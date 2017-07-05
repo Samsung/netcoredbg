@@ -337,6 +337,60 @@ namespace SOS
             return false;
         }
 
+        internal static bool GetStepRangesFromIP(IntPtr symbolReaderHandle, int ip, int methodToken, out uint ilStartOffset, out uint ilEndOffset)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            ilStartOffset = 0;
+            ilEndOffset = 0;
+
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+
+            GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+            MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+            try
+            {
+                Handle handle = MetadataTokens.Handle(methodToken);
+                if (handle.Kind != HandleKind.MethodDefinition)
+                    return false;
+
+                MethodDebugInformationHandle methodDebugHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
+                if (methodDebugHandle.IsNil)
+                    return false;
+
+                MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugHandle);
+                SequencePointCollection sequencePoints = methodDebugInfo.GetSequencePoints();
+
+                var list = new List<SequencePoint>();
+                foreach (SequencePoint p in sequencePoints)
+                    list.Add(p);
+                var pointsArray = list.ToArray();
+
+                for (int i = 1; i < pointsArray.Length; i++)
+                {
+                    if (pointsArray[i].Offset > ip)
+                    {
+                        ilStartOffset = (uint)pointsArray[i - 1].Offset;
+                        ilEndOffset = (uint)pointsArray[i].Offset;
+                        return true;
+                    }
+                }
+
+                // let's handle correctly last step range from last sequence point till
+                // end of the method.
+                if (pointsArray.Length > 0)
+                {
+                    ilStartOffset = (uint)pointsArray[pointsArray.Length - 1].Offset;
+                    ilEndOffset = ilStartOffset; // Should set this to IL code size in calling code
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
         /// <summary>
         /// Returns local variable name for given local index and IL offset.
         /// </summary>
