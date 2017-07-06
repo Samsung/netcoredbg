@@ -1,10 +1,4 @@
-// #include <iostream>
-// #include <cstdlib>
-
 #include <windows.h>
-// #include <winver.h>
-// #include <winternl.h>
-// #include <psapi.h>
 
 #include "corhdr.h"
 #include "cor.h"
@@ -13,17 +7,20 @@
 #include "clrinternal.h"
 
 #include <unistd.h>
-#include <sys/syscall.h>
-
-#include <histedit.h>
 
 #include <sstream>
 #include <mutex>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include <fstream>
 
-#include "symbolreader.h"
+typedef char * LPCUTF8;
+typedef uintptr_t TADDR;
+#include "sos_md.h"
+
+#include <arrayholder.h>
+#include "torelease.h"
 
 EXTERN_C HRESULT CreateDebuggingInterfaceFromVersionEx(
     int iDebuggerVersion,
@@ -38,9 +35,7 @@ CreateVersionStringFromModule(
     DWORD cchBuffer,
     DWORD* pdwLength);
 
-#include <arrayholder.h>
-#include "torelease.h"
-
+std::mutex g_processMutex;
 ICorDebugProcess *g_process = NULL;
 
 ULONG OSPageSize ()
@@ -69,6 +64,11 @@ size_t NextOSPageAddress (size_t addr)
 BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
                      PULONG lpcbBytesRead)
 {
+    std::lock_guard<std::mutex> lock(g_processMutex);
+
+    if (!g_process)
+        return FALSE;
+
     BOOL bRet = FALSE;
 
     SIZE_T bytesRead = 0;
@@ -87,35 +87,46 @@ BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
     return bRet;
 }
 
-/* This holds all the state for our line editor */
-EditLine *el;
+bool g_processExited = false;
 
-const char * prompt(EditLine *e) {
-    return "(gdb) ";
-}
+std::mutex g_outMutex;
 
-// Printing the following string causes libedit to back up to the beginning of the line & blank it out.
-const char undo_prompt_string[4] = { (char) 13, (char) 27, (char) 91, (char) 75};
+void _out_printf(const char *fmt, ...)
+    __attribute__((format (printf, 1, 2)));
 
-void _el_printf(EditLine *el, const char *fmt, ...)
-    __attribute__((format (printf, 2, 3)));
+#define out_printf(fmt, ...) _out_printf(fmt, ##__VA_ARGS__)
 
-#define el_printf(el, fmt, ...) _el_printf(el, fmt, ##__VA_ARGS__)
-
-void _el_printf(EditLine *el, const char *fmt, ...)
+void _out_printf(const char *fmt, ...)
 {
-    fwrite(undo_prompt_string , sizeof(char), sizeof(undo_prompt_string), stdout);
+    std::lock_guard<std::mutex> lock(g_outMutex);
     va_list arg;
 
-    /* Write the error message */
     va_start(arg, fmt);
     vfprintf(stdout, fmt, arg);
     va_end(arg);
 
     fflush(stdout);
-
-    el_set(el, EL_REFRESH);
 }
+
+// Breakpoints
+void DeleteAllBreakpoints();
+HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id);
+HRESULT DeleteBreakpoint(ULONG32 id);
+HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
+HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule);
+HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
+
+// Modules
+void SetCoreCLRPath(const std::string &coreclrPath);
+std::string GetModuleName(ICorDebugModule *pModule);
+HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range);
+HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule);
+HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
+                         ULONG32 &ilOffset,
+                         mdMethodDef &methodToken,
+                         std::string &fullname,
+                         ULONG &linenum);
+
 
 HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
 {
@@ -171,7 +182,7 @@ HRESULT PrintThreadsState(ICorDebugController *controller, std::string &output)
 
     std::stringstream ss;
 
-    ss << "^done,threads=[";
+    ss << "threads=[";
 
     ICorDebugThread *handle;
     ULONG fetched;
@@ -195,204 +206,38 @@ HRESULT PrintThreadsState(ICorDebugController *controller, std::string &output)
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
+    ULONG32 ilOffset;
     mdMethodDef methodToken;
+    std::string fullname;
+    ULONG linenum;
 
-    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+    IfFailRet(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
 
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
-    ULONG32 nOffset;
-    CorDebugMappingResult mappingResult;
-    IfFailRet(pILFrame->GetIP(&nOffset, &mappingResult));
-
-    SymbolReader symbolReader;
-    if (SUCCEEDED(symbolReader.LoadSymbols(pMDImport, pModule)))
-    {
-        WCHAR name[mdNameLen];
-        ULONG linenum;
-        IfFailRet(symbolReader.GetLineByILOffset(methodToken, nOffset, &linenum, name, mdNameLen));
-
-        char cname[mdNameLen];
-
-        WideCharToMultiByte(CP_UTF8, 0, name, (int)(PAL_wcslen(name) + 1), cname, mdNameLen, NULL, NULL);
-
-        std::stringstream ss;
-        ss << "line=\"" << linenum << "\",fullname=\"" << cname << "\"";
-        output = ss.str();
-    }
+    std::stringstream ss;
+    ss << "line=\"" << linenum << "\",fullname=\"" << fullname << "\"";
+    output = ss.str();
 
     return S_OK;
 }
+
 HRESULT PrintLocation(ICorDebugThread *pThread, std::string &output)
 {
     HRESULT Status;
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
 
-    return PrintFrameLocation(pFrame, output);
-}
-
-HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)
-{
-    HRESULT Status;
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-
+    ULONG32 ilOffset;
     mdMethodDef methodToken;
-    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+    std::string fullname;
+    ULONG linenum;
 
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
+    IfFailRet(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
 
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
-    ULONG32 nOffset;
-    CorDebugMappingResult mappingResult;
-    IfFailRet(pILFrame->GetIP(&nOffset, &mappingResult));
-
-    SymbolReader symbolReader;
-    IfFailRet(symbolReader.LoadSymbols(pMDImport, pModule));
-
-    ULONG32 ilStartOffset;
-    ULONG32 ilEndOffset;
-
-    IfFailRet(symbolReader.GetStepRangesFromIP(nOffset, methodToken, &ilStartOffset, &ilEndOffset));
-
-    if (ilStartOffset == ilEndOffset)
-    {
-        ToRelease<ICorDebugCode> pCode;
-        IfFailRet(pFunc->GetILCode(&pCode));
-        IfFailRet(pCode->GetSize(&ilEndOffset));
-    }
-
-    range->startOffset = ilStartOffset;
-    range->endOffset = ilEndOffset;
+    std::stringstream ss;
+    ss << "line=\"" << linenum << "\",fullname=\"" << fullname << "\"";
+    output = ss.str();
 
     return S_OK;
-}
-
-struct ModuleInfo
-{
-    CORDB_ADDRESS address;
-    std::shared_ptr<SymbolReader> symbols;
-    //ICorDebugModule *module;
-};
-
-std::mutex g_modulesInfoMutex;
-std::unordered_map<std::string, ModuleInfo> g_modulesInfo;
-
-std::string GetModuleName(ICorDebugModule *pModule)
-{
-    char cname[mdNameLen];
-    WCHAR name[mdNameLen];
-    ULONG32 name_len = 0;
-    if (SUCCEEDED(pModule->GetName(mdNameLen, &name_len, name)))
-    {
-        WideCharToMultiByte(CP_UTF8, 0, name, (int)(PAL_wcslen(name) + 1), cname, mdNameLen, NULL, NULL);
-        return cname;
-    }
-    return std::string();
-}
-
-HRESULT CreateBreakpoint(ICorDebugModule *pModule, std::string filename, int linenum)
-{
-    HRESULT Status;
-
-    WCHAR nameBuffer[MAX_LONGPATH];
-
-    Status = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), filename.size() + 1, nameBuffer, MAX_LONGPATH);
-
-    std::string modName = GetModuleName(pModule);
-
-    {
-        std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        auto info_pair = g_modulesInfo.find(modName);
-        if (info_pair == g_modulesInfo.end())
-        {
-            return E_FAIL;
-        }
-
-        CORDB_ADDRESS modAddress;
-        IfFailRet(pModule->GetBaseAddress(&modAddress));
-
-        mdMethodDef methodToken;
-        ULONG32 ilOffset;
-
-        IfFailRet(info_pair->second.symbols->ResolveSequencePoint(nameBuffer, linenum, modAddress, &methodToken, &ilOffset));
-
-        //el_printf(el, "  methodToken=0x%x ilOffset=%i\n", methodToken, ilOffset);
-
-        ToRelease<ICorDebugFunction> pFunc;
-        ToRelease<ICorDebugCode> pCode;
-        IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
-        IfFailRet(pFunc->GetILCode(&pCode));
-
-        ToRelease<ICorDebugFunctionBreakpoint> pBreakpoint;
-        IfFailRet(pCode->CreateBreakpoint(ilOffset, &pBreakpoint));
-        IfFailRet(pBreakpoint->Activate(TRUE));
-
-        return S_OK;
-    }
-
-    return E_FAIL;
-}
-
-HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum)
-{
-    HRESULT Status;
-
-    ToRelease<ICorDebugAppDomainEnum> domains;
-    IfFailRet(pProcess->EnumerateAppDomains(&domains));
-
-    ICorDebugAppDomain *curDomain;
-    ULONG domainsFetched;
-    while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
-    {
-        ToRelease<ICorDebugAppDomain> pDomain = curDomain;
-
-        ToRelease<ICorDebugAssemblyEnum> assemblies;
-        IfFailRet(pDomain->EnumerateAssemblies(&assemblies));
-
-        ICorDebugAssembly *curAssembly;
-        ULONG assembliesFetched;
-        while (SUCCEEDED(assemblies->Next(1, &curAssembly, &assembliesFetched)) && assembliesFetched == 1)
-        {
-            ToRelease<ICorDebugAssembly> pAssembly = curAssembly;
-
-            ToRelease<ICorDebugModuleEnum> modules;
-            IfFailRet(pAssembly->EnumerateModules(&modules));
-
-            ICorDebugModule *curModule;
-            ULONG modulesFetched;
-            while (SUCCEEDED(modules->Next(1, &curModule, &modulesFetched)) && modulesFetched == 1)
-            {
-                ToRelease<ICorDebugModule> pModule = curModule;
-
-                if (SUCCEEDED(CreateBreakpoint(pModule, filename, linenum)))
-                    return S_OK;
-            }
-        }
-    }
-    return S_FALSE;
 }
 
 HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
@@ -410,6 +255,8 @@ HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDoma
             pBreakpoint->Activate(FALSE);
         }
     }
+
+    DeleteAllBreakpoints();
 
     ToRelease<ICorDebugStepperEnum> steppers;
     if (SUCCEEDED(pAppDomain->EnumerateSteppers(&steppers)))
@@ -439,33 +286,6 @@ HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
     {
         ToRelease<ICorDebugAppDomain> pDomain = curDomain;
         DisableAllBreakpointsAndSteppersInAppDomain(pDomain);
-    }
-    return S_OK;
-}
-
-HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule)
-{
-    HRESULT Status;
-    std::string name = GetModuleName(pModule);
-
-    if (name.empty())
-        return E_FAIL;
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
-
-    auto symbolReader = std::make_shared<SymbolReader>();
-    IfFailRet(symbolReader->LoadSymbols(pMDImport, pModule));
-
-    CORDB_ADDRESS modAddress;
-    pModule->GetBaseAddress(&modAddress);
-
-    {
-        std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        g_modulesInfo.insert({name, {modAddress, symbolReader}});
     }
     return S_OK;
 }
@@ -661,6 +481,19 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
         }
         wcscat_s (m_szName, _countof(m_szName), szFunctionName);
 
+        ToRelease<IMDInternalImport> pIMDI;
+        IfFailRet(GetMDInternalFromImport(pMD, &pIMDI));
+
+        LPCSTR szName = NULL;
+        LPCSTR	szNameSpace = NULL;
+        pIMDI->GetNameOfTypeDef(memTypeDef, &szName, &szNameSpace);
+
+        // CORDB_ADDRESS modAddress;
+        // IfFailRet(pModule->GetBaseAddress(&modAddress));
+        // WCHAR cBuffer[2048];
+        // PrettyPrintClassFromToken(modAddress, typeDef, cBuffer, 2048);
+        // IMDInternalImport *pIMDI;
+
         // TODO:
         // LONG lSigBlobRemaining;
         // hr = GetFullNameForMD(pbSigBlob, ulSigBlob, &lSigBlobRemaining);
@@ -668,7 +501,7 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
         char funcName[2048] = {0};
         WideCharToMultiByte(CP_UTF8, 0, m_szName, (int)(_wcslen(m_szName) + 1), funcName, _countof(funcName), NULL, NULL);
 
-        ss << "func=\"" << funcName << "\"}";
+        ss << "func=\"" << szName << "." << szName << "\"}";
     }
 
     ss << "]";
@@ -688,8 +521,7 @@ public:
 
         void HandleEvent(ICorDebugController *controller, const char *eventName)
         {
-            el_printf(el, "test");
-            el_printf(el, "event received on tid %li: %s\n", syscall(SYS_gettid), eventName);
+            out_printf("=message,text=\"event received %s\"\n", eventName);
             controller->Continue(0);
         }
 
@@ -746,14 +578,17 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugBreakpoint *pBreakpoint)
         {
+            ULONG32 id = 0;
+            FindCurrentBreakpointId(pThread, id);
+
             std::string output;
             PrintLocation(pThread, output);
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            el_printf(el, "*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"1\",%s\n",
-                (int)threadId, output.c_str());
+            out_printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",%s\n",
+                (int)threadId, (unsigned int)id, output.c_str());
             {
                 std::lock_guard<std::mutex> lock(g_currentThreadMutex);
                 if (g_currentThread)
@@ -776,7 +611,7 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            el_printf(el, "*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
+            out_printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
                 (int)threadId, output.c_str());
 
             {
@@ -797,7 +632,38 @@ public:
         virtual HRESULT STDMETHODCALLTYPE Exception(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ BOOL unhandled) { return S_OK; }
+            /* [in] */ BOOL unhandled)
+        {
+            std::string output;
+            PrintLocation(pThread, output);
+
+            DWORD threadId = 0;
+            pThread->GetID(&threadId);
+
+            if (unhandled)
+            {
+                ToRelease<ICorDebugFrame> pFrame;
+                std::string output;
+
+                if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
+                    PrintFrameLocation(pFrame, output);
+
+                out_printf("*stopped,reason=\"exception-received\",exception-stage=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
+                    unhandled ? "unhandled" : "handled", (int)threadId, output.c_str());
+
+                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
+                if (g_currentThread)
+                    g_currentThread->Release();
+                pThread->AddRef();
+                g_currentThread = pThread;
+            } else {
+                out_printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
+                    "<exceptions.name>", "<short.module.name>");
+                pAppDomain->Continue(0);
+            }
+
+            return S_OK;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE EvalComplete(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -820,7 +686,8 @@ public:
         virtual HRESULT STDMETHODCALLTYPE ExitProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
-            el_printf(el, "*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
+            out_printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
+            g_processExited = true;
             return S_OK;
         }
 
@@ -830,7 +697,7 @@ public:
         {
             DWORD threadId = 0;
             thread->GetID(&threadId);
-            el_printf(el, "=thread-created,id=\"%i\"\n", (int)threadId);
+            out_printf("=thread-created,id=\"%i\"\n", (int)threadId);
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -850,9 +717,10 @@ public:
             std::string name = GetModuleName(pModule);
             if (!name.empty())
             {
-                el_printf(el, "=library-loaded,target-name=\"%s\"\n", name.c_str());
+                out_printf("=library-loaded,target-name=\"%s\"\n", name.c_str());
             }
             TryLoadModuleSymbols(pModule);
+            TryResolveBreakpointsForModule(pModule);
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -968,7 +836,22 @@ public:
             /* [in] */ ICorDebugFrame *pFrame,
             /* [in] */ ULONG32 nOffset,
             /* [in] */ CorDebugExceptionCallbackType dwEventType,
-            /* [in] */ DWORD dwFlags) {return S_OK; }
+            /* [in] */ DWORD dwFlags)
+        {
+            // const char *cbTypeName;
+            // switch(dwEventType)
+            // {
+            //     case DEBUG_EXCEPTION_FIRST_CHANCE: cbTypeName = "FIRST_CHANCE"; break;
+            //     case DEBUG_EXCEPTION_USER_FIRST_CHANCE: cbTypeName = "USER_FIRST_CHANCE"; break;
+            //     case DEBUG_EXCEPTION_CATCH_HANDLER_FOUND: cbTypeName = "CATCH_HANDLER_FOUND"; break;
+            //     case DEBUG_EXCEPTION_UNHANDLED: cbTypeName = "UNHANDLED"; break;
+            //     default: cbTypeName = "?"; break;
+            // }
+            // out_printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
+            //     cbTypeName);
+            pAppDomain->Continue(0);
+            return S_OK;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE ExceptionUnwind(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -1078,7 +961,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    SymbolReader::SetCoreCLRPath(coreclrPath);
+    SetCoreCLRPath(coreclrPath);
 
     WCHAR szModuleName[MAX_LONGPATH];
     MultiByteToWideChar(CP_UTF8, 0, coreclrPath.c_str(), coreclrPath.size() + 1, szModuleName, MAX_LONGPATH);
@@ -1089,7 +972,7 @@ int main(int argc, char *argv[])
         pidDebuggee,
         szModuleName,
         pBuffer,
-        100,
+        _countof(pBuffer),
         &dwLength);
 
     if (FAILED(hr))
@@ -1145,103 +1028,77 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    g_process = pProcess;
-
-    //printf("libedit thread %li\n", syscall(SYS_gettid));
-
-
-    /* This holds the info for our history */
-    History *myhistory;
-
-    /* Temp variables */
-    int keepreading = 1;
-    HistEvent ev;
-
-    /* Initialize the EditLine state to use our prompt function and
-    emacs style editing. */
-
-    el = el_init(argv[0], stdin, stdout, stderr);
-    el_set(el, EL_PROMPT, &prompt);
-    el_set(el, EL_EDITOR, "emacs");
-    el_set(el, EL_SIGNAL, 1);
-
-    /* Initialize the history */
-    myhistory = history_init();
-    if (myhistory == 0) {
-        fprintf(stderr, "history could not be initialized\n");
-        return 1;
+    {
+        std::lock_guard<std::mutex> lock(g_processMutex);
+        g_process = pProcess;
     }
 
-    /* Set the size of the history */
-    history(myhistory, &ev, H_SETSIZE, 800);
+    static char inputBuffer[1024];
+    const char *token = "";
 
-    /* This sets up the call back functions for history functionality */
-    el_set(el, EL_HIST, history, myhistory);
+    for (;;) {
+        token = "";
 
-    std::string prev_command;
-
-    while (keepreading) {
-        /* count is the number of characters read.
-           line is a const char* of our command line with the tailing \n */
-        int count;
-
-        const char *raw_line = el_gets(el, &count);
-        // Sleep(3000);
-        // const char *raw_line = "-gdb-exit\n";
-        // count = strlen(raw_line);
-
-        if (count <= 0)
-        {
-            keepreading = 0;
+        out_printf("(gdb)\n");
+        if (!fgets(inputBuffer, _countof(inputBuffer), stdin))
             break;
-        }
 
-        /* In order to use our history we have to explicitly add commands
-        to the history */
+        size_t count = strlen(inputBuffer);
 
-        std::string line(raw_line, count - 1);
+        if (count < 1 || inputBuffer[count - 1] != '\n')
+            break;
 
-        if (!line.empty())
-        {
-            history(myhistory, &ev, H_ENTER, raw_line);
-            prev_command = line;
-        }
+        if (count >= 2 && inputBuffer[count - 2] == '\r')
+            --count;
+
+        int miCmdStart = 0;
+        char *tokenEnd = strchr(inputBuffer, '-');
+        if (tokenEnd)
+            miCmdStart = tokenEnd - inputBuffer + 1;
         else
-        {
-            line = prev_command;
-        }
+            tokenEnd = inputBuffer;
+        std::string line(inputBuffer + miCmdStart, count - miCmdStart - 1);
+        *tokenEnd = '\0';
+        token = inputBuffer;
 
-        if (line == "-thread-info")
+        if (line == "thread-info")
         {
             std::string output;
             HRESULT hr = PrintThreadsState(pProcess, output);
-            printf("%x:%s\n", hr, output.c_str());
+            if (SUCCEEDED(hr))
+            {
+                out_printf("%s^done,%s\n", token, output.c_str());
+            }
+            else
+            {
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+            }
         }
-        else if (line == "-exec-continue")
+        else if (line == "exec-continue")
         {
             HRESULT hr = pProcess->Continue(0);
             if (SUCCEEDED(hr))
             {
-                printf("^done\n");
+                out_printf("%s^done\n", token);
             }
             else
             {
-                printf("^error,msg=\"HRESULT=%x\"\n", hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
             }
         }
-        else if (line == "-exec-interrupt")
+        else if (line == "exec-interrupt")
         {
             HRESULT hr = pProcess->Stop(0);
             if (SUCCEEDED(hr))
             {
-                printf("^done\n");
+                out_printf("%s^done\n", token);
             }
             else
             {
-                printf("^error,msg=\"HRESULT=%x\"\n", hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
             }
         }
-        else if (line.find("-break-insert ") == 0)
+        else if (line.find("break-insert ") == 0)
         {
             // TODO: imlement proper argument parsing
             std::size_t i1 = line.find(' ');
@@ -1253,25 +1110,34 @@ int main(int argc, char *argv[])
                 std::string slinenum = line.substr(i2 + 1);
 
                 int linenum = std::stoi(slinenum);
-                if (CreateBreakpointInProcess(pProcess, filename, linenum) == S_OK)
+                ULONG32 id;
+                if (SUCCEEDED(CreateBreakpointInProcess(pProcess, filename, linenum, id)))
                 {
-                    int bkpt_num = 1;
-                    printf("^done,bkpt={number=\"%i\",fullname=\"%s\",line=\"%i\"}\n", bkpt_num, filename.c_str(), linenum);
+                    std::string output;
+                    PrintBreakpoint(id, output);
+                    out_printf("%s^done,%s\n", token, output.c_str());
                 }
             }
             else
             {
-                printf("^error,msg=\"Unknown breakpoint location format\"\n");
+                out_printf("%s^error,msg=\"Unknown breakpoint location format\"\n", token);
             }
         }
-        else if (line == "-exec-next" || line == "-exec-step" || line == "-exec-finish")
+        else if (line.find("break-delete ") == 0)
+        {
+            std::size_t i = line.find(' ');
+            ULONG32 id = std::stoul(line.substr(i));
+            DeleteBreakpoint(id);
+            out_printf("%s^done\n", token);
+        }
+        else if (line == "exec-next" || line == "exec-step" || line == "exec-finish")
         {
             StepType stepType;
-            if (line == "-exec-next")
+            if (line == "exec-next")
                 stepType = STEP_OVER;
-            else if (line == "-exec-step")
+            else if (line == "exec-step")
                 stepType = STEP_IN;
-            else if (line == "-exec-finish")
+            else if (line == "exec-finish")
                 stepType = STEP_OUT;
 
             HRESULT hr;
@@ -1282,23 +1148,24 @@ int main(int argc, char *argv[])
 
             if (FAILED(hr))
             {
-                printf("^error,msg=\"Cannot create stepper: %x\"\n", hr);
+                out_printf("%s^error,msg=\"Cannot create stepper: %x\"\n", token, hr);
             }
             else
             {
                 hr = pProcess->Continue(0);
                 if (SUCCEEDED(hr))
                 {
-                    printf("^done\n");
+                    out_printf("%s^done\n", token);
                 }
                 else
                 {
-                    printf("^error,msg=\"HRESULT=%x\"\n", hr);
+                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
                 }
             }
         }
-        else if (line == "-stack-list-frames")
+        else if (line == "stack-list-frames")
         {
+            // TODO: Add parsing frame indeces
             std::string output;
             HRESULT hr;
             {
@@ -1307,14 +1174,14 @@ int main(int argc, char *argv[])
             }
             if (SUCCEEDED(hr))
             {
-                printf("^done,%s\n", output.c_str());
+                out_printf("%s^done,%s\n", inputBuffer, output.c_str());
             }
             else
             {
-                printf("^error,msg=\"HRESULT=%x\"\n", hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", inputBuffer, hr);
             }
         }
-        else if (line == "-gdb-exit")
+        else if (line == "gdb-exit")
         {
             hr = pProcess->Stop(0);
             if (SUCCEEDED(hr))
@@ -1323,36 +1190,29 @@ int main(int argc, char *argv[])
 
                 hr = pProcess->Terminate(0);
 
-                // TODO: wait for process exit event
-                Sleep(2000);
+                while (!g_processExited)
+                    Sleep(100);
 
                 pProcess.Release();
             }
-            keepreading = 0;
+            break;
         } else {
-            printf("^error,msg=\"Unknown command: %s\"\n", line.c_str());
+            out_printf("%s^error,msg=\"Unknown command: %s\"\n", token, line.c_str());
         }
     }
 
-    /* Clean up our memory */
-    history_end(myhistory);
-    el_end(el);
-
     if (pProcess)
     {
-        hr = pProcess->Stop(0);
-        //fprintf(stderr, "Stop : hr=%x\n", hr);
-        if (SUCCEEDED(hr))
+        if (SUCCEEDED(pProcess->Stop(0)))
         {
             DisableAllBreakpointsAndSteppers(pProcess);
             hr = pProcess->Detach();
         }
     }
-    //fprintf(stderr, "Detach : hr=%x\n", hr);
 
     pCorDebug->Terminate();
 
-    printf("^exit\n");
+    out_printf("%s^exit\n", token);
 
     // TODO: Cleanup libcoreclr.so instance
 

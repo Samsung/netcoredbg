@@ -1,6 +1,6 @@
 project(coreclrdbg)
 
-set(coreclrdbg_SRC main.cpp symbolreader.cpp tpa.cpp)
+set(coreclrdbg_SRC main.cpp symbolreader.cpp tpa.cpp breakpoints.cpp modules.cpp)
 
 if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
     add_definitions(-D_TARGET_AMD64_=1)
@@ -37,12 +37,13 @@ include_directories(${CLR_DIR}/src/debug/inc)
 include_directories(${CLR_DIR}/src/debug/shim)
 include_directories(${CLR_DIR}/src/coreclr/hosts/inc)
 
+include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
+
 target_link_libraries(coreclrdbg
     corguids
     dbgshim
     mscordaccore
     palrt
-    edit
 )
 
 install_clr(coreclrdbg)

@@ -70,3 +70,42 @@ public:
 private:
     T* m_ptr;
 };
+
+#ifndef IfFailRet
+#define IfFailRet(EXPR) do { Status = (EXPR); if(FAILED(Status)) { return (Status); } } while (0)
+#endif
+
+#ifndef _countof
+#define _countof(x) (sizeof(x)/sizeof(x[0]))
+#endif
+
+#ifdef PAL_STDCPP_COMPAT
+#define _iswprint   PAL_iswprint
+#define _wcslen     PAL_wcslen
+#define _wcsncmp    PAL_wcsncmp
+#define _wcsrchr    PAL_wcsrchr
+#define _wcscmp     PAL_wcscmp
+#define _wcschr     PAL_wcschr
+#define _wcscspn    PAL_wcscspn
+#define _wcscat     PAL_wcscat
+#define _wcsstr     PAL_wcsstr
+#else // PAL_STDCPP_COMPAT
+#define _iswprint   iswprint
+#define _wcslen     wcslen
+#define _wcsncmp    wcsncmp
+#define _wcsrchr    wcsrchr
+#define _wcscmp     wcscmp
+#define _wcschr     wcschr
+#define _wcscspn    wcscspn
+#define _wcscat     wcscat
+#define _wcsstr     wcsstr
+#endif // !PAL_STDCPP_COMPAT
+
+typedef uintptr_t TADDR;
+typedef ULONG64 CLRDATA_ADDRESS;
+
+// Convert between CLRDATA_ADDRESS and TADDR.
+#define TO_TADDR(cdaddr) ((TADDR)(cdaddr))
+#define TO_CDADDR(taddr) ((CLRDATA_ADDRESS)(LONG_PTR)(taddr))
+
+const int mdNameLen = 2048;

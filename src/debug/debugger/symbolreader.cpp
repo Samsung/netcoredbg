@@ -17,6 +17,7 @@
 
 #include <string>
 
+#include "torelease.h"
 #include "symbolreader.h"
 
 std::string SymbolReader::coreClrPath;
