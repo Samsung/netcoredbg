@@ -27,15 +27,6 @@ private:
 
     static HRESULT PrepareSymbolReader();
 
-    // HRESULT GetNamedLocalVariable(
-    //     ISymUnmanagedScope* pScope,
-    //     ICorDebugILFrame* pILFrame,
-    //     mdMethodDef methodToken,
-    //     ULONG localIndex,
-    //     WCHAR* paramName,
-    //     ULONG paramNameLen,
-    //     ICorDebugValue** ppValue);
-
     HRESULT LoadSymbolsForPortablePDB(
         WCHAR* pModuleName,
         BOOL isInMemory,
@@ -64,7 +55,7 @@ public:
 
     HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule);
     HRESULT GetLineByILOffset(mdMethodDef MethodToken, ULONG64 IlOffset, ULONG *pLinenum, WCHAR* pwszFileName, ULONG cchFileName);
-    //HRESULT GetNamedLocalVariable(___in ICorDebugFrame * pFrame, ___in ULONG localIndex, __out_ecount(paramNameLen) WCHAR* paramName, ___in ULONG paramNameLen, ___out ICorDebugValue** ppValue);
+    HRESULT GetNamedLocalVariable(ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex, WCHAR* paramName, ULONG paramNameLen, ICorDebugValue **ppValue);
     HRESULT ResolveSequencePoint(WCHAR* pFilename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset);
     HRESULT GetStepRangesFromIP(ULONG64 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
 };

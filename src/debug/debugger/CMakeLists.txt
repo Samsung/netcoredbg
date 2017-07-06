@@ -1,6 +1,12 @@
 project(coreclrdbg)
 
-set(coreclrdbg_SRC main.cpp symbolreader.cpp tpa.cpp breakpoints.cpp modules.cpp)
+set(coreclrdbg_SRC
+    main.cpp
+    symbolreader.cpp
+    tpa.cpp
+    breakpoints.cpp
+    modules.cpp
+    varobj.cpp)
 
 if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
     add_definitions(-D_TARGET_AMD64_=1)

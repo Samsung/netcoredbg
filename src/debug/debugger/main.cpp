@@ -128,6 +128,9 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          ULONG &linenum);
 
 
+// Varobj
+HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
+
 HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
 {
     HRESULT Status = S_OK;
@@ -1165,7 +1168,7 @@ int main(int argc, char *argv[])
         }
         else if (line == "stack-list-frames")
         {
-            // TODO: Add parsing frame indeces
+            // TODO: Add parsing frame indeces and --thread
             std::string output;
             HRESULT hr;
             {
@@ -1174,11 +1177,33 @@ int main(int argc, char *argv[])
             }
             if (SUCCEEDED(hr))
             {
-                out_printf("%s^done,%s\n", inputBuffer, output.c_str());
+                out_printf("%s^done,%s\n", token, output.c_str());
             }
             else
             {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", inputBuffer, hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+            }
+        }
+        else if (line.find("stack-list-variables ") == 0)
+        {
+            // TODO: Add parsing arguments --thread, --frame
+            std::string output;
+            HRESULT hr;
+            {
+                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
+
+                ToRelease<ICorDebugFrame> pFrame;
+                hr = g_currentThread->GetActiveFrame(&pFrame);
+                if (SUCCEEDED(hr))
+                    hr = ListVariables(pFrame, output);
+            }
+            if (SUCCEEDED(hr))
+            {
+                out_printf("%s^done,%s\n", token, output.c_str());
+            }
+            else
+            {
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
             }
         }
         else if (line == "gdb-exit")

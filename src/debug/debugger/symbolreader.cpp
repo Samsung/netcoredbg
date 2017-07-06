@@ -310,3 +310,36 @@ HRESULT SymbolReader::GetStepRangesFromIP(ULONG64 ip, mdMethodDef MethodToken, U
 
     return E_FAIL;
 }
+
+HRESULT SymbolReader::GetNamedLocalVariable(ICorDebugILFrame * pILFrame, mdMethodDef methodToken,
+    ULONG localIndex, WCHAR* paramName, ULONG paramNameLen, ICorDebugValue** ppValue)
+{
+    HRESULT Status = S_OK;
+
+    if (!m_symbolReaderHandle)
+        return E_FAIL;
+
+    _ASSERTE(getLocalVariableNameDelegate != nullptr);
+
+    BSTR wszParamName = SysAllocStringLen(0, mdNameLen);
+    if (wszParamName == NULL)
+    {
+        return E_OUTOFMEMORY;
+    }
+
+    if (getLocalVariableNameDelegate(m_symbolReaderHandle, methodToken, localIndex, &wszParamName) == FALSE)
+    {
+        SysFreeString(wszParamName);
+        return E_FAIL;
+    }
+
+    wcscpy_s(paramName, paramNameLen, wszParamName);
+    SysFreeString(wszParamName);
+
+    if (FAILED(pILFrame->GetLocalVariable(localIndex, ppValue)) || (*ppValue == NULL))
+    {
+        *ppValue = NULL;
+        return E_FAIL;
+    }
+    return S_OK;
+}

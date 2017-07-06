@@ -203,3 +203,34 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule)
     }
     return S_OK;
 }
+
+HRESULT GetFrameNamedLocalVariable(
+    ICorDebugModule *pModule,
+    ICorDebugILFrame *pILFrame,
+    mdMethodDef methodToken,
+    ULONG localIndex,
+    std::string &paramName,
+    ICorDebugValue** ppValue)
+{
+    HRESULT Status;
+
+    WCHAR wParamName[mdNameLen] = W("\0");
+
+    {
+        std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+        auto info_pair = g_modulesInfo.find(GetModuleName(pModule));
+        if (info_pair == g_modulesInfo.end())
+        {
+            return E_FAIL;
+        }
+
+        IfFailRet(info_pair->second.symbols->GetNamedLocalVariable(pILFrame, methodToken, localIndex, wParamName, _countof(wParamName), ppValue));
+    }
+
+    char cParamName[mdNameLen] = {0};
+    WideCharToMultiByte(CP_UTF8, 0, wParamName, (int)(PAL_wcslen(wParamName) + 1), cParamName, _countof(cParamName), NULL, NULL);
+
+    paramName = cParamName;
+
+    return S_OK;
+}
