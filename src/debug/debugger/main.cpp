@@ -1068,7 +1068,7 @@ int main(int argc, char *argv[])
             HRESULT hr;
             {
                 std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-                hr = PrintFrames(g_currentThread, output);
+                hr = g_currentThread ? PrintFrames(g_currentThread, output) : E_FAIL;
             }
             if (SUCCEEDED(hr))
             {
@@ -1088,7 +1088,7 @@ int main(int argc, char *argv[])
                 std::lock_guard<std::mutex> lock(g_currentThreadMutex);
 
                 ToRelease<ICorDebugFrame> pFrame;
-                hr = g_currentThread->GetActiveFrame(&pFrame);
+                hr = g_currentThread ? g_currentThread->GetActiveFrame(&pFrame) : E_FAIL;
                 if (SUCCEEDED(hr))
                     hr = ListVariables(pFrame, output);
             }
