@@ -8,5 +8,5 @@ class TypePrinter
 public:
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &output);
     static HRESULT GetTypeOfValue(ICorDebugValue *pValue, std::string &output);
-    static HRESULT GetMethodType(ICorDebugFunction *pFunction, std::string &output);
+    static HRESULT GetMethodName(ICorDebugFrame *pFrame, std::string &output);
 };

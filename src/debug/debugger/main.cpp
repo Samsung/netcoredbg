@@ -396,10 +396,10 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
         if (!frameLocation.empty())
             ss << frameLocation << ",";
 
-        std::string funcType;
-        TypePrinter::GetMethodType(pFunction, funcType);
+        std::string methodName;
+        TypePrinter::GetMethodName(pFrame, methodName);
 
-        ss << "func=\"" << funcType << "\"}";
+        ss << "func=\"" << methodName << "\"}";
     }
 
     ss << "]";

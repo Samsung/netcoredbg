@@ -366,9 +366,15 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
     return S_OK;
 }
 
-HRESULT TypePrinter::GetMethodType(ICorDebugFunction *pFunction, std::string &output)
+HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
+
+    ToRelease<ICorDebugILFrame2> pILFrame2;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame2, (LPVOID*) &pILFrame2));
+
+    ToRelease<ICorDebugFunction> pFunction;
+    IfFailRet(pFrame->GetFunction(&pFunction));
 
     ToRelease<ICorDebugClass> pClass;
     ToRelease<ICorDebugModule> pModule;
@@ -408,35 +414,63 @@ HRESULT TypePrinter::GetMethodType(ICorDebugFunction *pFunction, std::string &ou
     WCHAR m_szName[mdNameLen] = {0};
     m_szName[0] = L'\0';
 
+    char nameBuffer[2048] = {0};
+    std::stringstream ss;
+
     if (memTypeDef != mdTypeDefNil)
     {
         hr = NameForTypeDef_s (memTypeDef, pMD, m_szName, _countof(m_szName));
         if (SUCCEEDED (hr)) {
-            wcscat_s (m_szName, _countof(m_szName), W("."));
+            WideCharToMultiByte(CP_UTF8, 0, m_szName, (int)(_wcslen(m_szName) + 1), nameBuffer, _countof(nameBuffer), NULL, NULL);
+            ss << nameBuffer << ".";
         }
     }
-    wcscat_s (m_szName, _countof(m_szName), szFunctionName);
 
-    ToRelease<IMDInternalImport> pIMDI;
-    IfFailRet(GetMDInternalFromImport(pMD, &pIMDI));
+    WideCharToMultiByte(CP_UTF8, 0, szFunctionName, (int)(_wcslen(szFunctionName) + 1), nameBuffer, _countof(nameBuffer), NULL, NULL);
+    ss << nameBuffer;
 
-    LPCSTR szName = NULL;
-    LPCSTR	szNameSpace = NULL;
-    pIMDI->GetNameOfTypeDef(memTypeDef, &szName, &szNameSpace);
+    ToRelease<IMetaDataImport2> pMD2;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport2, (LPVOID*) &pMD2));
 
-    // CORDB_ADDRESS modAddress;
-    // IfFailRet(pModule->GetBaseAddress(&modAddress));
-    // WCHAR cBuffer[2048];
-    // PrettyPrintClassFromToken(modAddress, typeDef, cBuffer, 2048);
-    // IMDInternalImport *pIMDI;
+    ULONG methodGenericsCount = 0;
+    HCORENUM hEnum = NULL;
+    mdGenericParam gp;
+    ULONG fetched;
+    while (SUCCEEDED(pMD2->EnumGenericParams(&hEnum, methodDef, &gp, 1, &fetched)) && fetched == 1)
+    {
+        methodGenericsCount++;
+    }
+    pMD2->CloseEnum(hEnum);
 
-    // TODO:
-    // LONG lSigBlobRemaining;
-    // hr = GetFullNameForMD(pbSigBlob, ulSigBlob, &lSigBlobRemaining);
+    if (methodGenericsCount > 0)
+    {
+        ss << '`' << methodGenericsCount;
+    }
 
-    char funcName[2048] = {0};
-    WideCharToMultiByte(CP_UTF8, 0, m_szName, (int)(_wcslen(m_szName) + 1), funcName, _countof(funcName), NULL, NULL);
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
 
-    output = funcName;
+    if (SUCCEEDED(pILFrame2->EnumerateTypeParameters(&pTypeEnum)))
+    {
+        ULONG numTypes = 0;
+        ToRelease<ICorDebugType> pCurrentTypeParam;
+
+        bool isFirst = true;
+
+        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &numTypes)) && numTypes == 1)
+        {
+            ss << (isFirst ? "<" : ",");
+            isFirst = false;
+
+            std::string name;
+            GetTypeOfValue(pCurrentTypeParam, name);
+            ss << name;
+        }
+        if(!isFirst)
+            ss << ">";
+    }
+
+    ss << "()";
+
+    output = ss.str();
     return S_OK;
 }
