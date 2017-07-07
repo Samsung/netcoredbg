@@ -15,10 +15,6 @@
 #include <vector>
 #include <fstream>
 
-typedef char * LPCUTF8;
-typedef uintptr_t TADDR;
-#include "sos_md.h"
-
 #include <arrayholder.h>
 #include "torelease.h"
 
@@ -130,6 +126,9 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
 
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
+
+// TypePrinter
+#include "typeprinter.h"
 
 HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
 {
@@ -328,46 +327,6 @@ HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     return S_OK;
 }
 
-static HRESULT NameForTypeDef_s(mdTypeDef tkTypeDef, IMetaDataImport *pImport,
-                                WCHAR *mdName, size_t capacity_mdName)
-{
-    DWORD flags;
-    ULONG nameLen;
-
-    HRESULT hr = pImport->GetTypeDefProps(tkTypeDef, mdName,
-                                          mdNameLen, &nameLen,
-                                          &flags, NULL);
-    if (hr != S_OK) {
-        return hr;
-    }
-
-    if (!IsTdNested(flags)) {
-        return hr;
-    }
-    mdTypeDef tkEnclosingClass;
-    hr = pImport->GetNestedClassProps(tkTypeDef, &tkEnclosingClass);
-    if (hr != S_OK) {
-        return hr;
-    }
-    WCHAR *name = (WCHAR*)_alloca((nameLen+1)*sizeof(WCHAR));
-    wcscpy_s (name, nameLen+1, mdName);
-    hr = NameForTypeDef_s(tkEnclosingClass,pImport,mdName, capacity_mdName);
-    if (hr != S_OK) {
-        return hr;
-    }
-    size_t Len = _wcslen (mdName);
-    if (Len < mdNameLen-2) {
-        mdName[Len++] = L'+';
-        mdName[Len] = L'\0';
-    }
-    Len = mdNameLen-1 - Len;
-    if (Len > nameLen) {
-        Len = nameLen;
-    }
-    wcsncat_s (mdName,capacity_mdName,name,Len);
-    return hr;
-}
-
 HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
 {
     HRESULT Status;
@@ -437,74 +396,10 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
         if (!frameLocation.empty())
             ss << frameLocation << ",";
 
-        ToRelease<ICorDebugClass> pClass;
-        ToRelease<ICorDebugModule> pModule;
-        mdMethodDef methodDef;
-        IfFailRet(pFunction->GetClass(&pClass));
-        IfFailRet(pFunction->GetModule(&pModule));
-        IfFailRet(pFunction->GetToken(&methodDef));
+        std::string funcType;
+        TypePrinter::GetMethodType(pFunction, funcType);
 
-        WCHAR wszModuleName[100];
-        ULONG32 cchModuleNameActual;
-        IfFailRet(pModule->GetName(_countof(wszModuleName), &cchModuleNameActual, wszModuleName));
-
-        ToRelease<IUnknown> pMDUnknown;
-        ToRelease<IMetaDataImport> pMD;
-
-        IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-        IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-
-        mdTypeDef typeDef;
-        IfFailRet(pClass->GetToken(&typeDef));
-
-        HRESULT hr;
-        mdTypeDef memTypeDef;
-        ULONG nameLen;
-        DWORD flags;
-        PCCOR_SIGNATURE pbSigBlob;
-        ULONG ulSigBlob;
-        ULONG ulCodeRVA;
-        ULONG ulImplFlags;
-
-        WCHAR szFunctionName[1024] = {0};
-
-        hr = pMD->GetMethodProps(methodDef, &memTypeDef,
-                                 szFunctionName, _countof(szFunctionName), &nameLen,
-                                 &flags, &pbSigBlob, &ulSigBlob, &ulCodeRVA, &ulImplFlags);
-        szFunctionName[nameLen] = L'\0';
-        WCHAR m_szName[mdNameLen] = {0};
-        m_szName[0] = L'\0';
-
-        if (memTypeDef != mdTypeDefNil)
-        {
-            hr = NameForTypeDef_s (memTypeDef, pMD, m_szName, _countof(m_szName));
-            if (SUCCEEDED (hr)) {
-                wcscat_s (m_szName, _countof(m_szName), W("."));
-            }
-        }
-        wcscat_s (m_szName, _countof(m_szName), szFunctionName);
-
-        ToRelease<IMDInternalImport> pIMDI;
-        IfFailRet(GetMDInternalFromImport(pMD, &pIMDI));
-
-        LPCSTR szName = NULL;
-        LPCSTR	szNameSpace = NULL;
-        pIMDI->GetNameOfTypeDef(memTypeDef, &szName, &szNameSpace);
-
-        // CORDB_ADDRESS modAddress;
-        // IfFailRet(pModule->GetBaseAddress(&modAddress));
-        // WCHAR cBuffer[2048];
-        // PrettyPrintClassFromToken(modAddress, typeDef, cBuffer, 2048);
-        // IMDInternalImport *pIMDI;
-
-        // TODO:
-        // LONG lSigBlobRemaining;
-        // hr = GetFullNameForMD(pbSigBlob, ulSigBlob, &lSigBlobRemaining);
-
-        char funcName[2048] = {0};
-        WideCharToMultiByte(CP_UTF8, 0, m_szName, (int)(_wcslen(m_szName) + 1), funcName, _countof(funcName), NULL, NULL);
-
-        ss << "func=\"" << szName << "." << szName << "\"}";
+        ss << "func=\"" << funcType << "\"}";
     }
 
     ss << "]";

@@ -24,6 +24,7 @@ HRESULT GetFrameNamedLocalVariable(
     std::string &paramName,
     ICorDebugValue** ppValue);
 
+#include "typeprinter.h"
 
 // From strike.cpp
 static HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL)
@@ -272,6 +273,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, IMe
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
 {
     bool printValues = true;
+    bool printTypes = true;
     HRESULT Status;
 
     ToRelease<ICorDebugILFrame> pILFrame;
@@ -345,6 +347,12 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
                 if (SUCCEEDED(PrintValue(pValue, pILFrame, pMD, strVal)))
                     ss << ",value=\"" << strVal << "\"";
             }
+            if (printTypes)
+            {
+                std::string strVal;
+                if (SUCCEEDED(TypePrinter::GetTypeOfValue(pValue, strVal)))
+                    ss << ",type=\"" << strVal << "\"";
+            }
             ss << "}";
             sep = ",";
         }
@@ -376,6 +384,12 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
                 std::string strVal;
                 if (SUCCEEDED(PrintValue(pValue, pILFrame, pMD, strVal)))
                     ss << ",value=\"" << strVal << "\"";
+            }
+            if (printTypes)
+            {
+                std::string strVal;
+                if (SUCCEEDED(TypePrinter::GetTypeOfValue(pValue, strVal)))
+                    ss << ",type=\"" << strVal << "\"";
             }
             ss << "}";
             sep = ",";
