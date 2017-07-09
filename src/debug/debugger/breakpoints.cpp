@@ -72,7 +72,7 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output)
         else
         {
             ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-               "warning=\"No executable code of the debugger’s target code type is associated with this line.\"}";
+               "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
             Status = S_FALSE;
         }
         output = ss.str();
@@ -215,6 +215,8 @@ HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filena
     IfFailRet(pProcess->EnumerateAppDomains(&domains));
 
     Breakpoint bp;
+    bp.fullname = filename;
+    bp.linenum = linenum;
 
     ICorDebugAppDomain *curDomain;
     ULONG domainsFetched;
