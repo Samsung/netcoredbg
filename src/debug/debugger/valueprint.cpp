@@ -182,16 +182,12 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
 
     case ELEMENT_TYPE_VALUETYPE:
     case ELEMENT_TYPE_CLASS:
-        CORDB_ADDRESS addr;
-        if(SUCCEEDED(pValue->GetAddress(&addr)))
         {
-            ss << " @ 0x" << std::hex << addr;
+            std::string typeName;
+            TypePrinter::GetTypeOfValue(pValue, typeName);
+            ss << '{' << typeName << '}';
+            //ProcessFields(pValue, NULL, pILFrame, indent + 1, varToExpand, currentExpansion, currentExpansionSize, currentFrame);
         }
-        else
-        {
-            ss << "<failed to get address>";
-        }
-        //ProcessFields(pValue, NULL, pILFrame, indent + 1, varToExpand, currentExpansion, currentExpansionSize, currentFrame);
         break;
 
     case ELEMENT_TYPE_BOOLEAN:
@@ -210,11 +206,11 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
         break;
 
     case ELEMENT_TYPE_I1:
-        ss << *(char*) &(rgbValue[0]);
+        ss << (int) *(char*) &(rgbValue[0]);
         break;
 
     case ELEMENT_TYPE_U1:
-        ss << *(unsigned char*) &(rgbValue[0]);
+        ss << (unsigned int) *(unsigned char*) &(rgbValue[0]);
         break;
 
     case ELEMENT_TYPE_I2:
