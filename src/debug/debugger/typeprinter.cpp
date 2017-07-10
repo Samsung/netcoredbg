@@ -252,7 +252,10 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
                 {
                     char cName[mdNameLen] = {0};
                     WideCharToMultiByte(CP_UTF8, 0, g_mdName, (int)(_wcslen(g_mdName) + 1), cName, _countof(cName), NULL, NULL);
-                    ss << cName;
+                    if (strcmp(cName, "System.Decimal") == 0)
+                        ss << "decimal";
+                    else
+                        ss << cName;
                 }
 
             }
