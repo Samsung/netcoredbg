@@ -141,10 +141,9 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
             if (pValue)
                 pValue->AddRef();
             pResultValue = pValue;
-
         }
 
-        members.emplace_back(name, pValue, className);
+        members.emplace_back(name, pResultValue, className);
         return S_OK;
     }));
 
