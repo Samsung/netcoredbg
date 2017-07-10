@@ -410,7 +410,11 @@ static HRESULT GetNumChild(ICorDebugValue *pInputValue,
                                             0,
                                             NULL)))
         {
-            if (propFlags & fdStatic)
+            DWORD getterAttr = 0;
+            if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
+                continue;
+
+            if (getterAttr & mdStatic)
             {
                 if (numstaticBack == 0)
                     numstatic++;
@@ -716,13 +720,17 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
                                             1,
                                             &cOtherMethod)))
         {
+            DWORD getterAttr = 0;
+            if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
+                continue;
+
             char cName[mdNameLen] = {0};
             WideCharToMultiByte(CP_UTF8, 0, propertyName, (int)(propertyNameLen + 1), cName, _countof(cName), NULL, NULL);
 
             if (backedProperies.find(cName) != backedProperies.end())
                 continue;
 
-            bool is_static = (propFlags & fdStatic);
+            bool is_static = (getterAttr & mdStatic);
             if (is_static)
                 has_static_members = true;
 
