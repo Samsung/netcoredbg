@@ -190,6 +190,29 @@ void PrintChildren(std::vector<VarObjValue> &members, std::string &output)
     output = ss.str();
 }
 
+static unsigned int g_varCounter = 0;
+static std::unordered_map<std::string, VarObjValue> g_vars;
+
+static std::string InsertVar(VarObjValue &varobj)
+{
+    std::string varName = varobj.varobjName;
+
+    if (varName.empty() || varName == "-")
+    {
+        varName = "var" + std::to_string(g_varCounter++);
+    }
+
+    varobj.varobjName = varName;
+
+    auto it = g_vars.find(varName);
+    if (it != g_vars.end())
+        g_vars.erase(it);
+
+    g_vars.emplace(std::make_pair(varName, varobj));
+
+    return varName;
+}
+
 HRESULT ListChildren(VarObjValue &objValue, ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
@@ -226,23 +249,21 @@ HRESULT ListChildren(VarObjValue &objValue, ICorDebugFrame *pFrame, std::string 
         Status = GetNumChild(m.value, m.numchild, m.statics_only);
         if (!m.statics_only)
             TypePrinter::GetTypeOfValue(m.value, m.typeName);
+
+        InsertVar(m);
     }
 
     PrintChildren(members, output);
 
-    for (auto m : members)
-    {
-        if (m.value)
-            m.value->Release();
-    }
-
     return S_OK;
 }
 
-HRESULT ListChildren(ICorDebugValue *pInputValue, ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListChildren(const std::string &name, ICorDebugFrame *pFrame, std::string &output)
 {
-    VarObjValue val("?", pInputValue, "");
-    return ListChildren(val, pFrame, output);
+    auto it = g_vars.find(name);
+    if (it == g_vars.end())
+        return E_FAIL;
+    return ListChildren(it->second, pFrame, output);
 }
 
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
@@ -272,10 +293,6 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
                 ss << ",type=\"" << strVal << "\"";
         }
 
-        std::string test;
-        ListChildren(pValue, pFrame, test);
-        ss << test;
-
         ss << "}";
         sep = ",";
         return S_OK;
@@ -284,4 +301,52 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
     ss << "]";
     output = ss.str();
     return S_OK;
+}
+
+HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    ICorDebugValue *pResultValue = nullptr;
+    IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
+    {
+        if (pResultValue)
+            return S_OK; // TODO: Create a fast way to exit
+
+        if (name == expression && pValue)
+        {
+            pValue->AddRef();
+            pResultValue = pValue;
+        }
+        return S_OK;
+    }));
+
+    if (!pResultValue)
+        return E_FAIL;
+
+    VarObjValue varobj(expression, pResultValue, "");
+    varobj.varobjName = varobjName;
+    GetNumChild(varobj.value, varobj.numchild, varobj.statics_only);
+    TypePrinter::GetTypeOfValue(varobj.value, varobj.typeName);
+
+    std::string valName = InsertVar(varobj);
+
+    std::string valStr;
+    PrintValue(varobj.value, pILFrame, valStr);
+
+    std::stringstream ss;
+    ss << "name=\"" << valName << "\",numchild=\"" << varobj.numchild << "\",value=\"" << valStr
+       <<"\",type=\"" << varobj.typeName << "\"";
+    //name="var0",numchild="7",value="{Class2}",attributes="editable",type="Class2",thread-id="3945",has_more="1"
+    output = ss.str();
+
+    return S_OK;
+}
+
+HRESULT DeleteVar(const std::string &varobjName)
+{
+    return g_vars.erase(varobjName) == 0 ? E_FAIL : S_OK;
 }

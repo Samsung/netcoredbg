@@ -128,7 +128,9 @@ void NotifyEvalComplete();
 
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
-
+HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
+HRESULT ListChildren(const std::string &name, ICorDebugFrame *pFrame, std::string &output);
+HRESULT DeleteVar(const std::string &varobjName);
 
 // TypePrinter
 #include "typeprinter.h"
@@ -1164,6 +1166,76 @@ int main(int argc, char *argv[])
             else
             {
                 out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
+            }
+        }
+        else if (command == "var-create")
+        {
+            if (args.size() < 2)
+            {
+                out_printf("%s^error,msg=\"%s requires at least 2 arguments\"\n", token.c_str(), command.c_str());
+            } else {
+                // TODO: Add parsing arguments --thread, --frame
+                std::string output;
+                HRESULT hr;
+                {
+                    std::lock_guard<std::mutex> lock(g_currentThreadMutex);
+
+                    ToRelease<ICorDebugFrame> pFrame;
+                    hr = g_currentThread ? g_currentThread->GetActiveFrame(&pFrame) : E_FAIL;
+                    if (SUCCEEDED(hr))
+                        hr = CreateVar(pFrame, args.at(0), args.at(1), output);
+                }
+                if (SUCCEEDED(hr))
+                {
+                    out_printf("%s^done,%s\n", token.c_str(), output.c_str());
+                }
+                else
+                {
+                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
+                }
+            }
+        }
+        else if (command == "var-list-children")
+        {
+            if (args.size() < 1)
+            {
+                out_printf("%s^error,msg=\"%s requires an argument\"\n", token.c_str(), command.c_str());
+            } else {
+                // TODO: Add parsing arguments --thread, --frame
+                std::string output;
+                HRESULT hr;
+                {
+                    std::lock_guard<std::mutex> lock(g_currentThreadMutex);
+
+                    ToRelease<ICorDebugFrame> pFrame;
+                    hr = g_currentThread ? g_currentThread->GetActiveFrame(&pFrame) : E_FAIL;
+                    if (SUCCEEDED(hr))
+                        hr = ListChildren(args.at(0), pFrame, output);
+                }
+                if (SUCCEEDED(hr))
+                {
+                    out_printf("%s^done,%s\n", token.c_str(), output.c_str());
+                }
+                else
+                {
+                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
+                }
+            }
+        }
+        else if (command == "var-delete")
+        {
+            if (args.size() < 1)
+            {
+                out_printf("%s^error,msg=\"%s requires at least 1 argument\"\n", token.c_str(), command.c_str());
+            } else {
+                if (SUCCEEDED(DeleteVar(args.at(0))))
+                {
+                    out_printf("%s^done\n", token.c_str());
+                }
+                else
+                {
+                    out_printf("%s^error,msg=\"Varible %s does not exits\"\n", token.c_str(), args.at(0).c_str());
+                }
             }
         }
         else if (command == "gdb-exit")
