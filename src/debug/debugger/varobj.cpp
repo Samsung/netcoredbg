@@ -837,10 +837,9 @@ HRESULT ListChildren(ICorDebugValue *pInputValue, ICorDebugFrame *pFrame, std::s
     return ListChildren(val, pFrame, output);
 }
 
-HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
+HRESULT WalkStackVars(ICorDebugFrame *pFrame,
+                      std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> cb)
 {
-    bool printValues = true;
-    bool printTypes = true;
     HRESULT Status;
 
     ToRelease<ICorDebugILFrame> pILFrame;
@@ -859,12 +858,6 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
 
     mdMethodDef methodDef;
     IfFailRet(pFunction->GetToken(&methodDef));
-
-    std::stringstream ss;
-
-    ss << "variables=[";
-
-    const char *sep = "";
 
     ULONG cParams = 0;
     ToRelease<ICorDebugValueEnum> pParamEnum;
@@ -907,26 +900,7 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
             char cParamName[mdNameLen] = {0};
             WideCharToMultiByte(CP_UTF8, 0, paramName, (int)(_wcslen(paramName) + 1), cParamName, _countof(cParamName), NULL, NULL);
 
-            ss << sep << "{name=\"" << cParamName << "\"";
-            if (printValues)
-            {
-                std::string strVal;
-                if (SUCCEEDED(PrintValue(pValue, pILFrame, strVal)))
-                    ss << ",value=\"" << strVal << "\"";
-            }
-            if (printTypes)
-            {
-                std::string strVal;
-                if (SUCCEEDED(TypePrinter::GetTypeOfValue(pValue, strVal)))
-                    ss << ",type=\"" << strVal << "\"";
-            }
-
-            std::string test;
-            ListChildren(pValue, pFrame, test);
-            ss << test;
-
-            ss << "}";
-            sep = ",";
+            IfFailRet(cb(pILFrame, pValue, cParamName));
         }
     }
 
@@ -937,7 +911,7 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
     IfFailRet(pLocalsEnum->GetCount(&cLocals));
     if (cLocals > 0)
     {
-        for (ULONG i=0; i < cLocals; i++)
+        for (ULONG i = 0; i < cLocals; i++)
         {
             std::string paramName;
 
@@ -950,32 +924,48 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
             if (Status == S_FALSE)
                 break;
 
-            ss << sep << "{name=\"" << paramName << "\"";
-            if (printValues)
-            {
-                std::string strVal;
-                if (SUCCEEDED(PrintValue(pValue, pILFrame, strVal)))
-                    ss << ",value=\"" << strVal << "\"";
-            }
-            if (printTypes)
-            {
-                std::string strVal;
-                if (SUCCEEDED(TypePrinter::GetTypeOfValue(pValue, strVal)))
-                    ss << ",type=\"" << strVal << "\"";
-            }
-            std::string children;
-            ListChildren(pValue, pFrame, children);
-            ss << "," << children;
-
-            ULONG numchild;
-            GetNumChild(pValue, numchild);
-
-            ss << "numchild=\"" << numchild << "\"";
-
-            ss << "}";
-            sep = ",";
+            IfFailRet(cb(pILFrame, pValue, paramName));
         }
     }
+
+    return S_OK;
+}
+
+HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
+{
+    bool printValues = true;
+    bool printTypes = true;
+
+    HRESULT Status;
+
+    std::stringstream ss;
+    ss << "variables=[";
+    const char *sep = "";
+
+    IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
+    {
+        ss << sep << "{name=\"" << name << "\"";
+        if (printValues)
+        {
+            std::string strVal;
+            if (SUCCEEDED(PrintValue(pValue, pILFrame, strVal)))
+                ss << ",value=\"" << strVal << "\"";
+        }
+        if (printTypes)
+        {
+            std::string strVal;
+            if (SUCCEEDED(TypePrinter::GetTypeOfValue(pValue, strVal)))
+                ss << ",type=\"" << strVal << "\"";
+        }
+
+        std::string test;
+        ListChildren(pValue, pFrame, test);
+        ss << test;
+
+        ss << "}";
+        sep = ",";
+        return S_OK;
+    }));
 
     ss << "]";
     output = ss.str();
