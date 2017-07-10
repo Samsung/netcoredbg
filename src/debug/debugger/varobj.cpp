@@ -163,7 +163,7 @@ void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
     }
 }
 
-void PrintChildren(std::vector<VarObjValue> &members, std::string &output)
+void PrintChildren(std::vector<VarObjValue> &members, int print_values, ICorDebugILFrame *pILFrame, std::string &output)
 {
     std::stringstream ss;
     ss << "numchild=\"" << members.size() << "\"";
@@ -181,7 +181,15 @@ void PrintChildren(std::vector<VarObjValue> &members, std::string &output)
         ss << sep;
         sep = ",";
 
-        ss << "child={name=\"" << m.varobjName << "\",exp=\"" << m.name << "\",";
+        ss << "child={name=\"" << m.varobjName << "\",";
+        if (print_values)
+        {
+            std::string strVal;
+            if (m.value)
+                PrintValue(m.value, pILFrame, strVal);
+            ss << "value=\"" << strVal << "\",";
+        }
+        ss << "exp=\"" << m.name << "\",";
         ss << "numchild=\"" << m.numchild << "\",type=\"" << m.typeName << "\"}";
         //thread-id="452958",has_more="0"}
     }
@@ -213,7 +221,7 @@ static std::string InsertVar(VarObjValue &varobj)
     return varName;
 }
 
-HRESULT ListChildren(VarObjValue &objValue, ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
 
@@ -253,17 +261,17 @@ HRESULT ListChildren(VarObjValue &objValue, ICorDebugFrame *pFrame, std::string 
         InsertVar(m);
     }
 
-    PrintChildren(members, output);
+    PrintChildren(members, print_values, pILFrame, output);
 
     return S_OK;
 }
 
-HRESULT ListChildren(const std::string &name, ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListChildren(const std::string &name, int print_values, ICorDebugFrame *pFrame, std::string &output)
 {
     auto it = g_vars.find(name);
     if (it == g_vars.end())
         return E_FAIL;
-    return ListChildren(it->second, pFrame, output);
+    return ListChildren(it->second, print_values, pFrame, output);
 }
 
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)

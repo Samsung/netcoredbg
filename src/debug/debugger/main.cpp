@@ -129,7 +129,7 @@ void NotifyEvalComplete();
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
 HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
-HRESULT ListChildren(const std::string &name, ICorDebugFrame *pFrame, std::string &output);
+HRESULT ListChildren(const std::string &name, int print_values, ICorDebugFrame *pFrame, std::string &output);
 HRESULT DeleteVar(const std::string &varobjName);
 
 // TypePrinter
@@ -1197,7 +1197,23 @@ int main(int argc, char *argv[])
         }
         else if (command == "var-list-children")
         {
-            if (args.size() < 1)
+            int print_values = 0;
+            int var_index = 0;
+            if (!args.empty())
+            {
+                if (args.at(0) == "1" || args.at(0) == "--all-values")
+                {
+                    print_values = 1;
+                    var_index++;
+                }
+                else if (args.at(0) == "2" || args.at(0) == "--simple-values")
+                {
+                    print_values = 2;
+                    var_index++;
+                }
+            }
+
+            if (args.size() < (var_index + 1))
             {
                 out_printf("%s^error,msg=\"%s requires an argument\"\n", token.c_str(), command.c_str());
             } else {
@@ -1210,7 +1226,7 @@ int main(int argc, char *argv[])
                     ToRelease<ICorDebugFrame> pFrame;
                     hr = g_currentThread ? g_currentThread->GetActiveFrame(&pFrame) : E_FAIL;
                     if (SUCCEEDED(hr))
-                        hr = ListChildren(args.at(0), pFrame, output);
+                        hr = ListChildren(args.at(var_index), print_values, pFrame, output);
                 }
                 if (SUCCEEDED(hr))
                 {
