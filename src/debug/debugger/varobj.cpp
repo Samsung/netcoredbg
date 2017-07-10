@@ -272,190 +272,6 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
     return S_OK;
 }
 
-static HRESULT GetNumChild(ICorDebugValue *pInputValue,
-                           ICorDebugType *pTypeCast,
-                           ULONG &numstatic,
-                           ULONG &numinstance)
-{
-    numstatic = 0;
-    numinstance = 0;
-
-    HRESULT Status = S_OK;
-
-    BOOL isNull = FALSE;
-    ToRelease<ICorDebugValue> pValue;
-
-    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
-
-    if (isNull) return S_OK;
-
-    ToRelease<ICorDebugArrayValue> pArrayValue;
-    if (SUCCEEDED(pValue->QueryInterface(IID_ICorDebugArrayValue, (LPVOID *) &pArrayValue)))
-    {
-        ULONG32 nRank;
-        IfFailRet(pArrayValue->GetRank(&nRank));
-
-        ULONG32 cElements;
-        IfFailRet(pArrayValue->GetCount(&cElements));
-
-        numinstance = cElements;
-
-        return S_OK;
-    }
-
-    mdTypeDef currentTypeDef;
-    ToRelease<ICorDebugClass> pClass;
-    ToRelease<ICorDebugValue2> pValue2;
-    ToRelease<ICorDebugType> pType;
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
-    if(pTypeCast == NULL)
-        IfFailRet(pValue2->GetExactType(&pType));
-    else
-    {
-        pType = pTypeCast;
-        pType->AddRef();
-    }
-
-    CorElementType corElemType;
-    IfFailRet(pType->GetType(&corElemType));
-    if (corElemType == ELEMENT_TYPE_STRING)
-        return S_OK;
-
-    IfFailRet(pType->GetClass(&pClass));
-    IfFailRet(pClass->GetModule(&pModule));
-    IfFailRet(pClass->GetToken(&currentTypeDef));
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMD;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-
-    std::string baseTypeName;
-    ToRelease<ICorDebugType> pBaseType;
-    if(SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL && SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
-    {
-        if(baseTypeName == "System.Enum")
-            return S_OK;
-        else if(baseTypeName != "System.Object"  && baseTypeName != "System.ValueType")
-        {
-            // Add fields of base class
-            ULONG numstaticBase = 0;
-            ULONG numinstanceBase = 0;
-            IfFailRet(GetNumChild(pInputValue, pBaseType, numstaticBase, numinstanceBase));
-            numstatic += numstaticBase;
-            numinstance += numinstanceBase;
-        }
-    }
-
-    ULONG numFields = 0;
-    HCORENUM fEnum = NULL;
-    mdFieldDef fieldDef;
-    ULONG numstaticBack = 0;
-    ULONG numinstanceBack = 0;
-    while(SUCCEEDED(pMD->EnumFields(&fEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
-    {
-        ULONG nameLen = 0;
-        DWORD fieldAttr = 0;
-        WCHAR mdName[mdNameLen] = {0};
-        if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, mdNameLen, &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
-        {
-            bool is_back = (char)mdName[0] == '<';
-            if(fieldAttr & fdLiteral)
-                continue;
-
-            if (fieldAttr & fdStatic)
-            {
-                numstatic++;
-                numstaticBack += is_back ? 1 : 0;
-            }
-            else
-            {
-                numinstance++;
-                numinstanceBack += is_back ? 1 : 0;
-            }
-        }
-    }
-    pMD->CloseEnum(fEnum);
-
-    mdProperty propertyDef;
-    ULONG numProperties = 0;
-    HCORENUM propEnum = NULL;
-    while(SUCCEEDED(pMD->EnumProperties(&propEnum, currentTypeDef, &propertyDef, 1, &numProperties)) && numProperties != 0)
-    {
-        mdTypeDef  propertyClass;
-
-        DWORD propFlags;
-        UVCP_CONSTANT pDefaultValue;
-        ULONG cchDefaultValue;
-        mdMethodDef mdGetter;
-        mdMethodDef rmdOtherMethod;
-        ULONG cOtherMethod;
-        WCHAR propertyName[mdNameLen] = W("\0");
-        ULONG propertyNameLen = 0;
-        if (SUCCEEDED(pMD->GetPropertyProps(propertyDef,
-                                            &propertyClass,
-                                            propertyName,
-                                            mdNameLen,
-                                            &propertyNameLen,
-                                            &propFlags,
-                                            NULL,
-                                            NULL,
-                                            NULL,
-                                            &pDefaultValue,
-                                            &cchDefaultValue,
-                                            NULL,
-                                            &mdGetter,
-                                            NULL,
-                                            0,
-                                            NULL)))
-        {
-            DWORD getterAttr = 0;
-            if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
-                continue;
-
-            if (getterAttr & mdStatic)
-            {
-                if (numstaticBack == 0)
-                    numstatic++;
-                else
-                    numstaticBack--;
-            }
-            else
-            {
-                if (numinstanceBack == 0)
-                    numinstance++;
-                else
-                    numinstanceBack--;
-            }
-        }
-    }
-    pMD->CloseEnum(propEnum);
-
-    return S_OK;
-}
-
-HRESULT GetNumChild(ICorDebugValue *pValue,
-                    unsigned int &numchild,
-                    bool static_members = false)
-{
-    HRESULT Status = S_OK;
-    numchild = 0;
-
-    ULONG numstatic;
-    ULONG numinstance;
-    IfFailRet(GetNumChild(pValue, NULL, numstatic, numinstance));
-    if (static_members)
-    {
-        numchild = numstatic;
-    }
-    else
-    {
-        numchild = (numstatic > 0) ? numinstance + 1 : numinstance;
-    }
-    return S_OK;
-}
-
 extern std::mutex g_currentThreadMutex;
 extern ICorDebugThread *g_currentThread;
 
@@ -549,14 +365,10 @@ struct VarObjValue
                                 statics_only(true), numchild(0) {}
 };
 
-static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
-                                        ICorDebugType *pTypeCast,
-                                        ICorDebugILFrame *pILFrame,
-                                        std::vector<VarObjValue> &members,
-                                        bool static_members,
-                                        bool &has_static_members)
+typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
+
+static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFrame, ICorDebugType *pTypeCast, WalkMembersCallback cb)
 {
-    has_static_members = false;
     HRESULT Status = S_OK;
 
     BOOL isNull = FALSE;
@@ -572,7 +384,13 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
         ULONG32 nRank;
         IfFailRet(pArrayValue->GetRank(&nRank));
 
-        // TODO: array elements
+        ULONG32 cElements;
+        IfFailRet(pArrayValue->GetCount(&cElements));
+
+        for (ULONG32 i = 0; i < cElements; ++i)
+        {
+            IfFailRet(cb(mdMethodDefNil, nullptr, nullptr, nullptr, true, "[" + std::to_string(i) + "]"));
+        }
 
         return S_OK;
     }
@@ -614,7 +432,7 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
         else if(baseTypeName != "System.Object"  && baseTypeName != "System.ValueType")
         {
             // Add fields of base class
-            PrintFieldsAndProperties(pInputValue, pBaseType, pILFrame, members, static_members, has_static_members);
+            IfFailRet(WalkMembers(pInputValue, pILFrame, pBaseType, cb));
         }
     }
 
@@ -640,18 +458,13 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
                 continue;
 
             bool is_static = (fieldAttr & fdStatic);
-            if (is_static)
-                has_static_members = true;
-
-            bool add_member = static_members ? is_static : !is_static;
-            if (!add_member)
-                continue;
 
             ToRelease<ICorDebugValue> pFieldVal;
 
             if (fieldAttr & fdStatic)
             {
-                pType->GetStaticFieldValue(fieldDef, pILFrame, &pFieldVal);
+                if (pILFrame)
+                    pType->GetStaticFieldValue(fieldDef, pILFrame, &pFieldVal);
             }
             else
             {
@@ -670,7 +483,7 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
                     backedProperies.insert(name);
                 }
 
-                members.emplace_back(name, pFieldVal.Detach(), className);
+                IfFailRet(cb(mdMethodDefNil, pModule, pType, pFieldVal, is_static, name));
             }
             else
             {
@@ -678,7 +491,7 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
                 if (cName[0] == '<')
                     continue;
 
-                members.emplace_back(cName, nullptr, className);
+                IfFailRet(cb(mdMethodDefNil, pModule, pType, nullptr, is_static, cName));
             }
         }
     }
@@ -692,33 +505,26 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
         mdTypeDef  propertyClass;
 
         ULONG propertyNameLen = 0;
-        DWORD propFlags;
-        PCCOR_SIGNATURE pvSig;
-        ULONG pbSig;
-        DWORD dwCPlusTypeFlag;
         UVCP_CONSTANT pDefaultValue;
         ULONG cchDefaultValue;
-        mdMethodDef mdSetter;
         mdMethodDef mdGetter;
-        mdMethodDef rmdOtherMethod;
-        ULONG cOtherMethod;
         WCHAR propertyName[mdNameLen] = W("\0");
         if (SUCCEEDED(pMD->GetPropertyProps(propertyDef,
                                             &propertyClass,
                                             propertyName,
-                                            mdNameLen,
+                                            _countof(propertyName),
                                             &propertyNameLen,
-                                            &propFlags,
-                                            &pvSig,
-                                            &pbSig,
-                                            &dwCPlusTypeFlag,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
                                             &pDefaultValue,
                                             &cchDefaultValue,
-                                            &mdSetter,
+                                            nullptr,
                                             &mdGetter,
-                                            &rmdOtherMethod,
-                                            1,
-                                            &cOtherMethod)))
+                                            nullptr,
+                                            0,
+                                            nullptr)))
         {
             DWORD getterAttr = 0;
             if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
@@ -731,22 +537,101 @@ static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
                 continue;
 
             bool is_static = (getterAttr & mdStatic);
-            if (is_static)
-                has_static_members = true;
 
-            bool add_member = static_members ? is_static : !is_static;
-            if (!add_member)
-                continue;
-
-            ToRelease<ICorDebugValue> pResultValue;
-            std::string resultTypeName;
-            if (SUCCEEDED(EvalProperty(mdGetter, pModule, pType, pInputValue, is_static, &pResultValue)))
-            {
-                members.emplace_back(cName, pResultValue.Detach(), className);
-            }
+            IfFailRet(cb(mdGetter, pModule, pType, nullptr, is_static, cName));
         }
     }
     pMD->CloseEnum(propEnum);
+
+    return S_OK;
+}
+
+HRESULT WalkMembers(ICorDebugValue *pValue, ICorDebugILFrame *pILFrame, WalkMembersCallback cb)
+{
+    return WalkMembers(pValue, pILFrame, nullptr, cb);
+}
+
+HRESULT GetNumChild(ICorDebugValue *pValue,
+                    unsigned int &numchild,
+                    bool static_members = false)
+{
+    HRESULT Status = S_OK;
+    numchild = 0;
+
+    ULONG numstatic = 0;
+    ULONG numinstance = 0;
+
+    IfFailRet(WalkMembers(pValue, nullptr, nullptr, [&numstatic, &numinstance](
+        mdMethodDef,
+        ICorDebugModule *,
+        ICorDebugType *,
+        ICorDebugValue *,
+        bool is_static,
+        const std::string &)
+    {
+        if (is_static)
+            numstatic++;
+        else
+            numinstance++;
+        return S_OK;
+    }));
+
+    if (static_members)
+    {
+        numchild = numstatic;
+    }
+    else
+    {
+        numchild = (numstatic > 0) ? numinstance + 1 : numinstance;
+    }
+    return S_OK;
+}
+
+static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
+                                        ICorDebugType *pTypeCast,
+                                        ICorDebugILFrame *pILFrame,
+                                        std::vector<VarObjValue> &members,
+                                        bool static_members,
+                                        bool &has_static_members)
+{
+    has_static_members = false;
+    HRESULT Status;
+
+    IfFailRet(WalkMembers(pInputValue, pILFrame, nullptr, [&](
+        mdMethodDef mdGetter,
+        ICorDebugModule *pModule,
+        ICorDebugType *pType,
+        ICorDebugValue *pValue,
+        bool is_static,
+        const std::string &name)
+    {
+        if (is_static)
+            has_static_members = true;
+
+        bool add_member = static_members ? is_static : !is_static;
+        if (!add_member)
+            return S_OK;
+
+        std::string className;
+        TypePrinter::GetTypeOfValue(pType, className);
+
+        ICorDebugValue *pResultValue = nullptr;
+
+        if (mdGetter != mdMethodDefNil)
+        {
+            EvalProperty(mdGetter, pModule, pType, pInputValue, is_static, &pResultValue);
+        }
+        else
+        {
+            if (pValue)
+                pValue->AddRef();
+            pResultValue = pValue;
+
+        }
+
+        members.emplace_back(name, pValue, className);
+        return S_OK;
+    }));
 
     return S_OK;
 }
@@ -803,11 +688,11 @@ HRESULT ListChildren(VarObjValue &objValue, ICorDebugFrame *pFrame, std::string 
     bool has_static_members;
 
     IfFailRet(PrintFieldsAndProperties(objValue.value,
-                                    NULL,
-                                    pILFrame,
-                                    members,
-                                    objValue.statics_only,
-                                    has_static_members));
+                                       NULL,
+                                       pILFrame,
+                                       members,
+                                       objValue.statics_only,
+                                       has_static_members));
 
     if (!objValue.statics_only && has_static_members)
     {
@@ -825,7 +710,8 @@ HRESULT ListChildren(VarObjValue &objValue, ICorDebugFrame *pFrame, std::string 
             continue;
 
         Status = GetNumChild(m.value, m.numchild, m.statics_only);
-        TypePrinter::GetTypeOfValue(m.value, m.typeName);
+        if (!m.statics_only)
+            TypePrinter::GetTypeOfValue(m.value, m.typeName);
     }
 
     PrintChildren(members, output);
