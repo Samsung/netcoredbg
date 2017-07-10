@@ -804,6 +804,64 @@ std::string GetCoreCLRLPath(int pid)
     return std::string();
 }
 
+bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename, unsigned int &linenum)
+{
+    if (args.empty())
+        return false;
+
+    std::size_t i = args.at(0).rfind(':');
+
+    if (i == std::string::npos)
+        return false;
+
+    filename = args.at(0).substr(0, i);
+    std::string slinenum = args.at(0).substr(i + 1);
+
+    try
+    {
+        linenum = std::stoul(slinenum);
+        return true;
+    }
+    catch(std::invalid_argument e)
+    {
+        return false;
+    }
+    catch (std::out_of_range  e)
+    {
+        return false;
+    }
+}
+
+bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args)
+{
+    token.clear();
+    cmd.clear();
+    args.clear();
+
+    std::stringstream ss(str);
+
+    std::vector<std::string> result;
+    std::string buf;
+
+    if (!(ss >> cmd))
+        return false;
+
+    std::size_t i = cmd.find_first_not_of("0123456789");
+    if (i == std::string::npos)
+        return false;
+
+    if (cmd.at(i) != '-')
+        return false;
+
+    token = cmd.substr(0, i);
+    cmd = cmd.substr(i + 1);
+
+    while (ss >> buf)
+        args.push_back(buf);
+
+    return true;
+}
+
 void print_help()
 {
     fprintf(stderr,
@@ -944,110 +1002,105 @@ int main(int argc, char *argv[])
     }
 
     static char inputBuffer[1024];
-    const char *token = "";
+    std::string token;
 
     for (;;) {
-        token = "";
+        token.clear();
 
         out_printf("(gdb)\n");
         if (!fgets(inputBuffer, _countof(inputBuffer), stdin))
             break;
 
-        size_t count = strlen(inputBuffer);
+        std::vector<std::string> args;
+        std::string command;
+        if (!ParseLine(inputBuffer, token, command, args))
+        {
+            out_printf("%s^error,msg=\"Failed to parse input line\"\n", token.c_str());
+            continue;
+        }
 
-        if (count < 1 || inputBuffer[count - 1] != '\n')
-            break;
-
-        if (count >= 2 && inputBuffer[count - 2] == '\r')
-            --count;
-
-        int miCmdStart = 0;
-        char *tokenEnd = strchr(inputBuffer, '-');
-        if (tokenEnd)
-            miCmdStart = tokenEnd - inputBuffer + 1;
-        else
-            tokenEnd = inputBuffer;
-        std::string line(inputBuffer + miCmdStart, count - miCmdStart - 1);
-        *tokenEnd = '\0';
-        token = inputBuffer;
-
-        if (line == "thread-info")
+        if (command == "thread-info")
         {
             std::string output;
             HRESULT hr = PrintThreadsState(pProcess, output);
             if (SUCCEEDED(hr))
             {
-                out_printf("%s^done,%s\n", token, output.c_str());
+                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
             }
             else
             {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
             }
         }
-        else if (line == "exec-continue")
+        else if (command == "exec-continue")
         {
             HRESULT hr = pProcess->Continue(0);
             if (SUCCEEDED(hr))
             {
-                out_printf("%s^done\n", token);
+                out_printf("%s^done\n", token.c_str());
             }
             else
             {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
             }
         }
-        else if (line == "exec-interrupt")
+        else if (command == "exec-interrupt")
         {
             HRESULT hr = pProcess->Stop(0);
             if (SUCCEEDED(hr))
             {
-                out_printf("%s^done\n", token);
+                out_printf("%s^done\n", token.c_str());
             }
             else
             {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
             }
         }
-        else if (line.find("break-insert ") == 0)
+        else if (command == "break-insert")
         {
-            // TODO: imlement proper argument parsing
-            std::size_t i1 = line.find(' ');
-            std::size_t i2 = line.rfind(':');
-
-            if (i1 != std::string::npos && i2 != std::string::npos)
+            std::string filename;
+            unsigned int linenum;
+            ULONG32 id;
+            if (ParseBreakpoint(args, filename, linenum)
+                && SUCCEEDED(CreateBreakpointInProcess(pProcess, filename, linenum, id)))
             {
-                std::string filename = line.substr(i1 + 1, i2 - i1 - 1);
-                std::string slinenum = line.substr(i2 + 1);
-
-                int linenum = std::stoi(slinenum);
-                ULONG32 id;
-                if (SUCCEEDED(CreateBreakpointInProcess(pProcess, filename, linenum, id)))
+                std::string output;
+                PrintBreakpoint(id, output);
+                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
+            }
+            else
+            {
+                out_printf("%s^error,msg=\"Unknown breakpoint location format\"\n", token.c_str());
+            }
+        }
+        else if (command == "break-delete")
+        {
+            try
+            {
+                for (std::string &idStr : args)
                 {
-                    std::string output;
-                    PrintBreakpoint(id, output);
-                    out_printf("%s^done,%s\n", token, output.c_str());
+                    ULONG32 id = std::stoul(idStr);
+                    DeleteBreakpoint(id);
                 }
+                out_printf("%s^done\n", token.c_str());
             }
-            else
+            catch(std::invalid_argument e)
             {
-                out_printf("%s^error,msg=\"Unknown breakpoint location format\"\n", token);
+                out_printf("%s^error,msg=\"Invalid argument\"\n", token.c_str());
+            }
+            catch (std::out_of_range  e)
+            {
+                out_printf("%s^error,msg=\"Out of range\"\n", token.c_str());
             }
         }
-        else if (line.find("break-delete ") == 0)
-        {
-            std::size_t i = line.find(' ');
-            ULONG32 id = std::stoul(line.substr(i));
-            DeleteBreakpoint(id);
-            out_printf("%s^done\n", token);
-        }
-        else if (line == "exec-next" || line == "exec-step" || line == "exec-finish")
+        else if (command == "exec-next" || command == "exec-step" || command == "exec-finish")
         {
             StepType stepType;
-            if (line == "exec-next")
+            if (command == "exec-next")
                 stepType = STEP_OVER;
-            else if (line == "exec-step")
+            else if (command == "exec-step")
                 stepType = STEP_IN;
-            else if (line == "exec-finish")
+            else if (command == "exec-finish")
                 stepType = STEP_OUT;
 
             HRESULT hr;
@@ -1058,22 +1111,22 @@ int main(int argc, char *argv[])
 
             if (FAILED(hr))
             {
-                out_printf("%s^error,msg=\"Cannot create stepper: %x\"\n", token, hr);
+                out_printf("%s^error,msg=\"Cannot create stepper: %x\"\n", token.c_str(), hr);
             }
             else
             {
                 hr = pProcess->Continue(0);
                 if (SUCCEEDED(hr))
                 {
-                    out_printf("%s^done\n", token);
+                    out_printf("%s^done\n", token.c_str());
                 }
                 else
                 {
-                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
                 }
             }
         }
-        else if (line == "stack-list-frames")
+        else if (command == "stack-list-frames")
         {
             // TODO: Add parsing frame indeces and --thread
             std::string output;
@@ -1084,14 +1137,14 @@ int main(int argc, char *argv[])
             }
             if (SUCCEEDED(hr))
             {
-                out_printf("%s^done,%s\n", token, output.c_str());
+                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
             }
             else
             {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
             }
         }
-        else if (line.find("stack-list-variables ") == 0)
+        else if (command == "stack-list-variables")
         {
             // TODO: Add parsing arguments --thread, --frame
             std::string output;
@@ -1106,14 +1159,14 @@ int main(int argc, char *argv[])
             }
             if (SUCCEEDED(hr))
             {
-                out_printf("%s^done,%s\n", token, output.c_str());
+                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
             }
             else
             {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token, hr);
+                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
             }
         }
-        else if (line == "gdb-exit")
+        else if (command == "gdb-exit")
         {
             hr = pProcess->Stop(0);
             if (SUCCEEDED(hr))
@@ -1128,8 +1181,10 @@ int main(int argc, char *argv[])
                 pProcess.Release();
             }
             break;
-        } else {
-            out_printf("%s^error,msg=\"Unknown command: %s\"\n", token, line.c_str());
+        }
+        else
+        {
+            out_printf("%s^error,msg=\"Unknown command: %s\"\n", token.c_str(), command.c_str());
         }
     }
 
@@ -1144,7 +1199,7 @@ int main(int argc, char *argv[])
 
     pCorDebug->Terminate();
 
-    out_printf("%s^exit\n", token);
+    out_printf("%s^exit\n", token.c_str());
 
     // TODO: Cleanup libcoreclr.so instance
 
