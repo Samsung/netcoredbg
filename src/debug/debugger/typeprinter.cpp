@@ -195,10 +195,8 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugValue *pValue, std::string &output)
     return S_OK;
 }
 
-HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
+HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType)
 {
-    std::stringstream ss;
-
     HRESULT Status = S_OK;
 
     CorElementType corElemType;
@@ -222,15 +220,19 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
     //ELEMENT_TYPE_R4_HFA         = 0x06 | ELEMENT_TYPE_MODIFIER, // used only internally for R4 HFA types
     //ELEMENT_TYPE_R8_HFA         = 0x07 | ELEMENT_TYPE_MODIFIER, // used only internally for R8 HFA types
     default:
-        ss << "(Unhandled CorElementType: 0x" << std::hex << corElemType << ")";
-        output = ss.str();
+        {
+            std::stringstream ss;
+            ss << "(Unhandled CorElementType: 0x" << std::hex << corElemType << ")";
+            elementType = ss.str();
+        }
         break;
 
     case ELEMENT_TYPE_VALUETYPE:
     case ELEMENT_TYPE_CLASS:
         {
+            std::stringstream ss;
             //Defaults in case we fail...
-            output = (corElemType == ELEMENT_TYPE_VALUETYPE) ? "struct" : "class";
+            elementType = (corElemType == ELEMENT_TYPE_VALUETYPE) ? "struct" : "class";
 
             mdTypeDef typeDef;
             ToRelease<ICorDebugClass> pClass;
@@ -255,99 +257,98 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
 
             }
             AddGenericArgs(pType, ss);
-            output = ss.str();
+            elementType = ss.str();
             return S_OK;
         }
         break;
     case ELEMENT_TYPE_VOID:
-        output = "void";
+        elementType = "void";
         break;
     case ELEMENT_TYPE_BOOLEAN:
-        output = "bool";
+        elementType = "bool";
         break;
     case ELEMENT_TYPE_CHAR:
-        output = "char";
+        elementType = "char";
         break;
     case ELEMENT_TYPE_I1:
-        output = "sbyte";
+        elementType = "sbyte";
         break;
     case ELEMENT_TYPE_U1:
-        output = "byte";
+        elementType = "byte";
         break;
     case ELEMENT_TYPE_I2:
-        output = "short";
+        elementType = "short";
         break;
     case ELEMENT_TYPE_U2:
-        output = "ushort";
+        elementType = "ushort";
         break;
     case ELEMENT_TYPE_I4:
-        output = "int";
+        elementType = "int";
         break;
     case ELEMENT_TYPE_U4:
-        output = "uint";
+        elementType = "uint";
         break;
     case ELEMENT_TYPE_I8:
-        output = "long";
+        elementType = "long";
         break;
     case ELEMENT_TYPE_U8:
-        output = "ulong";
+        elementType = "ulong";
         break;
     case ELEMENT_TYPE_R4:
-        output = "float";
+        elementType = "float";
         break;
     case ELEMENT_TYPE_R8:
-        output = "double";
+        elementType = "double";
         break;
     case ELEMENT_TYPE_OBJECT:
-        output = "object";
+        elementType = "object";
         break;
     case ELEMENT_TYPE_STRING:
-        output = "string";
+        elementType = "string";
         break;
     case ELEMENT_TYPE_I:
-        output = "IntPtr";
+        elementType = "IntPtr";
         break;
     case ELEMENT_TYPE_U:
-        output = "UIntPtr";
+        elementType = "UIntPtr";
         break;
     case ELEMENT_TYPE_SZARRAY:
     case ELEMENT_TYPE_ARRAY:
     case ELEMENT_TYPE_BYREF:
     case ELEMENT_TYPE_PTR:
         {
-            std::string elementTypeName;
+            std::string subElementType;
+            std::string subArrayType;
             ToRelease<ICorDebugType> pFirstParameter;
             if(SUCCEEDED(pType->GetFirstTypeParameter(&pFirstParameter)))
-                GetTypeOfValue(pFirstParameter, elementTypeName);
+                GetTypeOfValue(pFirstParameter, subElementType, subArrayType);
             else
-                elementTypeName = "<unknown>";
+                subElementType = "<unknown>";
 
-            ss << elementTypeName;
+            elementType = subElementType;
 
             switch(corElemType)
             {
             case ELEMENT_TYPE_SZARRAY:
-                ss << "[]";
-                output = ss.str();
+                arrayType = "[]" + subArrayType;
                 return S_OK;
             case ELEMENT_TYPE_ARRAY:
                 {
+                    std::stringstream ss;
                     ULONG32 rank = 0;
                     pType->GetRank(&rank);
                     ss << "[";
                     for(ULONG32 i = 0; i < rank - 1; i++)
                         ss << ",";
                     ss << "]";
-                    output = ss.str();
+                    arrayType = ss.str() + subArrayType;
                 }
                 return S_OK;
             case ELEMENT_TYPE_BYREF:
-                ss << "&";
-                output = ss.str();
+                arrayType = subArrayType + "&";
                 return S_OK;
             case ELEMENT_TYPE_PTR:
-                ss << "*";
-                output = ss.str();
+                arrayType = subArrayType + "*";
                 return S_OK;
             default:
                 // note we can never reach here as this is a nested switch
@@ -357,12 +358,22 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
         }
         break;
     case ELEMENT_TYPE_FNPTR:
-        output = "*(...)";
+        elementType = "*(...)";
         break;
     case ELEMENT_TYPE_TYPEDBYREF:
-        output = "typedbyref";
+        elementType = "typedbyref";
         break;
     }
+    return S_OK;
+}
+
+HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
+{
+    HRESULT Status;
+    std::string elementType;
+    std::string arrayType;
+    IfFailRet(GetTypeOfValue(pType, elementType, arrayType));
+    output = elementType + arrayType;
     return S_OK;
 }
 
