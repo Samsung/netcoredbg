@@ -102,7 +102,7 @@ HRESULT GetNumChild(ICorDebugValue *pValue,
     return S_OK;
 }
 
-static HRESULT PrintFieldsAndProperties(ICorDebugValue *pInputValue,
+static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
                                         ICorDebugType *pTypeCast,
                                         ICorDebugILFrame *pILFrame,
                                         std::vector<VarObjValue> &members,
@@ -201,7 +201,7 @@ HRESULT ListChildren(VarObjValue &objValue, ICorDebugFrame *pFrame, std::string 
 
     bool has_static_members;
 
-    IfFailRet(PrintFieldsAndProperties(objValue.value,
+    IfFailRet(FetchFieldsAndProperties(objValue.value,
                                        NULL,
                                        pILFrame,
                                        members,
