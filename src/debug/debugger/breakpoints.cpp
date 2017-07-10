@@ -222,7 +222,7 @@ HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filena
     ULONG domainsFetched;
     while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
     {
-        ToRelease<ICorDebugAppDomain> pDomain = curDomain;
+        ToRelease<ICorDebugAppDomain> pDomain(curDomain);
 
         ToRelease<ICorDebugAssemblyEnum> assemblies;
         IfFailRet(pDomain->EnumerateAssemblies(&assemblies));
@@ -231,7 +231,7 @@ HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filena
         ULONG assembliesFetched;
         while (SUCCEEDED(assemblies->Next(1, &curAssembly, &assembliesFetched)) && assembliesFetched == 1)
         {
-            ToRelease<ICorDebugAssembly> pAssembly = curAssembly;
+            ToRelease<ICorDebugAssembly> pAssembly(curAssembly);
 
             ToRelease<ICorDebugModuleEnum> modules;
             IfFailRet(pAssembly->EnumerateModules(&modules));
@@ -240,7 +240,7 @@ HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filena
             ULONG modulesFetched;
             while (SUCCEEDED(modules->Next(1, &curModule, &modulesFetched)) && modulesFetched == 1)
             {
-                ToRelease<ICorDebugModule> pModule = curModule;
+                ToRelease<ICorDebugModule> pModule(curModule);
                 if (SUCCEEDED(ResolveBreakpoint(pModule, filename, linenum, bp)))
                 {
                     std::lock_guard<std::mutex> lock(g_breakMutex);

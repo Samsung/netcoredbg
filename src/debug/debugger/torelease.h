@@ -68,6 +68,7 @@ public:
     }
 
 private:
+    ToRelease(const ToRelease& that) = delete;
     T* m_ptr;
 };
 

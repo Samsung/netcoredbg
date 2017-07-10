@@ -191,7 +191,7 @@ HRESULT PrintThreadsState(ICorDebugController *controller, std::string &output)
     const char *sep = "";
     while (SUCCEEDED(Status = pThreads->Next(1, &handle, &fetched)) && fetched == 1)
     {
-        ToRelease<ICorDebugThread> pThread = handle;
+        ToRelease<ICorDebugThread> pThread(handle);
 
         std::string threadOutput;
         PrintThread(pThread, threadOutput);
@@ -253,7 +253,7 @@ HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDoma
         ULONG breakpointsFetched;
         while (SUCCEEDED(breakpoints->Next(1, &curBreakpoint, &breakpointsFetched)) && breakpointsFetched == 1)
         {
-            ToRelease<ICorDebugBreakpoint> pBreakpoint = curBreakpoint;
+            ToRelease<ICorDebugBreakpoint> pBreakpoint(curBreakpoint);
             pBreakpoint->Activate(FALSE);
         }
     }
@@ -267,7 +267,7 @@ HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDoma
         ULONG steppersFetched;
         while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
         {
-            ToRelease<ICorDebugStepper> pStepper = curStepper;
+            ToRelease<ICorDebugStepper> pStepper(curStepper);
             pStepper->Deactivate();
         }
     }
@@ -286,7 +286,7 @@ HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
     ULONG domainsFetched;
     while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
     {
-        ToRelease<ICorDebugAppDomain> pDomain = curDomain;
+        ToRelease<ICorDebugAppDomain> pDomain(curDomain);
         DisableAllBreakpointsAndSteppersInAppDomain(pDomain);
     }
     return S_OK;

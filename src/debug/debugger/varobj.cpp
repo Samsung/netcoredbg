@@ -171,7 +171,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, IMe
     case ELEMENT_TYPE_FNPTR:
         {
             CORDB_ADDRESS addr = 0;
-            ToRelease<ICorDebugReferenceValue> pReferenceValue = NULL;
+            ToRelease<ICorDebugReferenceValue> pReferenceValue;
             if(SUCCEEDED(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue)))
                 pReferenceValue->GetValue(&addr);
             ss << "<function pointer 0x" << std::hex << addr << ">";
