@@ -67,6 +67,7 @@ public:
         }
     }
 
+    ToRelease(ToRelease&& that) noexcept : m_ptr(that.m_ptr) { that.m_ptr = nullptr; }
 private:
     ToRelease(const ToRelease& that) = delete;
     T* m_ptr;

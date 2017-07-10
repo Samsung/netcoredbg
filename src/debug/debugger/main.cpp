@@ -126,6 +126,7 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
 
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
+void NotifyEvalComplete();
 
 // TypePrinter
 #include "typeprinter.h"
@@ -566,12 +567,20 @@ public:
         virtual HRESULT STDMETHODCALLTYPE EvalComplete(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugEval *pEval) { return S_OK; }
+            /* [in] */ ICorDebugEval *pEval)
+        {
+            NotifyEvalComplete();
+            return S_OK;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE EvalException(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugEval *pEval) { return S_OK; }
+            /* [in] */ ICorDebugEval *pEval)
+        {
+            NotifyEvalComplete();
+            return S_OK;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE CreateProcess(
             /* [in] */ ICorDebugProcess *pProcess)
@@ -586,6 +595,7 @@ public:
         {
             out_printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
             g_processExited = true;
+            NotifyEvalComplete();
             return S_OK;
         }
 
