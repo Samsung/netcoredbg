@@ -123,10 +123,12 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          std::string &fullname,
                          ULONG &linenum);
 
+// Valuewalk
+void NotifyEvalComplete();
 
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
-void NotifyEvalComplete();
+
 
 // TypePrinter
 #include "typeprinter.h"

@@ -7,7 +7,9 @@ set(coreclrdbg_SRC
     breakpoints.cpp
     modules.cpp
     varobj.cpp
-    typeprinter.cpp)
+    typeprinter.cpp
+    valuewalk.cpp
+    valueprint.cpp)
 
 if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
     add_definitions(-D_TARGET_AMD64_=1)
