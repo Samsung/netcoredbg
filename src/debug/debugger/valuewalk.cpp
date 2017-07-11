@@ -235,9 +235,9 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
         ULONG nameLen = 0;
         DWORD fieldAttr = 0;
         WCHAR mdName[mdNameLen] = {0};
-        if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, mdNameLen, &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
+        if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, _countof(mdName), &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
         {
-            std::string name = to_utf8(mdName, nameLen);
+            std::string name = to_utf8(mdName /*, nameLen*/);
 
             if(fieldAttr & fdLiteral)
                 continue;
@@ -258,7 +258,7 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
                     pObjValue->GetFieldValue(pClass, fieldDef, &pFieldVal);
             }
 
-            if(pFieldVal != NULL)
+            if (pFieldVal != NULL)
             {
                 if (name[0] == '<')
                 {
