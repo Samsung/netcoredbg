@@ -426,11 +426,11 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
         break;
 
     case ELEMENT_TYPE_R4:
-        ss << *(float*) &(rgbValue[0]);
+        ss << std::setprecision(9) << *(float*) &(rgbValue[0]);
         break;
 
     case ELEMENT_TYPE_R8:
-        ss << *(double*) &(rgbValue[0]);
+        ss << std::setprecision(17) << *(double*) &(rgbValue[0]);
         break;
 
     case ELEMENT_TYPE_OBJECT:
