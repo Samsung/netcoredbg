@@ -66,6 +66,69 @@ static BOOL IsEnum(ICorDebugValue * pInputValue)
     return FALSE;
 }
 
+static HRESULT PrintArrayValue(ICorDebugValue *pValue,
+                               std::string &output)
+{
+    HRESULT Status = S_OK;
+
+    ToRelease<ICorDebugArrayValue> pArrayValue;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugArrayValue, (LPVOID*) &pArrayValue));
+
+    ULONG32 nRank;
+    IfFailRet(pArrayValue->GetRank(&nRank));
+    if (nRank < 1)
+    {
+        return E_UNEXPECTED;
+    }
+
+    ULONG32 cElements;
+    IfFailRet(pArrayValue->GetCount(&cElements));
+
+    std::stringstream ss;
+    ss << "{";
+
+    std::string elementType;
+    std::string arrayType;
+
+    CorElementType corElemType;
+    ToRelease<ICorDebugType> pFirstParameter;
+    ToRelease<ICorDebugValue2> pValue2;
+    ToRelease<ICorDebugType> pType;
+    if (SUCCEEDED(pArrayValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2)) && SUCCEEDED(pValue2->GetExactType(&pType)))
+    {
+        if (SUCCEEDED(pType->GetFirstTypeParameter(&pFirstParameter)))
+        {
+            TypePrinter::GetTypeOfValue(pFirstParameter, elementType, arrayType);
+        }
+    }
+
+    std::vector<ULONG32> dims(nRank, 0);
+    pArrayValue->GetDimensions(nRank, &dims[0]);
+
+    std::vector<ULONG32> base(nRank, 0);
+    BOOL hasBaseIndicies = FALSE;
+    if (SUCCEEDED(pArrayValue->HasBaseIndicies(&hasBaseIndicies)) && hasBaseIndicies)
+        IfFailRet(pArrayValue->GetBaseIndicies(nRank, &base[0]));
+
+    ss << elementType << "[";
+    const char *sep = "";
+    for (size_t i = 0; i < dims.size(); ++i)
+    {
+        ss << sep;
+        sep = ", ";
+
+        if (base[i] > 0)
+            ss << base[i] << ".." << (base[i] + dims[i] - 1);
+        else
+            ss << dims[i];
+    }
+    ss << "]" << arrayType;
+
+    ss << "}";
+    output = ss.str();
+    return S_OK;
+}
+
 static HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output)
 {
     HRESULT Status;
@@ -127,11 +190,9 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
         return S_OK;
     }
 
-    if (corElemType == ELEMENT_TYPE_SZARRAY)
+    if (corElemType == ELEMENT_TYPE_SZARRAY || corElemType == ELEMENT_TYPE_ARRAY)
     {
-        output = "<ELEMENT_TYPE_SZARRAY>";
-        //return PrintSzArrayValue(pValue, pILFrame, pMD);
-        return S_OK;
+        return PrintArrayValue(pValue, output);
     }
 
     ToRelease<ICorDebugGenericValue> pGenericValue;
@@ -243,7 +304,6 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
 
         // TODO: The following corElementTypes are not yet implemented here.  Array
         // might be interesting to add, though the others may be of rather limited use:
-        // ELEMENT_TYPE_ARRAY          = 0x14,     // MDARRAY <type> <rank> <bcount> <bound1> ... <lbcount> <lb1> ...
         //
         // ELEMENT_TYPE_GENERICINST    = 0x15,     // GENERICINST <generic type> <argCnt> <arg1> ... <argn>
     }

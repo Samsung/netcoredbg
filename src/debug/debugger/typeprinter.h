@@ -10,9 +10,9 @@ class TypePrinter
                                 std::list<std::string> &args);
     static HRESULT AddGenericArgs(ICorDebugType *pType, std::list<std::string> &args);
     static HRESULT AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::string> &args);
-    static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType);
 public:
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &output);
     static HRESULT GetTypeOfValue(ICorDebugValue *pValue, std::string &output);
+    static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType);
     static HRESULT GetMethodName(ICorDebugFrame *pFrame, std::string &output);
 };

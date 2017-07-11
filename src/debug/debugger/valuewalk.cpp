@@ -109,6 +109,37 @@ HRESULT EvalProperty(
     return pEval->GetResult(ppEvalResult);
 }
 
+static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)
+{
+    int i = ind.size() - 1;
+
+    while (i >= 0)
+    {
+        ind[i] += 1;
+        if (ind[i] < dims[i])
+            return;
+        ind[i] = 0;
+        --i;
+    }
+}
+
+static std::string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vector<ULONG32> &base)
+{
+    const size_t ind_size = ind.size();
+    if (ind_size < 1 || base.size() != ind_size)
+        return std::string();
+
+    std::stringstream ss;
+    const char *sep = "";
+    for (size_t i = 0; i < ind_size; ++i)
+    {
+        ss << sep;
+        sep = ", ";
+        ss << (base[i] + ind[i]);
+    }
+    return ss.str();
+}
+
 static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFrame, ICorDebugType *pTypeCast, WalkMembersCallback cb)
 {
     HRESULT Status = S_OK;
@@ -129,11 +160,22 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
         ULONG32 cElements;
         IfFailRet(pArrayValue->GetCount(&cElements));
 
+        std::vector<ULONG32> dims(nRank, 0);
+        IfFailRet(pArrayValue->GetDimensions(nRank, &dims[0]));
+
+        std::vector<ULONG32> base(nRank, 0);
+        BOOL hasBaseIndicies = FALSE;
+        if (SUCCEEDED(pArrayValue->HasBaseIndicies(&hasBaseIndicies)) && hasBaseIndicies)
+            IfFailRet(pArrayValue->GetBaseIndicies(nRank, &base[0]));
+
+        std::vector<ULONG32> ind(nRank, 0);
+
         for (ULONG32 i = 0; i < cElements; ++i)
         {
             ToRelease<ICorDebugValue> pElementValue;
             pArrayValue->GetElementAtPosition(i, &pElementValue);
-            IfFailRet(cb(mdMethodDefNil, nullptr, nullptr, pElementValue, false, "[" + std::to_string(i) + "]"));
+            IfFailRet(cb(mdMethodDefNil, nullptr, nullptr, pElementValue, false, "[" + IndiciesToStr(ind, base) + "]"));
+            IncIndicies(ind, dims);
         }
 
         return S_OK;
