@@ -61,9 +61,146 @@ HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOut
     return S_OK;
 }
 
-static BOOL IsEnum(ICorDebugValue * pInputValue)
+static bool IsEnum(ICorDebugValue *pInputValue)
 {
-    return FALSE;
+    ToRelease<ICorDebugValue> pValue;
+    if (FAILED(DereferenceAndUnboxValue(pInputValue, &pValue, nullptr))) return false;
+
+    std::string baseTypeName;
+    ToRelease<ICorDebugValue2> pValue2;
+    ToRelease<ICorDebugType> pType;
+    ToRelease<ICorDebugType> pBaseType;
+
+    if (FAILED(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2))) return false;
+    if (FAILED(pValue2->GetExactType(&pType))) return false;
+    if (FAILED(pType->GetBase(&pBaseType)) || pBaseType == nullptr) return false;
+    if (FAILED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName))) return false;
+
+    return baseTypeName == "System.Enum";
+}
+
+static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, std::string &output)
+{
+    HRESULT Status = S_OK;
+
+    ToRelease<ICorDebugValue> pValue;
+    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, NULL));
+
+    mdTypeDef currentTypeDef;
+    ToRelease<ICorDebugClass> pClass;
+    ToRelease<ICorDebugValue2> pValue2;
+    ToRelease<ICorDebugType> pType;
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+    IfFailRet(pValue2->GetExactType(&pType));
+    IfFailRet(pType->GetClass(&pClass));
+    IfFailRet(pClass->GetModule(&pModule));
+    IfFailRet(pClass->GetToken(&currentTypeDef));
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+
+    //First, we need to figure out the underlying enum type so that we can correctly type cast the raw values of each enum constant
+    //We get that from the non-static field of the enum variable (I think the field is called __value or something similar)
+    ULONG numFields = 0;
+    HCORENUM fEnum = NULL;
+    mdFieldDef fieldDef;
+    CorElementType enumUnderlyingType = ELEMENT_TYPE_END;
+    while(SUCCEEDED(pMD->EnumFields(&fEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
+    {
+        DWORD             fieldAttr = 0;
+        PCCOR_SIGNATURE   pSignatureBlob = NULL;
+        ULONG             sigBlobLength = 0;
+        if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, NULL, 0, NULL, &fieldAttr, &pSignatureBlob, &sigBlobLength, NULL, NULL, NULL)))
+        {
+            if((fieldAttr & fdStatic) == 0)
+            {
+                CorSigUncompressCallingConv(pSignatureBlob);
+                enumUnderlyingType = CorSigUncompressElementType(pSignatureBlob);
+                break;
+            }
+        }
+    }
+    pMD->CloseEnum(fEnum);
+
+    std::stringstream ss;
+    const char *sep = "";
+
+    //Now that we know the underlying enum type, let's decode the enum variable into OR-ed, human readable enum contants
+    fEnum = NULL;
+    bool isFirst = true;
+    ULONG64 remainingValue = *((ULONG64*)enumValue);
+    while(SUCCEEDED(pMD->EnumFields(&fEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
+    {
+        ULONG             nameLen = 0;
+        DWORD             fieldAttr = 0;
+        WCHAR             mdName[mdNameLen];
+        WCHAR             typeName[mdNameLen];
+        UVCP_CONSTANT     pRawValue = NULL;
+        ULONG             rawValueLength = 0;
+        if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, mdNameLen, &nameLen, &fieldAttr, NULL, NULL, NULL, &pRawValue, &rawValueLength)))
+        {
+            DWORD enumValueRequiredAttributes = fdPublic | fdStatic | fdLiteral | fdHasDefault;
+            if((fieldAttr & enumValueRequiredAttributes) != enumValueRequiredAttributes)
+                continue;
+
+            ULONG64 currentConstValue = 0;
+            switch (enumUnderlyingType)
+            {
+                case ELEMENT_TYPE_CHAR:
+                case ELEMENT_TYPE_I1:
+                    currentConstValue = (ULONG64)(*((CHAR*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_U1:
+                    currentConstValue = (ULONG64)(*((BYTE*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_I2:
+                    currentConstValue = (ULONG64)(*((SHORT*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_U2:
+                    currentConstValue = (ULONG64)(*((USHORT*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_I4:
+                    currentConstValue = (ULONG64)(*((INT32*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_U4:
+                    currentConstValue = (ULONG64)(*((UINT32*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_I8:
+                    currentConstValue = (ULONG64)(*((LONG*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_U8:
+                    currentConstValue = (ULONG64)(*((ULONG*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_I:
+                    currentConstValue = (ULONG64)(*((int*)pRawValue));
+                    break;
+                case ELEMENT_TYPE_U:
+                case ELEMENT_TYPE_R4:
+                case ELEMENT_TYPE_R8:
+                // Technically U and the floating-point ones are options in the CLI, but not in the CLS or C#, so these are NYI
+                default:
+                    currentConstValue = 0;
+            }
+
+            if((currentConstValue == remainingValue) || ((currentConstValue != 0) && ((currentConstValue & remainingValue) == currentConstValue)))
+            {
+                remainingValue &= ~currentConstValue;
+
+                ss << sep;
+                sep = " | ";
+                ss << to_utf8(mdName);
+            }
+        }
+    }
+    pMD->CloseEnum(fEnum);
+
+    output = ss.str();
+
+    return S_OK;
 }
 
 static HRESULT PrintArrayValue(ICorDebugValue *pValue,
@@ -201,9 +338,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
 
     if(IsEnum(pValue))
     {
-        output = "<enum>";
-        //Status = PrintEnumValue(pValue, rgbValue);
-        return Status;
+        return PrintEnumValue(pValue, rgbValue, output);
     }
 
     std::stringstream ss;
