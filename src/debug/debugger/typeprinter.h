@@ -1,9 +1,7 @@
 class TypePrinter
 {
-    static HRESULT NameForTypeDef_s(mdTypeDef tkTypeDef, IMetaDataImport *pImport,
-                                    WCHAR *mdName, size_t capacity_mdName);
-    static HRESULT NameForToken_s(mdTypeDef mb, IMetaDataImport *pImport, WCHAR *mdName, size_t capacity_mdName,
-                                  bool bClassName);
+    static HRESULT NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImport, std::string &mdName);
+    static HRESULT NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::string &mdName, bool bClassName);
     static HRESULT AddGenericArgs(ICorDebugType *pType, std::stringstream &ss);
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType);
 public:

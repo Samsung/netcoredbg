@@ -38,49 +38,33 @@ typedef uintptr_t TADDR;
 *                                                                      *
 \**********************************************************************/
 // Caller should guard against exception
-// !!! mdName should have at least mdNameLen WCHAR
-HRESULT TypePrinter::NameForTypeDef_s(mdTypeDef tkTypeDef, IMetaDataImport *pImport,
-                                      WCHAR *mdName, size_t capacity_mdName)
+HRESULT TypePrinter::NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImport, std::string &mdName)
 {
+    HRESULT Status;
     DWORD flags;
+    WCHAR name[mdNameLen];
     ULONG nameLen;
 
-    HRESULT hr = pImport->GetTypeDefProps(tkTypeDef, mdName,
-                                        mdNameLen, &nameLen,
-                                        &flags, NULL);
-    if (hr != S_OK) {
-        return hr;
+    IfFailRet(pImport->GetTypeDefProps(tkTypeDef, name, _countof(name), &nameLen, &flags, NULL));
+    mdName = to_utf8(name/*, nameLen*/);
+
+    if (!IsTdNested(flags))
+    {
+        return S_OK;
     }
 
-    if (!IsTdNested(flags)) {
-        return hr;
-    }
     mdTypeDef tkEnclosingClass;
-    hr = pImport->GetNestedClassProps(tkTypeDef, &tkEnclosingClass);
-    if (hr != S_OK) {
-        return hr;
-    }
-    WCHAR *name = (WCHAR*)_alloca((nameLen+1)*sizeof(WCHAR));
-    wcscpy_s (name, nameLen+1, mdName);
-    hr = NameForTypeDef_s(tkEnclosingClass,pImport,mdName, capacity_mdName);
-    if (hr != S_OK) {
-        return hr;
-    }
-    size_t Len = _wcslen (mdName);
-    if (Len < mdNameLen-2) {
-        mdName[Len++] = L'+';
-        mdName[Len] = L'\0';
-    }
-    Len = mdNameLen-1 - Len;
-    if (Len > nameLen) {
-        Len = nameLen;
-    }
-    wcsncat_s (mdName,capacity_mdName,name,Len);
-    return hr;
+    IfFailRet(pImport->GetNestedClassProps(tkTypeDef, &tkEnclosingClass));
+
+    std::string enclosingName;
+    IfFailRet(NameForTypeDef(tkEnclosingClass, pImport, enclosingName));
+
+    mdName = enclosingName + "+" + mdName;
+
+    return S_OK;
 }
 
-HRESULT TypePrinter::NameForToken_s(mdTypeDef mb, IMetaDataImport *pImport, WCHAR *mdName, size_t capacity_mdName,
-                                    bool bClassName)
+HRESULT TypePrinter::NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::string &mdName, bool bClassName)
 {
     mdName[0] = L'\0';
     if ((mb & 0xff000000) != mdtTypeDef
@@ -98,25 +82,24 @@ HRESULT TypePrinter::NameForToken_s(mdTypeDef mb, IMetaDataImport *pImport, WCHA
         WCHAR name[MAX_CLASSNAME_LENGTH];
         if ((mb & 0xff000000) == mdtTypeDef)
         {
-            hr = NameForTypeDef_s (mb, pImport, mdName, capacity_mdName);
+            hr = NameForTypeDef(mb, pImport, mdName);
         }
         else if ((mb & 0xff000000) ==  mdtFieldDef)
         {
             mdTypeDef mdClass;
             ULONG size;
             hr = pImport->GetMemberProps(mb, &mdClass,
-                                            name, sizeof(name)/sizeof(WCHAR)-1, &size,
-                                            NULL, NULL, NULL, NULL,
-                                            NULL, NULL, NULL, NULL);
+                                         name, _countof(name), &size,
+                                         NULL, NULL, NULL, NULL,
+                                         NULL, NULL, NULL, NULL);
             if (SUCCEEDED(hr))
             {
                 if (mdClass != mdTypeDefNil && bClassName)
                 {
-                    hr = NameForTypeDef_s (mdClass, pImport, mdName, capacity_mdName);
-                    wcscat_s (mdName, capacity_mdName, W("."));
+                    hr = NameForTypeDef(mdClass, pImport, mdName);
+                    mdName += ".";
                 }
-                name[size] = L'\0';
-                wcscat_s (mdName, capacity_mdName, name);
+                mdName += to_utf8(name/*, size*/);
             }
         }
         else if ((mb & 0xff000000) ==  mdtMethodDef)
@@ -124,17 +107,16 @@ HRESULT TypePrinter::NameForToken_s(mdTypeDef mb, IMetaDataImport *pImport, WCHA
             mdTypeDef mdClass;
             ULONG size;
             hr = pImport->GetMethodProps(mb, &mdClass,
-                                            name, sizeof(name)/sizeof(WCHAR)-1, &size,
-                                            NULL, NULL, NULL, NULL, NULL);
+                                         name, _countof(name), &size,
+                                         NULL, NULL, NULL, NULL, NULL);
             if (SUCCEEDED (hr))
             {
                 if (mdClass != mdTypeDefNil && bClassName)
                 {
-                    hr = NameForTypeDef_s (mdClass, pImport, mdName, capacity_mdName);
-                    wcscat_s (mdName, capacity_mdName, W("."));
+                    hr = NameForTypeDef(mdClass, pImport, mdName);
+                    mdName += ".";
                 }
-                name[size] = L'\0';
-                wcscat_s (mdName, capacity_mdName, name);
+                mdName += to_utf8(name/*, size*/);
             }
         }
         else
@@ -248,17 +230,15 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
                 IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
                 IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
-                WCHAR g_mdName[mdNameLen];
+                std::string name;
 
-                if(SUCCEEDED(NameForToken_s(TokenFromRid(typeDef, mdtTypeDef), pMD, g_mdName, mdNameLen, false)))
+                if(SUCCEEDED(NameForToken(TokenFromRid(typeDef, mdtTypeDef), pMD, name, false)))
                 {
-                    std::string name = to_utf8(g_mdName);
                     if (name == "System.Decimal")
                         ss << "decimal";
                     else
                         ss << name;
                 }
-
             }
             AddGenericArgs(pType, ss);
             elementType = ss.str();
@@ -425,23 +405,20 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     hr = pMD->GetMethodProps(methodDef, &memTypeDef,
                              szFunctionName, _countof(szFunctionName), &nameLen,
                              &flags, &pbSigBlob, &ulSigBlob, &ulCodeRVA, &ulImplFlags);
-    szFunctionName[nameLen] = L'\0';
-    WCHAR m_szName[mdNameLen] = {0};
-    m_szName[0] = L'\0';
 
-    char nameBuffer[2048] = {0};
     std::stringstream ss;
 
     if (memTypeDef != mdTypeDefNil)
     {
-        hr = NameForTypeDef_s (memTypeDef, pMD, m_szName, _countof(m_szName));
-        if (SUCCEEDED (hr))
+        std::string name;
+        hr = NameForTypeDef(memTypeDef, pMD, name);
+        if (SUCCEEDED(hr))
         {
-            ss << to_utf8(m_szName) << ".";
+            ss << name << ".";
         }
     }
 
-    ss << to_utf8(szFunctionName, nameLen);
+    ss << to_utf8(szFunctionName/*, nameLen*/);
 
     ToRelease<IMetaDataImport2> pMD2;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport2, (LPVOID*) &pMD2));
