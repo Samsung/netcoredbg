@@ -391,6 +391,65 @@ namespace SOS
             return false;
         }
 
+        internal static bool GetLocalVariableNameAndScope(IntPtr symbolReaderHandle, int methodToken, int localIndex, out IntPtr localVarName, out int ilStartOffset, out int ilEndOffset)
+        {
+            localVarName = IntPtr.Zero;
+            ilStartOffset = 0;
+            ilEndOffset = 0;
+
+            string localVar = null;
+            if (!GetLocalVariableAndScopeByIndex(symbolReaderHandle, methodToken, localIndex, out localVar, out ilStartOffset, out ilEndOffset))
+                return false;
+
+            localVarName = Marshal.StringToBSTR(localVar);
+            localVar = null;
+            return true;
+        }
+
+        internal static bool GetLocalVariableAndScopeByIndex(IntPtr symbolReaderHandle, int methodToken, int localIndex, out string localVarName, out int ilStartOffset, out int ilEndOffset)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            localVarName = null;
+            ilStartOffset = 0;
+            ilEndOffset = 0;
+
+            GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+            MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+            try
+            {
+                Handle handle = MetadataTokens.Handle(methodToken);
+                if (handle.Kind != HandleKind.MethodDefinition)
+                    return false;
+
+                MethodDebugInformationHandle methodDebugHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
+                LocalScopeHandleCollection localScopes = reader.GetLocalScopes(methodDebugHandle);
+                foreach (LocalScopeHandle scopeHandle in localScopes)
+                {
+                    LocalScope scope = reader.GetLocalScope(scopeHandle);
+                    LocalVariableHandleCollection localVars = scope.GetLocalVariables();
+                    foreach (LocalVariableHandle varHandle in localVars)
+                    {
+                        LocalVariable localVar = reader.GetLocalVariable(varHandle);
+                        if (localVar.Index == localIndex)
+                        {
+                            if (localVar.Attributes == LocalVariableAttributes.DebuggerHidden)
+                                return false;
+
+                            localVarName = reader.GetString(localVar.Name);
+                            ilStartOffset = scope.StartOffset;
+                            ilEndOffset = scope.EndOffset;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
         /// <summary>
         /// Returns local variable name for given local index and IL offset.
         /// </summary>

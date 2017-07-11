@@ -204,7 +204,9 @@ HRESULT GetFrameNamedLocalVariable(
     mdMethodDef methodToken,
     ULONG localIndex,
     std::string &paramName,
-    ICorDebugValue** ppValue)
+    ICorDebugValue** ppValue,
+    ULONG32 *pIlStart,
+    ULONG32 *pIlEnd)
 {
     HRESULT Status;
 
@@ -218,7 +220,7 @@ HRESULT GetFrameNamedLocalVariable(
             return E_FAIL;
         }
 
-        IfFailRet(info_pair->second.symbols->GetNamedLocalVariable(pILFrame, methodToken, localIndex, wParamName, _countof(wParamName), ppValue));
+        IfFailRet(info_pair->second.symbols->GetNamedLocalVariableAndScope(pILFrame, methodToken, localIndex, wParamName, _countof(wParamName), ppValue, pIlStart, pIlEnd));
     }
 
     paramName = to_utf8(wParamName);

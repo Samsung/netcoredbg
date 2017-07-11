@@ -17,16 +17,6 @@
 
 #include "torelease.h"
 #include "arrayholder.h"
-
-// Modules
-HRESULT GetFrameNamedLocalVariable(
-    ICorDebugModule *pModule,
-    ICorDebugILFrame *pILFrame,
-    mdMethodDef methodToken,
-    ULONG localIndex,
-    std::string &paramName,
-    ICorDebugValue** ppValue);
-
 #include "typeprinter.h"
 
 // Valuewalk

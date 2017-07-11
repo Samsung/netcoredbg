@@ -26,7 +26,9 @@ HRESULT GetFrameNamedLocalVariable(
     mdMethodDef methodToken,
     ULONG localIndex,
     std::string &paramName,
-    ICorDebugValue** ppValue);
+    ICorDebugValue** ppValue,
+    ULONG32 *pIlStart,
+    ULONG32 *pIlEnd);
 
 #include "typeprinter.h"
 
@@ -354,6 +356,10 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
     ULONG cLocals = 0;
     ToRelease<ICorDebugValueEnum> pLocalsEnum;
 
+    ULONG32 currentIlOffset;
+    CorDebugMappingResult mappingResult;
+    IfFailRet(pILFrame->GetIP(&currentIlOffset, &mappingResult));
+
     IfFailRet(pILFrame->EnumerateLocalVariables(&pLocalsEnum));
     IfFailRet(pLocalsEnum->GetCount(&cLocals));
     if (cLocals > 0)
@@ -363,9 +369,14 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
             std::string paramName;
 
             ToRelease<ICorDebugValue> pValue;
-            Status = GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue);
+            ULONG32 ilStart;
+            ULONG32 ilEnd;
+            Status = GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd);
 
             if (FAILED(Status))
+                continue;
+
+            if (currentIlOffset < ilStart || currentIlOffset >= ilEnd)
                 continue;
 
             if (Status == S_FALSE)

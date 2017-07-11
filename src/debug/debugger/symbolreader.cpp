@@ -24,7 +24,7 @@ std::string SymbolReader::coreClrPath;
 LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
 DisposeDelegate SymbolReader::disposeDelegate;
 ResolveSequencePointDelegate SymbolReader::resolveSequencePointDelegate;
-GetLocalVariableName SymbolReader::getLocalVariableNameDelegate;
+GetLocalVariableNameAndScope SymbolReader::getLocalVariableNameAndScopeDelegate;
 GetLineByILOffsetDelegate SymbolReader::getLineByILOffsetDelegate;
 GetStepRangesFromIPDelegate SymbolReader::getStepRangesFromIPDelegate;
 
@@ -230,7 +230,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "LoadSymbolsForModule", (void **)&loadSymbolsForModuleDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ResolveSequencePoint", (void **)&resolveSequencePointDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLocalVariableName", (void **)&getLocalVariableNameDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLineByILOffset", (void **)&getLineByILOffsetDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
 
@@ -311,15 +311,22 @@ HRESULT SymbolReader::GetStepRangesFromIP(ULONG64 ip, mdMethodDef MethodToken, U
     return E_FAIL;
 }
 
-HRESULT SymbolReader::GetNamedLocalVariable(ICorDebugILFrame * pILFrame, mdMethodDef methodToken,
-    ULONG localIndex, WCHAR* paramName, ULONG paramNameLen, ICorDebugValue** ppValue)
+HRESULT SymbolReader::GetNamedLocalVariableAndScope(
+    ICorDebugILFrame * pILFrame,
+    mdMethodDef methodToken,
+    ULONG localIndex,
+    WCHAR* paramName,
+    ULONG paramNameLen,
+    ICorDebugValue** ppValue,
+    ULONG32* pIlStart,
+    ULONG32* pIlEnd)
 {
     HRESULT Status = S_OK;
 
     if (!m_symbolReaderHandle)
         return E_FAIL;
 
-    _ASSERTE(getLocalVariableNameDelegate != nullptr);
+    _ASSERTE(getLocalVariableNameAndScopeDelegate != nullptr);
 
     BSTR wszParamName = SysAllocStringLen(0, mdNameLen);
     if (wszParamName == NULL)
@@ -327,7 +334,7 @@ HRESULT SymbolReader::GetNamedLocalVariable(ICorDebugILFrame * pILFrame, mdMetho
         return E_OUTOFMEMORY;
     }
 
-    if (getLocalVariableNameDelegate(m_symbolReaderHandle, methodToken, localIndex, &wszParamName) == FALSE)
+    if (getLocalVariableNameAndScopeDelegate(m_symbolReaderHandle, methodToken, localIndex, &wszParamName, pIlStart, pIlEnd) == FALSE)
     {
         SysFreeString(wszParamName);
         return E_FAIL;
