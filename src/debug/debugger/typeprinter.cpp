@@ -10,6 +10,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <list>
 #include <iomanip>
 
 #include "torelease.h"
@@ -28,6 +29,49 @@ typedef uintptr_t TADDR;
 #define MAX_NAMESPACE_LENGTH    1024
 
 
+static std::string ConsumeGenericArgs(const std::string &name, std::list<std::string> &args)
+{
+    if (args.empty())
+        return name;
+
+    std::size_t offset = name.find_last_not_of("0123456789");
+
+    if (offset == std::string::npos || offset == name.size() - 1 || name.at(offset) != '`')
+        return name;
+
+    unsigned long numArgs = 0;
+    try {
+        numArgs = std::stoul(name.substr(offset + 1));
+    }
+    catch(std::invalid_argument e)
+    {
+        return name;
+    }
+    catch (std::out_of_range  e)
+    {
+        return name;
+    }
+
+    if (numArgs == 0 || numArgs > args.size())
+    {
+        return name;
+    }
+
+    std::stringstream ss;
+    ss << name.substr(0, offset);
+    ss << "<";
+    const char *sep = "";
+    while (numArgs--)
+    {
+        ss << sep;
+        sep = ", ";
+        ss << args.front();
+        args.pop_front();
+    }
+    ss << ">";
+    return ss.str();
+}
+
 // From metadata.cpp
 
 /**********************************************************************\
@@ -38,7 +82,11 @@ typedef uintptr_t TADDR;
 *                                                                      *
 \**********************************************************************/
 // Caller should guard against exception
-HRESULT TypePrinter::NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImport, std::string &mdName)
+HRESULT TypePrinter::NameForTypeDef(
+    mdTypeDef tkTypeDef,
+    IMetaDataImport *pImport,
+    std::string &mdName,
+    std::list<std::string> &args)
 {
     HRESULT Status;
     DWORD flags;
@@ -50,6 +98,7 @@ HRESULT TypePrinter::NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImpor
 
     if (!IsTdNested(flags))
     {
+        mdName = ConsumeGenericArgs(mdName, args);
         return S_OK;
     }
 
@@ -57,14 +106,18 @@ HRESULT TypePrinter::NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImpor
     IfFailRet(pImport->GetNestedClassProps(tkTypeDef, &tkEnclosingClass));
 
     std::string enclosingName;
-    IfFailRet(NameForTypeDef(tkEnclosingClass, pImport, enclosingName));
+    IfFailRet(NameForTypeDef(tkEnclosingClass, pImport, enclosingName, args));
 
-    mdName = enclosingName + "+" + mdName;
+    mdName = enclosingName + "." + ConsumeGenericArgs(mdName, args);
 
     return S_OK;
 }
 
-HRESULT TypePrinter::NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::string &mdName, bool bClassName)
+HRESULT TypePrinter::NameForToken(mdTypeDef mb,
+                                  IMetaDataImport *pImport,
+                                  std::string &mdName,
+                                  bool bClassName,
+                                  std::list<std::string> &args)
 {
     mdName[0] = L'\0';
     if ((mb & 0xff000000) != mdtTypeDef
@@ -82,7 +135,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::s
         WCHAR name[MAX_CLASSNAME_LENGTH];
         if ((mb & 0xff000000) == mdtTypeDef)
         {
-            hr = NameForTypeDef(mb, pImport, mdName);
+            hr = NameForTypeDef(mb, pImport, mdName, args);
         }
         else if ((mb & 0xff000000) ==  mdtFieldDef)
         {
@@ -96,7 +149,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::s
             {
                 if (mdClass != mdTypeDefNil && bClassName)
                 {
-                    hr = NameForTypeDef(mdClass, pImport, mdName);
+                    hr = NameForTypeDef(mdClass, pImport, mdName, args);
                     mdName += ".";
                 }
                 mdName += to_utf8(name/*, size*/);
@@ -113,7 +166,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::s
             {
                 if (mdClass != mdTypeDefNil && bClassName)
                 {
-                    hr = NameForTypeDef(mdClass, pImport, mdName);
+                    hr = NameForTypeDef(mdClass, pImport, mdName, args);
                     mdName += ".";
                 }
                 mdName += to_utf8(name/*, size*/);
@@ -133,30 +186,46 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::s
     return hr;
 }
 
-// From strike.cpp
-
-HRESULT TypePrinter::AddGenericArgs(ICorDebugType *pType, std::stringstream &ss)
+HRESULT TypePrinter::AddGenericArgs(ICorDebugType *pType, std::list<std::string> &args)
 {
     ToRelease<ICorDebugTypeEnum> pTypeEnum;
 
     if (SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
     {
+        ULONG fetched = 0;
+        ToRelease<ICorDebugType> pCurrentTypeParam;
+
+        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &fetched)) && fetched == 1)
+        {
+            std::string name;
+            GetTypeOfValue(pCurrentTypeParam, name);
+            args.emplace_back(name);
+        }
+    }
+
+    return S_OK;
+}
+
+HRESULT TypePrinter::AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::string> &args)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugILFrame2> pILFrame2;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame2, (LPVOID*) &pILFrame2));
+
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+
+    if (SUCCEEDED(pILFrame2->EnumerateTypeParameters(&pTypeEnum)))
+    {
         ULONG numTypes = 0;
         ToRelease<ICorDebugType> pCurrentTypeParam;
 
-        bool isFirst = true;
-
         while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &numTypes)) && numTypes == 1)
         {
-            ss << (isFirst ? "<" : ",");
-            isFirst = false;
-
             std::string name;
             GetTypeOfValue(pCurrentTypeParam, name);
-            ss << name;
+            args.emplace_back(name);
         }
-        if(!isFirst)
-            ss << ">";
     }
 
     return S_OK;
@@ -178,6 +247,8 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugValue *pValue, std::string &output)
 
     return S_OK;
 }
+
+// From strike.cpp
 
 HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType)
 {
@@ -218,6 +289,9 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
             //Defaults in case we fail...
             elementType = (corElemType == ELEMENT_TYPE_VALUETYPE) ? "struct" : "class";
 
+            std::list<std::string> args;
+            AddGenericArgs(pType, args);
+
             mdTypeDef typeDef;
             ToRelease<ICorDebugClass> pClass;
             if(SUCCEEDED(pType->GetClass(&pClass)) && SUCCEEDED(pClass->GetToken(&typeDef)))
@@ -232,7 +306,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
 
                 std::string name;
 
-                if(SUCCEEDED(NameForToken(TokenFromRid(typeDef, mdtTypeDef), pMD, name, false)))
+                if(SUCCEEDED(NameForToken(TokenFromRid(typeDef, mdtTypeDef), pMD, name, false, args)))
                 {
                     if (name == "System.Decimal")
                         ss << "decimal";
@@ -240,7 +314,6 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
                         ss << name;
                 }
             }
-            AddGenericArgs(pType, ss);
             elementType = ss.str();
             return S_OK;
         }
@@ -365,9 +438,6 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
 
-    ToRelease<ICorDebugILFrame2> pILFrame2;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame2, (LPVOID*) &pILFrame2));
-
     ToRelease<ICorDebugFunction> pFunction;
     IfFailRet(pFrame->GetFunction(&pFunction));
 
@@ -377,10 +447,6 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     IfFailRet(pFunction->GetClass(&pClass));
     IfFailRet(pFunction->GetModule(&pModule));
     IfFailRet(pFunction->GetToken(&methodDef));
-
-    WCHAR wszModuleName[100];
-    ULONG32 cchModuleNameActual;
-    IfFailRet(pModule->GetName(_countof(wszModuleName), &cchModuleNameActual, wszModuleName));
 
     ToRelease<IUnknown> pMDUnknown;
     ToRelease<IMetaDataImport> pMD;
@@ -402,26 +468,14 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
 
     WCHAR szFunctionName[mdNameLen] = {0};
 
+    ToRelease<IMetaDataImport2> pMD2;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport2, (LPVOID*) &pMD2));
+
     hr = pMD->GetMethodProps(methodDef, &memTypeDef,
                              szFunctionName, _countof(szFunctionName), &nameLen,
                              &flags, &pbSigBlob, &ulSigBlob, &ulCodeRVA, &ulImplFlags);
 
-    std::stringstream ss;
-
-    if (memTypeDef != mdTypeDefNil)
-    {
-        std::string name;
-        hr = NameForTypeDef(memTypeDef, pMD, name);
-        if (SUCCEEDED(hr))
-        {
-            ss << name << ".";
-        }
-    }
-
-    ss << to_utf8(szFunctionName/*, nameLen*/);
-
-    ToRelease<IMetaDataImport2> pMD2;
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport2, (LPVOID*) &pMD2));
+    std::string funcName = to_utf8(szFunctionName/*, nameLen*/);
 
     ULONG methodGenericsCount = 0;
     HCORENUM hEnum = NULL;
@@ -435,31 +489,26 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
 
     if (methodGenericsCount > 0)
     {
-        ss << '`' << methodGenericsCount;
+        std::stringstream ss;
+        ss << funcName << '`' << methodGenericsCount;
+        funcName = ss.str();
     }
 
-    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+    std::list<std::string> args;
+    AddGenericArgs(pFrame, args);
 
-    if (SUCCEEDED(pILFrame2->EnumerateTypeParameters(&pTypeEnum)))
+    std::stringstream ss;
+    if (memTypeDef != mdTypeDefNil)
     {
-        ULONG numTypes = 0;
-        ToRelease<ICorDebugType> pCurrentTypeParam;
-
-        bool isFirst = true;
-
-        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &numTypes)) && numTypes == 1)
+        std::string name;
+        hr = NameForTypeDef(memTypeDef, pMD, name, args);
+        if (SUCCEEDED(hr))
         {
-            ss << (isFirst ? "<" : ",");
-            isFirst = false;
-
-            std::string name;
-            GetTypeOfValue(pCurrentTypeParam, name);
-            ss << name;
+            ss << name << ".";
         }
-        if(!isFirst)
-            ss << ">";
     }
 
+    ss << ConsumeGenericArgs(funcName, args);
     ss << "()";
 
     output = ss.str();
