@@ -316,7 +316,7 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
             if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
                 continue;
 
-            std::string name = to_utf8(propertyName, propertyNameLen);
+            std::string name = to_utf8(propertyName/*, propertyNameLen*/);
 
             if (backedProperies.find(name) != backedProperies.end())
                 continue;
