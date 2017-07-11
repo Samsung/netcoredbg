@@ -16,6 +16,7 @@
 
 #include "torelease.h"
 #include "arrayholder.h"
+#include "cputil.h"
 
 // Modules
 HRESULT GetFrameNamedLocalVariable(
@@ -93,12 +94,7 @@ static HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output)
         &cchValueReturned,
         str));
 
-    ULONG32 cstrLen = cchValue * 2;
-    ArrayHolder<char> cstr = new char[cstrLen];
-
-    WideCharToMultiByte(CP_UTF8, 0, str, cchValue, cstr, cstrLen, NULL, NULL);
-
-    output = cstr;
+    output = to_utf8(str);
 
     return S_OK;
 }
@@ -196,12 +192,9 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
 
     case ELEMENT_TYPE_CHAR:
         {
-            WCHAR ws[2] = W("\0");
-            ws[0] = *(WCHAR *) &(rgbValue[0]);
-            char printableVal[10] = {0};
-            WideCharToMultiByte(CP_UTF8, 0, ws, 2, printableVal, _countof(printableVal), NULL, NULL);
-
-            ss << (unsigned int)ws[0] << " '" << printableVal << "'";
+            WCHAR wc = * (WCHAR *) &(rgbValue[0]);
+            std::string printableVal = to_utf8(&wc, 1);
+            ss << (unsigned int)wc << " '" << printableVal << "'";
         }
         break;
 

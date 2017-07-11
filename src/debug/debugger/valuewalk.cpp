@@ -16,6 +16,7 @@
 
 #include "torelease.h"
 #include "arrayholder.h"
+#include "cputil.h"
 
 // Modules
 HRESULT GetFrameNamedLocalVariable(
@@ -189,8 +190,7 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
         WCHAR mdName[mdNameLen] = {0};
         if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, mdNameLen, &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
         {
-            char cName[mdNameLen] = {0};
-            WideCharToMultiByte(CP_UTF8, 0, mdName, (int)(nameLen + 1), cName, _countof(cName), NULL, NULL);
+            std::string name = to_utf8(mdName, nameLen);
 
             if(fieldAttr & fdLiteral)
                 continue;
@@ -213,8 +213,7 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
 
             if(pFieldVal != NULL)
             {
-                std::string name(cName);
-                if (cName[0] == '<')
+                if (name[0] == '<')
                 {
                     size_t endOffset = name.rfind('>');
                     name = name.substr(1, endOffset - 1);
@@ -226,10 +225,10 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
             else
             {
                 // no need for backing field when we can not get its value
-                if (cName[0] == '<')
+                if (name[0] == '<')
                     continue;
 
-                IfFailRet(cb(mdMethodDefNil, pModule, pType, nullptr, is_static, cName));
+                IfFailRet(cb(mdMethodDefNil, pModule, pType, nullptr, is_static, name));
             }
         }
     }
@@ -268,15 +267,14 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
             if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
                 continue;
 
-            char cName[mdNameLen] = {0};
-            WideCharToMultiByte(CP_UTF8, 0, propertyName, (int)(propertyNameLen + 1), cName, _countof(cName), NULL, NULL);
+            std::string name = to_utf8(propertyName, propertyNameLen);
 
-            if (backedProperies.find(cName) != backedProperies.end())
+            if (backedProperies.find(name) != backedProperies.end())
                 continue;
 
             bool is_static = (getterAttr & mdStatic);
 
-            IfFailRet(cb(mdGetter, pModule, pType, nullptr, is_static, cName));
+            IfFailRet(cb(mdGetter, pModule, pType, nullptr, is_static, name));
         }
     }
     pMD->CloseEnum(propEnum);
@@ -348,10 +346,7 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
             if (Status == S_FALSE)
                 break;
 
-            char cParamName[mdNameLen] = {0};
-            WideCharToMultiByte(CP_UTF8, 0, paramName, (int)(_wcslen(paramName) + 1), cParamName, _countof(cParamName), NULL, NULL);
-
-            IfFailRet(cb(pILFrame, pValue, cParamName));
+            IfFailRet(cb(pILFrame, pValue, to_utf8(paramName, paramNameLen)));
         }
     }
 

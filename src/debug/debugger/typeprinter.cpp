@@ -21,6 +21,8 @@ typedef uintptr_t TADDR;
 
 #include "typeprinter.h"
 
+#include "cputil.h"
+
 // <TODO> Get rid of these!  Don't use them any more!</TODO>
 #define MAX_CLASSNAME_LENGTH    1024
 #define MAX_NAMESPACE_LENGTH    1024
@@ -250,12 +252,11 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
 
                 if(SUCCEEDED(NameForToken_s(TokenFromRid(typeDef, mdtTypeDef), pMD, g_mdName, mdNameLen, false)))
                 {
-                    char cName[mdNameLen] = {0};
-                    WideCharToMultiByte(CP_UTF8, 0, g_mdName, (int)(_wcslen(g_mdName) + 1), cName, _countof(cName), NULL, NULL);
-                    if (strcmp(cName, "System.Decimal") == 0)
+                    std::string name = to_utf8(g_mdName);
+                    if (name == "System.Decimal")
                         ss << "decimal";
                     else
-                        ss << cName;
+                        ss << name;
                 }
 
             }
@@ -419,11 +420,11 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     ULONG ulCodeRVA;
     ULONG ulImplFlags;
 
-    WCHAR szFunctionName[1024] = {0};
+    WCHAR szFunctionName[mdNameLen] = {0};
 
     hr = pMD->GetMethodProps(methodDef, &memTypeDef,
-                                szFunctionName, _countof(szFunctionName), &nameLen,
-                                &flags, &pbSigBlob, &ulSigBlob, &ulCodeRVA, &ulImplFlags);
+                             szFunctionName, _countof(szFunctionName), &nameLen,
+                             &flags, &pbSigBlob, &ulSigBlob, &ulCodeRVA, &ulImplFlags);
     szFunctionName[nameLen] = L'\0';
     WCHAR m_szName[mdNameLen] = {0};
     m_szName[0] = L'\0';
@@ -434,14 +435,13 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     if (memTypeDef != mdTypeDefNil)
     {
         hr = NameForTypeDef_s (memTypeDef, pMD, m_szName, _countof(m_szName));
-        if (SUCCEEDED (hr)) {
-            WideCharToMultiByte(CP_UTF8, 0, m_szName, (int)(_wcslen(m_szName) + 1), nameBuffer, _countof(nameBuffer), NULL, NULL);
-            ss << nameBuffer << ".";
+        if (SUCCEEDED (hr))
+        {
+            ss << to_utf8(m_szName) << ".";
         }
     }
 
-    WideCharToMultiByte(CP_UTF8, 0, szFunctionName, (int)(_wcslen(szFunctionName) + 1), nameBuffer, _countof(nameBuffer), NULL, NULL);
-    ss << nameBuffer;
+    ss << to_utf8(szFunctionName, nameLen);
 
     ToRelease<IMetaDataImport2> pMD2;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport2, (LPVOID*) &pMD2));

@@ -13,6 +13,7 @@
 
 #include "torelease.h"
 #include "symbolreader.h"
+#include "cputil.h"
 
 struct ModuleInfo
 {
@@ -36,8 +37,7 @@ std::string GetModuleName(ICorDebugModule *pModule)
     ULONG32 name_len = 0;
     if (SUCCEEDED(pModule->GetName(mdNameLen, &name_len, name)))
     {
-        WideCharToMultiByte(CP_UTF8, 0, name, (int)(PAL_wcslen(name) + 1), cname, mdNameLen, NULL, NULL);
-        return cname;
+        return to_utf8(name, name_len);
     }
     return std::string();
 }
@@ -72,9 +72,7 @@ HRESULT GetLocationInModule(ICorDebugModule *pModule,
     ULONG resolvedLinenum;
     IfFailRet(info_pair->second.symbols->GetLineByILOffset(methodToken, ilOffset, &resolvedLinenum, wFilename, _countof(wFilename)));
 
-    char cFilename[MAX_LONGPATH];
-    WideCharToMultiByte(CP_UTF8, 0, wFilename, (int)(PAL_wcslen(wFilename) + 1), cFilename, _countof(cFilename), NULL, NULL);
-    fullname = cFilename;
+    fullname = to_utf8(wFilename);
 
     return S_OK;
 }
@@ -119,11 +117,7 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
         IfFailRet(info_pair->second.symbols->GetLineByILOffset(methodToken, ilOffset, &linenum, name, _countof(name)));
     }
 
-    char cname[MAX_LONGPATH];
-
-    WideCharToMultiByte(CP_UTF8, 0, name, (int)(PAL_wcslen(name) + 1), cname, _countof(cname), NULL, NULL);
-
-    fullname = cname;
+    fullname = to_utf8(name);
 
     return S_OK;
 }
@@ -227,10 +221,7 @@ HRESULT GetFrameNamedLocalVariable(
         IfFailRet(info_pair->second.symbols->GetNamedLocalVariable(pILFrame, methodToken, localIndex, wParamName, _countof(wParamName), ppValue));
     }
 
-    char cParamName[mdNameLen] = {0};
-    WideCharToMultiByte(CP_UTF8, 0, wParamName, (int)(PAL_wcslen(wParamName) + 1), cParamName, _countof(cParamName), NULL, NULL);
-
-    paramName = cParamName;
+    paramName = to_utf8(wParamName);
 
     return S_OK;
 }
