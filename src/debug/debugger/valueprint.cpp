@@ -203,6 +203,198 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, std:
     return S_OK;
 }
 
+static HRESULT GetUIntValue(ICorDebugValue *pInputValue, unsigned int &value)
+{
+    HRESULT Status;
+
+    BOOL isNull = TRUE;
+    ToRelease<ICorDebugValue> pValue;
+    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+
+    if(isNull)
+        return E_FAIL;
+
+    ULONG32 cbSize;
+    IfFailRet(pValue->GetSize(&cbSize));
+    if (cbSize != sizeof(int))
+        return E_FAIL;
+
+    BYTE rgbValue[sizeof(int)] = {0};
+
+    ToRelease<ICorDebugGenericValue> pGenericValue;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+    IfFailRet(pGenericValue->GetValue((LPVOID) &(rgbValue[0])));
+
+    CorElementType corElemType;
+    IfFailRet(pValue->GetType(&corElemType));
+
+    switch (corElemType)
+    {
+    default:
+        return E_FAIL;
+    case ELEMENT_TYPE_I4:
+    case ELEMENT_TYPE_U4:
+        value = *(unsigned int*) &(rgbValue[0]);
+        return S_OK;
+    }
+    return E_FAIL;
+}
+
+static HRESULT GetDecimalFields(ICorDebugValue *pValue,
+                                unsigned int &hi,
+                                unsigned int &mid,
+                                unsigned int &lo,
+                                unsigned int &flags)
+{
+    HRESULT Status = S_OK;
+
+    mdTypeDef currentTypeDef;
+    ToRelease<ICorDebugClass> pClass;
+    ToRelease<ICorDebugValue2> pValue2;
+    ToRelease<ICorDebugType> pType;
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+    IfFailRet(pValue2->GetExactType(&pType));
+    IfFailRet(pType->GetClass(&pClass));
+    IfFailRet(pClass->GetModule(&pModule));
+    IfFailRet(pClass->GetToken(&currentTypeDef));
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    bool has_hi = false;
+    bool has_mid = false;
+    bool has_lo = false;
+    bool has_flags = false;
+
+    ULONG numFields = 0;
+    HCORENUM fEnum = NULL;
+    mdFieldDef fieldDef;
+    while(SUCCEEDED(pMD->EnumFields(&fEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
+    {
+        ULONG nameLen = 0;
+        DWORD fieldAttr = 0;
+        WCHAR mdName[mdNameLen] = {0};
+        if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, mdNameLen, &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
+        {
+            if(fieldAttr & fdLiteral)
+                continue;
+            if (fieldAttr & fdStatic)
+                continue;
+
+            ToRelease<ICorDebugValue> pFieldVal;
+            ToRelease<ICorDebugObjectValue> pObjValue;
+            IfFailRet(pValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue));
+            IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, &pFieldVal));
+
+            std::string name = to_utf8(mdName /*, nameLen*/);
+
+            if (name == "hi")
+            {
+                IfFailRet(GetUIntValue(pFieldVal, hi));
+                has_hi = true;
+            }
+            else if (name == "mid")
+            {
+                IfFailRet(GetUIntValue(pFieldVal, mid));
+                has_mid = true;
+            } else if (name == "lo")
+            {
+                IfFailRet(GetUIntValue(pFieldVal, lo));
+                has_lo = true;
+            }
+            else if (name == "flags")
+            {
+                IfFailRet(GetUIntValue(pFieldVal, flags));
+                has_flags = true;
+            }
+        }
+    }
+    pMD->CloseEnum(fEnum);
+
+    return (has_hi && has_mid && has_lo && has_flags ? S_OK : E_FAIL);
+}
+
+static inline uint64_t Make_64(uint32_t h, uint32_t l) { uint64_t v = h; v <<= 32; v |= l; return v; }
+static inline uint32_t Lo_32(uint64_t v) { return static_cast<uint32_t>(v); }
+
+bool uint96_is_zero(const uint32_t *v) { return v[0] == 0 && v[1] == 0 && v[2] == 0; }
+
+static void udivrem96(uint32_t *divident, uint32_t divisor, uint32_t &remainder)
+{
+    remainder = 0;
+    for (int i = 2; i >= 0; i--)
+    {
+        uint64_t partial_dividend = Make_64(remainder, divident[i]);
+        if (partial_dividend == 0) {
+            divident[i] = 0;
+            remainder = 0;
+        } else if (partial_dividend < divisor) {
+            divident[i] = 0;
+            remainder = Lo_32(partial_dividend);
+        } else if (partial_dividend == divisor) {
+            divident[i] = 1;
+            remainder = 0;
+        } else {
+            divident[i] = Lo_32(partial_dividend / divisor);
+            remainder = Lo_32(partial_dividend - (divident[i] * divisor));
+        }
+    }
+}
+
+static std::string uint96_to_string(uint32_t *v)
+{
+    static const char *digits = "0123456789";
+    std::string result;
+    do {
+        uint32_t rem;
+        udivrem96(v, 10, rem);
+        result.insert(0, 1, digits[rem]);
+    } while (!uint96_is_zero(v));
+    return result;
+}
+
+static HRESULT PrintDecimalValue(ICorDebugValue *pValue,
+                                 std::string &output)
+{
+    HRESULT Status = S_OK;
+
+    unsigned int hi;
+    unsigned int mid;
+    unsigned int lo;
+    unsigned int flags;
+    IfFailRet(GetDecimalFields(pValue, hi, mid, lo, flags));
+
+    uint32_t v[3] = { lo, mid, hi };
+
+    output = uint96_to_string(v);
+
+    static const unsigned int ScaleMask = 0x00FF0000ul;
+    static const unsigned int ScaleShift = 16;
+    static const unsigned int SignMask = 1ul << 31;
+
+    unsigned int scale = (flags & ScaleMask) >> ScaleShift;
+    bool is_negative = flags & SignMask;
+
+    size_t len = output.length();
+
+    if (len > scale)
+    {
+        if (scale != 0) output.insert(len - scale, 1, '.');
+    }
+    else
+    {
+        output.insert(0, "0.");
+        output.insert(2, scale, '0');
+    }
+
+    if (is_negative)
+        output.insert(0, 1, '-');
+
+    return S_OK;
+}
+
 static HRESULT PrintArrayValue(ICorDebugValue *pValue,
                                std::string &output)
 {
@@ -368,8 +560,16 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
         {
             std::string typeName;
             TypePrinter::GetTypeOfValue(pValue, typeName);
-            ss << '{' << typeName << '}';
-            //ProcessFields(pValue, NULL, pILFrame, indent + 1, varToExpand, currentExpansion, currentExpansionSize, currentFrame);
+            if (typeName == "decimal") // TODO: implement mechanism for printing custom type values
+            {
+                std::string val;
+                PrintDecimalValue(pValue, val);
+                ss << val;
+            }
+            else
+            {
+                ss << '{' << typeName << '}';
+            }
         }
         break;
 

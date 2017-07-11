@@ -224,6 +224,8 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
 
     std::string className;
     TypePrinter::GetTypeOfValue(pType, className);
+    if (className == "decimal") // TODO: implement mechanism for walking over custom type fields
+        return S_OK;
 
     std::unordered_set<std::string> backedProperies;
 
