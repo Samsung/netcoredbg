@@ -131,7 +131,9 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
 
         for (ULONG32 i = 0; i < cElements; ++i)
         {
-            IfFailRet(cb(mdMethodDefNil, nullptr, nullptr, nullptr, true, "[" + std::to_string(i) + "]"));
+            ToRelease<ICorDebugValue> pElementValue;
+            pArrayValue->GetElementAtPosition(i, &pElementValue);
+            IfFailRet(cb(mdMethodDefNil, nullptr, nullptr, pElementValue, false, "[" + std::to_string(i) + "]"));
         }
 
         return S_OK;

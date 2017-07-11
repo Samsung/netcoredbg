@@ -119,7 +119,8 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
             return S_OK;
 
         std::string className;
-        TypePrinter::GetTypeOfValue(pType, className);
+        if (pType)
+            TypePrinter::GetTypeOfValue(pType, className);
 
         ICorDebugValue *pResultValue = nullptr;
 
