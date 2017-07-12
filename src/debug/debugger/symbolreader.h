@@ -51,6 +51,8 @@ public:
         }
     }
 
+    bool SymbolsLoaded() const { return m_symbolReaderHandle != 0; }
+
     static void SetCoreCLRPath(const std::string &path) { coreClrPath = path; }
 
     HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule);

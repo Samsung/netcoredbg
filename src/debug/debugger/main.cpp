@@ -117,7 +117,12 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
 void SetCoreCLRPath(const std::string &coreclrPath);
 std::string GetModuleName(ICorDebugModule *pModule);
 HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range);
-HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule);
+HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
+                             std::string &id,
+                             std::string &name,
+                             bool &symbolsLoaded,
+                             CORDB_ADDRESS &baseAddress,
+                             ULONG32 &size);
 HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          ULONG32 &ilOffset,
                          mdMethodDef &methodToken,
@@ -627,13 +632,24 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugModule *pModule)
         {
-            std::string name = GetModuleName(pModule);
-            if (!name.empty())
+            std::string id;
+            std::string name;
+            bool symbolsLoaded = false;
+            CORDB_ADDRESS baseAddress = 0;
+            ULONG32 size = 0;
+
+            TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
             {
-                out_printf("=library-loaded,target-name=\"%s\"\n", name.c_str());
+                std::stringstream ss;
+                ss << "id=\"{" << id << "}\",target-name=\"" << name << "\","
+                   << "symbols-loaded=\"" << symbolsLoaded << "\","
+                   << "base-address=\"0x" << std::hex << baseAddress << "\","
+                   << "size=\"" << std::dec << size << "\"";
+                out_printf("=library-loaded,%s\n", ss.str().c_str());
             }
-            TryLoadModuleSymbols(pModule);
-            TryResolveBreakpointsForModule(pModule);
+            if (symbolsLoaded)
+                TryResolveBreakpointsForModule(pModule);
+
             pAppDomain->Continue(0);
             return S_OK;
         }

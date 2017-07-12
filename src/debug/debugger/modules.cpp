@@ -10,6 +10,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <iomanip>
 
 #include "torelease.h"
 #include "symbolreader.h"
@@ -170,30 +171,65 @@ HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE
     return S_OK;
 }
 
-HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule)
+HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
 {
     HRESULT Status;
-    std::string name = GetModuleName(pModule);
-
-    if (name.empty())
-        return E_FAIL;
 
     ToRelease<IUnknown> pMDUnknown;
     ToRelease<IMetaDataImport> pMDImport;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
 
+    GUID mvid;
+
+    IfFailRet(pMDImport->GetScopeProps(nullptr, 0, nullptr, &mvid));
+
+    std::stringstream ss;
+    ss << std::hex
+    << std::setfill('0') << std::setw(8) << mvid.Data1 << "-"
+    << std::setfill('0') << std::setw(4) << mvid.Data2 << "-"
+    << std::setfill('0') << std::setw(4) << mvid.Data3 << "-"
+    << std::setfill('0') << std::setw(2) << (static_cast<int>(mvid.Data4[0]) & 0xFF)
+    << std::setfill('0') << std::setw(2) << (static_cast<int>(mvid.Data4[1]) & 0xFF)
+    << "-";
+    for (int i = 2; i < 8; i++)
+        ss << std::setfill('0') << std::setw(2) << (static_cast<int>(mvid.Data4[i]) & 0xFF);
+
+    id = ss.str();
+
+    return S_OK;
+}
+
+HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
+                             std::string &id,
+                             std::string &name,
+                             bool &symbolsLoaded,
+                             CORDB_ADDRESS &baseAddress,
+                             ULONG32 &size)
+{
+    HRESULT Status;
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMDImport;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
 
     auto symbolReader = std::make_shared<SymbolReader>();
-    IfFailRet(symbolReader->LoadSymbols(pMDImport, pModule));
+    symbolReader->LoadSymbols(pMDImport, pModule);
+    symbolsLoaded = symbolReader->SymbolsLoaded();
 
-    CORDB_ADDRESS modAddress;
-    pModule->GetBaseAddress(&modAddress);
+    name = GetModuleName(pModule);
+
+    IfFailRet(GetModuleId(pModule, id));
+
+    IfFailRet(pModule->GetBaseAddress(&baseAddress));
+    IfFailRet(pModule->GetSize(&size));
 
     {
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        g_modulesInfo.insert({name, {modAddress, symbolReader}});
+        g_modulesInfo.insert({name, {baseAddress, symbolReader}});
     }
+
     return S_OK;
 }
 
