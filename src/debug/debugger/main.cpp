@@ -296,10 +296,20 @@ HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     return S_OK;
 }
 
-HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame = 0, int highFrame = INT_MAX)
+enum FrameType
+{
+    FrameNative,
+    FrameRuntimeUnwindable,
+    FrameILStubOrLCG,
+    FrameUnknown,
+    FrameManaged
+};
+
+typedef std::function<HRESULT(FrameType,ICorDebugFrame*,ICorDebugILFrame*,ICorDebugFunction*)> WalkFramesCallback;
+
+HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
 {
     HRESULT Status;
-    std::stringstream ss;
 
     ToRelease<ICorDebugThread3> pThread3;
     ToRelease<ICorDebugStackWalk> pStackWalk;
@@ -307,30 +317,18 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
     IfFailRet(pThread->QueryInterface(IID_ICorDebugThread3, (LPVOID *) &pThread3));
     IfFailRet(pThread3->CreateStackWalk(&pStackWalk));
 
-    int currentFrame = -1;
-
-    ss << "stack=[";
-
     for (Status = S_OK; ; Status = pStackWalk->Next())
     {
-        currentFrame++;
-
         if (Status == CORDBG_S_AT_END_OF_STACK)
             break;
 
         IfFailRet(Status);
 
-        if (currentFrame < lowFrame)
-            continue;
-        if (currentFrame > highFrame)
-            break;
-
         ToRelease<ICorDebugFrame> pFrame;
         IfFailRet(pStackWalk->GetFrame(&pFrame));
         if (Status == S_FALSE)
         {
-            ss << (currentFrame != 0 ? "," : "");
-            ss << "frame={level=\"" << currentFrame << "\",func=\"[NativeStackFrame]\"}";
+            IfFailRet(cb(FrameNative, pFrame, nullptr, nullptr));
             continue;
         }
 
@@ -338,8 +336,7 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
         Status = pFrame->QueryInterface(IID_ICorDebugRuntimeUnwindableFrame, (LPVOID *) &pRuntimeUnwindableFrame);
         if (SUCCEEDED(Status))
         {
-            ss << (currentFrame != 0 ? "," : "");
-            ss << "frame={level=\"" << currentFrame << "\",func=\"[RuntimeUnwindableFrame]\"}";
+            IfFailRet(cb(FrameRuntimeUnwindable, pFrame, nullptr, nullptr));
             continue;
         }
 
@@ -348,8 +345,7 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
 
         if (FAILED(hrILFrame))
         {
-            ss << (currentFrame != 0 ? "," : "");
-            ss << "frame={level=\"" << currentFrame << "\",func=\"?\"}";
+            IfFailRet(cb(FrameUnknown, pFrame, nullptr, nullptr));
             continue;
         }
 
@@ -357,24 +353,109 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
         Status = pFrame->GetFunction(&pFunction);
         if (FAILED(Status))
         {
-            ss << (currentFrame != 0 ? "," : "");
-            ss << "frame={level=\"" << currentFrame << "\",func=\"[IL Stub or LCG]\"}";
+            IfFailRet(cb(FrameILStubOrLCG, pFrame, pILFrame, nullptr));
             continue;
         }
 
-        std::string frameLocation;
-        PrintFrameLocation(pFrame, frameLocation);
+        IfFailRet(cb(FrameManaged, pFrame, pILFrame, pFunction));
+    }
+
+    return S_OK;
+}
+
+HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame)
+{
+    ToRelease<ICorDebugFrame> result;
+
+    int currentFrame = -1;
+
+    HRESULT Status = WalkFrames(pThread, [&](
+        FrameType frameType,
+        ICorDebugFrame *pFrame,
+        ICorDebugILFrame *pILFrame,
+        ICorDebugFunction *pFunction)
+    {
+        currentFrame++;
+
+        if (currentFrame < level)
+            return S_OK;
+        else if (currentFrame > level)
+            return E_FAIL;
+
+        if (currentFrame == level && frameType == FrameManaged)
+        {
+            pFrame->AddRef();
+            result = pFrame;
+        }
+        return E_FAIL;
+    });
+
+    if (result)
+    {
+        *ppFrame = result.Detach();
+        return S_OK;
+    }
+
+    return Status;
+}
+
+HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame = 0, int highFrame = INT_MAX)
+{
+    HRESULT Status;
+    std::stringstream ss;
+
+    int currentFrame = -1;
+
+    ss << "stack=[";
+
+    IfFailRet(WalkFrames(pThread, [&](
+        FrameType frameType,
+        ICorDebugFrame *pFrame,
+        ICorDebugILFrame *pILFrame,
+        ICorDebugFunction *pFunction)
+    {
+        currentFrame++;
+
+        if (currentFrame < lowFrame)
+            return S_OK;
+        if (currentFrame > highFrame)
+            return S_OK; // Todo implement fast break mechanism
 
         ss << (currentFrame != 0 ? "," : "");
-        ss << "frame={level=\"" << currentFrame << "\",";
-        if (!frameLocation.empty())
-            ss << frameLocation << ",";
 
-        std::string methodName;
-        TypePrinter::GetMethodName(pFrame, methodName);
+        switch(frameType)
+        {
+            case FrameNative:
+                ss << "frame={level=\"" << currentFrame << "\",func=\"[NativeStackFrame]\"}";
+                break;
+            case FrameRuntimeUnwindable:
+                ss << "frame={level=\"" << currentFrame << "\",func=\"[RuntimeUnwindableFrame]\"}";
+                break;
+            case FrameILStubOrLCG:
+                ss << "frame={level=\"" << currentFrame << "\",func=\"[IL Stub or LCG]\"}";
+                break;
+            case FrameUnknown:
+                ss << "frame={level=\"" << currentFrame << "\",func=\"?\"}";
+                break;
+            case FrameManaged:
+                {
+                    std::string frameLocation;
+                    PrintFrameLocation(pFrame, frameLocation);
 
-        ss << "func=\"" << methodName << "\"}";
-    }
+                    ss << (currentFrame != 0 ? "," : "");
+                    ss << "frame={level=\"" << currentFrame << "\",";
+                    if (!frameLocation.empty())
+                        ss << frameLocation << ",";
+
+                    std::string methodName;
+                    TypePrinter::GetMethodName(pFrame, methodName);
+
+                    ss << "func=\"" << methodName << "\"}";
+                }
+                break;
+        }
+        return S_OK;
+    }));
 
     ss << "]";
 
