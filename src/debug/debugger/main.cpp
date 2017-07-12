@@ -211,26 +211,6 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
     return S_OK;
 }
 
-HRESULT PrintLocation(ICorDebugThread *pThread, std::string &output)
-{
-    HRESULT Status;
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-
-    ULONG32 ilOffset;
-    mdMethodDef methodToken;
-    std::string fullname;
-    ULONG linenum;
-
-    IfFailRet(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
-
-    std::stringstream ss;
-    ss << "line=\"" << linenum << "\",fullname=\"" << fullname << "\"";
-    output = ss.str();
-
-    return S_OK;
-}
-
 HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
     HRESULT Status;
@@ -489,7 +469,9 @@ public:
             FindCurrentBreakpointId(pThread, id);
 
             std::string output;
-            PrintLocation(pThread, output);
+            ToRelease<ICorDebugFrame> pFrame;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
+                PrintFrameLocation(pFrame, output);
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
@@ -509,7 +491,9 @@ public:
             /* [in] */ CorDebugStepReason reason)
         {
             std::string output;
-            PrintLocation(pThread, output);
+            ToRelease<ICorDebugFrame> pFrame;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
+                PrintFrameLocation(pFrame, output);
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
@@ -532,7 +516,9 @@ public:
             /* [in] */ BOOL unhandled)
         {
             std::string output;
-            PrintLocation(pThread, output);
+            ToRelease<ICorDebugFrame> pFrame;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
+                PrintFrameLocation(pFrame, output);
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
@@ -540,15 +526,10 @@ public:
 
             if (unhandled)
             {
-                ToRelease<ICorDebugFrame> pFrame;
-                std::string output;
-
-                if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
-                    PrintFrameLocation(pFrame, output);
-
                 out_printf("*stopped,reason=\"exception-received\",exception-stage=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
                     unhandled ? "unhandled" : "handled", (int)threadId, output.c_str());
             } else {
+                // TODO: Add exception name and module
                 out_printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
                     "<exceptions.name>", "<short.module.name>");
                 pAppDomain->Continue(0);
