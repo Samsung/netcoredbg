@@ -1,7 +1,3 @@
-namespace std {
-class list;
-}
-
 class TypePrinter
 {
     static HRESULT NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImport, std::string &mdName,
