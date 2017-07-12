@@ -232,6 +232,8 @@ static void PrintChildren(std::vector<VarObjValue> &members, int print_values, I
     const char *sep = "";
     for (auto &m : members)
     {
+        ss << sep;
+        sep = ",";
         PrintChild(InsertVar(m), print_values, pILFrame, ss);
     }
 
