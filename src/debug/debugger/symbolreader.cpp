@@ -1,17 +1,7 @@
-#include <windows.h>
-#include <coreclrhost.h>
-
-#include "corhdr.h"
-#include "cor.h"
-#include "cordebug.h"
-#include "debugshim.h"
-#include "clrinternal.h"
-
-#include "arrayholder.h"
+#include "common.h"
 
 #include <string>
 
-#include "torelease.h"
 #include "symbolreader.h"
 
 #include "platform.h"

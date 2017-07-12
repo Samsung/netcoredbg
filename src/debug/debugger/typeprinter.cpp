@@ -1,9 +1,4 @@
-#include <windows.h>
-
-#include "corhdr.h"
-#include "cor.h"
-#include "cordebug.h"
-#include "debugshim.h"
+#include "common.h"
 
 #include <sstream>
 #include <mutex>
@@ -13,8 +8,6 @@
 #include <list>
 #include <iomanip>
 
-#include "torelease.h"
-#include "arrayholder.h"
 
 typedef char * LPCUTF8;
 typedef uintptr_t TADDR;

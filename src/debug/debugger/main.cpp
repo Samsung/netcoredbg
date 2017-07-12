@@ -1,10 +1,4 @@
-#include <windows.h>
-
-#include "corhdr.h"
-#include "cor.h"
-#include "cordebug.h"
-#include "debugshim.h"
-#include "clrinternal.h"
+#include "common.h"
 
 #include <sstream>
 #include <mutex>
@@ -13,12 +7,9 @@
 #include <unordered_map>
 #include <vector>
 #include <list>
-#include <fstream>
-
-#include <arrayholder.h>
-#include "torelease.h"
 
 #include "platform.h"
+#include "typeprinter.h"
 
 
 EXTERN_C HRESULT CreateDebuggingInterfaceFromVersionEx(
@@ -145,8 +136,6 @@ HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::s
 HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
 HRESULT DeleteVar(const std::string &varobjName);
 
-// TypePrinter
-#include "typeprinter.h"
 
 HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
 {

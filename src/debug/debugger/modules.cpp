@@ -1,9 +1,4 @@
-#include <windows.h>
-
-#include "corhdr.h"
-#include "cor.h"
-#include "cordebug.h"
-#include "debugshim.h"
+#include "common.h"
 
 #include <sstream>
 #include <mutex>
@@ -12,7 +7,6 @@
 #include <vector>
 #include <iomanip>
 
-#include "torelease.h"
 #include "symbolreader.h"
 #include "cputil.h"
 
