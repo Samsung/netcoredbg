@@ -134,7 +134,7 @@ void NotifyEvalComplete();
 
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
-HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
+HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
 HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
 HRESULT DeleteVar(const std::string &varobjName);
 
@@ -1172,7 +1172,7 @@ int main(int argc, char *argv[])
                     ToRelease<ICorDebugFrame> pFrame;
                     hr = pThread->GetActiveFrame(&pFrame);
                     if (SUCCEEDED(hr))
-                        hr = CreateVar(pFrame, args.at(0), args.at(1), output);
+                        hr = CreateVar(pThread, pFrame, args.at(0), args.at(1), output);
                 }
                 if (SUCCEEDED(hr))
                 {

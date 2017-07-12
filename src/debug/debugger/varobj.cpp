@@ -79,23 +79,26 @@ struct VarObjValue
     std::string owningType;
     std::string typeName;
 
+    int threadId;
     std::string varobjName;
     bool statics_only;
 
     unsigned int numchild;
 
     VarObjValue(
+        int tid,
         const std::string &n,
         ICorDebugValue *v,
         const std::string t = "",
-        const std::string vn = "") : name(n), value(v), owningType(t), varobjName(vn),
-                                      statics_only(false), numchild(0)
+        const std::string vn = "") : name(n), value(v), owningType(t), threadId(tid), varobjName(vn),
+                                     statics_only(false), numchild(0)
     {
         GetTypeNameAndNumChild();
     }
 
     VarObjValue(
-        ICorDebugValue *v) : name("Static members"), value(v),
+        int tid,
+        ICorDebugValue *v) : name("Static members"), value(v), threadId(tid),
                              statics_only(true), numchild(0)
     {
         GetTypeNameAndNumChild();
@@ -127,6 +130,9 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
 {
     has_static_members = false;
     HRESULT Status;
+
+    DWORD threadId = 0;
+    IfFailRet(pThread->GetID(&threadId));
 
     IfFailRet(WalkMembers(pInputValue, pILFrame, [&](
         mdMethodDef mdGetter,
@@ -160,7 +166,7 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
             pResultValue = pValue;
         }
 
-        members.emplace_back(name, pResultValue, className);
+        members.emplace_back(threadId, name, pResultValue, className);
         return S_OK;
     }));
 
@@ -197,8 +203,8 @@ static void PrintChild(VarObjValue &v,
         ss << "value=\"" << strVal << "\",";
     }
     ss << "exp=\"" << v.name << "\",";
-    ss << "numchild=\"" << v.numchild << "\",type=\"" << v.typeName << "\"}";
-    //thread-id="452958",has_more="0"}
+    ss << "numchild=\"" << v.numchild << "\",type=\"" << v.typeName << "\",thread-id=\"" << v.threadId << "\"}";
+    //,has_more="0"}
 }
 
 static VarObjValue & InsertVar(VarObjValue &varobj)
@@ -265,7 +271,7 @@ HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugThread *p
     if (!objValue.statics_only && has_static_members)
     {
         objValue.value->AddRef();
-        members.emplace_back(objValue.value);
+        members.emplace_back(objValue.threadId, objValue.value);
     }
 
     FixupInheritedFieldNames(members);
@@ -328,14 +334,17 @@ static void PrintCreatedVar(VarObjValue &v, ICorDebugILFrame *pILFrame, std::str
 
     std::stringstream ss;
     ss << "name=\"" << v.varobjName << "\",numchild=\"" << v.numchild << "\",value=\"" << valStr
-       <<"\",type=\"" << v.typeName << "\"";
+       <<"\",type=\"" << v.typeName << "\",thread-id=\"" << v.threadId << "\"";
     //name="var0",numchild="7",value="{Class2}",attributes="editable",type="Class2",thread-id="3945",has_more="1"
     output = ss.str();
 }
 
-HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output)
+HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output)
 {
     HRESULT Status;
+
+    DWORD threadId = 0;
+    pThread->GetID(&threadId);
 
     ToRelease<ICorDebugILFrame> pILFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
@@ -357,7 +366,7 @@ HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const s
     if (!pResultValue)
         return E_FAIL;
 
-    VarObjValue tmpobj(expression, pResultValue, "", varobjName);
+    VarObjValue tmpobj(threadId, expression, pResultValue, "", varobjName);
     PrintCreatedVar(InsertVar(tmpobj), pILFrame, output);
 
     return S_OK;
