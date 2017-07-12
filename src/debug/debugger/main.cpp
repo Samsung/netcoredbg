@@ -844,7 +844,7 @@ public:
             /* [in] */ ICorDebugMDA *pMDA) {return S_OK; }
 };
 
-std::string GetCoreCLRLPath(int pid)
+std::string GetCoreCLRPath(int pid)
 {
     static const char *coreclr_so = "/libcoreclr.so";
     static const std::size_t coreclr_so_len = strlen(coreclr_so);
@@ -986,7 +986,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    std::string coreclrPath = GetCoreCLRLPath(pidDebuggee);
+    std::string coreclrPath = GetCoreCLRPath(pidDebuggee);
     if (coreclrPath.empty())
     {
         fprintf(stderr, "Error: Unable to find libcoreclr.so\n");
