@@ -35,28 +35,6 @@ HRESULT EvalProperty(
 // Valueprint
 HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output);
 
-struct VarObjValue
-{
-    std::string name;
-    ICorDebugValue *value;
-    std::string owningType;
-    std::string typeName;
-
-    std::string varobjName;
-    bool statics_only;
-
-    unsigned int numchild;
-
-    VarObjValue(
-        const std::string &n,
-        ICorDebugValue *v,
-        const std::string t = "") : name(n), value(v), owningType(t),
-                                statics_only(false), numchild(0) {}
-    VarObjValue(
-        ICorDebugValue *v) : name("Static members"), value(v),
-                                statics_only(true), numchild(0) {}
-};
-
 HRESULT GetNumChild(ICorDebugValue *pValue,
                     unsigned int &numchild,
                     bool static_members = false)
@@ -92,6 +70,51 @@ HRESULT GetNumChild(ICorDebugValue *pValue,
     }
     return S_OK;
 }
+
+struct VarObjValue
+{
+    std::string name;
+    ToRelease<ICorDebugValue> value;
+    std::string owningType;
+    std::string typeName;
+
+    std::string varobjName;
+    bool statics_only;
+
+    unsigned int numchild;
+
+    VarObjValue(
+        const std::string &n,
+        ICorDebugValue *v,
+        const std::string t = "",
+        const std::string vn = "") : name(n), value(v), owningType(t), varobjName(vn),
+                                      statics_only(false), numchild(0)
+    {
+        GetTypeNameAndNumChild();
+    }
+
+    VarObjValue(
+        ICorDebugValue *v) : name("Static members"), value(v),
+                             statics_only(true), numchild(0)
+    {
+        GetTypeNameAndNumChild();
+    }
+
+    VarObjValue(VarObjValue &&that) = default;
+
+private:
+    VarObjValue(const VarObjValue &that) = delete;
+
+    void GetTypeNameAndNumChild()
+    {
+        if (!value)
+            return;
+
+        GetNumChild(value, numchild, statics_only);
+        if (!statics_only)
+            TypePrinter::GetTypeOfValue(value, typeName);
+    }
+};
 
 static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
                                         ICorDebugType *pTypeCast,
@@ -142,7 +165,7 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
     return S_OK;
 }
 
-void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
+static void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
 {
     std::unordered_set<std::string> names;
     for (auto it = members.rbegin(); it != members.rend(); ++it)
@@ -155,45 +178,28 @@ void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
     }
 }
 
-void PrintChildren(std::vector<VarObjValue> &members, int print_values, ICorDebugILFrame *pILFrame, std::string &output)
-{
-    std::stringstream ss;
-    ss << "numchild=\"" << members.size() << "\"";
-
-    if (members.empty())
-    {
-        output = ss.str();
-        return;
-    }
-    ss << ",children=[";
-
-    const char *sep = "";
-    for (auto m : members)
-    {
-        ss << sep;
-        sep = ",";
-
-        ss << "child={name=\"" << m.varobjName << "\",";
-        if (print_values)
-        {
-            std::string strVal;
-            if (m.value)
-                PrintValue(m.value, pILFrame, strVal);
-            ss << "value=\"" << strVal << "\",";
-        }
-        ss << "exp=\"" << m.name << "\",";
-        ss << "numchild=\"" << m.numchild << "\",type=\"" << m.typeName << "\"}";
-        //thread-id="452958",has_more="0"}
-    }
-
-    ss << "]";
-    output = ss.str();
-}
-
 static unsigned int g_varCounter = 0;
 static std::unordered_map<std::string, VarObjValue> g_vars;
 
-static std::string InsertVar(VarObjValue &varobj)
+static void PrintChild(VarObjValue &v,
+                       int print_values,
+                       ICorDebugILFrame *pILFrame,
+                       std::stringstream &ss)
+{
+    ss << "child={name=\"" << v.varobjName << "\",";
+    if (print_values)
+    {
+        std::string strVal;
+        if (v.value)
+            PrintValue(v.value, pILFrame, strVal);
+        ss << "value=\"" << strVal << "\",";
+    }
+    ss << "exp=\"" << v.name << "\",";
+    ss << "numchild=\"" << v.numchild << "\",type=\"" << v.typeName << "\"}";
+    //thread-id="452958",has_more="0"}
+}
+
+static VarObjValue & InsertVar(VarObjValue &varobj)
 {
     std::string varName = varobj.varobjName;
 
@@ -208,9 +214,29 @@ static std::string InsertVar(VarObjValue &varobj)
     if (it != g_vars.end())
         g_vars.erase(it);
 
-    g_vars.emplace(std::make_pair(varName, varobj));
+    return g_vars.emplace(std::make_pair(varName, std::move(varobj))).first->second;
+}
 
-    return varName;
+static void PrintChildren(std::vector<VarObjValue> &members, int print_values, ICorDebugILFrame *pILFrame, std::string &output)
+{
+    std::stringstream ss;
+    ss << "numchild=\"" << members.size() << "\"";
+
+    if (members.empty())
+    {
+        output = ss.str();
+        return;
+    }
+    ss << ",children=[";
+
+    const char *sep = "";
+    for (auto &m : members)
+    {
+        PrintChild(InsertVar(m), print_values, pILFrame, ss);
+    }
+
+    ss << "]";
+    output = ss.str();
 }
 
 HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugFrame *pFrame, std::string &output)
@@ -238,20 +264,6 @@ HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugFrame *pF
     }
 
     FixupInheritedFieldNames(members);
-
-    for (auto &m : members)
-    {
-        std::string className;
-
-        if (!m.value)
-            continue;
-
-        Status = GetNumChild(m.value, m.numchild, m.statics_only);
-        if (!m.statics_only)
-            TypePrinter::GetTypeOfValue(m.value, m.typeName);
-
-        InsertVar(m);
-    }
 
     PrintChildren(members, print_values, pILFrame, output);
 
@@ -303,6 +315,19 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
     return S_OK;
 }
 
+static void PrintCreatedVar(VarObjValue &v, ICorDebugILFrame *pILFrame, std::string &output)
+{
+    std::string valStr;
+    if (v.value)
+        PrintValue(v.value, pILFrame, valStr);
+
+    std::stringstream ss;
+    ss << "name=\"" << v.varobjName << "\",numchild=\"" << v.numchild << "\",value=\"" << valStr
+       <<"\",type=\"" << v.typeName << "\"";
+    //name="var0",numchild="7",value="{Class2}",attributes="editable",type="Class2",thread-id="3945",has_more="1"
+    output = ss.str();
+}
+
 HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output)
 {
     HRESULT Status;
@@ -327,21 +352,8 @@ HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const s
     if (!pResultValue)
         return E_FAIL;
 
-    VarObjValue varobj(expression, pResultValue, "");
-    varobj.varobjName = varobjName;
-    GetNumChild(varobj.value, varobj.numchild, varobj.statics_only);
-    TypePrinter::GetTypeOfValue(varobj.value, varobj.typeName);
-
-    std::string valName = InsertVar(varobj);
-
-    std::string valStr;
-    PrintValue(varobj.value, pILFrame, valStr);
-
-    std::stringstream ss;
-    ss << "name=\"" << valName << "\",numchild=\"" << varobj.numchild << "\",value=\"" << valStr
-       <<"\",type=\"" << varobj.typeName << "\"";
-    //name="var0",numchild="7",value="{Class2}",attributes="editable",type="Class2",thread-id="3945",has_more="1"
-    output = ss.str();
+    VarObjValue tmpobj(expression, pResultValue, "", varobjName);
+    PrintCreatedVar(InsertVar(tmpobj), pILFrame, output);
 
     return S_OK;
 }
