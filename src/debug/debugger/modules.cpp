@@ -32,12 +32,11 @@ void SetCoreCLRPath(const std::string &coreclrPath)
 
 std::string GetModuleName(ICorDebugModule *pModule)
 {
-    char cname[mdNameLen];
     WCHAR name[mdNameLen];
     ULONG32 name_len = 0;
-    if (SUCCEEDED(pModule->GetName(mdNameLen, &name_len, name)))
+    if (SUCCEEDED(pModule->GetName(_countof(name), &name_len, name)))
     {
-        return to_utf8(name, name_len);
+        return to_utf8(name/*, name_len*/);
     }
     return std::string();
 }
