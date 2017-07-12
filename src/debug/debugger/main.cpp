@@ -149,37 +149,15 @@ HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
 
     DWORD threadId = 0;
     IfFailRet(pThread->GetID(&threadId));
-    CorDebugThreadState state = THREAD_SUSPEND;
-    IfFailRet(pThread->GetDebugState(&state));
 
-    CorDebugUserState ustate;
-    IfFailRet(pThread->GetUserState(&ustate));
-
-    static const struct { int val; const char *name; } states[] = {
-        { USER_STOP_REQUESTED, "USER_STOP_REQUESTED" },
-        { USER_SUSPEND_REQUESTED, "USER_SUSPEND_REQUESTED" },
-        { USER_BACKGROUND, "USER_BACKGROUND" },
-        { USER_UNSTARTED, "USER_UNSTARTED" },
-        { USER_STOPPED, "USER_STOPPED" },
-        { USER_WAIT_SLEEP_JOIN, "USER_WAIT_SLEEP_JOIN" },
-        { USER_SUSPENDED, "USER_SUSPENDED" },
-        { USER_UNSAFE_POINT, "USER_UNSAFE_POINT" },
-        { USER_THREADPOOL, "USER_THREADPOOL" }
-    };
-
-    std::string user_state;
-    for (int i = 0; i < sizeof(states)/sizeof(states[0]); i++)
-    {
-        if (ustate & states[i].val)
-        {
-            if (!user_state.empty()) user_state += '|';
-            user_state += states[i].name;
-        }
-    }
+    ToRelease<ICorDebugProcess> pProcess;
+    IfFailRet(pThread->GetProcess(&pProcess));
+    BOOL running = FALSE;
+    IfFailRet(pProcess->IsRunning(&running));
 
     ss << "{id=\"" << threadId
-       << "\",name=\"<No name>\",state=\"" << (state == THREAD_RUN ? "running" : "stopped")
-       << "-" << user_state << "\"}";
+       << "\",name=\"<No name>\",state=\""
+       << (running ? "running" : "stopped") << "\"}";
 
     output = ss.str();
 
