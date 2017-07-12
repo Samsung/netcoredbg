@@ -291,8 +291,8 @@ HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread 
 
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
 {
-    bool printValues = true;
-    bool printTypes = true;
+    const bool printValues = true;
+    const bool printTypes = false;
 
     HRESULT Status;
 
