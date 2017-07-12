@@ -1,9 +1,24 @@
 #include <string>
 #include <cstring>
 #include <set>
+#include <fstream>
 
 #include <dirent.h>
 #include <sys/stat.h>
+#include <dlfcn.h>
+#include <unistd.h>
+
+#include <linux/limits.h>
+
+
+unsigned long OSPageSize()
+{
+    static unsigned long pageSize = 0;
+    if (pageSize == 0)
+        pageSize = sysconf(_SC_PAGESIZE);
+
+    return pageSize;
+}
 
 void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &tpaList)
 {
@@ -96,4 +111,46 @@ void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &t
     }
 
     closedir(dir);
+}
+
+std::string GetExeAbsPath()
+{
+    static const char* self_link = "/proc/self/exe";
+
+    char exe[PATH_MAX];
+
+    ssize_t r = readlink(self_link, exe, PATH_MAX - 1);
+
+    if (r < 0)
+    {
+        return std::string();
+    }
+
+    exe[r] = '\0';
+
+    return exe;
+}
+
+std::string GetCoreCLRPath(int pid)
+{
+    static const char *coreclr_so = "/libcoreclr.so";
+    static const std::size_t coreclr_so_len = strlen(coreclr_so);
+
+    char maps_name[100];
+    snprintf(maps_name, sizeof(maps_name), "/proc/%i/maps", pid);
+    std::ifstream input(maps_name);
+
+    for(std::string line; std::getline(input, line); )
+    {
+        std::size_t i = line.rfind(coreclr_so);
+        if (i == std::string::npos)
+            continue;
+        if (i + coreclr_so_len != line.size())
+            continue;
+        std::size_t si = line.rfind(' ', i);
+        if (i == std::string::npos)
+            continue;
+        return line.substr(si + 1);//, i - si - 1);
+    }
+    return std::string();
 }

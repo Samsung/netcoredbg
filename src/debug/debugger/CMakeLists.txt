@@ -3,7 +3,7 @@ project(coreclrdbg)
 set(coreclrdbg_SRC
     main.cpp
     symbolreader.cpp
-    tpa.cpp
+    platform.cpp
     breakpoints.cpp
     modules.cpp
     varobj.cpp

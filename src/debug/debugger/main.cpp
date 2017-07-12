@@ -6,8 +6,6 @@
 #include "debugshim.h"
 #include "clrinternal.h"
 
-#include <unistd.h>
-
 #include <sstream>
 #include <mutex>
 #include <memory>
@@ -18,6 +16,9 @@
 
 #include <arrayholder.h>
 #include "torelease.h"
+
+#include "platform.h"
+
 
 EXTERN_C HRESULT CreateDebuggingInterfaceFromVersionEx(
     int iDebuggerVersion,
@@ -34,15 +35,6 @@ CreateVersionStringFromModule(
 
 std::mutex g_processMutex;
 ICorDebugProcess *g_process = NULL;
-
-ULONG OSPageSize ()
-{
-    static ULONG pageSize = 0;
-    if (pageSize == 0)
-        pageSize = sysconf(_SC_PAGESIZE);
-
-    return pageSize;
-}
 
 size_t NextOSPageAddress (size_t addr)
 {
@@ -843,30 +835,6 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugMDA *pMDA) {return S_OK; }
 };
-
-std::string GetCoreCLRPath(int pid)
-{
-    static const char *coreclr_so = "/libcoreclr.so";
-    static const std::size_t coreclr_so_len = strlen(coreclr_so);
-
-    char maps_name[100];
-    snprintf(maps_name, sizeof(maps_name), "/proc/%i/maps", pid);
-    std::ifstream input(maps_name);
-
-    for(std::string line; std::getline(input, line); )
-    {
-        std::size_t i = line.rfind(coreclr_so);
-        if (i == std::string::npos)
-            continue;
-        if (i + coreclr_so_len != line.size())
-            continue;
-        std::size_t si = line.rfind(' ', i);
-        if (i == std::string::npos)
-            continue;
-        return line.substr(si + 1);//, i - si - 1);
-    }
-    return std::string();
-}
 
 bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename, unsigned int &linenum)
 {

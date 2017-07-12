@@ -1,9 +1,3 @@
-#include <sys/stat.h>
-#include <linux/limits.h>
-#include <dlfcn.h>
-
-#include <unistd.h>
-
 #include <windows.h>
 #include <coreclrhost.h>
 
@@ -19,6 +13,8 @@
 
 #include "torelease.h"
 #include "symbolreader.h"
+
+#include "platform.h"
 
 std::string SymbolReader::coreClrPath;
 LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
@@ -104,26 +100,6 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
     }
 
     return Status;
-}
-
-void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &tpaList);
-
-static std::string GetExeAbsPath()
-{
-    static const char* self_link = "/proc/self/exe";
-
-    char exe[PATH_MAX];
-
-    ssize_t r = readlink(self_link, exe, PATH_MAX - 1);
-
-    if (r < 0)
-    {
-        return std::string();
-    }
-
-    exe[r] = '\0';
-
-    return exe;
 }
 
 HRESULT SymbolReader::PrepareSymbolReader()
