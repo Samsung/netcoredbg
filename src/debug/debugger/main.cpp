@@ -8,6 +8,7 @@
 
 #include <sstream>
 #include <mutex>
+#include <condition_variable>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -33,8 +34,24 @@ CreateVersionStringFromModule(
     DWORD cchBuffer,
     DWORD* pdwLength);
 
-std::mutex g_processMutex;
-ICorDebugProcess *g_process = NULL;
+static std::mutex g_processMutex;
+static std::condition_variable g_processCV;
+static ICorDebugProcess *g_process = nullptr;
+
+static void NotifyProcessExited()
+{
+    std::lock_guard<std::mutex> lock(g_processMutex);
+    g_process = nullptr;
+    g_processMutex.unlock();
+    g_processCV.notify_one();
+}
+
+static void WaitProcessExited()
+{
+    std::unique_lock<std::mutex> lock(g_processMutex);
+    if (g_process)
+        g_processCV.wait(lock, []{return g_process == nullptr;});
+}
 
 size_t NextOSPageAddress (size_t addr)
 {
@@ -75,8 +92,6 @@ BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
     *lpcbBytesRead = bytesRead;
     return bRet;
 }
-
-bool g_processExited = false;
 
 std::mutex g_outMutex;
 
@@ -641,8 +656,8 @@ public:
             /* [in] */ ICorDebugProcess *pProcess)
         {
             out_printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
-            g_processExited = true;
             NotifyEvalComplete();
+            NotifyProcessExited();
             return S_OK;
         }
 
@@ -1302,8 +1317,7 @@ int main(int argc, char *argv[])
 
                 hr = pProcess->Terminate(0);
 
-                while (!g_processExited)
-                    Sleep(100);
+                WaitProcessExited();
 
                 pProcess.Release();
             }
