@@ -10,6 +10,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <map>
 
 #include "torelease.h"
 
@@ -29,8 +30,8 @@ HRESULT GetLocationInModule(ICorDebugModule *pModule,
                             std::string &fullname);
 
 
-std::mutex g_breakMutex;
-ULONG32 g_breakIndex = 1;
+static std::mutex g_breakMutex;
+static ULONG32 g_breakIndex = 1;
 
 struct Breakpoint {
     ULONG32 id;
@@ -39,7 +40,7 @@ struct Breakpoint {
     ULONG32 ilOffset;
     std::string fullname;
     int linenum;
-    ICorDebugBreakpoint *breakpoint;
+    ToRelease<ICorDebugBreakpoint> breakpoint;
 
     bool IsResolved() const
     {
@@ -47,39 +48,48 @@ struct Breakpoint {
     }
 
     Breakpoint() : id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr) {}
+
+    ~Breakpoint()
+    {
+        if (breakpoint)
+            breakpoint->Activate(0);
+    }
+
+    Breakpoint(Breakpoint &&that) = default;
+
+    Breakpoint(const Breakpoint &that) = delete;
 };
 
-std::vector<Breakpoint> g_breaks;
+static std::map<ULONG32, Breakpoint> g_breaks;
 
 HRESULT PrintBreakpoint(ULONG32 id, std::string &output)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
-    for (Breakpoint &b : g_breaks)
+    auto it = g_breaks.find(id);
+
+    if (it == g_breaks.end())
+        return E_FAIL;
+
+    Breakpoint &b = it->second;
+
+    std::stringstream ss;
+
+    HRESULT Status;
+    if (b.IsResolved())
     {
-        if (b.id != id)
-            continue;
-
-        std::stringstream ss;
-
-        HRESULT Status;
-        if (b.IsResolved())
-        {
-            ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-               "func=\"\",fullname=\"" << b.fullname << "\",line=\"" << b.linenum << "\"}";
-            Status = S_OK;
-        }
-        else
-        {
-            ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-               "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
-            Status = S_FALSE;
-        }
-        output = ss.str();
-        return Status;
+        ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
+            "func=\"\",fullname=\"" << b.fullname << "\",line=\"" << b.linenum << "\"}";
+        Status = S_OK;
     }
-
-    return E_FAIL;
+    else
+    {
+        ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
+            "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
+        Status = S_FALSE;
+    }
+    output = ss.str();
+    return S_OK;
 }
 
 HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id)
@@ -96,8 +106,10 @@ HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id)
 
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
-    for (Breakpoint &b : g_breaks)
+    for (auto &it : g_breaks)
     {
+        Breakpoint &b = it.second;
+
         if (b.fullname == fullname &&
             b.ilOffset == ilOffset &&
             b.methodToken == methodToken &&
@@ -115,41 +127,14 @@ HRESULT DeleteBreakpoint(ULONG32 id)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
-    auto bpit = g_breaks.begin();
+    g_breaks.erase(id);
 
-    while(bpit != g_breaks.end())
-    {
-        if (bpit->id == id)
-        {
-            if (bpit->breakpoint)
-            {
-                bpit->breakpoint->Activate(0);
-                bpit->breakpoint->Release();
-            }
-            bpit = g_breaks.erase(bpit);
-            return S_OK;
-        }
-        else
-        {
-            ++bpit;
-        }
-    }
-
-    return E_FAIL;
+    return S_OK;
 }
 
 void DeleteAllBreakpoints()
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
-
-    for (Breakpoint &b : g_breaks)
-    {
-        if (b.breakpoint)
-        {
-            b.breakpoint->Activate(0);
-            b.breakpoint->Release();
-        }
-    }
 
     g_breaks.clear();
 }
@@ -194,8 +179,10 @@ HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
-    for (Breakpoint &b : g_breaks)
+    for (auto &it : g_breaks)
     {
+        Breakpoint &b = it.second;
+
         if (b.IsResolved())
             continue;
 
@@ -246,7 +233,7 @@ HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filena
                     std::lock_guard<std::mutex> lock(g_breakMutex);
                     id = g_breakIndex++;
                     bp.id = id;
-                    g_breaks.push_back(bp);
+                    g_breaks.insert(std::make_pair(id, std::move(bp)));
                     return S_OK;
                 }
             }
@@ -257,7 +244,7 @@ HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filena
     std::lock_guard<std::mutex> lock(g_breakMutex);
     id = g_breakIndex++;
     bp.id = id;
-    g_breaks.push_back(bp);
+    g_breaks.insert(std::make_pair(id, std::move(bp)));
 
     return S_FALSE;
 }
