@@ -316,7 +316,7 @@ HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     return S_OK;
 }
 
-HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
+HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame = 0, int highFrame = INT_MAX)
 {
     HRESULT Status;
     std::stringstream ss;
@@ -339,6 +339,11 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
             break;
 
         IfFailRet(Status);
+
+        if (currentFrame < lowFrame)
+            continue;
+        if (currentFrame > highFrame)
+            break;
 
         ToRelease<ICorDebugFrame> pFrame;
         IfFailRet(pStackWalk->GetFrame(&pFrame));
@@ -1127,14 +1132,16 @@ int main(int argc, char *argv[])
         }
         else if (command == "stack-list-frames")
         {
-            // TODO: Add parsing frame indeces and --thread
+            // TODO: Add parsing frame lowFrame, highFrame and --thread
             std::string output;
             ToRelease<ICorDebugThread> pThread;
             DWORD threadId = GetLastStoppedThreadId();
             HRESULT hr = pProcess->GetThread(threadId, &pThread);
+            int lowFrame = 0;
+            int highFrame = INT_MAX;
             if (SUCCEEDED(hr))
             {
-                hr = PrintFrames(pThread, output);
+                hr = PrintFrames(pThread, output, lowFrame, highFrame);
             }
             if (SUCCEEDED(hr))
             {
