@@ -38,12 +38,9 @@ HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOut
 typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
 typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
-extern std::mutex g_currentThreadMutex;
-extern ICorDebugThread *g_currentThread;
-
-std::mutex g_evalMutex;
-std::condition_variable g_evalCV;
-bool g_evalComplete = false;
+static std::mutex g_evalMutex;
+static std::condition_variable g_evalCV;
+static bool g_evalComplete = false;
 
 void NotifyEvalComplete()
 {
@@ -54,6 +51,7 @@ void NotifyEvalComplete()
 }
 
 HRESULT EvalProperty(
+    ICorDebugThread *pThread,
     mdMethodDef methodDef,
     ICorDebugModule *pModule,
     ICorDebugType *pType,
@@ -66,13 +64,8 @@ HRESULT EvalProperty(
     ToRelease<ICorDebugEval> pEval;
 
     ToRelease<ICorDebugProcess> pProcess;
-    {
-        // g_currentThreadMutex should be locked by caller function
-        //std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-
-        IfFailRet(g_currentThread->GetProcess(&pProcess));
-        IfFailRet(g_currentThread->CreateEval(&pEval));
-    }
+    IfFailRet(pThread->GetProcess(&pProcess));
+    IfFailRet(pThread->CreateEval(&pEval));
 
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pModule->GetFunctionFromToken(methodDef, &pFunc));

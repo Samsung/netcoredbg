@@ -135,7 +135,7 @@ void NotifyEvalComplete();
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
 HRESULT CreateVar(ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
-HRESULT ListChildren(const std::string &name, int print_values, ICorDebugFrame *pFrame, std::string &output);
+HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
 HRESULT DeleteVar(const std::string &varobjName);
 
 // TypePrinter
@@ -398,8 +398,23 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output)
     return S_OK;
 }
 
-std::mutex g_currentThreadMutex;
-ICorDebugThread *g_currentThread = nullptr;
+static std::mutex g_lastStoppedThreadIdMutex;
+static int g_lastStoppedThreadId = 0;
+
+void SetLastStoppedThread(ICorDebugThread *pThread)
+{
+    DWORD threadId = 0;
+    pThread->GetID(&threadId);
+
+    std::lock_guard<std::mutex> lock(g_lastStoppedThreadIdMutex);
+    g_lastStoppedThreadId = threadId;
+}
+
+int GetLastStoppedThreadId()
+{
+    std::lock_guard<std::mutex> lock(g_lastStoppedThreadIdMutex);
+    return g_lastStoppedThreadId;
+}
 
 class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2
 {
@@ -476,13 +491,9 @@ public:
 
             out_printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",%s\n",
                 (int)threadId, (unsigned int)id, output.c_str());
-            {
-                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-                if (g_currentThread)
-                    g_currentThread->Release();
-                pThread->AddRef();
-                g_currentThread = pThread;
-            }
+
+            SetLastStoppedThread(pThread);
+
             return S_OK;
         }
 
@@ -501,13 +512,7 @@ public:
             out_printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
                 (int)threadId, output.c_str());
 
-            {
-                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-                if (g_currentThread)
-                    g_currentThread->Release();
-                pThread->AddRef();
-                g_currentThread = pThread;
-            }
+            SetLastStoppedThread(pThread);
 
             return S_OK;
         }
@@ -526,6 +531,7 @@ public:
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
+            SetLastStoppedThread(pThread);
 
             if (unhandled)
             {
@@ -537,12 +543,6 @@ public:
 
                 out_printf("*stopped,reason=\"exception-received\",exception-stage=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
                     unhandled ? "unhandled" : "handled", (int)threadId, output.c_str());
-
-                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-                if (g_currentThread)
-                    g_currentThread->Release();
-                pThread->AddRef();
-                g_currentThread = pThread;
             } else {
                 out_printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
                     "<exceptions.name>", "<short.module.name>");
@@ -1100,10 +1100,12 @@ int main(int argc, char *argv[])
             else if (command == "exec-finish")
                 stepType = STEP_OUT;
 
-            HRESULT hr;
+            ToRelease<ICorDebugThread> pThread;
+            DWORD threadId = GetLastStoppedThreadId();
+            HRESULT hr = pProcess->GetThread(threadId, &pThread);
+            if (SUCCEEDED(hr))
             {
-                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-                hr = g_currentThread ? RunStep(g_currentThread, stepType) : E_FAIL;
+                hr = RunStep(pThread, stepType);
             }
 
             if (FAILED(hr))
@@ -1127,10 +1129,12 @@ int main(int argc, char *argv[])
         {
             // TODO: Add parsing frame indeces and --thread
             std::string output;
-            HRESULT hr;
+            ToRelease<ICorDebugThread> pThread;
+            DWORD threadId = GetLastStoppedThreadId();
+            HRESULT hr = pProcess->GetThread(threadId, &pThread);
+            if (SUCCEEDED(hr))
             {
-                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-                hr = g_currentThread ? PrintFrames(g_currentThread, output) : E_FAIL;
+                hr = PrintFrames(pThread, output);
             }
             if (SUCCEEDED(hr))
             {
@@ -1145,12 +1149,13 @@ int main(int argc, char *argv[])
         {
             // TODO: Add parsing arguments --thread, --frame
             std::string output;
-            HRESULT hr;
+            ToRelease<ICorDebugThread> pThread;
+            DWORD threadId = GetLastStoppedThreadId();
+            HRESULT hr = pProcess->GetThread(threadId, &pThread);
+            if (SUCCEEDED(hr))
             {
-                std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-
                 ToRelease<ICorDebugFrame> pFrame;
-                hr = g_currentThread ? g_currentThread->GetActiveFrame(&pFrame) : E_FAIL;
+                hr = pThread->GetActiveFrame(&pFrame);
                 if (SUCCEEDED(hr))
                     hr = ListVariables(pFrame, output);
             }
@@ -1171,12 +1176,13 @@ int main(int argc, char *argv[])
             } else {
                 // TODO: Add parsing arguments --thread, --frame
                 std::string output;
-                HRESULT hr;
+                ToRelease<ICorDebugThread> pThread;
+                DWORD threadId = GetLastStoppedThreadId();
+                HRESULT hr = pProcess->GetThread(threadId, &pThread);
+                if (SUCCEEDED(hr))
                 {
-                    std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-
                     ToRelease<ICorDebugFrame> pFrame;
-                    hr = g_currentThread ? g_currentThread->GetActiveFrame(&pFrame) : E_FAIL;
+                    hr = pThread->GetActiveFrame(&pFrame);
                     if (SUCCEEDED(hr))
                         hr = CreateVar(pFrame, args.at(0), args.at(1), output);
                 }
@@ -1214,14 +1220,15 @@ int main(int argc, char *argv[])
             } else {
                 // TODO: Add parsing arguments --thread, --frame
                 std::string output;
-                HRESULT hr;
+                ToRelease<ICorDebugThread> pThread;
+                DWORD threadId = GetLastStoppedThreadId();
+                HRESULT hr = pProcess->GetThread(threadId, &pThread);
+                if (SUCCEEDED(hr))
                 {
-                    std::lock_guard<std::mutex> lock(g_currentThreadMutex);
-
                     ToRelease<ICorDebugFrame> pFrame;
-                    hr = g_currentThread ? g_currentThread->GetActiveFrame(&pFrame) : E_FAIL;
+                    hr = pThread->GetActiveFrame(&pFrame);
                     if (SUCCEEDED(hr))
-                        hr = ListChildren(args.at(var_index), print_values, pFrame, output);
+                        hr = ListChildren(args.at(var_index), print_values, pThread, pFrame, output);
                 }
                 if (SUCCEEDED(hr))
                 {

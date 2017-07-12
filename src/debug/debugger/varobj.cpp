@@ -25,6 +25,7 @@ typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::strin
 HRESULT WalkMembers(ICorDebugValue *pValue, ICorDebugILFrame *pILFrame, WalkMembersCallback cb);
 HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb);
 HRESULT EvalProperty(
+    ICorDebugThread *pThread,
     mdMethodDef methodDef,
     ICorDebugModule *pModule,
     ICorDebugType *pType,
@@ -118,6 +119,7 @@ private:
 
 static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
                                         ICorDebugType *pTypeCast,
+                                        ICorDebugThread *pThread,
                                         ICorDebugILFrame *pILFrame,
                                         std::vector<VarObjValue> &members,
                                         bool static_members,
@@ -149,7 +151,7 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
 
         if (mdGetter != mdMethodDefNil)
         {
-            EvalProperty(mdGetter, pModule, pType, pInputValue, is_static, &pResultValue);
+            EvalProperty(pThread, mdGetter, pModule, pType, pInputValue, is_static, &pResultValue);
         }
         else
         {
@@ -241,7 +243,7 @@ static void PrintChildren(std::vector<VarObjValue> &members, int print_values, I
     output = ss.str();
 }
 
-HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
 
@@ -254,6 +256,7 @@ HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugFrame *pF
 
     IfFailRet(FetchFieldsAndProperties(objValue.value,
                                        NULL,
+                                       pThread,
                                        pILFrame,
                                        members,
                                        objValue.statics_only,
@@ -272,12 +275,12 @@ HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugFrame *pF
     return S_OK;
 }
 
-HRESULT ListChildren(const std::string &name, int print_values, ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output)
 {
     auto it = g_vars.find(name);
     if (it == g_vars.end())
         return E_FAIL;
-    return ListChildren(it->second, print_values, pFrame, output);
+    return ListChildren(it->second, print_values, pThread, pFrame, output);
 }
 
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
