@@ -596,7 +596,7 @@ void CommandLoop(ICorDebugProcess *pProcess);
 void print_help()
 {
     fprintf(stderr,
-        "CoreCLR debugger for Linux.\n"
+        ".NET Core debugger for Linux/macOS.\n"
         "\n"
         "Options:\n"
         "--attach <process-id>                 Attach the debugger to the specified process id.\n"

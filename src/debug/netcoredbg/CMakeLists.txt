@@ -1,6 +1,6 @@
-project(coreclrdbg)
+project(netcoredbg)
 
-set(coreclrdbg_SRC
+set(netcoredbg_SRC
     main.cpp
     symbolreader.cpp
     platform.cpp
@@ -35,7 +35,7 @@ elseif(CLR_CMAKE_PLATFORM_ARCH_ARM64)
     add_definitions(-DBIT64)
 endif()
 
-add_executable(coreclrdbg ${coreclrdbg_SRC})
+add_executable(netcoredbg ${netcoredbg_SRC})
 
 add_compile_options(-fPIE)
 add_definitions(-DPAL_STDCPP_COMPAT)
@@ -50,11 +50,11 @@ include_directories(${CLR_DIR}/src/coreclr/hosts/inc)
 
 include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
 
-target_link_libraries(coreclrdbg
+target_link_libraries(netcoredbg
     corguids
     dbgshim
     mscordaccore
     palrt
 )
 
-install_clr(coreclrdbg)
+install_clr(netcoredbg)
