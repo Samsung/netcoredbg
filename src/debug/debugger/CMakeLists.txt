@@ -9,7 +9,8 @@ set(coreclrdbg_SRC
     varobj.cpp
     typeprinter.cpp
     valuewalk.cpp
-    valueprint.cpp)
+    valueprint.cpp
+    commands.cpp)
 
 if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
     add_definitions(-D_TARGET_AMD64_=1)

@@ -37,7 +37,7 @@ static void NotifyProcessExited()
     g_processCV.notify_one();
 }
 
-static void WaitProcessExited()
+void WaitProcessExited()
 {
     std::unique_lock<std::mutex> lock(g_processMutex);
     if (g_process)
@@ -106,10 +106,7 @@ void _out_printf(const char *fmt, ...)
 // Breakpoints
 void DeleteAllBreakpoints();
 HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id);
-HRESULT DeleteBreakpoint(ULONG32 id);
-HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
 HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule);
-HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
 
 // Modules
 void SetCoreCLRPath(const std::string &coreclrPath);
@@ -129,12 +126,6 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
 
 // Valuewalk
 void NotifyEvalComplete();
-
-// Varobj
-HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
-HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
-HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
-HRESULT DeleteVar(const std::string &varobjName);
 
 
 HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
@@ -254,41 +245,6 @@ HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
         ToRelease<ICorDebugAppDomain> pDomain(curDomain);
         DisableAllBreakpointsAndSteppersInAppDomain(pDomain);
     }
-    return S_OK;
-}
-
-enum StepType {
-    STEP_IN = 0,
-    STEP_OVER,
-    STEP_OUT
-};
-
-HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
-{
-    HRESULT Status;
-
-    ToRelease<ICorDebugStepper> pStepper;
-    IfFailRet(pThread->CreateStepper(&pStepper));
-
-    CorDebugIntercept mask = (CorDebugIntercept)(INTERCEPT_ALL & ~(INTERCEPT_SECURITY | INTERCEPT_CLASS_INIT));
-    IfFailRet(pStepper->SetInterceptMask(mask));
-
-    if (stepType == STEP_OUT)
-    {
-        IfFailRet(pStepper->StepOut());
-        return S_OK;
-    }
-
-    BOOL bStepIn = stepType == STEP_IN;
-
-    COR_DEBUG_STEP_RANGE range;
-    if (SUCCEEDED(GetStepRangeFromCurrentIP(pThread, &range)))
-    {
-        IfFailRet(pStepper->StepRange(bStepIn, &range, 1));
-    } else {
-        IfFailRet(pStepper->Step(bStepIn));
-    }
-
     return S_OK;
 }
 
@@ -840,63 +796,7 @@ public:
             /* [in] */ ICorDebugMDA *pMDA) {return S_OK; }
 };
 
-bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename, unsigned int &linenum)
-{
-    if (args.empty())
-        return false;
-
-    std::size_t i = args.at(0).rfind(':');
-
-    if (i == std::string::npos)
-        return false;
-
-    filename = args.at(0).substr(0, i);
-    std::string slinenum = args.at(0).substr(i + 1);
-
-    try
-    {
-        linenum = std::stoul(slinenum);
-        return true;
-    }
-    catch(std::invalid_argument e)
-    {
-        return false;
-    }
-    catch (std::out_of_range  e)
-    {
-        return false;
-    }
-}
-
-bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args)
-{
-    token.clear();
-    cmd.clear();
-    args.clear();
-
-    std::stringstream ss(str);
-
-    std::vector<std::string> result;
-    std::string buf;
-
-    if (!(ss >> cmd))
-        return false;
-
-    std::size_t i = cmd.find_first_not_of("0123456789");
-    if (i == std::string::npos)
-        return false;
-
-    if (cmd.at(i) != '-')
-        return false;
-
-    token = cmd.substr(0, i);
-    cmd = cmd.substr(i + 1);
-
-    while (ss >> buf)
-        args.push_back(buf);
-
-    return true;
-}
+void CommandLoop(ICorDebugProcess *pProcess);
 
 void print_help()
 {
@@ -1037,299 +937,9 @@ int main(int argc, char *argv[])
         g_process = pProcess;
     }
 
-    static char inputBuffer[1024];
-    std::string token;
-
-    for (;;) {
-        token.clear();
-
-        out_printf("(gdb)\n");
-        if (!fgets(inputBuffer, _countof(inputBuffer), stdin))
-            break;
-
-        std::vector<std::string> args;
-        std::string command;
-        if (!ParseLine(inputBuffer, token, command, args))
-        {
-            out_printf("%s^error,msg=\"Failed to parse input line\"\n", token.c_str());
-            continue;
-        }
-
-        if (command == "thread-info")
-        {
-            std::string output;
-            HRESULT hr = PrintThreadsState(pProcess, output);
-            if (SUCCEEDED(hr))
-            {
-                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
-            }
-            else
-            {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-            }
-        }
-        else if (command == "exec-continue")
-        {
-            HRESULT hr = pProcess->Continue(0);
-            if (SUCCEEDED(hr))
-            {
-                out_printf("%s^done\n", token.c_str());
-            }
-            else
-            {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-            }
-        }
-        else if (command == "exec-interrupt")
-        {
-            HRESULT hr = pProcess->Stop(0);
-            if (SUCCEEDED(hr))
-            {
-                out_printf("%s^done\n", token.c_str());
-            }
-            else
-            {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-            }
-        }
-        else if (command == "break-insert")
-        {
-            std::string filename;
-            unsigned int linenum;
-            ULONG32 id;
-            if (ParseBreakpoint(args, filename, linenum)
-                && SUCCEEDED(CreateBreakpointInProcess(pProcess, filename, linenum, id)))
-            {
-                std::string output;
-                PrintBreakpoint(id, output);
-                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
-            }
-            else
-            {
-                out_printf("%s^error,msg=\"Unknown breakpoint location format\"\n", token.c_str());
-            }
-        }
-        else if (command == "break-delete")
-        {
-            try
-            {
-                for (std::string &idStr : args)
-                {
-                    ULONG32 id = std::stoul(idStr);
-                    DeleteBreakpoint(id);
-                }
-                out_printf("%s^done\n", token.c_str());
-            }
-            catch(std::invalid_argument e)
-            {
-                out_printf("%s^error,msg=\"Invalid argument\"\n", token.c_str());
-            }
-            catch (std::out_of_range  e)
-            {
-                out_printf("%s^error,msg=\"Out of range\"\n", token.c_str());
-            }
-        }
-        else if (command == "exec-next" || command == "exec-step" || command == "exec-finish")
-        {
-            StepType stepType;
-            if (command == "exec-next")
-                stepType = STEP_OVER;
-            else if (command == "exec-step")
-                stepType = STEP_IN;
-            else if (command == "exec-finish")
-                stepType = STEP_OUT;
-
-            ToRelease<ICorDebugThread> pThread;
-            DWORD threadId = GetLastStoppedThreadId();
-            HRESULT hr = pProcess->GetThread(threadId, &pThread);
-            if (SUCCEEDED(hr))
-            {
-                hr = RunStep(pThread, stepType);
-            }
-
-            if (FAILED(hr))
-            {
-                out_printf("%s^error,msg=\"Cannot create stepper: %x\"\n", token.c_str(), hr);
-            }
-            else
-            {
-                hr = pProcess->Continue(0);
-                if (SUCCEEDED(hr))
-                {
-                    out_printf("%s^done\n", token.c_str());
-                }
-                else
-                {
-                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-                }
-            }
-        }
-        else if (command == "stack-list-frames")
-        {
-            // TODO: Add parsing frame lowFrame, highFrame and --thread
-            std::string output;
-            ToRelease<ICorDebugThread> pThread;
-            DWORD threadId = GetLastStoppedThreadId();
-            HRESULT hr = pProcess->GetThread(threadId, &pThread);
-            int lowFrame = 0;
-            int highFrame = INT_MAX;
-            if (SUCCEEDED(hr))
-            {
-                hr = PrintFrames(pThread, output, lowFrame, highFrame);
-            }
-            if (SUCCEEDED(hr))
-            {
-                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
-            }
-            else
-            {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-            }
-        }
-        else if (command == "stack-list-variables")
-        {
-            // TODO: Add parsing arguments --thread, --frame
-            std::string output;
-            ToRelease<ICorDebugThread> pThread;
-            DWORD threadId = GetLastStoppedThreadId();
-            HRESULT hr = pProcess->GetThread(threadId, &pThread);
-            if (SUCCEEDED(hr))
-            {
-                ToRelease<ICorDebugFrame> pFrame;
-                hr = pThread->GetActiveFrame(&pFrame);
-                if (SUCCEEDED(hr))
-                    hr = ListVariables(pFrame, output);
-            }
-            if (SUCCEEDED(hr))
-            {
-                out_printf("%s^done,%s\n", token.c_str(), output.c_str());
-            }
-            else
-            {
-                out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-            }
-        }
-        else if (command == "var-create")
-        {
-            if (args.size() < 2)
-            {
-                out_printf("%s^error,msg=\"%s requires at least 2 arguments\"\n", token.c_str(), command.c_str());
-            } else {
-                // TODO: Add parsing arguments --thread, --frame
-                std::string output;
-                ToRelease<ICorDebugThread> pThread;
-                DWORD threadId = GetLastStoppedThreadId();
-                HRESULT hr = pProcess->GetThread(threadId, &pThread);
-                if (SUCCEEDED(hr))
-                {
-                    ToRelease<ICorDebugFrame> pFrame;
-                    hr = pThread->GetActiveFrame(&pFrame);
-                    if (SUCCEEDED(hr))
-                        hr = CreateVar(pThread, pFrame, args.at(0), args.at(1), output);
-                }
-                if (SUCCEEDED(hr))
-                {
-                    out_printf("%s^done,%s\n", token.c_str(), output.c_str());
-                }
-                else
-                {
-                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-                }
-            }
-        }
-        else if (command == "var-list-children")
-        {
-            int print_values = 0;
-            int var_index = 0;
-            if (!args.empty())
-            {
-                if (args.at(0) == "1" || args.at(0) == "--all-values")
-                {
-                    print_values = 1;
-                    var_index++;
-                }
-                else if (args.at(0) == "2" || args.at(0) == "--simple-values")
-                {
-                    print_values = 2;
-                    var_index++;
-                }
-            }
-
-            if (args.size() < (var_index + 1))
-            {
-                out_printf("%s^error,msg=\"%s requires an argument\"\n", token.c_str(), command.c_str());
-            } else {
-                // TODO: Add parsing arguments --thread, --frame
-                std::string output;
-                ToRelease<ICorDebugThread> pThread;
-                DWORD threadId = GetLastStoppedThreadId();
-                HRESULT hr = pProcess->GetThread(threadId, &pThread);
-                if (SUCCEEDED(hr))
-                {
-                    ToRelease<ICorDebugFrame> pFrame;
-                    hr = pThread->GetActiveFrame(&pFrame);
-                    if (SUCCEEDED(hr))
-                        hr = ListChildren(args.at(var_index), print_values, pThread, pFrame, output);
-                }
-                if (SUCCEEDED(hr))
-                {
-                    out_printf("%s^done,%s\n", token.c_str(), output.c_str());
-                }
-                else
-                {
-                    out_printf("%s^error,msg=\"HRESULT=%x\"\n", token.c_str(), hr);
-                }
-            }
-        }
-        else if (command == "var-delete")
-        {
-            if (args.size() < 1)
-            {
-                out_printf("%s^error,msg=\"%s requires at least 1 argument\"\n", token.c_str(), command.c_str());
-            } else {
-                if (SUCCEEDED(DeleteVar(args.at(0))))
-                {
-                    out_printf("%s^done\n", token.c_str());
-                }
-                else
-                {
-                    out_printf("%s^error,msg=\"Varible %s does not exits\"\n", token.c_str(), args.at(0).c_str());
-                }
-            }
-        }
-        else if (command == "gdb-exit")
-        {
-            hr = pProcess->Stop(0);
-            if (SUCCEEDED(hr))
-            {
-                DisableAllBreakpointsAndSteppers(pProcess);
-
-                hr = pProcess->Terminate(0);
-
-                WaitProcessExited();
-
-                pProcess.Release();
-            }
-            break;
-        }
-        else
-        {
-            out_printf("%s^error,msg=\"Unknown command: %s\"\n", token.c_str(), command.c_str());
-        }
-    }
-
-    if (pProcess)
-    {
-        if (SUCCEEDED(pProcess->Stop(0)))
-        {
-            DisableAllBreakpointsAndSteppers(pProcess);
-            hr = pProcess->Detach();
-        }
-    }
+    CommandLoop(pProcess);
 
     pCorDebug->Terminate();
-
-    out_printf("%s^exit\n", token.c_str());
 
     // TODO: Cleanup libcoreclr.so instance
 
