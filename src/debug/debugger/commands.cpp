@@ -10,7 +10,7 @@
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
 HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
-HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
+HRESULT ListChildren(int childStart, int childEnd, const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
 HRESULT DeleteVar(const std::string &varobjName);
 
 // Modules
@@ -79,6 +79,23 @@ static int GetIntArg(const std::vector<std::string> &args, const std::string nam
     bool ok;
     int val = ParseInt(*it, ok);
     return ok ? val : defaultValue;
+}
+
+static bool GetIndices(const std::vector<std::string> &args, int &index1, int &index2)
+{
+    if (args.size() < 2)
+        return false;
+
+    bool ok;
+    int val1 = ParseInt(args.at(args.size() - 2), ok);
+    if (!ok)
+        return false;
+    int val2 = ParseInt(args.at(args.size() - 1), ok);
+    if (!ok)
+        return false;
+    index1 = val1;
+    index2 = val2;
+    return true;
 }
 
 bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename, unsigned int &linenum)
@@ -193,18 +210,17 @@ static std::unordered_map<std::string, CommandCallback> commands {
     { "exec-next", StepCommand(STEP_OVER) },
     { "exec-finish", StepCommand(STEP_OUT) },
     { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        // TODO: Add parsing frame lowFrame and highFrame
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
         int lowFrame = 0;
         int highFrame = INT_MAX;
+        GetIndices(args, lowFrame, highFrame);
         IfFailRet(PrintFrames(pThread, output, lowFrame, highFrame));
         return S_OK;
     }},
     { "stack-list-variables", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        // TODO: Add parsing arguments --frame
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
@@ -226,7 +242,6 @@ static std::unordered_map<std::string, CommandCallback> commands {
             return E_FAIL;
         }
 
-        // TODO: Add parsing arguments --frame
         ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
@@ -261,14 +276,16 @@ static std::unordered_map<std::string, CommandCallback> commands {
             return E_FAIL;
         }
 
-        // TODO: Add parsing arguments --frame and children indices
         ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
 
         ToRelease<ICorDebugFrame> pFrame;
         IfFailRet(pThread->GetActiveFrame(&pFrame));
-        return ListChildren(args.at(var_index), print_values, pThread, pFrame, output);
+        int childStart = 0;
+        int childEnd = INT_MAX;
+        GetIndices(args, childStart, childEnd);
+        return ListChildren(childStart, childEnd, args.at(var_index), print_values, pThread, pFrame, output);
     }},
     { "var-delete", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.size() < 1)

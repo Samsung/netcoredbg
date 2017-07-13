@@ -119,13 +119,17 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
                                         ICorDebugILFrame *pILFrame,
                                         std::vector<VarObjValue> &members,
                                         bool static_members,
-                                        bool &has_static_members)
+                                        bool &has_static_members,
+                                        int childStart,
+                                        int childEnd)
 {
     has_static_members = false;
     HRESULT Status;
 
     DWORD threadId = 0;
     IfFailRet(pThread->GetID(&threadId));
+
+    int currentIndex = -1;
 
     IfFailRet(WalkMembers(pInputValue, pILFrame, [&](
         mdMethodDef mdGetter,
@@ -140,6 +144,10 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
 
         bool add_member = static_members ? is_static : !is_static;
         if (!add_member)
+            return S_OK;
+
+        ++currentIndex;
+        if (currentIndex < childStart || currentIndex >= childEnd)
             return S_OK;
 
         std::string className;
@@ -242,7 +250,14 @@ static void PrintChildren(std::vector<VarObjValue> &members, int print_values, I
     output = ss.str();
 }
 
-HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListChildren(
+    int childStart,
+    int childEnd,
+    VarObjValue &objValue,
+    int print_values,
+    ICorDebugThread *pThread,
+    ICorDebugFrame *pFrame,
+    std::string &output)
 {
     HRESULT Status;
 
@@ -259,7 +274,9 @@ HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugThread *p
                                        pILFrame,
                                        members,
                                        objValue.statics_only,
-                                       has_static_members));
+                                       has_static_members,
+                                       childStart,
+                                       childEnd));
 
     if (!objValue.statics_only && has_static_members)
     {
@@ -274,12 +291,19 @@ HRESULT ListChildren(VarObjValue &objValue, int print_values, ICorDebugThread *p
     return S_OK;
 }
 
-HRESULT ListChildren(const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListChildren(
+    int childStart,
+    int childEnd,
+    const std::string &name,
+    int print_values,
+    ICorDebugThread *pThread,
+    ICorDebugFrame *pFrame,
+    std::string &output)
 {
     auto it = g_vars.find(name);
     if (it == g_vars.end())
         return E_FAIL;
-    return ListChildren(it->second, print_values, pThread, pFrame, output);
+    return ListChildren(childStart, childEnd, it->second, print_values, pThread, pFrame, output);
 }
 
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
