@@ -198,8 +198,10 @@ static std::unordered_map<std::string, CommandCallback> commands {
     { "break-delete", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &) -> HRESULT {
         for (const std::string &idStr : args)
         {
-            ULONG32 id = std::stoul(idStr);
-            DeleteBreakpoint(id);
+            bool ok;
+            int id = ParseInt(idStr, ok);
+            if (ok)
+                DeleteBreakpoint(id);
         }
         return S_OK;
     } },
