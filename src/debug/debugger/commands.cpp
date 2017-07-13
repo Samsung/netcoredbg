@@ -5,6 +5,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <functional>
+#include <algorithm>
 
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
@@ -42,6 +43,41 @@ int GetLastStoppedThreadId();
 void WaitProcessExited();
 HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess);
 
+static int ParseInt(const std::string &s, bool &ok)
+{
+    ok = false;
+    try
+    {
+        int result = std::stoi(s);
+        ok = true;
+        return result;
+    }
+    catch(std::invalid_argument e)
+    {
+    }
+    catch (std::out_of_range  e)
+    {
+    }
+    return 0;
+}
+
+static int GetIntArg(const std::vector<std::string> &args, const std::string name, int defaultValue)
+{
+    auto it = std::find(args.begin(), args.end(), name);
+
+    if (it == args.end())
+        return defaultValue;
+
+    ++it;
+
+    if (it == args.end())
+        return defaultValue;
+
+    bool ok;
+    int val = ParseInt(*it, ok);
+    return ok ? val : defaultValue;
+}
+
 bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename, unsigned int &linenum)
 {
     if (args.empty())
@@ -55,19 +91,9 @@ bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename
     filename = args.at(0).substr(0, i);
     std::string slinenum = args.at(0).substr(i + 1);
 
-    try
-    {
-        linenum = std::stoul(slinenum);
-        return true;
-    }
-    catch(std::invalid_argument e)
-    {
-        return false;
-    }
-    catch (std::out_of_range  e)
-    {
-        return false;
-    }
+    bool ok;
+    linenum = ParseInt(slinenum, ok);
+    return ok && linenum > 0;
 }
 
 HRESULT BreakInsertCommand(
@@ -164,10 +190,10 @@ static std::unordered_map<std::string, CommandCallback> commands {
     { "exec-next", StepCommand(STEP_OVER) },
     { "exec-finish", StepCommand(STEP_OUT) },
     { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        // TODO: Add parsing frame lowFrame, highFrame and --thread
+        // TODO: Add parsing frame lowFrame and highFrame
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
-        DWORD threadId = GetLastStoppedThreadId();
+        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
         int lowFrame = 0;
         int highFrame = INT_MAX;
@@ -175,10 +201,10 @@ static std::unordered_map<std::string, CommandCallback> commands {
         return S_OK;
     }},
     { "stack-list-variables", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        // TODO: Add parsing arguments --thread, --frame
+        // TODO: Add parsing arguments --frame
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
-        DWORD threadId = GetLastStoppedThreadId();
+        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
 
         ToRelease<ICorDebugFrame> pFrame;
@@ -197,9 +223,9 @@ static std::unordered_map<std::string, CommandCallback> commands {
             return E_FAIL;
         }
 
-        // TODO: Add parsing arguments --thread, --frame
+        // TODO: Add parsing arguments --frame
         ToRelease<ICorDebugThread> pThread;
-        DWORD threadId = GetLastStoppedThreadId();
+        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
 
         ToRelease<ICorDebugFrame> pFrame;
@@ -232,9 +258,9 @@ static std::unordered_map<std::string, CommandCallback> commands {
             return E_FAIL;
         }
 
-        // TODO: Add parsing arguments --thread, --frame
+        // TODO: Add parsing arguments --frame and children indices
         ToRelease<ICorDebugThread> pThread;
-        DWORD threadId = GetLastStoppedThreadId();
+        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
 
         ToRelease<ICorDebugFrame> pFrame;
@@ -259,7 +285,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
         Status = pProcess->Terminate(0);
 
         WaitProcessExited();
-        //pProcess.Release();
+
         return Status;
     }}
 };
