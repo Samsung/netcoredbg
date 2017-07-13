@@ -228,7 +228,6 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
                     std::string frameLocation;
                     PrintFrameLocation(pFrame, frameLocation);
 
-                    ss << (currentFrame != 0 ? "," : "");
                     ss << "frame={level=\"" << currentFrame << "\",";
                     if (!frameLocation.empty())
                         ss << frameLocation << ",";
