@@ -7,6 +7,8 @@
 #include <functional>
 #include <algorithm>
 
+using namespace std::placeholders;
+
 // Varobj
 HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
 HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
@@ -141,7 +143,7 @@ enum StepType {
     STEP_OUT
 };
 
-HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
+static HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
 {
     HRESULT Status;
 
@@ -170,20 +172,15 @@ HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     return S_OK;
 }
 
-static CommandCallback StepCommand(StepType stepType)
+static HRESULT StepCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &, StepType stepType)
 {
-    return [&](ICorDebugProcess *pProcess,
-               const std::vector<std::string> &,
-               std::string &)->HRESULT
-        {
-            HRESULT Status;
-            ToRelease<ICorDebugThread> pThread;
-            DWORD threadId = GetLastStoppedThreadId();
-            IfFailRet(pProcess->GetThread(threadId, &pThread));
-            IfFailRet(RunStep(pThread, stepType));
-            IfFailRet(pProcess->Continue(0));
-            return S_OK;
-        };
+    HRESULT Status;
+    ToRelease<ICorDebugThread> pThread;
+    DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+    IfFailRet(pProcess->GetThread(threadId, &pThread));
+    IfFailRet(RunStep(pThread, stepType));
+    IfFailRet(pProcess->Continue(0));
+    return S_OK;
 }
 
 static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &output)
@@ -206,9 +203,9 @@ static std::unordered_map<std::string, CommandCallback> commands {
         }
         return S_OK;
     } },
-    { "exec-step", StepCommand(STEP_IN) },
-    { "exec-next", StepCommand(STEP_OVER) },
-    { "exec-finish", StepCommand(STEP_OUT) },
+    { "exec-step", std::bind(StepCommand, _1, _2, _3, STEP_IN) },
+    { "exec-next", std::bind(StepCommand, _1, _2, _3, STEP_OVER) },
+    { "exec-finish", std::bind(StepCommand, _1, _2, _3, STEP_OUT) },
     { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
