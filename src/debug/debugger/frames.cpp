@@ -3,6 +3,7 @@
 #include <sstream>
 #include <vector>
 #include <list>
+#include <functional>
 
 #include "typeprinter.h"
 
