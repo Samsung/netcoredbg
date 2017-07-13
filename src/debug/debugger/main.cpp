@@ -8,6 +8,7 @@
 #include <vector>
 #include <list>
 
+#include "cputil.h"
 #include "platform.h"
 #include "typeprinter.h"
 
@@ -194,6 +195,37 @@ int GetLastStoppedThreadId()
     return g_lastStoppedThreadId;
 }
 
+static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
+                                std::string &excType,
+                                std::string &excModule)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    ToRelease<ICorDebugValue> pExceptionValue;
+    IfFailRet(pThread->GetCurrentException(&pExceptionValue));
+
+    TypePrinter::GetTypeOfValue(pExceptionValue, excType);
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMDImport;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
+
+    WCHAR mdName[mdNameLen];
+    ULONG nameLen;
+    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
+    excModule = to_utf8(mdName, nameLen);
+    return S_OK;
+}
+
 class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2
 {
     ULONG m_refCount;
@@ -322,9 +354,12 @@ public:
                 out_printf("*stopped,reason=\"exception-received\",exception-stage=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
                     unhandled ? "unhandled" : "handled", (int)threadId, output.c_str());
             } else {
-                // TODO: Add exception name and module
+                ToRelease<ICorDebugValue> pExceptionValue;
+                std::string excType;
+                std::string excModule;
+                GetExceptionInfo(pThread, excType, excModule);
                 out_printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
-                    "<exceptions.name>", "<short.module.name>");
+                    excType.c_str(), excModule.c_str());
                 pAppDomain->Continue(0);
             }
 
@@ -433,7 +468,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ LONG lLevel,
             /* [in] */ WCHAR *pLogSwitchName,
-            /* [in] */ WCHAR *pMessage) { return S_OK; }
+            /* [in] */ WCHAR *pMessage) { pAppDomain->Continue(0); return S_OK; }
 
         virtual HRESULT STDMETHODCALLTYPE LogSwitch(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -441,7 +476,7 @@ public:
             /* [in] */ LONG lLevel,
             /* [in] */ ULONG ulReason,
             /* [in] */ WCHAR *pLogSwitchName,
-            /* [in] */ WCHAR *pParentName) { return S_OK; }
+            /* [in] */ WCHAR *pParentName) { pAppDomain->Continue(0); return S_OK; }
 
         virtual HRESULT STDMETHODCALLTYPE CreateAppDomain(
             /* [in] */ ICorDebugProcess *pProcess,
@@ -524,17 +559,17 @@ public:
             /* [in] */ CorDebugExceptionCallbackType dwEventType,
             /* [in] */ DWORD dwFlags)
         {
-            // const char *cbTypeName;
-            // switch(dwEventType)
-            // {
-            //     case DEBUG_EXCEPTION_FIRST_CHANCE: cbTypeName = "FIRST_CHANCE"; break;
-            //     case DEBUG_EXCEPTION_USER_FIRST_CHANCE: cbTypeName = "USER_FIRST_CHANCE"; break;
-            //     case DEBUG_EXCEPTION_CATCH_HANDLER_FOUND: cbTypeName = "CATCH_HANDLER_FOUND"; break;
-            //     case DEBUG_EXCEPTION_UNHANDLED: cbTypeName = "UNHANDLED"; break;
-            //     default: cbTypeName = "?"; break;
-            // }
-            // out_printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
-            //     cbTypeName);
+          // const char *cbTypeName;
+          // switch(dwEventType)
+          // {
+          //     case DEBUG_EXCEPTION_FIRST_CHANCE: cbTypeName = "FIRST_CHANCE"; break;
+          //     case DEBUG_EXCEPTION_USER_FIRST_CHANCE: cbTypeName = "USER_FIRST_CHANCE"; break;
+          //     case DEBUG_EXCEPTION_CATCH_HANDLER_FOUND: cbTypeName = "CATCH_HANDLER_FOUND"; break;
+          //     case DEBUG_EXCEPTION_UNHANDLED: cbTypeName = "UNHANDLED"; break;
+          //     default: cbTypeName = "?"; break;
+          // }
+          // out_printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
+          //     cbTypeName);
             pAppDomain->Continue(0);
             return S_OK;
         }
