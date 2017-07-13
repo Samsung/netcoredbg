@@ -475,6 +475,39 @@ static HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output)
     return S_OK;
 }
 
+void EscapeString(std::string &s, char q = '\"')
+{
+    for (std::size_t i = 0; i < s.size(); ++i)
+    {
+        int count = 0;
+        char c = s.at(i);
+        switch (c)
+        {
+            case '\'':
+                count = c != q ? 0 : 2;
+                s.insert(i, count, '\\');
+                break;
+            case '\"':
+                count = c != q ? 1 : 3;
+                s.insert(i, count, '\\');
+                break;
+            case '\\':
+                count = 3;
+                s.insert(i, count, '\\');
+                break;
+            case '\0': count = 2; s.insert(i, count, '\\'); s[i + count] = '0'; break;
+            case '\a': count = 2; s.insert(i, count, '\\'); s[i + count] = 'a'; break;
+            case '\b': count = 2; s.insert(i, count, '\\'); s[i + count] = 'b'; break;
+            case '\f': count = 2; s.insert(i, count, '\\'); s[i + count] = 'f'; break;
+            case '\n': count = 2; s.insert(i, count, '\\'); s[i + count] = 'n'; break;
+            case '\r': count = 2; s.insert(i, count, '\\'); s[i + count] = 'r'; break;
+            case '\t': count = 2; s.insert(i, count, '\\'); s[i + count] = 't'; break;
+            case '\v': count = 2; s.insert(i, count, '\\'); s[i + count] = 'v'; break;
+        }
+        i += count;
+    }
+}
+
 HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output)
 {
     HRESULT Status;
@@ -505,6 +538,8 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
     {
         std::string raw_str;
         IfFailRet(PrintStringValue(pValue, raw_str));
+
+        EscapeString(raw_str, '"');
 
         std::stringstream ss;
         ss << "\\\"" << raw_str << "\\\"";
@@ -574,6 +609,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
         {
             WCHAR wc = * (WCHAR *) &(rgbValue[0]);
             std::string printableVal = to_utf8(&wc, 1);
+            EscapeString(printableVal, '\'');
             ss << (unsigned int)wc << " '" << printableVal << "'";
         }
         break;
