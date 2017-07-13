@@ -381,7 +381,7 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
             if (Status == S_FALSE)
                 break;
 
-            IfFailRet(cb(pILFrame, pValue, to_utf8(paramName, paramNameLen)));
+            IfFailRet(cb(pILFrame, pValue, to_utf8(paramName/*, paramNameLen*/)));
         }
     }
 
