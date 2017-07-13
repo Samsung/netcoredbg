@@ -21,6 +21,9 @@ HRESULT DeleteBreakpoint(ULONG32 id);
 HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
 HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
 
+// Frames
+HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
+
 void _out_printf(const char *fmt, ...)
     __attribute__((format (printf, 1, 2)));
 
@@ -208,7 +211,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
         IfFailRet(pProcess->GetThread(threadId, &pThread));
 
         ToRelease<ICorDebugFrame> pFrame;
-        IfFailRet(pThread->GetActiveFrame(&pFrame));
+        IfFailRet(GetFrameAt(pThread, GetIntArg(args, "--frame", 0), &pFrame));
 
         IfFailRet(ListVariables(pFrame, output));
 
@@ -229,7 +232,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
         IfFailRet(pProcess->GetThread(threadId, &pThread));
 
         ToRelease<ICorDebugFrame> pFrame;
-        IfFailRet(pThread->GetActiveFrame(&pFrame));
+        IfFailRet(GetFrameAt(pThread, GetIntArg(args, "--frame", 0), &pFrame));
 
         return CreateVar(pThread, pFrame, args.at(0), args.at(1), output);
     }},
