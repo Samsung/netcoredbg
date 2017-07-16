@@ -69,6 +69,20 @@ static int ParseInt(const std::string &s, bool &ok)
     return 0;
 }
 
+// Remove all --name value
+static void StripArgs(std::vector<std::string> &args)
+{
+    auto it = args.begin();
+
+    while (it != args.end())
+    {
+        if (it->find("--") == 0 && it + 1 != args.end())
+            it = args.erase(args.erase(it));
+        else
+            ++it;
+    }
+}
+
 static int GetIntArg(const std::vector<std::string> &args, const std::string name, int defaultValue)
 {
     auto it = std::find(args.begin(), args.end(), name);
@@ -236,14 +250,16 @@ HRESULT Debugger::HandleCommand(std::string command,
         this->DetachFromProcess();
         return S_OK;
     }},
-    { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         if (!pProcess) return E_FAIL;
+        std::vector<std::string> args = args_orig;
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         IfFailRet(pProcess->GetThread(threadId, &pThread));
         int lowFrame = 0;
         int highFrame = INT_MAX;
+        StripArgs(args);
         GetIndices(args, lowFrame, highFrame);
         IfFailRet(PrintFrames(pThread, output, lowFrame, highFrame));
         return S_OK;
@@ -281,27 +297,30 @@ HRESULT Debugger::HandleCommand(std::string command,
 
         return CreateVar(pThread, pFrame, args.at(0), args.at(1), output);
     }},
-    { "var-list-children", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "var-list-children", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         if (!pProcess) return E_FAIL;
         HRESULT Status;
+
+        std::vector<std::string> args = args_orig;
 
         int print_values = 0;
         int var_index = 0;
         if (!args.empty())
         {
-            if (args.at(0) == "1" || args.at(0) == "--all-values")
+            auto first_arg_it = args.begin();
+            if (*first_arg_it == "1" || *first_arg_it == "--all-values")
             {
                 print_values = 1;
-                var_index++;
+                args.erase(first_arg_it);
             }
-            else if (args.at(0) == "2" || args.at(0) == "--simple-values")
+            else if (*first_arg_it == "2" || *first_arg_it == "--simple-values")
             {
                 print_values = 2;
-                var_index++;
+                args.erase(first_arg_it);
             }
         }
 
-        if (args.size() < (var_index + 1))
+        if (args.empty())
         {
             output = "Command requires an argument";
             return E_FAIL;
@@ -315,6 +334,7 @@ HRESULT Debugger::HandleCommand(std::string command,
         IfFailRet(pThread->GetActiveFrame(&pFrame));
         int childStart = 0;
         int childEnd = INT_MAX;
+        StripArgs(args);
         GetIndices(args, childStart, childEnd);
         return ListChildren(childStart, childEnd, args.at(var_index), print_values, pThread, pFrame, output);
     }},
