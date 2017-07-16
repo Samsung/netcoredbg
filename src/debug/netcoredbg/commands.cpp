@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include <cstring>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -366,6 +367,54 @@ HRESULT Debugger::HandleCommand(std::string command,
     return command_it->second(m_pProcess, args, output);
 }
 
+static std::vector<std::string> TokenizeString(const std::string &str)
+{
+    enum {
+        StateSpace,
+        StateToken,
+        StateQuotedToken,
+        StateEscape
+    } state = StateSpace;
+
+    std::vector<std::string> result;
+
+    static const char *delimiters = " \t\n\r";
+
+    for (char c : str)
+    {
+        switch(state)
+        {
+            case StateSpace:
+                if (strchr(delimiters, c))
+                    continue;
+                result.emplace_back();
+                state = c == '"' ? StateQuotedToken : StateToken;
+                if (state != StateQuotedToken)
+                    result.back() +=c;
+                break;
+            case StateToken:
+                if (strchr(delimiters, c))
+                    state = StateSpace;
+                else
+                    result.back() += c;
+                break;
+            case StateQuotedToken:
+                if (c == '\\')
+                    state = StateEscape;
+                else if (c == '"')
+                    state = StateSpace;
+                else
+                    result.back() += c;
+                break;
+            case StateEscape:
+                result.back() += c;
+                state = StateQuotedToken;
+                break;
+        }
+    }
+    return result;
+}
+
 static bool ParseLine(const std::string &str,
                       std::string &token,
                       std::string &cmd,
@@ -375,26 +424,24 @@ static bool ParseLine(const std::string &str,
     cmd.clear();
     args.clear();
 
-    std::stringstream ss(str);
+    std::vector<std::string> result = TokenizeString(str);
 
-    std::vector<std::string> result;
-    std::string buf;
-
-    if (!(ss >> cmd))
+    if (result.empty())
         return false;
 
-    std::size_t i = cmd.find_first_not_of("0123456789");
+    auto cmd_it = result.begin();
+
+    std::size_t i = cmd_it->find_first_not_of("0123456789");
     if (i == std::string::npos)
         return false;
 
-    if (cmd.at(i) != '-')
+    if (cmd_it->at(i) != '-')
         return false;
 
-    token = cmd.substr(0, i);
-    cmd = cmd.substr(i + 1);
-
-    while (ss >> buf)
-        args.push_back(buf);
+    token = cmd_it->substr(0, i);
+    cmd = cmd_it->substr(i + 1);
+    result.erase(result.begin());
+    args = result;
 
     return true;
 }
