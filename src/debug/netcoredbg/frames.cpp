@@ -194,6 +194,7 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
     int currentFrame = -1;
 
     ss << "stack=[";
+    const char *sep = "";
 
     IfFailRet(WalkFrames(pThread, [&](
         FrameType frameType,
@@ -208,7 +209,8 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
         if (currentFrame > highFrame)
             return S_OK; // Todo implement fast break mechanism
 
-        ss << (currentFrame != 0 ? "," : "");
+        ss << sep;
+        sep = ",";
 
         switch(frameType)
         {
