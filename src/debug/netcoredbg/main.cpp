@@ -30,9 +30,17 @@ static std::mutex g_processMutex;
 static std::condition_variable g_processCV;
 static ICorDebugProcess *g_process = nullptr;
 
+static void ProcessCreated(ICorDebugProcess *pProcess)
+{
+    std::lock_guard<std::mutex> lock(g_processMutex);
+    pProcess->AddRef();
+    g_process = pProcess;
+}
+
 static void NotifyProcessExited()
 {
     std::lock_guard<std::mutex> lock(g_processMutex);
+    g_process->Release();
     g_process = nullptr;
     g_processMutex.unlock();
     g_processCV.notify_one();
@@ -110,6 +118,7 @@ HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id);
 HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
 // Modules
+void CleanupAllModules();
 void SetCoreCLRPath(const std::string &coreclrPath);
 std::string GetModuleName(ICorDebugModule *pModule);
 HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range);
@@ -143,6 +152,7 @@ static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *p
         }
     }
 
+    // FIXME: Delete all or Release all?
     DeleteAllBreakpoints();
 
     ToRelease<ICorDebugStepperEnum> steppers;
@@ -388,6 +398,7 @@ public:
             /* [in] */ ICorDebugProcess *pProcess)
         {
             //HandleEvent(pProcess, "CreateProcess");
+            ProcessCreated(pProcess);
             pProcess->Continue(0);
             return S_OK;
         }
@@ -591,7 +602,121 @@ public:
             /* [in] */ ICorDebugMDA *pMDA) {return S_OK; }
 };
 
-void CommandLoop(ICorDebugProcess *pProcess);
+static ToRelease<ManagedCallback> g_managedCallback(new ManagedCallback());
+ICorDebugProcess *g_pProcess = nullptr;
+static ICorDebug *g_pDebug = nullptr;
+
+void CommandLoop();
+
+HRESULT DetachProcess()
+{
+    if (!g_pProcess || !g_pDebug)
+        return E_FAIL;
+
+    if (SUCCEEDED(g_pProcess->Stop(0)))
+    {
+        DisableAllBreakpointsAndSteppers(g_pProcess);
+        g_pProcess->Detach();
+    }
+
+    CleanupAllModules();
+    // TODO: Cleanup libcoreclr.so instance
+
+    g_pProcess->Release();
+    g_pProcess = nullptr;
+
+    g_pDebug->Terminate();
+    g_pDebug = nullptr;
+
+    return S_OK;
+}
+
+HRESULT TerminateProcess()
+{
+    if (!g_pProcess || !g_pDebug)
+        return E_FAIL;
+
+    if (SUCCEEDED(g_pProcess->Stop(0)))
+    {
+        DisableAllBreakpointsAndSteppers(g_pProcess);
+        //pProcess->Detach();
+    }
+
+    CleanupAllModules();
+    // TODO: Cleanup libcoreclr.so instance
+
+    g_pProcess->Terminate(0);
+    WaitProcessExited();
+
+    g_pProcess->Release();
+    g_pProcess = nullptr;
+
+    g_pDebug->Terminate();
+    g_pDebug = nullptr;
+
+    return S_OK;
+}
+
+HRESULT AttachToProcess(int pid)
+{
+    HRESULT Status;
+
+    if (g_pProcess || g_pDebug)
+    {
+        std::lock_guard<std::mutex> lock(g_processMutex);
+        if (g_process)
+            return E_FAIL; // Already attached
+        g_processMutex.unlock();
+
+        TerminateProcess();
+    }
+
+    std::string coreclrPath = GetCoreCLRPath(pid);
+    if (coreclrPath.empty())
+        return E_INVALIDARG; // Unable to find libcoreclr.so
+
+    SetCoreCLRPath(coreclrPath);
+
+    WCHAR szModuleName[MAX_LONGPATH];
+    MultiByteToWideChar(CP_UTF8, 0, coreclrPath.c_str(), coreclrPath.size() + 1, szModuleName, MAX_LONGPATH);
+
+    WCHAR pBuffer[100];
+    DWORD dwLength;
+    IfFailRet(CreateVersionStringFromModule(
+        pid,
+        szModuleName,
+        pBuffer,
+        _countof(pBuffer),
+        &dwLength));
+
+    ToRelease<IUnknown> pCordb;
+    ToRelease<ICorDebug> pCorDebug;
+    IfFailRet(CreateDebuggingInterfaceFromVersionEx(4, pBuffer, &pCordb));
+
+    IfFailRet(pCordb->QueryInterface(IID_ICorDebug, (LPVOID *)&pCorDebug));
+
+    IfFailRet(pCorDebug->Initialize());
+
+    Status = pCorDebug->SetManagedHandler(g_managedCallback);
+    if (FAILED(Status))
+    {
+        pCorDebug->Terminate();
+        return Status;
+    }
+
+    ToRelease<ICorDebugProcess> pProcess;
+    Status = pCorDebug->DebugActiveProcess(pid, FALSE, &pProcess);
+    if (FAILED(Status))
+    {
+        pCorDebug->Terminate();
+        return Status;
+    }
+
+    g_pProcess = pProcess.Detach();
+    g_pDebug = pCorDebug.Detach();
+
+    return S_OK;
+}
 
 void print_help()
 {
@@ -647,96 +772,17 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (pidDebuggee == 0)
+    if (pidDebuggee != 0)
     {
-        fprintf(stderr, "Error: Missing process id\n");
-        return EXIT_FAILURE;
+        HRESULT Status = AttachToProcess(pidDebuggee);
+        if (FAILED(Status))
+        {
+            fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
+            return EXIT_FAILURE;
+        }
     }
 
-    std::string coreclrPath = GetCoreCLRPath(pidDebuggee);
-    if (coreclrPath.empty())
-    {
-        fprintf(stderr, "Error: Unable to find libcoreclr.so\n");
-        return EXIT_FAILURE;
-    }
-
-    SetCoreCLRPath(coreclrPath);
-
-    WCHAR szModuleName[MAX_LONGPATH];
-    MultiByteToWideChar(CP_UTF8, 0, coreclrPath.c_str(), coreclrPath.size() + 1, szModuleName, MAX_LONGPATH);
-
-    WCHAR pBuffer[100];
-    DWORD dwLength;
-    HRESULT hr = CreateVersionStringFromModule(
-        pidDebuggee,
-        szModuleName,
-        pBuffer,
-        _countof(pBuffer),
-        &dwLength);
-
-    if (FAILED(hr))
-    {
-        fprintf(stderr, "CreateVersionStringFromModule failed: hr=%x\n", hr);
-        return EXIT_FAILURE;
-    }
-
-    ToRelease<IUnknown> pCordb;
-    //WCHAR szDebuggeeVersion[] = W("4.0");
-    hr = CreateDebuggingInterfaceFromVersionEx(4, pBuffer, &pCordb);
-
-    if (FAILED(hr))
-    {
-        fprintf(stderr, "CreateDebuggingInterfaceFromVersionEx failed: hr=%x\n", hr);
-        return EXIT_FAILURE;
-    }
-
-    ToRelease<ICorDebug> pCorDebug;
-
-    hr = pCordb->QueryInterface(IID_ICorDebug, (LPVOID *)&pCorDebug);
-    if (FAILED(hr))
-    {
-        fprintf(stderr, "QueryInterface(IID_ICorDebug) failed: hr=%x\n", hr);
-        return EXIT_FAILURE;
-    }
-
-    hr = pCorDebug->Initialize();
-    if (FAILED(hr))
-    {
-        fprintf(stderr, "Initialize failed: hr=%x\n", hr);
-        return EXIT_FAILURE;
-    }
-
-    hr = pCorDebug->SetManagedHandler(new ManagedCallback());
-    if (FAILED(hr))
-    {
-        fprintf(stderr, "SetManagedHandler failed: hr=%x\n", hr);
-        return EXIT_FAILURE;
-    }
-
-    hr = pCorDebug->CanLaunchOrAttach(pidDebuggee, FALSE);
-    //fprintf(stderr, "CanLaunchOrAttach : hr=%x\n", hr);
-
-    ToRelease<ICorDebugProcess> pProcess;
-    hr = pCorDebug->DebugActiveProcess(
-            pidDebuggee,
-            FALSE,
-            &pProcess);
-    if (FAILED(hr))
-    {
-        fprintf(stderr, "DebugActiveProcess failed: hr=%x\n", hr);
-        return EXIT_FAILURE;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(g_processMutex);
-        g_process = pProcess;
-    }
-
-    CommandLoop(pProcess);
-
-    pCorDebug->Terminate();
-
-    // TODO: Cleanup libcoreclr.so instance
+    CommandLoop();
 
     return EXIT_SUCCESS;
 }

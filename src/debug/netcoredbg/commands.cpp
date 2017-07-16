@@ -20,11 +20,13 @@ HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE
 
 // Breakpoints
 HRESULT DeleteBreakpoint(ULONG32 id);
-HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
+HRESULT InsertBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
 HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
 
 // Frames
 HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
+
+void TerminateProcess();
 
 void _out_printf(const char *fmt, ...)
     __attribute__((format (printf, 1, 2)));
@@ -118,7 +120,7 @@ bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename
     return ok && linenum > 0;
 }
 
-HRESULT BreakInsertCommand(
+static HRESULT BreakInsertCommand(
     ICorDebugProcess *pProcess,
     const std::vector<std::string> &args,
     std::string &output)
@@ -127,7 +129,7 @@ HRESULT BreakInsertCommand(
     unsigned int linenum;
     ULONG32 id;
     if (ParseBreakpoint(args, filename, linenum)
-        && SUCCEEDED(CreateBreakpointInProcess(pProcess, filename, linenum, id)))
+        && SUCCEEDED(InsertBreakpointInProcess(pProcess, filename, linenum, id)))
     {
         PrintBreakpoint(id, output);
         return S_OK;
@@ -185,6 +187,7 @@ static HRESULT StepCommand(ICorDebugProcess *pProcess, const std::vector<std::st
 
 static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &output)
 {
+    if (!pProcess) return E_FAIL;
     return PrintThreadsState(pProcess, output);
 }
 
@@ -192,8 +195,12 @@ static bool g_exit = false;
 
 static std::unordered_map<std::string, CommandCallback> commands {
     { "thread-info", ThreadInfoCommand },
-    { "exec-continue", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){ return pProcess->Continue(0); } },
-    { "exec-interrupt", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){ return pProcess->Stop(0); } },
+    { "exec-continue", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){
+        if (!pProcess) return E_FAIL;
+        return pProcess->Continue(0); } },
+    { "exec-interrupt", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){
+        if (!pProcess) return E_FAIL;
+        return pProcess->Stop(0); } },
     { "break-insert", BreakInsertCommand },
     { "break-delete", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &) -> HRESULT {
         for (const std::string &idStr : args)
@@ -209,6 +216,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
     { "exec-next", std::bind(StepCommand, _1, _2, _3, STEP_OVER) },
     { "exec-finish", std::bind(StepCommand, _1, _2, _3, STEP_OUT) },
     { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (!pProcess) return E_FAIL;
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
@@ -220,6 +228,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
         return S_OK;
     }},
     { "stack-list-variables", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (!pProcess) return E_FAIL;
         HRESULT Status;
         ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
@@ -233,6 +242,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
         return S_OK;
     }},
     { "var-create", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (!pProcess) return E_FAIL;
         HRESULT Status;
 
         if (args.size() < 2)
@@ -251,6 +261,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
         return CreateVar(pThread, pFrame, args.at(0), args.at(1), output);
     }},
     { "var-list-children", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (!pProcess) return E_FAIL;
         HRESULT Status;
 
         int print_values = 0;
@@ -294,18 +305,12 @@ static std::unordered_map<std::string, CommandCallback> commands {
         }
         return DeleteVar(args.at(0));
     }},
-    { "gdb-exit", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        HRESULT Status;
+    { "gdb-exit", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         g_exit = true;
-        IfFailRet(pProcess->Stop(0));
 
-        DisableAllBreakpointsAndSteppers(pProcess);
+        TerminateProcess();
 
-        Status = pProcess->Terminate(0);
-
-        WaitProcessExited();
-
-        return Status;
+        return S_OK;
     }}
 };
 
@@ -342,7 +347,9 @@ static bool ParseLine(const std::string &str,
     return true;
 }
 
-void CommandLoop(ICorDebugProcess *pProcess)
+extern ICorDebugProcess *g_pProcess;
+
+void CommandLoop()
 {
     static char inputBuffer[1024];
     std::string token;
@@ -372,7 +379,7 @@ void CommandLoop(ICorDebugProcess *pProcess)
         }
 
         std::string output;
-        HRESULT hr = command_it->second(pProcess, args, output);
+        HRESULT hr = command_it->second(g_pProcess, args, output);
         if (g_exit)
             break;
         if (SUCCEEDED(hr))
@@ -386,10 +393,9 @@ void CommandLoop(ICorDebugProcess *pProcess)
             out_printf("%s^error,msg=\"Error: 0x%08x%s%s\"\n", token.c_str(), hr, sep, output.c_str());
         }
     }
-    if (SUCCEEDED(pProcess->Stop(0)))
-    {
-        DisableAllBreakpointsAndSteppers(pProcess);
-        pProcess->Detach();
-    }
+
+    if (!g_exit)
+        TerminateProcess();
+
     out_printf("%s^exit\n", token.c_str());
 }

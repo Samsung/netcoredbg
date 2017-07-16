@@ -20,6 +20,12 @@ struct ModuleInfo
 std::mutex g_modulesInfoMutex;
 std::unordered_map<std::string, ModuleInfo> g_modulesInfo;
 
+void CleanupAllModules()
+{
+    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+    g_modulesInfo.clear();
+}
+
 void SetCoreCLRPath(const std::string &coreclrPath)
 {
     SymbolReader::SetCoreCLRPath(coreclrPath);
