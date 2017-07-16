@@ -106,18 +106,9 @@ HRESULT SymbolReader::PrepareSymbolReader()
     WCHAR wszCoreClrPath[MAX_LONGPATH];
     MultiByteToWideChar(CP_UTF8, 0, coreClrPath.c_str(), coreClrPath.size() + 1, wszCoreClrPath, MAX_LONGPATH);
 
-    std::string clrDir = coreClrPath.substr(0, coreClrPath.rfind('/'));
+    std::string clrDir = coreClrPath.substr(0, coreClrPath.rfind(DIRECTORY_SEPARATOR_STR_A));
 
     HRESULT Status;
-
-    //coreClrPath = g_ExtServices->GetCoreClrDirectory();
-    // if (!GetAbsolutePath(coreClrPath, absolutePath))
-    // {
-    //     //ExtErr("Error: Failed to get coreclr absolute path\n");
-    //     return E_FAIL;
-    // }
-    // coreClrPath.append(DIRECTORY_SEPARATOR_STR_A);
-    // coreClrPath.append(MAIN_CLR_DLL_NAME_A);
 
     HMODULE coreclrLib = LoadLibraryW(wszCoreClrPath);
     if (coreclrLib == nullptr)
@@ -153,7 +144,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
         return E_FAIL;
     }
 
-    std::size_t dirSepIndex = exe.rfind('/');
+    std::size_t dirSepIndex = exe.rfind(DIRECTORY_SEPARATOR_STR_A);
     if (dirSepIndex == std::string::npos)
         return E_FAIL;
 
@@ -169,13 +160,6 @@ HRESULT SymbolReader::PrepareSymbolReader()
                                     clrDir.c_str(),
                                     // AppDomainCompatSwitch
                                     "UseLatestBehaviorWhenTFMNotSpecified"};
-
-    // std::string entryPointExecutablePath;
-    // if (!GetEntrypointExecutableAbsolutePath(entryPointExecutablePath))
-    // {
-    //     //ExtErr("Could not get full path to current executable");
-    //     return E_FAIL;
-    // }
 
     Status = initializeCoreCLR(exe.c_str(), "debugger",
         sizeof(propertyKeys) / sizeof(propertyKeys[0]), propertyKeys, propertyValues, &hostHandle, &domainId);
