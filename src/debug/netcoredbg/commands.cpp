@@ -118,10 +118,20 @@ static bool GetIndices(const std::vector<std::string> &args, int &index1, int &i
     return true;
 }
 
-bool ParseBreakpoint(const std::vector<std::string> &args, std::string &filename, unsigned int &linenum)
+bool ParseBreakpoint(const std::vector<std::string> &args_orig, std::string &filename, unsigned int &linenum)
 {
+    std::vector<std::string> args = args_orig;
+    StripArgs(args);
+
     if (args.empty())
         return false;
+
+    if (args.at(0) == "-f")
+    {
+        args.erase(args.begin());
+        if (args.empty())
+            return false;
+    }
 
     std::size_t i = args.at(0).rfind(':');
 
