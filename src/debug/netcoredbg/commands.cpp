@@ -26,7 +26,9 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
 // Frames
 HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
 
+HRESULT AttachToProcess(int pid);
 void TerminateProcess();
+HRESULT DetachProcess();
 
 void _out_printf(const char *fmt, ...)
     __attribute__((format (printf, 1, 2)));
@@ -215,6 +217,24 @@ static std::unordered_map<std::string, CommandCallback> commands {
     { "exec-step", std::bind(StepCommand, _1, _2, _3, STEP_IN) },
     { "exec-next", std::bind(StepCommand, _1, _2, _3, STEP_OVER) },
     { "exec-finish", std::bind(StepCommand, _1, _2, _3, STEP_OUT) },
+    { "target-attach", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        HRESULT Status;
+        if (args.size() != 1)
+        {
+            output = "Command requires an argument";
+            return E_INVALIDARG;
+        }
+        bool ok;
+        int pid = ParseInt(args.at(0), ok);
+        if (!ok) return E_INVALIDARG;
+        IfFailRet(AttachToProcess(pid));
+        // TODO: print succeessful result
+        return S_OK;
+    }},
+    { "target-detach", [](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
+        DetachProcess();
+        return S_OK;
+    }},
     { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (!pProcess) return E_FAIL;
         HRESULT Status;
