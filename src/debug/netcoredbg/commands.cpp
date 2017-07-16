@@ -7,6 +7,8 @@
 #include <functional>
 #include <algorithm>
 
+#include "debugger.h"
+
 using namespace std::placeholders;
 
 // Varobj
@@ -26,9 +28,6 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
 // Frames
 HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
 
-HRESULT AttachToProcess(int pid);
-void TerminateProcess();
-HRESULT DetachProcess();
 
 void _out_printf(const char *fmt, ...)
     __attribute__((format (printf, 1, 2)));
@@ -193,9 +192,11 @@ static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<s
     return PrintThreadsState(pProcess, output);
 }
 
-static bool g_exit = false;
-
-static std::unordered_map<std::string, CommandCallback> commands {
+HRESULT Debugger::HandleCommand(std::string command,
+                                const std::vector<std::string> &args,
+                                std::string &output)
+{
+    static std::unordered_map<std::string, CommandCallback> commands {
     { "thread-info", ThreadInfoCommand },
     { "exec-continue", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){
         if (!pProcess) return E_FAIL;
@@ -217,7 +218,7 @@ static std::unordered_map<std::string, CommandCallback> commands {
     { "exec-step", std::bind(StepCommand, _1, _2, _3, STEP_IN) },
     { "exec-next", std::bind(StepCommand, _1, _2, _3, STEP_OVER) },
     { "exec-finish", std::bind(StepCommand, _1, _2, _3, STEP_OUT) },
-    { "target-attach", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "target-attach", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
         if (args.size() != 1)
         {
@@ -227,12 +228,12 @@ static std::unordered_map<std::string, CommandCallback> commands {
         bool ok;
         int pid = ParseInt(args.at(0), ok);
         if (!ok) return E_INVALIDARG;
-        IfFailRet(AttachToProcess(pid));
+        IfFailRet(this->AttachToProcess(pid));
         // TODO: print succeessful result
         return S_OK;
     }},
-    { "target-detach", [](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
-        DetachProcess();
+    { "target-detach", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
+        this->DetachFromProcess();
         return S_OK;
     }},
     { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -325,14 +326,25 @@ static std::unordered_map<std::string, CommandCallback> commands {
         }
         return DeleteVar(args.at(0));
     }},
-    { "gdb-exit", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        g_exit = true;
+    { "gdb-exit", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        this->m_exit = true;
 
-        TerminateProcess();
+        this->TerminateProcess();
 
         return S_OK;
     }}
-};
+    };
+
+    auto command_it = commands.find(command);
+
+    if (command_it == commands.end())
+    {
+        output = "Unknown command: " + command;
+        return E_FAIL;
+    }
+
+    return command_it->second(m_pProcess, args, output);
+}
 
 static bool ParseLine(const std::string &str,
                       std::string &token,
@@ -367,14 +379,12 @@ static bool ParseLine(const std::string &str,
     return true;
 }
 
-extern ICorDebugProcess *g_pProcess;
-
-void CommandLoop()
+void Debugger::CommandLoop()
 {
     static char inputBuffer[1024];
     std::string token;
 
-    while (!g_exit)
+    while (!m_exit)
     {
         token.clear();
 
@@ -390,18 +400,12 @@ void CommandLoop()
             continue;
         }
 
-        auto command_it = commands.find(command);
-
-        if (command_it == commands.end())
-        {
-            out_printf("%s^error,msg=\"Unknown command: %s\"\n", token.c_str(), command.c_str());
-            continue;
-        }
-
         std::string output;
-        HRESULT hr = command_it->second(g_pProcess, args, output);
-        if (g_exit)
+        HRESULT hr = HandleCommand(command, args, output);
+
+        if (m_exit)
             break;
+
         if (SUCCEEDED(hr))
         {
             const char *sep = output.empty() ? "" : ",";
@@ -414,7 +418,7 @@ void CommandLoop()
         }
     }
 
-    if (!g_exit)
+    if (!m_exit)
         TerminateProcess();
 
     out_printf("%s^exit\n", token.c_str());

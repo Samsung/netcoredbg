@@ -11,7 +11,7 @@
 #include "cputil.h"
 #include "platform.h"
 #include "typeprinter.h"
-
+#include "debugger.h"
 
 EXTERN_C HRESULT CreateDebuggingInterfaceFromVersionEx(
     int iDebuggerVersion,
@@ -602,66 +602,65 @@ public:
             /* [in] */ ICorDebugMDA *pMDA) {return S_OK; }
 };
 
-static ToRelease<ManagedCallback> g_managedCallback(new ManagedCallback());
-ICorDebugProcess *g_pProcess = nullptr;
-static ICorDebug *g_pDebug = nullptr;
-
-void CommandLoop();
-
-HRESULT DetachProcess()
+Debugger::~Debugger()
 {
-    if (!g_pProcess || !g_pDebug)
+    m_managedCallback->Release();
+}
+
+HRESULT Debugger::DetachFromProcess()
+{
+    if (!m_pProcess || !m_pDebug)
         return E_FAIL;
 
-    if (SUCCEEDED(g_pProcess->Stop(0)))
+    if (SUCCEEDED(m_pProcess->Stop(0)))
     {
-        DisableAllBreakpointsAndSteppers(g_pProcess);
-        g_pProcess->Detach();
+        DisableAllBreakpointsAndSteppers(m_pProcess);
+        m_pProcess->Detach();
     }
 
     CleanupAllModules();
     // TODO: Cleanup libcoreclr.so instance
 
-    g_pProcess->Release();
-    g_pProcess = nullptr;
+    m_pProcess->Release();
+    m_pProcess = nullptr;
 
-    g_pDebug->Terminate();
-    g_pDebug = nullptr;
+    m_pDebug->Terminate();
+    m_pDebug = nullptr;
 
     return S_OK;
 }
 
-HRESULT TerminateProcess()
+HRESULT Debugger::TerminateProcess()
 {
-    if (!g_pProcess || !g_pDebug)
+    if (!m_pProcess || !m_pDebug)
         return E_FAIL;
 
-    if (SUCCEEDED(g_pProcess->Stop(0)))
+    if (SUCCEEDED(m_pProcess->Stop(0)))
     {
-        DisableAllBreakpointsAndSteppers(g_pProcess);
+        DisableAllBreakpointsAndSteppers(m_pProcess);
         //pProcess->Detach();
     }
 
     CleanupAllModules();
     // TODO: Cleanup libcoreclr.so instance
 
-    g_pProcess->Terminate(0);
+    m_pProcess->Terminate(0);
     WaitProcessExited();
 
-    g_pProcess->Release();
-    g_pProcess = nullptr;
+    m_pProcess->Release();
+    m_pProcess = nullptr;
 
-    g_pDebug->Terminate();
-    g_pDebug = nullptr;
+    m_pDebug->Terminate();
+    m_pDebug = nullptr;
 
     return S_OK;
 }
 
-HRESULT AttachToProcess(int pid)
+HRESULT Debugger::AttachToProcess(int pid)
 {
     HRESULT Status;
 
-    if (g_pProcess || g_pDebug)
+    if (m_pProcess || m_pDebug)
     {
         std::lock_guard<std::mutex> lock(g_processMutex);
         if (g_process)
@@ -697,7 +696,7 @@ HRESULT AttachToProcess(int pid)
 
     IfFailRet(pCorDebug->Initialize());
 
-    Status = pCorDebug->SetManagedHandler(g_managedCallback);
+    Status = pCorDebug->SetManagedHandler(m_managedCallback);
     if (FAILED(Status))
     {
         pCorDebug->Terminate();
@@ -712,8 +711,8 @@ HRESULT AttachToProcess(int pid)
         return Status;
     }
 
-    g_pProcess = pProcess.Detach();
-    g_pDebug = pCorDebug.Detach();
+    m_pProcess = pProcess.Detach();
+    m_pDebug = pCorDebug.Detach();
 
     return S_OK;
 }
@@ -772,9 +771,11 @@ int main(int argc, char *argv[])
         }
     }
 
+    Debugger debugger(new ManagedCallback());
+
     if (pidDebuggee != 0)
     {
-        HRESULT Status = AttachToProcess(pidDebuggee);
+        HRESULT Status = debugger.AttachToProcess(pidDebuggee);
         if (FAILED(Status))
         {
             fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
@@ -782,7 +783,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    CommandLoop();
+    debugger.CommandLoop();
 
     return EXIT_SUCCESS;
 }
