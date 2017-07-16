@@ -296,7 +296,12 @@ HRESULT Debugger::HandleCommand(std::string command,
         ToRelease<ICorDebugFrame> pFrame;
         IfFailRet(GetFrameAt(pThread, GetIntArg(args, "--frame", 0), &pFrame));
 
-        return CreateVar(pThread, pFrame, args.at(0), args.at(1), output);
+        std::string var_name = args.at(0);
+        std::string var_expr = args.at(1);
+        if (var_expr == "*" && args.size() >= 3)
+            var_expr = args.at(2);
+
+        return CreateVar(pThread, pFrame, var_name, var_expr, output);
     }},
     { "var-list-children", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         if (!pProcess) return E_FAIL;
