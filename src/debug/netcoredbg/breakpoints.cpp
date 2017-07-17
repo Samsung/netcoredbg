@@ -227,7 +227,7 @@ static HRESULT ResolveBreakpoint(Breakpoint &bp)
     return S_OK;
 }
 
-HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule)
+void TryResolveBreakpointsForModule(ICorDebugModule *pModule)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
@@ -238,12 +238,8 @@ HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule)
         if (b.IsResolved())
             continue;
 
-        if (SUCCEEDED(ResolveBreakpointInModule(pModule, b)))
-        {
-            return S_OK;
-        }
+        ResolveBreakpointInModule(pModule, b);
     }
-    return E_FAIL;
 }
 
 static HRESULT CreateBreakpointInProcess(Breakpoint &bp, ULONG32 &id)

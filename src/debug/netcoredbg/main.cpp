@@ -115,7 +115,7 @@ void _out_printf(const char *fmt, ...)
 // Breakpoints
 void DeleteAllBreakpoints();
 HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id);
-HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule);
+void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
 // Modules
 void CleanupAllModules();
