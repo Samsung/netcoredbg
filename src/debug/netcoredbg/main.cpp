@@ -444,7 +444,9 @@ public:
             TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
             {
                 std::stringstream ss;
-                ss << "id=\"{" << id << "}\",target-name=\"" << name << "\","
+                ss << "id=\"{" << id << "}\","
+                   << "target-name=\"" << name << "\","
+                   << "host-name=\"" << name << "\","
                    << "symbols-loaded=\"" << symbolsLoaded << "\","
                    << "base-address=\"0x" << std::hex << baseAddress << "\","
                    << "size=\"" << std::dec << size << "\"";

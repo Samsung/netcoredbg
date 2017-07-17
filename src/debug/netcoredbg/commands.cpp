@@ -25,6 +25,7 @@ HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE
 HRESULT DeleteBreakpoint(ULONG32 id);
 HRESULT InsertBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
 HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
+ULONG32 InsertExceptionBreakpoint(const std::string &name);
 
 // Frames
 HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
@@ -368,7 +369,38 @@ HRESULT Debugger::HandleCommand(std::string command,
         this->TerminateProcess();
 
         return S_OK;
-    }}
+    }},
+    { "handshake", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (!args.empty() && args.at(0) == "init")
+            output = "request=\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"";
+
+        return S_OK;
+    }},
+    { "gdb-set", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        return S_OK;
+    }},
+    { "break-exception-insert", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (args.empty())
+            return E_FAIL;
+        size_t i = 1;
+        if (args.at(0) == "--mda")
+            i = 2;
+
+        std::stringstream ss;
+        const char *sep = "";
+        ss << "bkpt=[";
+        for (; i < args.size(); i++)
+        {
+            ULONG32 id = InsertExceptionBreakpoint(args.at(i));
+            ss << sep;
+            sep = ",";
+            ss << "{number=\"" << id << "\"}";
+        }
+        ss << "]";
+        output = ss.str();
+
+        return S_OK;
+    }},
     };
 
     auto command_it = commands.find(command);

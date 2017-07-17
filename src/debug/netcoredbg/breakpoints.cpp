@@ -126,6 +126,12 @@ static ULONG32 InsertBreakpoint(Breakpoint &bp)
     return id;
 }
 
+ULONG32 InsertExceptionBreakpoint(const std::string &name)
+{
+    Breakpoint bp;
+    return InsertBreakpoint(bp);
+}
+
 HRESULT DeleteBreakpoint(ULONG32 id)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
