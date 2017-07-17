@@ -759,12 +759,6 @@ void print_help()
 
 int main(int argc, char *argv[])
 {
-    if (argc <= 1)
-    {
-        print_help();
-        return EXIT_FAILURE;
-    }
-
     DWORD pidDebuggee = 0;
 
     for (int i = 1; i < argc; i++)
