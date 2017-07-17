@@ -204,6 +204,8 @@ static void PrintVar(VarObjValue &v,
 {
     std::stringstream ss;
 
+    std::string editable = "noneditable";
+
     ss << "name=\"" << v.varobjName << "\",";
     if (print_values)
     {
@@ -212,8 +214,11 @@ static void PrintVar(VarObjValue &v,
             PrintValue(v.value, pILFrame, strVal);
         ss << "value=\"" << strVal << "\",";
     }
+    ss << "attributes=\"" << editable << "\",";
     ss << "exp=\"" << v.name << "\",";
-    ss << "numchild=\"" << v.numchild << "\",type=\"" << v.typeName << "\",thread-id=\"" << v.threadId << "\"";
+    ss << "numchild=\"" << v.numchild << "\",";
+    ss << "type=\"" << v.typeName << "\",";
+    ss << "thread-id=\"" << v.threadId << "\"";
     //,has_more="0"}
 
     output = ss.str();
