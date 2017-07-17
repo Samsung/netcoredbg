@@ -387,15 +387,23 @@ public:
             pThread->GetID(&threadId);
             SetLastStoppedThread(pThread);
 
+            std::string excType;
+            std::string excModule;
+            GetExceptionInfo(pThread, excType, excModule);
+
             if (unhandled)
             {
-                out_printf("*stopped,reason=\"exception-received\",exception-stage=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                    unhandled ? "unhandled" : "handled", (int)threadId, output.c_str());
+                std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
+                std::string category = "clr";
+                out_printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                    excType.c_str(),
+                    details.c_str(),
+                    unhandled ? "unhandled" : "handled",
+                    category.c_str(),
+                    (int)threadId,
+                    output.c_str());
             } else {
                 ToRelease<ICorDebugValue> pExceptionValue;
-                std::string excType;
-                std::string excModule;
-                GetExceptionInfo(pThread, excType, excModule);
                 out_printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
                     excType.c_str(), excModule.c_str());
                 pAppDomain->Continue(0);
