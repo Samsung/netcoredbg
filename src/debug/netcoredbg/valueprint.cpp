@@ -30,7 +30,7 @@ HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOut
         {
             ToRelease<ICorDebugValue> pDereferencedValue;
             IfFailRet(pReferenceValue->Dereference(&pDereferencedValue));
-            return DereferenceAndUnboxValue(pDereferencedValue, ppOutputValue);
+            return DereferenceAndUnboxValue(pDereferencedValue, ppOutputValue, pIsNull);
         }
         else
         {
@@ -47,7 +47,7 @@ HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOut
     {
         ToRelease<ICorDebugObjectValue> pUnboxedValue;
         IfFailRet(pBoxedValue->GetObject(&pUnboxedValue));
-        return DereferenceAndUnboxValue(pUnboxedValue, ppOutputValue);
+        return DereferenceAndUnboxValue(pUnboxedValue, ppOutputValue, pIsNull);
     }
     *ppOutputValue = pValue;
     (*ppOutputValue)->AddRef();
