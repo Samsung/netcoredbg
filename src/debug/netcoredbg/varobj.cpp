@@ -210,7 +210,7 @@ static void PrintVar(VarObjValue &v,
     if (print_values)
     {
         std::string strVal;
-        if (v.value)
+        if (v.value && !v.statics_only)
             PrintValue(v.value, pILFrame, strVal);
         ss << "value=\"" << strVal << "\",";
     }

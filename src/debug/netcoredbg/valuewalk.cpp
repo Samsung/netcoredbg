@@ -135,7 +135,7 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
 
     IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
 
-    if (isNull) return S_OK;
+    if (isNull && !pValue.GetPtr()) return S_OK;
 
     ToRelease<ICorDebugArrayValue> pArrayValue;
     if (SUCCEEDED(pValue->QueryInterface(IID_ICorDebugArrayValue, (LPVOID *) &pArrayValue)))
@@ -254,7 +254,8 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
                     name = name.substr(1, endOffset - 1);
                     backedProperies.insert(name);
                 }
-
+                if (isNull && !is_static)
+                    continue;
                 IfFailRet(cb(mdMethodDefNil, pModule, pType, pFieldVal, is_static, name));
             }
             else
@@ -262,7 +263,8 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
                 // no need for backing field when we can not get its value
                 if (name[0] == '<')
                     continue;
-
+                if (isNull && !is_static)
+                    continue;
                 IfFailRet(cb(mdMethodDefNil, pModule, pType, nullptr, is_static, name));
             }
         }
@@ -309,6 +311,8 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
 
             bool is_static = (getterAttr & mdStatic);
 
+            if (isNull && !is_static)
+                continue;
             IfFailRet(cb(mdGetter, pModule, pType, nullptr, is_static, name));
         }
     }
