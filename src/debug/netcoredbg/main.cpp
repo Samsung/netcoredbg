@@ -339,7 +339,7 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            out_printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",%s\n",
+            out_printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",frame={%s}\n",
                 (int)threadId, (unsigned int)id, output.c_str());
 
             SetLastStoppedThread(pThread);
