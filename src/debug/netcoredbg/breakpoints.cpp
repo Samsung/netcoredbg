@@ -41,13 +41,16 @@ struct Breakpoint {
     std::string fullname;
     int linenum;
     ToRelease<ICorDebugBreakpoint> breakpoint;
+    bool enabled;
+    ULONG32 times;
 
     bool IsResolved() const
     {
         return modAddress != 0;
     }
 
-    Breakpoint() : id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr) {}
+    Breakpoint() :
+        id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr), enabled(true), times(0) {}
 
     ~Breakpoint()
     {
@@ -92,7 +95,7 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output)
     return S_OK;
 }
 
-HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id)
+HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
 {
     HRESULT Status;
     ULONG32 ilOffset;
@@ -113,9 +116,11 @@ HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id)
         if (b.fullname == fullname &&
             b.ilOffset == ilOffset &&
             b.methodToken == methodToken &&
-            b.linenum == linenum)
+            b.linenum == linenum &&
+            b.enabled)
         {
             id = b.id;
+            times = ++b.times;
             return S_OK;
         }
     }

@@ -114,7 +114,7 @@ void _out_printf(const char *fmt, ...)
 
 // Breakpoints
 void DeleteAllBreakpoints();
-HRESULT FindCurrentBreakpointId(ICorDebugThread *pThread, ULONG32 &id);
+HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times);
 void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
 // Modules
@@ -329,7 +329,8 @@ public:
             /* [in] */ ICorDebugBreakpoint *pBreakpoint)
         {
             ULONG32 id = 0;
-            FindCurrentBreakpointId(pThread, id);
+            ULONG32 times = 0;
+            HitBreakpoint(pThread, id, times);
 
             std::string output;
             ToRelease<ICorDebugFrame> pFrame;
@@ -339,8 +340,8 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            out_printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",frame={%s}\n",
-                (int)threadId, (unsigned int)id, output.c_str());
+            out_printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
+                (int)threadId, (unsigned int)id, (unsigned int)times, output.c_str());
 
             SetLastStoppedThread(pThread);
 
