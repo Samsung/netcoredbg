@@ -201,7 +201,7 @@ static HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     return S_OK;
 }
 
-static HRESULT StepCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &, StepType stepType)
+static HRESULT StepCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output, StepType stepType)
 {
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
@@ -209,6 +209,7 @@ static HRESULT StepCommand(ICorDebugProcess *pProcess, const std::vector<std::st
     IfFailRet(pProcess->GetThread(threadId, &pThread));
     IfFailRet(RunStep(pThread, stepType));
     IfFailRet(pProcess->Continue(0));
+    output = "^running";
     return S_OK;
 }
 
@@ -526,8 +527,15 @@ void Debugger::CommandLoop()
 
         if (SUCCEEDED(hr))
         {
-            const char *sep = output.empty() ? "" : ",";
-            out_printf("%s^done%s%s\n", token.c_str(), sep, output.c_str());
+            const char *resultClass;
+            if (output.empty())
+                resultClass = "^done";
+            else if (output.at(0) == '^')
+                resultClass = "";
+            else
+                resultClass = "^done,";
+
+            out_printf("%s%s%s\n", token.c_str(), resultClass, output.c_str());
         }
         else
         {
