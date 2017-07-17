@@ -12,9 +12,11 @@
 
 struct ModuleInfo
 {
-    CORDB_ADDRESS address;
     std::shared_ptr<SymbolReader> symbols;
-    //ICorDebugModule *module;
+    ToRelease<ICorDebugModule> module;
+
+    ModuleInfo(ModuleInfo &&) = default;
+    ModuleInfo(const ModuleInfo &) = delete;
 };
 
 std::mutex g_modulesInfoMutex;
@@ -40,6 +42,44 @@ std::string GetModuleName(ICorDebugModule *pModule)
         return to_utf8(name/*, name_len*/);
     }
     return std::string();
+}
+
+HRESULT GetLocationInAny(std::string filename,
+                         ULONG linenum,
+                         ULONG32 &ilOffset,
+                         mdMethodDef &methodToken,
+                         std::string &fullname,
+                         ICorDebugModule **ppModule)
+{
+    HRESULT Status;
+
+    WCHAR nameBuffer[MAX_LONGPATH];
+
+    Status = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), filename.size() + 1, nameBuffer, MAX_LONGPATH);
+
+    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+
+    for (auto &info_pair : g_modulesInfo)
+    {
+        ModuleInfo &mdInfo = info_pair.second;
+
+        CORDB_ADDRESS modAddress;
+        IfFailRet(mdInfo.module->GetBaseAddress(&modAddress));
+        if (FAILED(mdInfo.symbols->ResolveSequencePoint(nameBuffer, linenum, modAddress, &methodToken, &ilOffset)))
+            continue;
+
+        WCHAR wFilename[MAX_LONGPATH];
+        ULONG resolvedLinenum;
+        if (FAILED(mdInfo.symbols->GetLineByILOffset(methodToken, ilOffset, &resolvedLinenum, wFilename, _countof(wFilename))))
+            continue;
+
+        fullname = to_utf8(wFilename);
+
+        mdInfo.module->AddRef();
+        *ppModule = mdInfo.module.GetPtr();
+        return S_OK;
+    }
+    return E_FAIL;
 }
 
 HRESULT GetLocationInModule(ICorDebugModule *pModule,
@@ -227,7 +267,9 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
 
     {
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        g_modulesInfo.insert({name, {baseAddress, symbolReader}});
+        pModule->AddRef();
+        ModuleInfo mdInfo { symbolReader, pModule };
+        g_modulesInfo.insert(std::make_pair(name, std::move(mdInfo)));
     }
 
     return S_OK;

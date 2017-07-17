@@ -22,7 +22,12 @@ HRESULT GetLocationInModule(ICorDebugModule *pModule,
                             ULONG32 &ilOffset,
                             mdMethodDef &methodToken,
                             std::string &fullname);
-
+HRESULT GetLocationInAny(std::string filename,
+                         ULONG linenum,
+                         ULONG32 &ilOffset,
+                         mdMethodDef &methodToken,
+                         std::string &fullname,
+                         ICorDebugModule **ppModule);
 
 static std::mutex g_breakMutex;
 static ULONG32 g_breakIndex = 1;
@@ -148,7 +153,7 @@ void DeleteAllBreakpoints()
     g_breaks.clear();
 }
 
-HRESULT ResolveBreakpoint(ICorDebugModule *pModule, Breakpoint &bp)
+static HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, Breakpoint &bp)
 {
     HRESULT Status;
 
@@ -183,6 +188,44 @@ HRESULT ResolveBreakpoint(ICorDebugModule *pModule, Breakpoint &bp)
     return S_OK;
 }
 
+static HRESULT ResolveBreakpoint(Breakpoint &bp)
+{
+    HRESULT Status;
+
+    mdMethodDef methodToken;
+    ULONG32 ilOffset;
+    std::string fullname;
+
+    ToRelease<ICorDebugModule> pModule;
+
+    IfFailRet(GetLocationInAny(bp.fullname,
+                               bp.linenum,
+                               ilOffset,
+                               methodToken,
+                               fullname,
+                               &pModule));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    ToRelease<ICorDebugCode> pCode;
+    IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
+    IfFailRet(pFunc->GetILCode(&pCode));
+
+    ToRelease<ICorDebugFunctionBreakpoint> pBreakpoint;
+    IfFailRet(pCode->CreateBreakpoint(ilOffset, &pBreakpoint));
+    IfFailRet(pBreakpoint->Activate(TRUE));
+
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    bp.modAddress = modAddress;
+    bp.methodToken = methodToken;
+    bp.ilOffset = ilOffset;
+    bp.fullname = fullname;
+    bp.breakpoint = pBreakpoint.Detach();
+
+    return S_OK;
+}
+
 HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
@@ -194,7 +237,7 @@ HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule)
         if (b.IsResolved())
             continue;
 
-        if (SUCCEEDED(ResolveBreakpoint(pModule, b)))
+        if (SUCCEEDED(ResolveBreakpointInModule(pModule, b)))
         {
             return S_OK;
         }
@@ -202,45 +245,13 @@ HRESULT TryResolveBreakpointsForModule(ICorDebugModule *pModule)
     return E_FAIL;
 }
 
-static HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, Breakpoint &bp, ULONG32 &id)
+static HRESULT CreateBreakpointInProcess(Breakpoint &bp, ULONG32 &id)
 {
-    HRESULT Status;
-
-    ToRelease<ICorDebugAppDomainEnum> domains;
-    IfFailRet(pProcess->EnumerateAppDomains(&domains));
-
-    ICorDebugAppDomain *curDomain;
-    ULONG domainsFetched;
-    while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
+    if (SUCCEEDED(ResolveBreakpoint(bp)))
     {
-        ToRelease<ICorDebugAppDomain> pDomain(curDomain);
-
-        ToRelease<ICorDebugAssemblyEnum> assemblies;
-        IfFailRet(pDomain->EnumerateAssemblies(&assemblies));
-
-        ICorDebugAssembly *curAssembly;
-        ULONG assembliesFetched;
-        while (SUCCEEDED(assemblies->Next(1, &curAssembly, &assembliesFetched)) && assembliesFetched == 1)
-        {
-            ToRelease<ICorDebugAssembly> pAssembly(curAssembly);
-
-            ToRelease<ICorDebugModuleEnum> modules;
-            IfFailRet(pAssembly->EnumerateModules(&modules));
-
-            ICorDebugModule *curModule;
-            ULONG modulesFetched;
-            while (SUCCEEDED(modules->Next(1, &curModule, &modulesFetched)) && modulesFetched == 1)
-            {
-                ToRelease<ICorDebugModule> pModule(curModule);
-                if (SUCCEEDED(ResolveBreakpoint(pModule, bp)))
-                {
-                    id = InsertBreakpoint(bp);
-                    return S_OK;
-                }
-            }
-        }
+        id = InsertBreakpoint(bp);
+        return S_OK;
     }
-
     return S_FALSE;
 }
 
@@ -250,7 +261,7 @@ HRESULT InsertBreakpointInProcess(ICorDebugProcess *pProcess, std::string filena
     bp.fullname = filename;
     bp.linenum = linenum;
 
-    HRESULT Status = pProcess ? CreateBreakpointInProcess(pProcess, bp, id) : S_FALSE;
+    HRESULT Status = pProcess ? CreateBreakpointInProcess(bp, id) : S_FALSE;
 
     if (Status == S_FALSE)
     {
