@@ -15,7 +15,6 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          mdMethodDef &methodToken,
                          std::string &fullname,
                          ULONG &linenum);
-std::string GetModuleName(ICorDebugModule *pModule);
 
 HRESULT GetLocationInModule(ICorDebugModule *pModule,
                             std::string filename,

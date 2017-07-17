@@ -120,7 +120,7 @@ void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 // Modules
 void CleanupAllModules();
 void SetCoreCLRPath(const std::string &coreclrPath);
-std::string GetModuleName(ICorDebugModule *pModule);
+std::string GetModuleFileName(ICorDebugModule *pModule);
 HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range);
 HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
                              std::string &id,

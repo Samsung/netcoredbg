@@ -20,7 +20,7 @@ struct ModuleInfo
 };
 
 std::mutex g_modulesInfoMutex;
-std::unordered_map<std::string, ModuleInfo> g_modulesInfo;
+std::unordered_map<CORDB_ADDRESS, ModuleInfo> g_modulesInfo;
 
 void CleanupAllModules()
 {
@@ -33,7 +33,7 @@ void SetCoreCLRPath(const std::string &coreclrPath)
     SymbolReader::SetCoreCLRPath(coreclrPath);
 }
 
-std::string GetModuleName(ICorDebugModule *pModule)
+std::string GetModuleFileName(ICorDebugModule *pModule)
 {
     WCHAR name[mdNameLen];
     ULONG32 name_len = 0;
@@ -95,17 +95,16 @@ HRESULT GetLocationInModule(ICorDebugModule *pModule,
 
     Status = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), filename.size() + 1, nameBuffer, MAX_LONGPATH);
 
-    std::string modName = GetModuleName(pModule);
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
 
     std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-    auto info_pair = g_modulesInfo.find(modName);
+    auto info_pair = g_modulesInfo.find(modAddress);
     if (info_pair == g_modulesInfo.end())
     {
         return E_FAIL;
     }
 
-    CORDB_ADDRESS modAddress;
-    IfFailRet(pModule->GetBaseAddress(&modAddress));
     IfFailRet(info_pair->second.symbols->ResolveSequencePoint(nameBuffer, linenum, modAddress, &methodToken, &ilOffset));
 
     WCHAR wFilename[MAX_LONGPATH];
@@ -143,12 +142,14 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
 
-    std::string modName = GetModuleName(pModule);
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
     WCHAR name[MAX_LONGPATH];
 
     {
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        auto info_pair = g_modulesInfo.find(modName);
+        auto info_pair = g_modulesInfo.find(modAddress);
         if (info_pair == g_modulesInfo.end())
         {
             return E_FAIL;
@@ -184,12 +185,15 @@ HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&nOffset, &mappingResult));
 
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
     ULONG32 ilStartOffset;
     ULONG32 ilEndOffset;
 
     {
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        auto info_pair = g_modulesInfo.find(GetModuleName(pModule));
+        auto info_pair = g_modulesInfo.find(modAddress);
         if (info_pair == g_modulesInfo.end())
         {
             return E_FAIL;
@@ -258,7 +262,7 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
     symbolReader->LoadSymbols(pMDImport, pModule);
     symbolsLoaded = symbolReader->SymbolsLoaded();
 
-    name = GetModuleName(pModule);
+    name = GetModuleFileName(pModule);
 
     IfFailRet(GetModuleId(pModule, id));
 
@@ -269,7 +273,7 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
         pModule->AddRef();
         ModuleInfo mdInfo { symbolReader, pModule };
-        g_modulesInfo.insert(std::make_pair(name, std::move(mdInfo)));
+        g_modulesInfo.insert(std::make_pair(baseAddress, std::move(mdInfo)));
     }
 
     return S_OK;
@@ -287,11 +291,14 @@ HRESULT GetFrameNamedLocalVariable(
 {
     HRESULT Status;
 
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
     WCHAR wParamName[mdNameLen] = W("\0");
 
     {
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        auto info_pair = g_modulesInfo.find(GetModuleName(pModule));
+        auto info_pair = g_modulesInfo.find(modAddress);
         if (info_pair == g_modulesInfo.end())
         {
             return E_FAIL;
