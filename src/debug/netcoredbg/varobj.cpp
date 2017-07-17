@@ -121,7 +121,8 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
                                         bool static_members,
                                         bool &has_static_members,
                                         int childStart,
-                                        int childEnd)
+                                        int childEnd,
+                                        bool &has_more)
 {
     has_static_members = false;
     HRESULT Status;
@@ -129,6 +130,7 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
     DWORD threadId = 0;
     IfFailRet(pThread->GetID(&threadId));
 
+    has_more = false;
     int currentIndex = -1;
 
     IfFailRet(WalkMembers(pInputValue, pILFrame, [&](
@@ -147,8 +149,13 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
             return S_OK;
 
         ++currentIndex;
-        if (currentIndex < childStart || currentIndex >= childEnd)
+        if (currentIndex < childStart)
             return S_OK;
+        if (currentIndex >= childEnd)
+        {
+            has_more = true;
+            return S_OK;
+        }
 
         std::string className;
         if (pType)
@@ -226,7 +233,7 @@ static VarObjValue & InsertVar(VarObjValue &varobj)
     return g_vars.emplace(std::make_pair(varName, std::move(varobj))).first->second;
 }
 
-static void PrintChildren(std::vector<VarObjValue> &members, int print_values, ICorDebugILFrame *pILFrame, std::string &output)
+static void PrintChildren(std::vector<VarObjValue> &members, int print_values, ICorDebugILFrame *pILFrame, bool has_more, std::string &output)
 {
     std::stringstream ss;
     ss << "numchild=\"" << members.size() << "\"";
@@ -247,6 +254,7 @@ static void PrintChildren(std::vector<VarObjValue> &members, int print_values, I
     }
 
     ss << "]";
+    ss << ",has_more=\"" << (has_more ? 1 : 0) << "\"";
     output = ss.str();
 }
 
@@ -267,6 +275,7 @@ HRESULT ListChildren(
     std::vector<VarObjValue> members;
 
     bool has_static_members;
+    bool has_more;
 
     IfFailRet(FetchFieldsAndProperties(objValue.value,
                                        NULL,
@@ -276,7 +285,8 @@ HRESULT ListChildren(
                                        objValue.statics_only,
                                        has_static_members,
                                        childStart,
-                                       childEnd));
+                                       childEnd,
+                                       has_more));
 
     if (!objValue.statics_only && has_static_members)
     {
@@ -286,7 +296,7 @@ HRESULT ListChildren(
 
     FixupInheritedFieldNames(members);
 
-    PrintChildren(members, print_values, pILFrame, output);
+    PrintChildren(members, print_values, pILFrame, has_more, output);
 
     return S_OK;
 }
