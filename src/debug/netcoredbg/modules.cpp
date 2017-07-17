@@ -244,6 +244,20 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
     return S_OK;
 }
 
+static std::string GetFileName(const std::string &path)
+{
+    std::size_t i = path.find_last_of("/\\");
+    return i == std::string::npos ? path : path.substr(i + 1);
+}
+
+static bool ShouldLoadSymbolsFor(const std::string &moduleName)
+{
+    std::string name = GetFileName(moduleName);
+    if (name.find("System.") == 0)
+        return false;
+    return true;
+}
+
 HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
                              std::string &id,
                              std::string &name,
@@ -258,11 +272,15 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
 
-    auto symbolReader = std::make_shared<SymbolReader>();
-    symbolReader->LoadSymbols(pMDImport, pModule);
-    symbolsLoaded = symbolReader->SymbolsLoaded();
-
     name = GetModuleFileName(pModule);
+
+    auto symbolReader = std::make_shared<SymbolReader>();
+
+    if (ShouldLoadSymbolsFor(name))
+    {
+        symbolReader->LoadSymbols(pMDImport, pModule);
+        symbolsLoaded = symbolReader->SymbolsLoaded();
+    }
 
     IfFailRet(GetModuleId(pModule, id));
 
