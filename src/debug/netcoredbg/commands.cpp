@@ -401,6 +401,10 @@ HRESULT Debugger::HandleCommand(std::string command,
 
         return S_OK;
     }},
+    { "var-show-attributes", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        output = "status=\"noneditable\"";
+        return S_OK;
+    }},
     };
 
     auto command_it = commands.find(command);
