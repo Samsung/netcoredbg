@@ -7,6 +7,7 @@
 #include <vector>
 #include <map>
 
+std::string EscapeMIValue(const std::string &str);
 
 // Modules
 HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
@@ -78,7 +79,7 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output)
     if (b.IsResolved())
     {
         ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "func=\"\",fullname=\"" << b.fullname << "\",line=\"" << b.linenum << "\"}";
+            "func=\"\",fullname=\"" << EscapeMIValue(b.fullname) << "\",line=\"" << b.linenum << "\"}";
         Status = S_OK;
     }
     else

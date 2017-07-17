@@ -136,6 +136,34 @@ void NotifyEvalComplete();
 // Frames
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output);
 
+// TODO: Merge with EscapeString
+std::string EscapeMIValue(const std::string &str)
+{
+    std::string s(str);
+
+    for (std::size_t i = 0; i < s.size(); ++i)
+    {
+        int count = 0;
+        char c = s.at(i);
+        switch (c)
+        {
+            case '\"': count = 1; s.insert(i, count, '\\'); s[i + count] = '\"'; break;
+            case '\\': count = 1; s.insert(i, count, '\\'); s[i + count] = '\\'; break;
+            case '\0': count = 1; s.insert(i, count, '\\'); s[i + count] = '0'; break;
+            case '\a': count = 1; s.insert(i, count, '\\'); s[i + count] = 'a'; break;
+            case '\b': count = 1; s.insert(i, count, '\\'); s[i + count] = 'b'; break;
+            case '\f': count = 1; s.insert(i, count, '\\'); s[i + count] = 'f'; break;
+            case '\n': count = 1; s.insert(i, count, '\\'); s[i + count] = 'n'; break;
+            case '\r': count = 1; s.insert(i, count, '\\'); s[i + count] = 'r'; break;
+            case '\t': count = 1; s.insert(i, count, '\\'); s[i + count] = 't'; break;
+            case '\v': count = 1; s.insert(i, count, '\\'); s[i + count] = 'v'; break;
+        }
+        i += count;
+    }
+
+    return s;
+}
+
 static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
     HRESULT Status;
@@ -445,8 +473,8 @@ public:
             {
                 std::stringstream ss;
                 ss << "id=\"{" << id << "}\","
-                   << "target-name=\"" << name << "\","
-                   << "host-name=\"" << name << "\","
+                   << "target-name=\"" << EscapeMIValue(name) << "\","
+                   << "host-name=\"" << EscapeMIValue(name) << "\","
                    << "symbols-loaded=\"" << symbolsLoaded << "\","
                    << "base-address=\"0x" << std::hex << baseAddress << "\","
                    << "size=\"" << std::dec << size << "\"";

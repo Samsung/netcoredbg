@@ -7,6 +7,8 @@
 
 #include "typeprinter.h"
 
+std::string EscapeMIValue(const std::string &str);
+
 HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          ULONG32 &ilOffset,
                          mdMethodDef &methodToken,
@@ -77,7 +79,7 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
     IfFailRet(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
 
     std::stringstream ss;
-    ss << "line=\"" << linenum << "\",fullname=\"" << fullname << "\"";
+    ss << "line=\"" << linenum << "\",fullname=\"" << EscapeMIValue(fullname) << "\"";
     output = ss.str();
 
     return S_OK;
