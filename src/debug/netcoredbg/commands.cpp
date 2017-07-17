@@ -13,7 +13,7 @@
 using namespace std::placeholders;
 
 // Varobj
-HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output);
+HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
 HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
 HRESULT ListChildren(int childStart, int childEnd, const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
 HRESULT DeleteVar(const std::string &varobjName);
@@ -290,7 +290,7 @@ HRESULT Debugger::HandleCommand(std::string command,
         ToRelease<ICorDebugFrame> pFrame;
         IfFailRet(GetFrameAt(pThread, GetIntArg(args, "--frame", 0), &pFrame));
 
-        IfFailRet(ListVariables(pFrame, output));
+        IfFailRet(ListVariables(pThread, pFrame, output));
 
         return S_OK;
     }},

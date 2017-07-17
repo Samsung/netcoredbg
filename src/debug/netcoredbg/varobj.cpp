@@ -328,7 +328,7 @@ HRESULT ListChildren(
     return ListChildren(childStart, childEnd, it->second, print_values, pThread, pFrame, output);
 }
 
-HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
+HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output)
 {
     const bool printValues = true;
     const bool printTypes = false;
@@ -339,9 +339,38 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
     ss << "variables=[";
     const char *sep = "";
 
+    ToRelease<ICorDebugValue> pExceptionValue;
+    if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
+    {
+        ToRelease<ICorDebugILFrame> pILFrame;
+        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+        ss << sep;
+        sep = ",";
+
+        ss << "{name=\"" << "$exception" << "\"";
+        if (printValues)
+        {
+            std::string strVal;
+            if (SUCCEEDED(PrintValue(pExceptionValue, pILFrame, strVal)))
+                ss << ",value=\"" << strVal << "\"";
+        }
+        if (printTypes)
+        {
+            std::string strVal;
+            if (SUCCEEDED(TypePrinter::GetTypeOfValue(pExceptionValue, strVal)))
+                ss << ",type=\"" << strVal << "\"";
+        }
+
+        ss << "}";
+    }
+
     IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
     {
-        ss << sep << "{name=\"" << name << "\"";
+        ss << sep;
+        sep = ",";
+
+        ss << "{name=\"" << name << "\"";
         if (printValues)
         {
             std::string strVal;
@@ -356,7 +385,7 @@ HRESULT ListVariables(ICorDebugFrame *pFrame, std::string &output)
         }
 
         ss << "}";
-        sep = ",";
+
         return S_OK;
     }));
 
@@ -375,24 +404,32 @@ HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::s
     ToRelease<ICorDebugILFrame> pILFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
-    ICorDebugValue *pResultValue = nullptr;
-    IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
-    {
-        if (pResultValue)
-            return S_OK; // TODO: Create a fast way to exit
+    ToRelease<ICorDebugValue> pResultValue;
 
-        if (name == expression && pValue)
+    if (expression == "$exception")
+    {
+        pThread->GetCurrentException(&pResultValue);
+    }
+    else
+    {
+        IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
         {
-            pValue->AddRef();
-            pResultValue = pValue;
-        }
-        return S_OK;
-    }));
+            if (pResultValue)
+                return S_OK; // TODO: Create a fast way to exit
+
+            if (name == expression && pValue)
+            {
+                pValue->AddRef();
+                pResultValue = pValue;
+            }
+            return S_OK;
+        }));
+    }
 
     if (!pResultValue)
         return E_FAIL;
 
-    VarObjValue tmpobj(threadId, expression, pResultValue, "", varobjName);
+    VarObjValue tmpobj(threadId, expression, pResultValue.Detach(), "", varobjName);
     int print_values = 1;
     PrintVar(InsertVar(tmpobj), print_values, pILFrame, output);
 
