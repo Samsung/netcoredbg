@@ -182,6 +182,9 @@ static HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     CorDebugIntercept mask = (CorDebugIntercept)(INTERCEPT_ALL & ~(INTERCEPT_SECURITY | INTERCEPT_CLASS_INIT));
     IfFailRet(pStepper->SetInterceptMask(mask));
 
+    CorDebugUnmappedStop stopMask = STOP_NONE;
+    IfFailRet(pStepper->SetUnmappedStopMask(stopMask));
+
     if (stepType == STEP_OUT)
     {
         IfFailRet(pStepper->StepOut());
