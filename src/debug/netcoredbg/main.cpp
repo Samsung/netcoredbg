@@ -361,7 +361,7 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            out_printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
+            out_printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 (int)threadId, output.c_str());
 
             SetLastStoppedThread(pThread);
@@ -389,7 +389,7 @@ public:
 
             if (unhandled)
             {
-                out_printf("*stopped,reason=\"exception-received\",exception-stage=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",%s\n",
+                out_printf("*stopped,reason=\"exception-received\",exception-stage=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                     unhandled ? "unhandled" : "handled", (int)threadId, output.c_str());
             } else {
                 ToRelease<ICorDebugValue> pExceptionValue;
