@@ -12,7 +12,7 @@
 
 struct ModuleInfo
 {
-    std::shared_ptr<SymbolReader> symbols;
+    std::unique_ptr<SymbolReader> symbols;
     ToRelease<ICorDebugModule> module;
 
     ModuleInfo(ModuleInfo &&) = default;
@@ -274,7 +274,7 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
 
     name = GetModuleFileName(pModule);
 
-    auto symbolReader = std::make_shared<SymbolReader>();
+    std::unique_ptr<SymbolReader> symbolReader(new SymbolReader());
 
     if (ShouldLoadSymbolsFor(name))
     {
@@ -290,7 +290,7 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
     {
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
         pModule->AddRef();
-        ModuleInfo mdInfo { symbolReader, pModule };
+        ModuleInfo mdInfo { std::move(symbolReader), pModule };
         g_modulesInfo.insert(std::make_pair(baseAddress, std::move(mdInfo)));
     }
 
