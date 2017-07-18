@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <functional>
 #include <algorithm>
+#include <mutex>
 
 #include "debugger.h"
 
@@ -33,10 +34,6 @@ HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame
 // Main
 HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
 
-void _out_printf(const char *fmt, ...)
-    __attribute__((format (printf, 1, 2)));
-
-#define out_printf(fmt, ...) _out_printf(fmt, ##__VA_ARGS__)
 
 typedef std::function<HRESULT(
     ICorDebugProcess *pProcess,
@@ -524,7 +521,7 @@ void Debugger::CommandLoop()
     {
         token.clear();
 
-        out_printf("(gdb)\n");
+        Printf("(gdb)\n");
         if (!fgets(inputBuffer, _countof(inputBuffer), stdin))
             break;
 
@@ -532,7 +529,7 @@ void Debugger::CommandLoop()
         std::string command;
         if (!ParseLine(inputBuffer, token, command, args))
         {
-            out_printf("%s^error,msg=\"Failed to parse input\"\n", token.c_str());
+            Printf("%s^error,msg=\"Failed to parse input\"\n", token.c_str());
             continue;
         }
 
@@ -552,17 +549,17 @@ void Debugger::CommandLoop()
             else
                 resultClass = "^done,";
 
-            out_printf("%s%s%s\n", token.c_str(), resultClass, output.c_str());
+            Printf("%s%s%s\n", token.c_str(), resultClass, output.c_str());
         }
         else
         {
             const char *sep = output.empty() ? "" : " ";
-            out_printf("%s^error,msg=\"Error: 0x%08x%s%s\"\n", token.c_str(), hr, sep, output.c_str());
+            Printf("%s^error,msg=\"Error: 0x%08x%s%s\"\n", token.c_str(), hr, sep, output.c_str());
         }
     }
 
     if (!m_exit)
         TerminateProcess();
 
-    out_printf("%s^exit\n", token.c_str());
+    Printf("%s^exit\n", token.c_str());
 }

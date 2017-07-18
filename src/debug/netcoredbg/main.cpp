@@ -93,16 +93,11 @@ BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
     return bRet;
 }
 
-std::mutex g_outMutex;
+std::mutex Debugger::m_outMutex;
 
-void _out_printf(const char *fmt, ...)
-    __attribute__((format (printf, 1, 2)));
-
-#define out_printf(fmt, ...) _out_printf(fmt, ##__VA_ARGS__)
-
-void _out_printf(const char *fmt, ...)
+void Debugger::Printf(const char *fmt, ...)
 {
-    std::lock_guard<std::mutex> lock(g_outMutex);
+    std::lock_guard<std::mutex> lock(m_outMutex);
     va_list arg;
 
     va_start(arg, fmt);
@@ -295,7 +290,7 @@ public:
 
         void HandleEvent(ICorDebugController *controller, const char *eventName)
         {
-            out_printf("=message,text=\"event received %s\"\n", eventName);
+            Debugger::Printf("=message,text=\"event received %s\"\n", eventName);
             controller->Continue(0);
         }
 
@@ -364,7 +359,7 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            out_printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
+            Debugger::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
                 (int)threadId, (unsigned int)id, (unsigned int)times, output.c_str());
 
             SetLastStoppedThread(pThread);
@@ -386,7 +381,7 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            out_printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+            Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 (int)threadId, output.c_str());
 
             SetLastStoppedThread(pThread);
@@ -420,7 +415,7 @@ public:
             {
                 std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
                 std::string category = "clr";
-                out_printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                Debugger::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                     excType.c_str(),
                     details.c_str(),
                     unhandled ? "unhandled" : "handled",
@@ -429,7 +424,7 @@ public:
                     output.c_str());
             } else {
                 ToRelease<ICorDebugValue> pExceptionValue;
-                out_printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
+                Debugger::Printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
                     excType.c_str(), excModule.c_str());
                 pAppDomain->Continue(0);
             }
@@ -467,7 +462,7 @@ public:
         virtual HRESULT STDMETHODCALLTYPE ExitProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
-            out_printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
+            Debugger::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
             NotifyEvalComplete();
             NotifyProcessExited();
             return S_OK;
@@ -479,7 +474,7 @@ public:
         {
             DWORD threadId = 0;
             thread->GetID(&threadId);
-            out_printf("=thread-created,id=\"%i\"\n", (int)threadId);
+            Debugger::Printf("=thread-created,id=\"%i\"\n", (int)threadId);
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -511,7 +506,7 @@ public:
                 << "symbols-loaded=\"" << symbolsLoaded << "\","
                 << "base-address=\"0x" << std::hex << baseAddress << "\","
                 << "size=\"" << std::dec << size << "\"";
-            out_printf("=library-loaded,%s\n", ss.str().c_str());
+            Debugger::Printf("=library-loaded,%s\n", ss.str().c_str());
 
             if (symbolsLoaded)
                 TryResolveBreakpointsForModule(pModule);
@@ -642,7 +637,7 @@ public:
           //     case DEBUG_EXCEPTION_UNHANDLED: cbTypeName = "UNHANDLED"; break;
           //     default: cbTypeName = "?"; break;
           // }
-          // out_printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
+          // Debugger::Printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
           //     cbTypeName);
             pAppDomain->Continue(0);
             return S_OK;

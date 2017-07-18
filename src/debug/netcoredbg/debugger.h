@@ -7,6 +7,8 @@ class Debugger
     ICorDebugProcess *m_pProcess;
     bool m_exit;
     static bool m_justMyCode;
+    static std::mutex m_outMutex;
+
     HRESULT HandleCommand(std::string command,
                           const std::vector<std::string> &args,
                           std::string &output);
@@ -22,6 +24,8 @@ public:
         m_exit(false) {}
 
     ~Debugger();
+
+    static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
 
     HRESULT AttachToProcess(int pid);
     HRESULT DetachFromProcess();
