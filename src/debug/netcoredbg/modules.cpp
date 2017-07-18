@@ -10,6 +10,10 @@
 #include "symbolreader.h"
 #include "cputil.h"
 
+// JMC
+bool ShouldLoadSymbolsForModule(const std::string &moduleName);
+HRESULT SetJMCFromAttributes(ICorDebugModule *pModule);
+
 struct ModuleInfo
 {
     std::unique_ptr<SymbolReader> symbols;
@@ -250,14 +254,6 @@ std::string GetFileName(const std::string &path)
     return i == std::string::npos ? path : path.substr(i + 1);
 }
 
-static bool ShouldLoadSymbolsFor(const std::string &moduleName)
-{
-    std::string name = GetFileName(moduleName);
-    if (name.find("System.") == 0)
-        return false;
-    return true;
-}
-
 HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
                              std::string &id,
                              std::string &name,
@@ -276,10 +272,19 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
 
     std::unique_ptr<SymbolReader> symbolReader(new SymbolReader());
 
-    if (ShouldLoadSymbolsFor(name))
+    if (ShouldLoadSymbolsForModule(name))
     {
         symbolReader->LoadSymbols(pMDImport, pModule);
         symbolsLoaded = symbolReader->SymbolsLoaded();
+    }
+
+    // JMC stuff
+    ToRelease<ICorDebugModule2> pModule2;
+    if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
+    {
+        pModule2->SetJMCStatus(symbolsLoaded, 0, nullptr);
+        if (symbolsLoaded)
+            SetJMCFromAttributes(pModule);
     }
 
     IfFailRet(GetModuleId(pModule, id));

@@ -504,12 +504,6 @@ public:
 
             TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
 
-            ToRelease<ICorDebugModule2> pModule2;
-            if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
-            {
-                pModule2->SetJMCStatus(symbolsLoaded, 0, nullptr);
-            }
-
             std::stringstream ss;
             ss << "id=\"{" << id << "}\","
                 << "target-name=\"" << EscapeMIValue(name) << "\","
