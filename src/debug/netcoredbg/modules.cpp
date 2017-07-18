@@ -244,7 +244,7 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
     return S_OK;
 }
 
-static std::string GetFileName(const std::string &path)
+std::string GetFileName(const std::string &path)
 {
     std::size_t i = path.find_last_of("/\\");
     return i == std::string::npos ? path : path.substr(i + 1);

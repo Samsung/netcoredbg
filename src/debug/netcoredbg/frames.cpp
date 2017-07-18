@@ -4,10 +4,14 @@
 #include <vector>
 #include <list>
 #include <functional>
+#include <iomanip>
 
 #include "typeprinter.h"
 
 std::string EscapeMIValue(const std::string &str);
+
+HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
+std::string GetFileName(const std::string &path);
 
 HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          ULONG32 &ilOffset,
@@ -76,10 +80,51 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
     std::string fullname;
     ULONG linenum;
 
-    IfFailRet(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
-
     std::stringstream ss;
-    ss << "line=\"" << linenum << "\",fullname=\"" << EscapeMIValue(fullname) << "\"";
+
+    if (SUCCEEDED(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum)))
+    {
+        ss << "line=\"" << linenum << "\","
+           << "fullname=\"" << EscapeMIValue(fullname) << "\","
+            <<"file=\"" << GetFileName(fullname) << "\",";
+    }
+
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    ULONG32 nOffset = 0;
+    ToRelease<ICorDebugNativeFrame> pNativeFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugNativeFrame, (LPVOID*) &pNativeFrame));
+    IfFailRet(pNativeFrame->GetIP(&nOffset));
+
+    CorDebugMappingResult mappingResult;
+    IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+
+    std::string id;
+    IfFailRet(GetModuleId(pModule, id));
+
+    ss << "clr-addr={module-id=\"{" << id << "}\","
+       << "method-token=\"0x" << std::setw(8) << std::setfill('0') << std::hex << methodToken << "\","
+       << "il-offset=\"" << std::dec << ilOffset << "\",native-offset=\"" << nOffset << "\"},";
+
+    std::string methodName;
+    TypePrinter::GetMethodName(pFrame, methodName);
+    ss << "func=\"" << methodName << "\",";
+
+    CORDB_ADDRESS startAddr = 0;
+    CORDB_ADDRESS endAddr = 0;
+    pFrame->GetStackRange(&startAddr, &endAddr);
+
+    ss << "addr=\"0x" << std::setw(sizeof(void*)) << std::setfill('0') << std::hex << startAddr << "\"";
+
     output = ss.str();
 
     return S_OK;
@@ -233,14 +278,10 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame 
                     std::string frameLocation;
                     PrintFrameLocation(pFrame, frameLocation);
 
-                    ss << "frame={level=\"" << currentFrame << "\",";
+                    ss << "frame={level=\"" << currentFrame << "\"";
                     if (!frameLocation.empty())
-                        ss << frameLocation << ",";
-
-                    std::string methodName;
-                    TypePrinter::GetMethodName(pFrame, methodName);
-
-                    ss << "func=\"" << methodName << "\"}";
+                        ss << "," << frameLocation;
+                    ss << "}";
                 }
                 break;
         }
