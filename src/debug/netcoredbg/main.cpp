@@ -181,6 +181,23 @@ static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
     return S_OK;
 }
 
+HRESULT DisableAllSteppers(ICorDebugProcess *pProcess)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugAppDomainEnum> domains;
+    IfFailRet(pProcess->EnumerateAppDomains(&domains));
+
+    ICorDebugAppDomain *curDomain;
+    ULONG domainsFetched;
+    while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
+    {
+        ToRelease<ICorDebugAppDomain> pDomain(curDomain);
+        DisableAllSteppersInAppDomain(pDomain);
+    }
+    return S_OK;
+}
+
 static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
     HRESULT Status;
@@ -351,9 +368,6 @@ public:
                 (int)threadId, (unsigned int)id, (unsigned int)times, output.c_str());
 
             SetLastStoppedThread(pThread);
-
-            // If we do not ignore the breakpoint then remove any active steppers - we'll create a new one when needed
-            DisableAllSteppersInAppDomain(pAppDomain);
 
             return S_OK;
         }

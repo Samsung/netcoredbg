@@ -30,6 +30,8 @@ ULONG32 InsertExceptionBreakpoint(const std::string &name);
 // Frames
 HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
 
+// Main
+HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
 
 void _out_printf(const char *fmt, ...)
     __attribute__((format (printf, 1, 2)));
@@ -214,6 +216,7 @@ static HRESULT StepCommand(ICorDebugProcess *pProcess, const std::vector<std::st
     ToRelease<ICorDebugThread> pThread;
     DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
     IfFailRet(pProcess->GetThread(threadId, &pThread));
+    DisableAllSteppers(pProcess);
     IfFailRet(RunStep(pThread, stepType));
     IfFailRet(pProcess->Continue(0));
     output = "^running";
