@@ -28,6 +28,12 @@ unsigned long OSPageSize()
     return pageSize;
 }
 
+std::string GetFileName(const std::string &path)
+{
+    std::size_t i = path.find_last_of("/\\");
+    return i == std::string::npos ? path : path.substr(i + 1);
+}
+
 void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &tpaList)
 {
     const char * const tpaExtensions[] = {

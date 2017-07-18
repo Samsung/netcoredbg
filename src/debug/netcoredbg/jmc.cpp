@@ -5,9 +5,7 @@
 #include <list>
 
 #include "typeprinter.h"
-
-std::string GetFileName(const std::string &path);
-
+#include "platform.h"
 
 static const char *g_nonUserCode = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";
 

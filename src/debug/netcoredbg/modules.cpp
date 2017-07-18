@@ -248,12 +248,6 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
     return S_OK;
 }
 
-std::string GetFileName(const std::string &path)
-{
-    std::size_t i = path.find_last_of("/\\");
-    return i == std::string::npos ? path : path.substr(i + 1);
-}
-
 HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
                              std::string &id,
                              std::string &name,

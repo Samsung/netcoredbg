@@ -7,11 +7,11 @@
 #include <iomanip>
 
 #include "typeprinter.h"
+#include "platform.h"
 
 std::string EscapeMIValue(const std::string &str);
 
 HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
-std::string GetFileName(const std::string &path);
 
 HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          ULONG32 &ilOffset,
