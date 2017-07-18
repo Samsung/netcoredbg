@@ -6,6 +6,7 @@
 #include <functional>
 #include <iomanip>
 #include <mutex>
+#include <condition_variable>
 
 #include "typeprinter.h"
 #include "platform.h"

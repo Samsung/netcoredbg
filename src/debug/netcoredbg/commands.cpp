@@ -8,6 +8,7 @@
 #include <functional>
 #include <algorithm>
 #include <mutex>
+#include <condition_variable>
 
 #include "debugger.h"
 
@@ -377,6 +378,19 @@ HRESULT Debugger::HandleCommand(std::string command,
         this->TerminateProcess();
 
         return S_OK;
+    }},
+    { "file-exec-and-symbols", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (args.empty())
+            return E_INVALIDARG;
+        m_fileExec = args.at(0);
+        return S_OK;
+    }},
+    { "exec-arguments", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        m_execArgs = args;
+        return S_OK;
+    }},
+    { "exec-run", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        return RunProcess(); // TODO return ~running
     }},
     { "handshake", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (!args.empty() && args.at(0) == "init")

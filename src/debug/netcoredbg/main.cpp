@@ -7,24 +7,18 @@
 #include <unordered_map>
 #include <vector>
 #include <list>
+#include <chrono>
 
 #include "cputil.h"
 #include "platform.h"
 #include "typeprinter.h"
 #include "debugger.h"
 
-EXTERN_C HRESULT CreateDebuggingInterfaceFromVersionEx(
-    int iDebuggerVersion,
-    LPCWSTR szDebuggeeVersion,
-    IUnknown ** ppCordb);
-
-EXTERN_C HRESULT
-CreateVersionStringFromModule(
-    DWORD pidDebuggee,
-    LPCWSTR szModuleName,
-    LPWSTR pBuffer,
-    DWORD cchBuffer,
-    DWORD* pdwLength);
+#define __in
+#define __out
+#include "dbgshim.h"
+#undef __in
+#undef __out
 
 static std::mutex g_processMutex;
 static std::condition_variable g_processCV;
@@ -606,16 +600,20 @@ public:
             /* [in] */ ICorDebugAssembly *pAssembly) { return S_OK; }
 
         virtual HRESULT STDMETHODCALLTYPE ControlCTrap(
-            /* [in] */ ICorDebugProcess *pProcess) { return S_OK; }
+            /* [in] */ ICorDebugProcess *pProcess) { HandleEvent(pProcess, "ControlCTrap"); return S_OK; }
 
         virtual HRESULT STDMETHODCALLTYPE NameChange(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread) { return S_OK; }
+            /* [in] */ ICorDebugThread *pThread)
+        {
+            pAppDomain->Continue(0);
+            return S_OK;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE UpdateModuleSymbols(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugModule *pModule,
-            /* [in] */ IStream *pSymbolStream) { return S_OK; }
+            /* [in] */ IStream *pSymbolStream) { HandleEvent(pAppDomain, "UpdateModuleSymbols"); return S_OK; }
 
         virtual HRESULT STDMETHODCALLTYPE EditAndContinueRemap(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -642,11 +640,11 @@ public:
         virtual HRESULT STDMETHODCALLTYPE CreateConnection(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ CONNID dwConnectionId,
-            /* [in] */ WCHAR *pConnName) {return S_OK; }
+            /* [in] */ WCHAR *pConnName) { HandleEvent(pProcess, "CreateConnection"); return S_OK; }
 
         virtual HRESULT STDMETHODCALLTYPE ChangeConnection(
             /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ CONNID dwConnectionId) {return S_OK; }
+            /* [in] */ CONNID dwConnectionId) { HandleEvent(pProcess, "ChangeConnection"); return S_OK; }
 
         virtual HRESULT STDMETHODCALLTYPE DestroyConnection(
             /* [in] */ ICorDebugProcess *pProcess,
@@ -689,7 +687,7 @@ public:
         virtual HRESULT STDMETHODCALLTYPE MDANotification(
             /* [in] */ ICorDebugController *pController,
             /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugMDA *pMDA) {return S_OK; }
+            /* [in] */ ICorDebugMDA *pMDA) { HandleEvent(pController, "MDANotification"); return S_OK; }
 };
 
 bool Debugger::m_justMyCode = true;
@@ -697,6 +695,120 @@ bool Debugger::m_justMyCode = true;
 Debugger::~Debugger()
 {
     m_managedCallback->Release();
+}
+
+VOID Debugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
+{
+    Debugger *self = static_cast<Debugger*>(parameter);
+
+    std::unique_lock<std::mutex> lock(self->m_startupMutex);
+
+    self->m_startupResult = FAILED(hr) ? hr : self->Startup(pCordb, self->m_processId);
+    self->m_startupReady = true;
+
+    if (self->m_unregisterToken)
+    {
+        UnregisterForRuntimeStartup(self->m_unregisterToken);
+        self->m_unregisterToken = nullptr;
+    }
+
+    lock.unlock();
+    self->m_startupCV.notify_one();
+}
+
+HRESULT Debugger::Startup(IUnknown *punk, int pid)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebug> pCorDebug;
+    IfFailRet(punk->QueryInterface(IID_ICorDebug, (void **)&pCorDebug));
+
+    IfFailRet(pCorDebug->Initialize());
+
+    Status = pCorDebug->SetManagedHandler(m_managedCallback);
+    if (FAILED(Status))
+    {
+        pCorDebug->Terminate();
+        return Status;
+    }
+
+    ToRelease<ICorDebugProcess> pProcess;
+    Status = pCorDebug->DebugActiveProcess(m_processId, FALSE, &pProcess);
+    if (FAILED(Status))
+    {
+        pCorDebug->Terminate();
+        return Status;
+    }
+
+    m_pProcess = pProcess.Detach();
+    m_pDebug = pCorDebug.Detach();
+
+    m_processId = pid;
+
+    return S_OK;
+}
+
+HRESULT Debugger::RunProcess()
+{
+    static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(1000);
+    HRESULT Status;
+
+    IfFailRet(CheckNoProcess());
+
+    std::stringstream ss;
+    ss << "\"" << m_fileExec << "\"";
+    for (std::string &arg : m_execArgs)
+    {
+        ss << " \"" << EscapeMIValue(arg) << "\"";
+    }
+    std::string cmdString = ss.str();
+    std::unique_ptr<WCHAR[]> cmd(new WCHAR[cmdString.size() + 1]);
+
+    MultiByteToWideChar(CP_UTF8, 0, cmdString.c_str(), cmdString.size() + 1, &cmd[0], cmdString.size() + 1);
+
+    m_startupReady = false;
+
+    BOOL bSuspendProcess = TRUE;
+    LPVOID lpEnvironment = nullptr; // as current
+    LPCWSTR lpCurrentDirectory = nullptr; // as current
+    HANDLE resumeHandle;
+    IfFailRet(CreateProcessForLaunch(&cmd[0], bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
+
+    IfFailRet(RegisterForRuntimeStartup(m_processId, Debugger::StartupCallback, this, &m_unregisterToken));
+
+    // Resume the process so that StartupCallback can run
+    IfFailRet(ResumeProcess(resumeHandle));
+    CloseResumeHandle(resumeHandle);
+
+    // Wait for Debugger::StartupCallback to complete
+
+    // FIXME: if the process exits too soon the Debugger::StartupCallback()
+    // is never called (bug in dbgshim?).
+    // The workaround is to wait with timeout.
+    auto now = std::chrono::system_clock::now();
+
+    std::unique_lock<std::mutex> lock(m_startupMutex);
+    if (!m_startupCV.wait_until(lock, now + startupCallbackWaitTimeout, [this](){return m_startupReady;}))
+    {
+        // Timed out
+        return E_FAIL;
+    }
+
+    return m_startupResult;
+}
+
+HRESULT Debugger::CheckNoProcess()
+{
+    if (m_pProcess || m_pDebug)
+    {
+        std::lock_guard<std::mutex> lock(g_processMutex);
+        if (g_process)
+            return E_FAIL; // Already attached
+        g_processMutex.unlock();
+
+        TerminateProcess();
+    }
+    return S_OK;
 }
 
 HRESULT Debugger::DetachFromProcess()
@@ -752,15 +864,7 @@ HRESULT Debugger::AttachToProcess(int pid)
 {
     HRESULT Status;
 
-    if (m_pProcess || m_pDebug)
-    {
-        std::lock_guard<std::mutex> lock(g_processMutex);
-        if (g_process)
-            return E_FAIL; // Already attached
-        g_processMutex.unlock();
-
-        TerminateProcess();
-    }
+    IfFailRet(CheckNoProcess());
 
     std::string coreclrPath = GetCoreCLRPath(pid);
     if (coreclrPath.empty())
@@ -781,32 +885,11 @@ HRESULT Debugger::AttachToProcess(int pid)
         &dwLength));
 
     ToRelease<IUnknown> pCordb;
-    ToRelease<ICorDebug> pCorDebug;
+
     IfFailRet(CreateDebuggingInterfaceFromVersionEx(4, pBuffer, &pCordb));
 
-    IfFailRet(pCordb->QueryInterface(IID_ICorDebug, (LPVOID *)&pCorDebug));
-
-    IfFailRet(pCorDebug->Initialize());
-
-    Status = pCorDebug->SetManagedHandler(m_managedCallback);
-    if (FAILED(Status))
-    {
-        pCorDebug->Terminate();
-        return Status;
-    }
-
-    ToRelease<ICorDebugProcess> pProcess;
-    Status = pCorDebug->DebugActiveProcess(pid, FALSE, &pProcess);
-    if (FAILED(Status))
-    {
-        pCorDebug->Terminate();
-        return Status;
-    }
-
-    m_pProcess = pProcess.Detach();
-    m_pDebug = pCorDebug.Detach();
-
-    return S_OK;
+    m_unregisterToken = nullptr;
+    return Startup(pCordb, pid);
 }
 
 void print_help()

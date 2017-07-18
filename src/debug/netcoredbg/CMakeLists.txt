@@ -47,6 +47,7 @@ include_directories(${CLR_DIR}/src/pal/inc/rt)
 include_directories(${CLR_DIR}/src/pal/prebuilt/inc)
 include_directories(${CLR_DIR}/src/debug/inc)
 include_directories(${CLR_DIR}/src/debug/shim)
+include_directories(${CLR_DIR}/src/dlls/dbgshim)
 include_directories(${CLR_DIR}/src/coreclr/hosts/inc)
 
 include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
