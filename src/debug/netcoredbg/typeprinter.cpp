@@ -113,10 +113,10 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
                                   std::list<std::string> &args)
 {
     mdName[0] = L'\0';
-    if ((mb & 0xff000000) != mdtTypeDef
-        && (mb & 0xff000000) != mdtFieldDef
-        && (mb & 0xff000000) != mdtMethodDef
-        && (mb & 0xff000000) != mdtMemberRef)
+    if (TypeFromToken(mb) != mdtTypeDef
+        && TypeFromToken(mb) != mdtFieldDef
+        && TypeFromToken(mb) != mdtMethodDef
+        && TypeFromToken(mb) != mdtMemberRef)
     {
         //ExtOut("unsupported\n");
         return E_FAIL;
@@ -127,11 +127,11 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
     PAL_CPP_TRY
     {
         WCHAR name[MAX_CLASSNAME_LENGTH];
-        if ((mb & 0xff000000) == mdtTypeDef)
+        if (TypeFromToken(mb) == mdtTypeDef)
         {
             hr = NameForTypeDef(mb, pImport, mdName, args);
         }
-        else if ((mb & 0xff000000) ==  mdtFieldDef)
+        else if (TypeFromToken(mb) ==  mdtFieldDef)
         {
             mdTypeDef mdClass;
             ULONG size;
@@ -149,7 +149,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
                 mdName += to_utf8(name/*, size*/);
             }
         }
-        else if ((mb & 0xff000000) ==  mdtMethodDef)
+        else if (TypeFromToken(mb) == mdtMethodDef)
         {
             mdTypeDef mdClass;
             ULONG size;
@@ -166,7 +166,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
                 mdName += to_utf8(name/*, size*/);
             }
         }
-        else if ((mb & 0xff000000) == mdtMemberRef)
+        else if (TypeFromToken(mb) == mdtMemberRef)
         {
             mdTypeDef mdClass;
             ULONG size;
@@ -175,7 +175,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
                                             NULL, NULL);
             if (SUCCEEDED (hr))
             {
-                if ((mdClass & 0xff000000) == mdtTypeRef && bClassName)
+                if (TypeFromToken(mdClass) == mdtTypeRef && bClassName)
                 {
                     ToRelease<IMDInternalImport> pMDI;
                     hr = GetMDInternalFromImport(pImport, &pMDI);
@@ -187,7 +187,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
                             mdName = std::string(sznamespace) + "." + std::string(szname) + ".";
                     }
                 }
-                else if ((mdClass & 0xff000000) == mdtTypeDef && bClassName)
+                else if (TypeFromToken(mdClass) == mdtTypeDef && bClassName)
                 {
                     hr = NameForTypeDef(mdClass, pImport, mdName, args);
                     mdName += ".";
