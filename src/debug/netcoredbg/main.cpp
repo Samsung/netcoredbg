@@ -489,16 +489,22 @@ public:
             ULONG32 size = 0;
 
             TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
+
+            ToRelease<ICorDebugModule2> pModule2;
+            if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
             {
-                std::stringstream ss;
-                ss << "id=\"{" << id << "}\","
-                   << "target-name=\"" << EscapeMIValue(name) << "\","
-                   << "host-name=\"" << EscapeMIValue(name) << "\","
-                   << "symbols-loaded=\"" << symbolsLoaded << "\","
-                   << "base-address=\"0x" << std::hex << baseAddress << "\","
-                   << "size=\"" << std::dec << size << "\"";
-                out_printf("=library-loaded,%s\n", ss.str().c_str());
+                pModule2->SetJMCStatus(symbolsLoaded, 0, nullptr);
             }
+
+            std::stringstream ss;
+            ss << "id=\"{" << id << "}\","
+                << "target-name=\"" << EscapeMIValue(name) << "\","
+                << "host-name=\"" << EscapeMIValue(name) << "\","
+                << "symbols-loaded=\"" << symbolsLoaded << "\","
+                << "base-address=\"0x" << std::hex << baseAddress << "\","
+                << "size=\"" << std::dec << size << "\"";
+            out_printf("=library-loaded,%s\n", ss.str().c_str());
+
             if (symbolsLoaded)
                 TryResolveBreakpointsForModule(pModule);
 
@@ -650,6 +656,8 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugMDA *pMDA) {return S_OK; }
 };
+
+bool Debugger::m_justMyCode = true;
 
 Debugger::~Debugger()
 {

@@ -184,6 +184,11 @@ static HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     CorDebugUnmappedStop stopMask = STOP_NONE;
     IfFailRet(pStepper->SetUnmappedStopMask(stopMask));
 
+    ToRelease<ICorDebugStepper2> pStepper2;
+    IfFailRet(pStepper->QueryInterface(IID_ICorDebugStepper2, (LPVOID *)&pStepper2));
+
+    IfFailRet(pStepper2->SetJMC(Debugger::IsJustMyCode()));
+
     if (stepType == STEP_OUT)
     {
         IfFailRet(pStepper->StepOut());
@@ -380,6 +385,13 @@ HRESULT Debugger::HandleCommand(std::string command,
         return S_OK;
     }},
     { "gdb-set", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (args.size() == 2)
+        {
+            if (args.at(0) == "just-my-code")
+            {
+                Debugger::SetJustMyCode(args.at(1) == "1");
+            }
+        }
         return S_OK;
     }},
     { "break-exception-insert", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
