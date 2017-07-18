@@ -107,6 +107,38 @@ void Debugger::Printf(const char *fmt, ...)
     fflush(stdout);
 }
 
+void Debugger::Message(const char *fmt, ...)
+{
+    va_list args;
+
+    const char *data;
+
+    va_start(args, fmt);
+    char buf[32];
+    size_t n = std::vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    std::string text;
+
+    if (n >= sizeof(buf))
+    {
+        // Static buffer too small
+        text.resize(n + 1, 0);
+
+        va_start(args, fmt);
+        std::vsnprintf(const_cast<char*>(text.data()), text.size(), fmt, args);
+        va_end(args);
+
+        data = text.data();
+    }
+    else
+    {
+        data = buf;
+    }
+
+    Printf("=message,text=\"%s\",send-to=\"output-window\"\n", EscapeMIValue(data).c_str());
+}
+
 // Breakpoints
 void DeleteAllBreakpoints();
 HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times);
