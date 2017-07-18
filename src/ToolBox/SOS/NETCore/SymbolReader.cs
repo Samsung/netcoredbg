@@ -363,7 +363,9 @@ namespace SOS
 
                 var list = new List<SequencePoint>();
                 foreach (SequencePoint p in sequencePoints)
-                    list.Add(p);
+                    if (p.StartLine != 0 && p.StartLine != SequencePoint.HiddenLine)
+                        list.Add(p);
+
                 var pointsArray = list.ToArray();
 
                 for (int i = 1; i < pointsArray.Length; i++)
