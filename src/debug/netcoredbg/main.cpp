@@ -164,6 +164,23 @@ std::string EscapeMIValue(const std::string &str)
     return s;
 }
 
+static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugStepperEnum> steppers;
+    IfFailRet(pAppDomain->EnumerateSteppers(&steppers));
+
+    ICorDebugStepper *curStepper;
+    ULONG steppersFetched;
+    while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
+    {
+        ToRelease<ICorDebugStepper> pStepper(curStepper);
+        pStepper->Deactivate();
+    }
+
+    return S_OK;
+}
+
 static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
     HRESULT Status;
@@ -183,17 +200,7 @@ static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *p
     // FIXME: Delete all or Release all?
     DeleteAllBreakpoints();
 
-    ToRelease<ICorDebugStepperEnum> steppers;
-    if (SUCCEEDED(pAppDomain->EnumerateSteppers(&steppers)))
-    {
-        ICorDebugStepper *curStepper;
-        ULONG steppersFetched;
-        while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
-        {
-            ToRelease<ICorDebugStepper> pStepper(curStepper);
-            pStepper->Deactivate();
-        }
-    }
+    DisableAllSteppersInAppDomain(pAppDomain);
 
     return S_OK;
 }
@@ -344,6 +351,9 @@ public:
                 (int)threadId, (unsigned int)id, (unsigned int)times, output.c_str());
 
             SetLastStoppedThread(pThread);
+
+            // If we do not ignore the breakpoint then remove any active steppers - we'll create a new one when needed
+            DisableAllSteppersInAppDomain(pAppDomain);
 
             return S_OK;
         }

@@ -51,7 +51,6 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
 // Debug events
 int GetLastStoppedThreadId();
 void WaitProcessExited();
-HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess);
 
 static int ParseInt(const std::string &s, bool &ok)
 {
