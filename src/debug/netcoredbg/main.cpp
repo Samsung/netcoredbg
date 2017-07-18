@@ -132,7 +132,7 @@ void NotifyEvalComplete();
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output);
 
 // TODO: Merge with EscapeString
-std::string EscapeMIValue(const std::string &str)
+std::string Debugger::EscapeMIValue(const std::string &str)
 {
     std::string s(str);
 
@@ -501,8 +501,8 @@ public:
 
             std::stringstream ss;
             ss << "id=\"{" << id << "}\","
-                << "target-name=\"" << EscapeMIValue(name) << "\","
-                << "host-name=\"" << EscapeMIValue(name) << "\","
+                << "target-name=\"" << Debugger::EscapeMIValue(name) << "\","
+                << "host-name=\"" << Debugger::EscapeMIValue(name) << "\","
                 << "symbols-loaded=\"" << symbolsLoaded << "\","
                 << "base-address=\"0x" << std::hex << baseAddress << "\","
                 << "size=\"" << std::dec << size << "\"";

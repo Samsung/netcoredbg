@@ -5,11 +5,11 @@
 #include <list>
 #include <functional>
 #include <iomanip>
+#include <mutex>
 
 #include "typeprinter.h"
 #include "platform.h"
-
-std::string EscapeMIValue(const std::string &str);
+#include "debugger.h"
 
 HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
 
@@ -85,7 +85,7 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
     if (SUCCEEDED(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum)))
     {
         ss << "line=\"" << linenum << "\","
-           << "fullname=\"" << EscapeMIValue(fullname) << "\","
+           << "fullname=\"" << Debugger::EscapeMIValue(fullname) << "\","
             <<"file=\"" << GetFileName(fullname) << "\",";
     }
 

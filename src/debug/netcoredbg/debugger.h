@@ -26,6 +26,7 @@ public:
     ~Debugger();
 
     static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
+    static std::string EscapeMIValue(const std::string &str);
 
     HRESULT AttachToProcess(int pid);
     HRESULT DetachFromProcess();
