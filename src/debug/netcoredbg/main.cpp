@@ -9,6 +9,7 @@
 #include <list>
 #include <chrono>
 
+#include "symbolreader.h"
 #include "cputil.h"
 #include "platform.h"
 #include "typeprinter.h"
@@ -140,7 +141,6 @@ void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
 // Modules
 void CleanupAllModules();
-void SetCoreCLRPath(const std::string &coreclrPath);
 std::string GetModuleFileName(ICorDebugModule *pModule);
 HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range);
 HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
@@ -716,6 +716,85 @@ VOID Debugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
     self->m_startupCV.notify_one();
 }
 
+// From dbgshim.cpp
+static bool AreAllHandlesValid(HANDLE *handleArray, DWORD arrayLength)
+{
+    for (DWORD i = 0; i < arrayLength; i++)
+    {
+        HANDLE h = handleArray[i];
+        if (h == INVALID_HANDLE_VALUE)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static HRESULT InternalEnumerateCLRs(int pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength)
+{
+    int numTries = 0;
+    HRESULT hr;
+
+    while (numTries < 25)
+    {
+        hr = EnumerateCLRs(pid, ppHandleArray, ppStringArray, pdwArrayLength);
+
+        // EnumerateCLRs uses the OS API CreateToolhelp32Snapshot which can return ERROR_BAD_LENGTH or
+        // ERROR_PARTIAL_COPY. If we get either of those, we try wait 1/10th of a second try again (that
+        // is the recommendation of the OS API owners).
+        if ((hr != HRESULT_FROM_WIN32(ERROR_PARTIAL_COPY)) && (hr != HRESULT_FROM_WIN32(ERROR_BAD_LENGTH)))
+        {
+            // Just return any other error or if no handles were found (which means the coreclr module wasn't found yet).
+            if (FAILED(hr) || *ppHandleArray == NULL || *pdwArrayLength <= 0)
+            {
+                return hr;
+            }
+            // If EnumerateCLRs succeeded but any of the handles are INVALID_HANDLE_VALUE, then sleep and retry
+            // also. This fixes a race condition where dbgshim catches the coreclr module just being loaded but
+            // before g_hContinueStartupEvent has been initialized.
+            if (AreAllHandlesValid(*ppHandleArray, *pdwArrayLength))
+            {
+                return hr;
+            }
+            // Clean up memory allocated in EnumerateCLRs since this path it succeeded
+            CloseCLREnumeration(*ppHandleArray, *ppStringArray, *pdwArrayLength);
+
+            *ppHandleArray = NULL;
+            *ppStringArray = NULL;
+            *pdwArrayLength = 0;
+        }
+
+        // Sleep and retry enumerating the runtimes
+        Sleep(100);
+        numTries++;
+
+        // if (m_canceled)
+        // {
+        //     break;
+        // }
+    }
+
+    // Indicate a timeout
+    hr = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+
+    return hr;
+}
+
+static std::string GetCLRPath(int pid)
+{
+    HANDLE* pHandleArray;
+    LPWSTR* pStringArray;
+    DWORD dwArrayLength;
+    if (FAILED(InternalEnumerateCLRs(pid, &pHandleArray, &pStringArray, &dwArrayLength)) || dwArrayLength == 0)
+        return std::string();
+
+    std::string result = to_utf8(pStringArray[0]);
+
+    CloseCLREnumeration(pHandleArray, pStringArray, dwArrayLength);
+
+    return result;
+}
+
 HRESULT Debugger::Startup(IUnknown *punk, int pid)
 {
     HRESULT Status;
@@ -744,6 +823,10 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
     m_pDebug = pCorDebug.Detach();
 
     m_processId = pid;
+    if (m_clrPath.empty())
+        m_clrPath = GetCLRPath(pid);
+
+    SymbolReader::SetCoreCLRPath(m_clrPath);
 
     return S_OK;
 }
@@ -767,6 +850,7 @@ HRESULT Debugger::RunProcess()
     MultiByteToWideChar(CP_UTF8, 0, cmdString.c_str(), cmdString.size() + 1, &cmd[0], cmdString.size() + 1);
 
     m_startupReady = false;
+    m_clrPath.clear();
 
     BOOL bSuspendProcess = TRUE;
     LPVOID lpEnvironment = nullptr; // as current
@@ -866,14 +950,12 @@ HRESULT Debugger::AttachToProcess(int pid)
 
     IfFailRet(CheckNoProcess());
 
-    std::string coreclrPath = GetCoreCLRPath(pid);
-    if (coreclrPath.empty())
+    std::string m_clrPath = GetCLRPath(pid);
+    if (m_clrPath.empty())
         return E_INVALIDARG; // Unable to find libcoreclr.so
 
-    SetCoreCLRPath(coreclrPath);
-
     WCHAR szModuleName[MAX_LONGPATH];
-    MultiByteToWideChar(CP_UTF8, 0, coreclrPath.c_str(), coreclrPath.size() + 1, szModuleName, MAX_LONGPATH);
+    MultiByteToWideChar(CP_UTF8, 0, m_clrPath.c_str(), m_clrPath.size() + 1, szModuleName, MAX_LONGPATH);
 
     WCHAR pBuffer[100];
     DWORD dwLength;

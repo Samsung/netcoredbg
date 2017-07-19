@@ -32,11 +32,6 @@ void CleanupAllModules()
     g_modulesInfo.clear();
 }
 
-void SetCoreCLRPath(const std::string &coreclrPath)
-{
-    SymbolReader::SetCoreCLRPath(coreclrPath);
-}
-
 std::string GetModuleFileName(ICorDebugModule *pModule)
 {
     WCHAR name[mdNameLen];

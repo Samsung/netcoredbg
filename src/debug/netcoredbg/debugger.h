@@ -20,6 +20,7 @@ class Debugger
 
     PVOID m_unregisterToken;
     DWORD m_processId;
+    std::string m_clrPath;
 
     HRESULT CheckNoProcess();
 
