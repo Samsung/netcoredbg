@@ -286,27 +286,30 @@ HRESULT ListChildren(
 
     std::vector<VarObjValue> members;
 
-    bool has_static_members;
-    bool has_more;
+    bool has_static_members = false;
+    bool has_more = false;
 
-    IfFailRet(FetchFieldsAndProperties(objValue.value,
-                                       NULL,
-                                       pThread,
-                                       pILFrame,
-                                       members,
-                                       objValue.statics_only,
-                                       has_static_members,
-                                       childStart,
-                                       childEnd,
-                                       has_more));
-
-    if (!objValue.statics_only && has_static_members)
+    if (objValue.value)
     {
-        objValue.value->AddRef();
-        members.emplace_back(objValue.threadId, objValue.value);
-    }
+        IfFailRet(FetchFieldsAndProperties(objValue.value,
+                                           NULL,
+                                           pThread,
+                                           pILFrame,
+                                           members,
+                                           objValue.statics_only,
+                                           has_static_members,
+                                           childStart,
+                                           childEnd,
+                                           has_more));
 
-    FixupInheritedFieldNames(members);
+        if (!objValue.statics_only && has_static_members)
+        {
+            objValue.value->AddRef();
+            members.emplace_back(objValue.threadId, objValue.value);
+        }
+
+        FixupInheritedFieldNames(members);
+    }
 
     PrintChildren(members, print_values, pILFrame, has_more, output);
 
