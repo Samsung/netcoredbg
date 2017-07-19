@@ -812,7 +812,7 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
     }
 
     ToRelease<ICorDebugProcess> pProcess;
-    Status = pCorDebug->DebugActiveProcess(m_processId, FALSE, &pProcess);
+    Status = pCorDebug->DebugActiveProcess(pid, FALSE, &pProcess);
     if (FAILED(Status))
     {
         pCorDebug->Terminate();
