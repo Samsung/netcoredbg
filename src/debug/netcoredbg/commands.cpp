@@ -171,7 +171,7 @@ enum StepType {
     STEP_OUT
 };
 
-static HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
+HRESULT Debugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepType)
 {
     HRESULT Status;
 
@@ -208,14 +208,16 @@ static HRESULT RunStep(ICorDebugThread *pThread, StepType stepType)
     return S_OK;
 }
 
-static HRESULT StepCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output, StepType stepType)
+HRESULT Debugger::StepCommand(ICorDebugProcess *pProcess,
+                              const std::vector<std::string> &args,
+                              std::string &output, StepType stepType)
 {
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
     IfFailRet(pProcess->GetThread(threadId, &pThread));
     DisableAllSteppers(pProcess);
-    IfFailRet(RunStep(pThread, stepType));
+    IfFailRet(SetupStep(pThread, stepType));
     IfFailRet(pProcess->Continue(0));
     output = "^running";
     return S_OK;

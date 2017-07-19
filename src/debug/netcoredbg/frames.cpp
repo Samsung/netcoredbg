@@ -80,6 +80,7 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
     mdMethodDef methodToken;
     std::string fullname;
     ULONG linenum;
+    bool has_source = false;
 
     std::stringstream ss;
 
@@ -88,6 +89,7 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
         ss << "line=\"" << linenum << "\","
            << "fullname=\"" << Debugger::EscapeMIValue(fullname) << "\","
             <<"file=\"" << GetFileName(fullname) << "\",";
+        has_source = true;
     }
 
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
@@ -128,7 +130,7 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
 
     output = ss.str();
 
-    return S_OK;
+    return has_source ? S_OK : S_FALSE;
 }
 
 enum FrameType

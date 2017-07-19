@@ -401,17 +401,27 @@ public:
         {
             std::string output;
             ToRelease<ICorDebugFrame> pFrame;
+            HRESULT Status = S_FALSE;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
-                PrintFrameLocation(pFrame, output);
+                Status = PrintFrameLocation(pFrame, output);
 
-            DWORD threadId = 0;
-            pThread->GetID(&threadId);
+            const bool no_source = Status == S_FALSE;
 
-            Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                (int)threadId, output.c_str());
+            if (Debugger::IsJustMyCode() && no_source)
+            {
+                Debugger::SetupStep(pThread, Debugger::STEP_IN);
+                pAppDomain->Continue(0);
+            }
+            else
+            {
+                DWORD threadId = 0;
+                pThread->GetID(&threadId);
 
-            SetLastStoppedThread(pThread);
+                Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                    (int)threadId, output.c_str());
 
+                SetLastStoppedThread(pThread);
+            }
             return S_OK;
         }
 

@@ -2,6 +2,7 @@ class ManagedCallback;
 
 class Debugger
 {
+    friend class ManagedCallback;
     ManagedCallback *m_managedCallback;
     ICorDebug *m_pDebug;
     ICorDebugProcess *m_pProcess;
@@ -32,6 +33,17 @@ class Debugger
     HRESULT Startup(IUnknown *punk, int pid);
 
     HRESULT RunProcess();
+
+    enum StepType {
+        STEP_IN = 0,
+        STEP_OVER,
+        STEP_OUT
+    };
+
+    static HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
+    static HRESULT StepCommand(ICorDebugProcess *pProcess,
+                               const std::vector<std::string> &args,
+                               std::string &output, StepType stepType);
 public:
     static bool IsJustMyCode() { return m_justMyCode; }
     static void SetJustMyCode(bool enable) { m_justMyCode = enable; }
