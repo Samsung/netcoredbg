@@ -235,9 +235,13 @@ HRESULT Debugger::HandleCommand(std::string command,
 {
     static std::unordered_map<std::string, CommandCallback> commands {
     { "thread-info", ThreadInfoCommand },
-    { "exec-continue", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){
+    { "exec-continue", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &output){
+        HRESULT Status;
         if (!pProcess) return E_FAIL;
-        return pProcess->Continue(0); } },
+        IfFailRet(pProcess->Continue(0));
+        output = "^running";
+        return S_OK;
+    } },
     { "exec-interrupt", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){
         if (!pProcess) return E_FAIL;
         return pProcess->Stop(0); } },
