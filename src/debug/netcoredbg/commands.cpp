@@ -390,7 +390,10 @@ HRESULT Debugger::HandleCommand(std::string command,
         return S_OK;
     }},
     { "exec-run", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        return RunProcess(); // TODO return ~running
+        HRESULT Status = RunProcess();
+        if (SUCCEEDED(Status))
+            output = "^running";
+        return Status;
     }},
     { "handshake", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (!args.empty() && args.at(0) == "init")

@@ -833,7 +833,7 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
 
 HRESULT Debugger::RunProcess()
 {
-    static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(1000);
+    static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
     HRESULT Status;
 
     IfFailRet(CheckNoProcess());
