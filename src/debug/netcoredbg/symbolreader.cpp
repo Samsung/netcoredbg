@@ -113,7 +113,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     HMODULE coreclrLib = LoadLibraryW(wszCoreClrPath);
     if (coreclrLib == nullptr)
     {
-        printf("Error: Failed to load coreclr\n");
+        fprintf(stderr, "Error: Failed to load coreclr\n");
         return E_FAIL;
     }
 
@@ -122,7 +122,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     coreclr_initialize_ptr initializeCoreCLR = (coreclr_initialize_ptr)GetProcAddress(coreclrLib, "coreclr_initialize");
     if (initializeCoreCLR == nullptr)
     {
-        printf("Error: coreclr_initialize not found\n");
+        fprintf(stderr, "Error: coreclr_initialize not found\n");
         return E_FAIL;
     }
 
@@ -140,7 +140,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     std::string exe = GetExeAbsPath();
     if (exe.empty())
     {
-        printf("GetExeAbsPath is empty\n");
+        fprintf(stderr, "GetExeAbsPath is empty\n");
         return E_FAIL;
     }
 
@@ -166,14 +166,14 @@ HRESULT SymbolReader::PrepareSymbolReader()
 
     if (FAILED(Status))
     {
-        printf("Error: Fail to initialize CoreCLR %08x\n", Status);
+        fprintf(stderr, "Error: Fail to initialize CoreCLR %08x\n", Status);
         return Status;
     }
 
     coreclr_create_delegate_ptr createDelegate = (coreclr_create_delegate_ptr)GetProcAddress(coreclrLib, "coreclr_create_delegate");
     if (createDelegate == nullptr)
     {
-        printf("Error: coreclr_create_delegate not found\n");
+        fprintf(stderr, "Error: coreclr_create_delegate not found\n");
         return E_FAIL;
     }
 
