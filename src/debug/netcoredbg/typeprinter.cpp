@@ -425,7 +425,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
                 }
                 return S_OK;
             case ELEMENT_TYPE_BYREF:
-                arrayType = subArrayType + "&";
+                arrayType = subArrayType; // + "&";
                 return S_OK;
             case ELEMENT_TYPE_PTR:
                 arrayType = subArrayType + "*";
