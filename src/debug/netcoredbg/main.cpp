@@ -157,6 +157,9 @@ void NotifyEvalComplete();
 // Frames
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output);
 
+// Varobj
+void CleanupVars();
+
 // TODO: Merge with EscapeString
 std::string Debugger::EscapeMIValue(const std::string &str)
 {
@@ -809,6 +812,8 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
 {
     HRESULT Status;
 
+    Cleanup();
+
     ToRelease<ICorDebug> pCorDebug;
     IfFailRet(punk->QueryInterface(IID_ICorDebug, (void **)&pCorDebug));
 
@@ -916,8 +921,7 @@ HRESULT Debugger::DetachFromProcess()
         m_pProcess->Detach();
     }
 
-    CleanupAllModules();
-    // TODO: Cleanup libcoreclr.so instance
+    Cleanup();
 
     m_pProcess->Release();
     m_pProcess = nullptr;
@@ -939,8 +943,7 @@ HRESULT Debugger::TerminateProcess()
         //pProcess->Detach();
     }
 
-    CleanupAllModules();
-    // TODO: Cleanup libcoreclr.so instance
+    Cleanup();
 
     m_pProcess->Terminate(0);
     WaitProcessExited();
@@ -952,6 +955,13 @@ HRESULT Debugger::TerminateProcess()
     m_pDebug = nullptr;
 
     return S_OK;
+}
+
+void Debugger::Cleanup()
+{
+    CleanupAllModules();
+    CleanupVars();
+    // TODO: Cleanup libcoreclr.so instance
 }
 
 HRESULT Debugger::AttachToProcess(int pid)

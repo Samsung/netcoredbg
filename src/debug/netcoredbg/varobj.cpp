@@ -10,6 +10,7 @@
 #include <list>
 #include <iomanip>
 
+#include "debugger.h"
 #include "typeprinter.h"
 
 // Valuewalk
@@ -26,6 +27,9 @@ HRESULT EvalFunction(
 
 // Valueprint
 HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output);
+
+// Modules
+HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
 
 HRESULT GetNumChild(ICorDebugValue *pValue,
                     unsigned int &numchild,
@@ -111,6 +115,81 @@ private:
     }
 };
 
+static unsigned int g_varCounter = 0;
+static std::unordered_map<std::string, VarObjValue> g_vars;
+static ToRelease<ICorDebugFunction> g_pRunClassConstructor;
+static ToRelease<ICorDebugFunction> g_pGetTypeHandle;
+
+void CleanupVars()
+{
+    g_vars.clear();
+    g_varCounter = 0;
+    if (g_pRunClassConstructor)
+        g_pRunClassConstructor->Release();
+    if (g_pGetTypeHandle)
+        g_pGetTypeHandle->Release();
+}
+
+static HRESULT GetMethodToken(IMetaDataImport *pMD, mdTypeDef cl, const WCHAR *methodName)
+{
+    ULONG numMethods = 0;
+    HCORENUM mEnum = NULL;
+    mdMethodDef methodDef = mdTypeDefNil;
+    pMD->EnumMethodsWithName(&mEnum, cl, methodName, &methodDef, 1, &numMethods);
+    pMD->CloseEnum(mEnum);
+    return methodDef;
+}
+
+static HRESULT FindFunction(ICorDebugModule *pModule,
+                            const WCHAR *typeName,
+                            const WCHAR *methodName,
+                            ICorDebugFunction **ppFunction)
+{
+    HRESULT Status;
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    mdTypeDef typeDef = mdTypeDefNil;
+
+    IfFailRet(pMD->FindTypeDefByName(typeName, mdTypeDefNil, &typeDef));
+
+    mdMethodDef methodDef = GetMethodToken(pMD, typeDef, methodName);
+
+    if (methodDef == mdMethodDefNil)
+        return E_FAIL;
+
+    return pModule->GetFunctionFromToken(methodDef, ppFunction);
+}
+
+static HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame, ICorDebugValue *pValue)
+{
+    HRESULT Status;
+
+    if (!g_pRunClassConstructor && !g_pGetTypeHandle)
+    {
+        ToRelease<ICorDebugModule> pModule;
+        IfFailRet(GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+
+        static const WCHAR helpersName[] = W("System.Runtime.CompilerServices.RuntimeHelpers");
+        static const WCHAR runCCTorMethodName[] = W("RunClassConstructor");
+        static const WCHAR typeName[] = W("System.Type");
+        static const WCHAR getTypeHandleMethodName[] = W("GetTypeHandle");
+        IfFailRet(FindFunction(pModule, helpersName, runCCTorMethodName, &g_pRunClassConstructor));
+        IfFailRet(FindFunction(pModule, typeName, getTypeHandleMethodName, &g_pGetTypeHandle));
+    }
+
+    ToRelease<ICorDebugValue> pRuntimeHandleValue;
+    IfFailRet(EvalFunction(pThread, g_pGetTypeHandle, nullptr, pValue, &pRuntimeHandleValue));
+
+    ToRelease<ICorDebugValue> pResultValue;
+    IfFailRet(EvalFunction(pThread, g_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue));
+
+    return S_OK;
+}
+
 static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
                                         ICorDebugType *pTypeCast,
                                         ICorDebugThread *pThread,
@@ -193,9 +272,6 @@ static void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
         }
     }
 }
-
-static unsigned int g_varCounter = 0;
-static std::unordered_map<std::string, VarObjValue> g_vars;
 
 static void PrintVar(VarObjValue &v,
                      int print_values,
@@ -304,6 +380,8 @@ HRESULT ListChildren(
 
         if (!objValue.statics_only && has_static_members)
         {
+            RunClassConstructor(pThread, pILFrame, objValue.value);
+
             objValue.value->AddRef();
             members.emplace_back(objValue.threadId, objValue.value);
         }

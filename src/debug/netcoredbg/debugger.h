@@ -34,6 +34,8 @@ class Debugger
 
     HRESULT RunProcess();
 
+    void Cleanup();
+
     enum StepType {
         STEP_IN = 0,
         STEP_OVER,

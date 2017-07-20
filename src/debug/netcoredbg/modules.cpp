@@ -9,6 +9,7 @@
 
 #include "symbolreader.h"
 #include "cputil.h"
+#include "platform.h"
 
 // JMC
 bool ShouldLoadSymbolsForModule(const std::string &moduleName);
@@ -322,4 +323,24 @@ HRESULT GetFrameNamedLocalVariable(
     paramName = to_utf8(wParamName);
 
     return S_OK;
+}
+
+HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule)
+{
+    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+
+    for (auto &info_pair : g_modulesInfo)
+    {
+        ModuleInfo &mdInfo = info_pair.second;
+
+        std::string path = GetModuleFileName(mdInfo.module);
+
+        if (GetFileName(path) == name)
+        {
+            mdInfo.module->AddRef();
+            *ppModule = mdInfo.module;
+            return S_OK;
+        }
+    }
+    return E_FAIL;
 }
