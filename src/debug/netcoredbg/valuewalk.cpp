@@ -43,13 +43,24 @@ void NotifyEvalComplete()
     g_evalCV.notify_one();
 }
 
-HRESULT EvalProperty(
+static HRESULT WaitEvalResult(ICorDebugProcess *pProcess,
+                              ICorDebugEval *pEval,
+                              ICorDebugValue **ppEvalResult)
+{
+    HRESULT Status;
+    std::unique_lock<std::mutex> lock(g_evalMutex);
+    g_evalComplete = false;
+    IfFailRet(pProcess->Continue(0));
+    g_evalCV.wait(lock, []{return g_evalComplete;});
+
+    return pEval->GetResult(ppEvalResult);
+}
+
+HRESULT EvalFunction(
     ICorDebugThread *pThread,
-    mdMethodDef methodDef,
-    ICorDebugModule *pModule,
-    ICorDebugType *pType,
-    ICorDebugValue *pInputValue,
-    bool is_static,
+    ICorDebugFunction *pFunc,
+    ICorDebugType *pType, // may be nullptr
+    ICorDebugValue *pArgValue, // may be nullptr
     ICorDebugValue **ppEvalResult)
 {
     HRESULT Status = S_OK;
@@ -60,22 +71,21 @@ HRESULT EvalProperty(
     IfFailRet(pThread->GetProcess(&pProcess));
     IfFailRet(pThread->CreateEval(&pEval));
 
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pModule->GetFunctionFromToken(methodDef, &pFunc));
-
-    ToRelease<ICorDebugTypeEnum> pTypeEnum;
-
     std::vector< ToRelease<ICorDebugType> > typeParams;
-    if(SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
+
+    if (pType)
     {
-        ICorDebugType *curType;
-        ULONG fetched = 0;
-        while(SUCCEEDED(pTypeEnum->Next(1, &curType, &fetched)) && fetched == 1)
+        ToRelease<ICorDebugTypeEnum> pTypeEnum;
+        if(SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
         {
-            typeParams.emplace_back(curType);
+            ICorDebugType *curType;
+            ULONG fetched = 0;
+            while(SUCCEEDED(pTypeEnum->Next(1, &curType, &fetched)) && fetched == 1)
+            {
+                typeParams.emplace_back(curType);
+            }
         }
     }
-
     ToRelease<ICorDebugEval2> pEval2;
     IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
 
@@ -83,16 +93,11 @@ HRESULT EvalProperty(
         pFunc,
         typeParams.size(),
         (ICorDebugType **)typeParams.data(),
-        is_static ? 0 : 1,
-        is_static ? NULL : &pInputValue
+        pArgValue ? 1 : 0,
+        pArgValue ? &pArgValue : nullptr
     ));
 
-    std::unique_lock<std::mutex> lock(g_evalMutex);
-    g_evalComplete = false;
-    IfFailRet(pProcess->Continue(0));
-    g_evalCV.wait(lock, []{return g_evalComplete;});
-
-    return pEval->GetResult(ppEvalResult);
+    return WaitEvalResult(pProcess, pEval, ppEvalResult);
 }
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)

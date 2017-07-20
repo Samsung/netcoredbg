@@ -17,13 +17,11 @@ typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDe
 typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 HRESULT WalkMembers(ICorDebugValue *pValue, ICorDebugILFrame *pILFrame, WalkMembersCallback cb);
 HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb);
-HRESULT EvalProperty(
+HRESULT EvalFunction(
     ICorDebugThread *pThread,
-    mdMethodDef methodDef,
-    ICorDebugModule *pModule,
-    ICorDebugType *pType,
-    ICorDebugValue *pInputValue,
-    bool is_static,
+    ICorDebugFunction *pFunc,
+    ICorDebugType *pType, // may be nullptr
+    ICorDebugValue *pArgValue, // may be nullptr
     ICorDebugValue **ppEvalResult);
 
 // Valueprint
@@ -165,7 +163,9 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
 
         if (mdGetter != mdMethodDefNil)
         {
-            EvalProperty(pThread, mdGetter, pModule, pType, pInputValue, is_static, &pResultValue);
+            ToRelease<ICorDebugFunction> pFunc;
+            if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
+                EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResultValue);
         }
         else
         {
