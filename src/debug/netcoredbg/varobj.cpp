@@ -170,7 +170,7 @@ static HRESULT FindFunction(ICorDebugModule *pModule,
     return pModule->GetFunctionFromToken(methodDef, ppFunction);
 }
 
-static HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame, ICorDebugValue *pValue)
+HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame, ICorDebugValue *pValue)
 {
     HRESULT Status;
 
@@ -504,6 +504,8 @@ HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::str
     return S_OK;
 }
 
+HRESULT EvalExpr(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &expression, ICorDebugValue **ppResult);
+
 HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output)
 {
     HRESULT Status;
@@ -516,28 +518,7 @@ HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::s
 
     ToRelease<ICorDebugValue> pResultValue;
 
-    if (expression == "$exception")
-    {
-        pThread->GetCurrentException(&pResultValue);
-    }
-    else
-    {
-        IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
-        {
-            if (pResultValue)
-                return S_OK; // TODO: Create a fast way to exit
-
-            if (name == expression && pValue)
-            {
-                pValue->AddRef();
-                pResultValue = pValue;
-            }
-            return S_OK;
-        }));
-    }
-
-    if (!pResultValue)
-        return E_FAIL;
+    IfFailRet(EvalExpr(pThread, pFrame, expression, &pResultValue));
 
     VarObjValue tmpobj(threadId, expression, pResultValue.Detach(), "", varobjName);
     int print_values = 1;

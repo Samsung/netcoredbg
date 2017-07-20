@@ -344,3 +344,16 @@ HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule)
     }
     return E_FAIL;
 }
+
+HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb)
+{
+    HRESULT Status;
+    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+
+    for (auto &info_pair : g_modulesInfo)
+    {
+        ModuleInfo &mdInfo = info_pair.second;
+        IfFailRet(cb(mdInfo.module));
+    }
+    return S_OK;
+}

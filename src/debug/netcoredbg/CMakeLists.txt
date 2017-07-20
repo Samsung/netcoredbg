@@ -12,7 +12,8 @@ set(netcoredbg_SRC
     valueprint.cpp
     commands.cpp
     frames.cpp
-    jmc.cpp)
+    jmc.cpp
+    expr.cpp)
 
 if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
     add_definitions(-D_TARGET_AMD64_=1)
