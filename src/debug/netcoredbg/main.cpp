@@ -412,7 +412,7 @@ public:
 
             if (Debugger::IsJustMyCode() && no_source)
             {
-                Debugger::SetupStep(pThread, Debugger::STEP_IN);
+                Debugger::SetupStep(pThread, Debugger::STEP_OVER);
                 pAppDomain->Continue(0);
             }
             else
