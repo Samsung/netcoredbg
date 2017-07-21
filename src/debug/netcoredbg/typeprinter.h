@@ -11,4 +11,5 @@ public:
     static HRESULT GetTypeOfValue(ICorDebugValue *pValue, std::string &output);
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType);
     static HRESULT GetMethodName(ICorDebugFrame *pFrame, std::string &output);
+    static HRESULT GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeName, std::string &methodName);
 };

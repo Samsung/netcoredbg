@@ -470,7 +470,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
     return S_OK;
 }
 
-HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
+HRESULT TypePrinter::GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeName, std::string &methodName)
 {
     HRESULT Status;
 
@@ -533,19 +533,29 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     std::list<std::string> args;
     AddGenericArgs(pFrame, args);
 
-    std::stringstream ss;
     if (memTypeDef != mdTypeDefNil)
     {
-        std::string name;
-        hr = NameForTypeDef(memTypeDef, pMD, name, args);
-        if (SUCCEEDED(hr))
-        {
-            ss << name << ".";
-        }
+        if (FAILED(NameForTypeDef(memTypeDef, pMD, typeName, args)))
+            typeName = "";
     }
 
-    ss << ConsumeGenericArgs(funcName, args);
-    ss << "()";
+    methodName = ConsumeGenericArgs(funcName, args);
+
+    return S_OK;
+}
+
+HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
+{
+    HRESULT Status;
+
+    std::string typeName;
+    std::string methodName;
+
+    std::stringstream ss;
+    IfFailRet(GetTypeAndMethod(pFrame, typeName, methodName));
+    if (!typeName.empty())
+        ss << typeName << ".";
+    ss << methodName << "()";
 
     output = ss.str();
     return S_OK;
