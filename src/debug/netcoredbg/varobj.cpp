@@ -25,8 +25,14 @@ HRESULT EvalFunction(
     ICorDebugValue *pArgValue, // may be nullptr
     ICorDebugValue **ppEvalResult);
 
+HRESULT EvalObjectNoConstructor(
+    ICorDebugThread *pThread,
+    ICorDebugType *pType,
+    ICorDebugValue **ppEvalResult);
+
 // Valueprint
 HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output);
+HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
 
 // Modules
 HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
@@ -181,8 +187,24 @@ static HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *p
         IfFailRet(FindFunction(pModule, typeName, getTypeHandleMethodName, &g_pGetTypeHandle));
     }
 
+    ToRelease<ICorDebugValue> pNewValue;
+
+    ToRelease<ICorDebugValue> pUnboxedValue;
+    BOOL isNull = FALSE;
+    IfFailRet(DereferenceAndUnboxValue(pValue, &pUnboxedValue, &isNull));
+    if (isNull)
+    {
+        ToRelease<ICorDebugValue2> pValue2;
+        ToRelease<ICorDebugType> pType;
+
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+        IfFailRet(pValue2->GetExactType(&pType));
+
+        EvalObjectNoConstructor(pThread, pType, &pNewValue);
+    }
+
     ToRelease<ICorDebugValue> pRuntimeHandleValue;
-    IfFailRet(EvalFunction(pThread, g_pGetTypeHandle, nullptr, pValue, &pRuntimeHandleValue));
+    IfFailRet(EvalFunction(pThread, g_pGetTypeHandle, nullptr, pNewValue ? pNewValue.GetPtr() : pValue, &pRuntimeHandleValue));
 
     ToRelease<ICorDebugValue> pResultValue;
     IfFailRet(EvalFunction(pThread, g_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue));

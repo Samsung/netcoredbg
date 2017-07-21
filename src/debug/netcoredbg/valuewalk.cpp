@@ -76,11 +76,11 @@ HRESULT EvalFunction(
     if (pType)
     {
         ToRelease<ICorDebugTypeEnum> pTypeEnum;
-        if(SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
+        if (SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
         {
             ICorDebugType *curType;
             ULONG fetched = 0;
-            while(SUCCEEDED(pTypeEnum->Next(1, &curType, &fetched)) && fetched == 1)
+            while (SUCCEEDED(pTypeEnum->Next(1, &curType, &fetched)) && fetched == 1)
             {
                 typeParams.emplace_back(curType);
             }
@@ -95,6 +95,47 @@ HRESULT EvalFunction(
         (ICorDebugType **)typeParams.data(),
         pArgValue ? 1 : 0,
         pArgValue ? &pArgValue : nullptr
+    ));
+
+    return WaitEvalResult(pProcess, pEval, ppEvalResult);
+}
+
+HRESULT EvalObjectNoConstructor(
+    ICorDebugThread *pThread,
+    ICorDebugType *pType,
+    ICorDebugValue **ppEvalResult)
+{
+    HRESULT Status = S_OK;
+
+    ToRelease<ICorDebugEval> pEval;
+
+    ToRelease<ICorDebugProcess> pProcess;
+    IfFailRet(pThread->GetProcess(&pProcess));
+    IfFailRet(pThread->CreateEval(&pEval));
+
+    std::vector< ToRelease<ICorDebugType> > typeParams;
+
+    ToRelease<ICorDebugClass> pClass;
+    IfFailRet(pType->GetClass(&pClass));
+
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+    if (SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
+    {
+        ICorDebugType *curType;
+        ULONG fetched = 0;
+        while (SUCCEEDED(pTypeEnum->Next(1, &curType, &fetched)) && fetched == 1)
+        {
+            typeParams.emplace_back(curType);
+        }
+    }
+
+    ToRelease<ICorDebugEval2> pEval2;
+    IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+
+    IfFailRet(pEval2->NewParameterizedObjectNoConstructor(
+        pClass,
+        typeParams.size(),
+        (ICorDebugType **)typeParams.data()
     ));
 
     return WaitEvalResult(pProcess, pEval, ppEvalResult);
