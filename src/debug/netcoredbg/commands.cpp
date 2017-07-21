@@ -456,7 +456,7 @@ HRESULT Debugger::HandleCommand(std::string command,
     return command_it->second(m_pProcess, args, output);
 }
 
-std::vector<std::string> TokenizeString(const std::string &str, const char *delimiters = " \t\n\r")
+static std::vector<std::string> TokenizeString(const std::string &str, const char *delimiters = " \t\n\r")
 {
     enum {
         StateSpace,

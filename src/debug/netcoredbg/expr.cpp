@@ -12,9 +12,6 @@
 
 #include "typeprinter.h"
 
-// Commands
-std::vector<std::string> TokenizeString(const std::string &str, const char *delimiters = " \t\n\r");
-
 // Modules
 HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
 
@@ -202,6 +199,97 @@ static HRESULT FollowFields(ICorDebugThread *pThread,
     return S_OK;
 }
 
+static std::vector<std::string> ParseExpression(const std::string &expression)
+{
+    std::vector<std::string> result;
+    int paramDepth = 0;
+
+    result.push_back("");
+
+    for (char c : expression)
+    {
+        switch(c)
+        {
+            case '.':
+            case '[':
+                if (paramDepth == 0)
+                {
+                    result.push_back("");
+                    continue;
+                }
+                break;
+            case '<':
+                paramDepth++;
+                break;
+            case '>':
+                paramDepth--;
+                break;
+            case ' ':
+                continue;
+            default:
+                break;
+        }
+        result.back() += c;
+    }
+    return result;
+}
+
+static std::vector<std::string> ParseGenericParams(const std::string &part, std::string &typeName)
+{
+    std::vector<std::string> result;
+
+    std::size_t start = part.find('<');
+    if (start == std::string::npos)
+    {
+        typeName = part;
+        return result;
+    }
+
+    int paramDepth = 0;
+
+    result.push_back("");
+
+    for (std::size_t i = start; i < part.size(); i++)
+    {
+        char c = part.at(i);
+        switch(c)
+        {
+            case ',':
+                if (paramDepth == 1)
+                {
+                    result.push_back("");
+                    continue;
+                }
+                break;
+            case '<':
+                paramDepth++;
+                if (paramDepth == 1) continue;
+                break;
+            case '>':
+                paramDepth--;
+                if (paramDepth == 0) continue;
+                break;
+            default:
+                break;
+        }
+        result.back() += c;
+    }
+    typeName = part.substr(0, start) + '`' + std::to_string(result.size());
+    return result;
+}
+
+std::vector<std::string> GatherParameters(const std::vector<std::string> &parts, int indexEnd)
+{
+    std::vector<std::string> result;
+    for (int i = 0; i < indexEnd; i++)
+    {
+        std::string typeName;
+        std::vector<std::string> params = ParseGenericParams(parts[i], typeName);
+        result.insert(result.end(), params.begin(), params.end());
+    }
+    return result;
+}
+
 HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string> &parts, int &nextPart, mdTypeDef &typeToken)
 {
     HRESULT Status;
@@ -216,7 +304,9 @@ HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string
     // Search for type in module
     for (int i = nextPart; i < (int)parts.size(); i++)
     {
-        currentTypeName += (currentTypeName.empty() ? "" : ".") + parts[i];
+        std::string name;
+        ParseGenericParams(parts[i], name);
+        currentTypeName += (currentTypeName.empty() ? "" : ".") + name;
 
         typeToken = GetTypeTokenForName(pMD, mdTypeDefNil, currentTypeName);
         if (typeToken != mdTypeDefNil)
@@ -232,7 +322,9 @@ HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string
     // Resolve nested class
     for (int j = nextPart; j < (int)parts.size(); j++)
     {
-        mdTypeDef classToken = GetTypeTokenForName(pMD, typeToken, parts[j]);
+        std::string name;
+        ParseGenericParams(parts[j], name);
+        mdTypeDef classToken = GetTypeTokenForName(pMD, typeToken, name);
         if (classToken == mdTypeDefNil)
             break;
         typeToken = classToken;
@@ -242,7 +334,53 @@ HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string
     return S_OK;
 }
 
-HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule = nullptr)
+HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule = nullptr);
+
+HRESULT GetType(const std::string &typeName, ICorDebugType **ppType)
+{
+    std::vector<std::string> classParts = ParseExpression(typeName);
+    int nextClassPart = 0;
+    return FindType(classParts, nextClassPart, nullptr, ppType);
+}
+
+static std::string RenameType(const std::string &shortTypeName)
+{
+    static const std::unordered_map<std::string, std::string> short2long = {
+        {"bool",    "System.Boolean"},
+        {"byte",    "System.Byte"},
+        {"sbyte",   "System.SByte"},
+        {"char",    "System.Char"},
+        {"decimal", "System.Decimal"},
+        {"double",  "System.Double"},
+        {"float",   "System.Single"},
+        {"int",     "System.Int32"},
+        {"uint",    "System.UInt32"},
+        {"long",    "System.Int64"},
+        {"ulong",   "System.UInt64"},
+        {"object",  "System.Object"},
+        {"short",   "System.Int16"},
+        {"ushort",  "System.UInt16"},
+        {"string",  "System.String"},
+        {"IntPtr",  "System.IntPtr"},
+        {"UIntPtr", "System.UIntPtr"}
+    };
+    auto renamed = short2long.find(shortTypeName);
+    return renamed != short2long.end() ? renamed->second : shortTypeName;
+}
+
+HRESULT ResolveParameters(const std::vector<std::string> &params, std::vector< ToRelease<ICorDebugType> > &types)
+{
+    HRESULT Status;
+    for (auto &p : params)
+    {
+        ICorDebugType *tmpType;
+        IfFailRet(GetType(RenameType(p), &tmpType));
+        types.emplace_back(tmpType);
+    }
+    return S_OK;
+}
+
+HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule)
 {
     HRESULT Status;
 
@@ -274,6 +412,10 @@ HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebug
     if (typeToken == mdTypeDefNil)
         return E_FAIL;
 
+    std::vector<std::string> params = GatherParameters(parts, nextPart);
+    std::vector< ToRelease<ICorDebugType> > types;
+    IfFailRet(ResolveParameters(params, types));
+
     ToRelease<ICorDebugClass> pClass;
     IfFailRet(pTypeModule->GetClassFromToken(typeToken, &pClass));
 
@@ -298,18 +440,13 @@ HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebug
     CorElementType et = isValueType ? ELEMENT_TYPE_VALUETYPE : ELEMENT_TYPE_CLASS;
 
     ToRelease<ICorDebugType> pType;
-    IfFailRet(pClass2->GetParameterizedType(et, 0, nullptr, &pType));
+    IfFailRet(pClass2->GetParameterizedType(et, types.size(), (ICorDebugType **)types.data(), &pType));
 
     *ppType = pType.Detach();
     if (ppModule)
         *ppModule = pTypeModule.Detach();
 
     return S_OK;
-}
-
-static std::vector<std::string> ParseExpression(const std::string &expression)
-{
-    return TokenizeString(expression, ".[");
 }
 
 static HRESULT FollowNested(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame, const std::string &methodClass, const std::vector<std::string> &parts, ICorDebugValue **ppResult)
