@@ -200,19 +200,6 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
-    std::string baseTypeName;
-    ToRelease<ICorDebugType> pBaseType;
-    if(SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL && SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
-    {
-        if(baseTypeName == "System.Enum")
-            return S_OK;
-        else if(baseTypeName != "System.Object"  && baseTypeName != "System.ValueType")
-        {
-            // Add fields of base class
-            IfFailRet(WalkMembers(pInputValue, pILFrame, pBaseType, cb));
-        }
-    }
-
     std::string className;
     TypePrinter::GetTypeOfValue(pType, className);
     if (className == "decimal") // TODO: implement mechanism for walking over custom type fields
@@ -322,6 +309,19 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
         }
     }
     pMD->CloseEnum(propEnum);
+
+    std::string baseTypeName;
+    ToRelease<ICorDebugType> pBaseType;
+    if(SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL && SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
+    {
+        if(baseTypeName == "System.Enum")
+            return S_OK;
+        else if(baseTypeName != "System.Object"  && baseTypeName != "System.ValueType")
+        {
+            // Add fields of base class
+            IfFailRet(WalkMembers(pInputValue, pILFrame, pBaseType, cb));
+        }
+    }
 
     return S_OK;
 }

@@ -263,12 +263,12 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
 static void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
 {
     std::unordered_set<std::string> names;
-    for (auto it = members.rbegin(); it != members.rend(); ++it)
+    for (auto &it : members)
     {
-        auto r = names.insert(it->name);
+        auto r = names.insert(it.name);
         if (!r.second)
         {
-            it->name += " (" + it->owningType + ")";
+            it.name += " (" + it.owningType + ")";
         }
     }
 }
