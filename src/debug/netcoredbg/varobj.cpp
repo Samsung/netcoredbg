@@ -192,6 +192,13 @@ static HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *p
     ToRelease<ICorDebugValue> pUnboxedValue;
     BOOL isNull = FALSE;
     IfFailRet(DereferenceAndUnboxValue(pValue, &pUnboxedValue, &isNull));
+
+    CorElementType et;
+    IfFailRet(pUnboxedValue->GetType(&et));
+
+    if (et != ELEMENT_TYPE_CLASS)
+        return S_OK;
+
     if (isNull)
     {
         ToRelease<ICorDebugValue2> pValue2;
