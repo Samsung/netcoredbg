@@ -116,7 +116,8 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
     if (TypeFromToken(mb) != mdtTypeDef
         && TypeFromToken(mb) != mdtFieldDef
         && TypeFromToken(mb) != mdtMethodDef
-        && TypeFromToken(mb) != mdtMemberRef)
+        && TypeFromToken(mb) != mdtMemberRef
+        && TypeFromToken(mb) != mdtTypeRef)
     {
         //ExtOut("unsupported\n");
         return E_FAIL;
@@ -193,6 +194,18 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
                     mdName += ".";
                 }
                 mdName += to_utf8(name/*, size*/);
+            }
+        }
+        else if (TypeFromToken(mb) == mdtTypeRef)
+        {
+            ToRelease<IMDInternalImport> pMDI;
+            hr = GetMDInternalFromImport(pImport, &pMDI);
+            if (SUCCEEDED(hr))
+            {
+                LPCSTR sznamespace = 0;
+                LPCSTR szname = 0;
+                if (SUCCEEDED(pMDI->GetNameOfTypeRef(mdtTypeRef, &sznamespace, &szname)))
+                    mdName = std::string(sznamespace) + "." + std::string(szname);
             }
         }
         else
