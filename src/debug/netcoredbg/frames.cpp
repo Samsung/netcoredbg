@@ -79,9 +79,12 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
 
     if (SUCCEEDED(Modules::GetFrameLocation(pFrame, ilOffset, sp)))
     {
-        ss << "line=\"" << sp.startLine << "\","
+        ss << "file=\"" << GetFileName(sp.document) << "\","
            << "fullname=\"" << Debugger::EscapeMIValue(sp.document) << "\","
-           << "file=\"" << GetFileName(sp.document) << "\",";
+           << "line=\"" << sp.startLine << "\","
+           << "col=\"" << sp.startColumn << "\","
+           << "end-line=\"" << sp.endLine << "\","
+           << "end-col=\"" << sp.endColumn << "\",";
         has_source = true;
     }
 
