@@ -11,6 +11,7 @@
 #include <condition_variable>
 
 #include "debugger.h"
+#include "modules.h"
 
 using namespace std::placeholders;
 
@@ -19,9 +20,6 @@ HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::str
 HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
 HRESULT ListChildren(int childStart, int childEnd, const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
 HRESULT DeleteVar(const std::string &varobjName);
-
-// Modules
-HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range);
 
 // Breakpoints
 HRESULT DeleteBreakpoint(ULONG32 id);
@@ -198,7 +196,7 @@ HRESULT Debugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepTyp
     BOOL bStepIn = stepType == STEP_IN;
 
     COR_DEBUG_STEP_RANGE range;
-    if (SUCCEEDED(GetStepRangeFromCurrentIP(pThread, &range)))
+    if (SUCCEEDED(Modules::GetStepRangeFromCurrentIP(pThread, &range)))
     {
         IfFailRet(pStepper->StepRange(bStepIn, &range, 1));
     } else {

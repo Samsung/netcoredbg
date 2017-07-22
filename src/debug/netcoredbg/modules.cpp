@@ -10,11 +10,13 @@
 #include "symbolreader.h"
 #include "cputil.h"
 #include "platform.h"
+#include "modules.h"
 
 // JMC
 bool ShouldLoadSymbolsForModule(const std::string &moduleName);
 HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
 
+namespace Modules {
 struct ModuleInfo
 {
     std::unique_ptr<SymbolReader> symbols;
@@ -357,3 +359,5 @@ HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb)
     }
     return S_OK;
 }
+
+} // Modules namespace

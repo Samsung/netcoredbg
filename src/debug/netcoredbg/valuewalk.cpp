@@ -11,18 +11,7 @@
 #include <iomanip>
 
 #include "cputil.h"
-
-// Modules
-HRESULT GetFrameNamedLocalVariable(
-    ICorDebugModule *pModule,
-    ICorDebugILFrame *pILFrame,
-    mdMethodDef methodToken,
-    ULONG localIndex,
-    std::string &paramName,
-    ICorDebugValue** ppValue,
-    ULONG32 *pIlStart,
-    ULONG32 *pIlEnd);
-
+#include "modules.h"
 #include "typeprinter.h"
 
 // Valueprint
@@ -500,7 +489,7 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
             ToRelease<ICorDebugValue> pValue;
             ULONG32 ilStart;
             ULONG32 ilEnd;
-            Status = GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd);
+            Status = Modules::GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd);
 
             if (FAILED(Status))
                 continue;

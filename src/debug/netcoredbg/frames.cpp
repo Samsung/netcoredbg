@@ -11,14 +11,8 @@
 #include "typeprinter.h"
 #include "platform.h"
 #include "debugger.h"
+#include "modules.h"
 
-HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
-
-HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
-                         ULONG32 &ilOffset,
-                         mdMethodDef &methodToken,
-                         std::string &fullname,
-                         ULONG &linenum);
 
 HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
 {
@@ -84,7 +78,7 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
 
     std::stringstream ss;
 
-    if (SUCCEEDED(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum)))
+    if (SUCCEEDED(Modules::GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum)))
     {
         ss << "line=\"" << linenum << "\","
            << "fullname=\"" << Debugger::EscapeMIValue(fullname) << "\","
@@ -112,7 +106,7 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
     IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
 
     std::string id;
-    IfFailRet(GetModuleId(pModule, id));
+    IfFailRet(Modules::GetModuleId(pModule, id));
 
     ss << "clr-addr={module-id=\"{" << id << "}\","
        << "method-token=\"0x" << std::setw(8) << std::setfill('0') << std::hex << methodToken << "\","

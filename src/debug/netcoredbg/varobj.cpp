@@ -12,6 +12,7 @@
 
 #include "debugger.h"
 #include "typeprinter.h"
+#include "modules.h"
 
 // Valuewalk
 typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
@@ -33,9 +34,6 @@ HRESULT EvalObjectNoConstructor(
 // Valueprint
 HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output);
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
-
-// Modules
-HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
 
 HRESULT GetNumChild(ICorDebugValue *pValue,
                     unsigned int &numchild,
@@ -177,7 +175,7 @@ HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame
     if (!g_pRunClassConstructor && !g_pGetTypeHandle)
     {
         ToRelease<ICorDebugModule> pModule;
-        IfFailRet(GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+        IfFailRet(Modules::GetModuleWithName("System.Private.CoreLib.dll", &pModule));
 
         static const WCHAR helpersName[] = W("System.Runtime.CompilerServices.RuntimeHelpers");
         static const WCHAR runCCTorMethodName[] = W("RunClassConstructor");

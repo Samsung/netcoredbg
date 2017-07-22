@@ -10,27 +10,7 @@
 #include <condition_variable>
 
 #include "debugger.h"
-
-
-// Modules
-HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
-                         ULONG32 &ilOffset,
-                         mdMethodDef &methodToken,
-                         std::string &fullname,
-                         ULONG &linenum);
-
-HRESULT GetLocationInModule(ICorDebugModule *pModule,
-                            std::string filename,
-                            ULONG linenum,
-                            ULONG32 &ilOffset,
-                            mdMethodDef &methodToken,
-                            std::string &fullname);
-HRESULT GetLocationInAny(std::string filename,
-                         ULONG linenum,
-                         ULONG32 &ilOffset,
-                         mdMethodDef &methodToken,
-                         std::string &fullname,
-                         ICorDebugModule **ppModule);
+#include "modules.h"
 
 static std::mutex g_breakMutex;
 static ULONG32 g_breakIndex = 1;
@@ -107,7 +87,7 @@ HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
 
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
-    IfFailRet(GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
+    IfFailRet(Modules::GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
 
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
@@ -169,11 +149,12 @@ static HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, Breakpoint &b
     ULONG32 ilOffset;
     std::string fullname;
 
-    IfFailRet(GetLocationInModule(pModule, bp.fullname,
-                                  bp.linenum,
-                                  ilOffset,
-                                  methodToken,
-                                  fullname));
+    IfFailRet(Modules::GetLocationInModule(
+        pModule, bp.fullname,
+        bp.linenum,
+        ilOffset,
+        methodToken,
+        fullname));
 
     ToRelease<ICorDebugFunction> pFunc;
     ToRelease<ICorDebugCode> pCode;
@@ -206,12 +187,13 @@ static HRESULT ResolveBreakpoint(Breakpoint &bp)
 
     ToRelease<ICorDebugModule> pModule;
 
-    IfFailRet(GetLocationInAny(bp.fullname,
-                               bp.linenum,
-                               ilOffset,
-                               methodToken,
-                               fullname,
-                               &pModule));
+    IfFailRet(Modules::GetLocationInAny(
+        bp.fullname,
+        bp.linenum,
+        ilOffset,
+        methodToken,
+        fullname,
+        &pModule));
 
     ToRelease<ICorDebugFunction> pFunc;
     ToRelease<ICorDebugCode> pCode;

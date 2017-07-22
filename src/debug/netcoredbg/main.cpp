@@ -14,6 +14,7 @@
 #include "platform.h"
 #include "typeprinter.h"
 #include "debugger.h"
+#include "modules.h"
 
 #define __in
 #define __out
@@ -138,18 +139,6 @@ void Debugger::Message(const char *fmt, ...)
 void DeleteAllBreakpoints();
 HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times);
 void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
-
-// Modules
-void CleanupAllModules();
-std::string GetModuleFileName(ICorDebugModule *pModule);
-HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range);
-HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
-                             std::string &id,
-                             std::string &name,
-                             bool &symbolsLoaded,
-                             CORDB_ADDRESS &baseAddress,
-                             ULONG32 &size);
-
 
 // Valuewalk
 void NotifyEvalComplete();
@@ -536,7 +525,7 @@ public:
             CORDB_ADDRESS baseAddress = 0;
             ULONG32 size = 0;
 
-            TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
+            Modules::TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
 
             std::stringstream ss;
             ss << "id=\"{" << id << "}\","
@@ -959,7 +948,7 @@ HRESULT Debugger::TerminateProcess()
 
 void Debugger::Cleanup()
 {
-    CleanupAllModules();
+    Modules::CleanupAllModules();
     CleanupVars();
     // TODO: Cleanup libcoreclr.so instance
 }

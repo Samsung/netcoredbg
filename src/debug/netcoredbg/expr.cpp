@@ -11,9 +11,7 @@
 #include <iomanip>
 
 #include "typeprinter.h"
-
-// Modules
-HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
+#include "modules.h"
 
 // Valuewalk
 typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
@@ -392,7 +390,7 @@ HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebug
 
     if (!pTypeModule)
     {
-        ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
+        Modules::ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
             if (typeToken != mdTypeDefNil) // already found
                 return S_OK;
 
