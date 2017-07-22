@@ -8,6 +8,7 @@ typedef  BOOL (*ResolveSequencePointDelegate)(PVOID, const char*, unsigned int, 
 typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned int*, unsigned int*);
 typedef  BOOL (*GetLineByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, ULONG *, BSTR*);
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
+typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
 
 BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
                      PULONG lpcbBytesRead);
@@ -24,6 +25,7 @@ private:
     static GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate;
     static GetLineByILOffsetDelegate getLineByILOffsetDelegate;
     static GetStepRangesFromIPDelegate getStepRangesFromIPDelegate;
+    static GetSequencePointsDelegate getSequencePointsDelegate;
 
     static HRESULT PrepareSymbolReader();
 
@@ -37,6 +39,15 @@ private:
         ULONG64 inMemoryPdbSize);
 
 public:
+    static const int HiddenLine;
+    struct __attribute__((packed)) SequencePoint {
+        int32_t startLine;
+        int32_t startColumn;
+        int32_t endLine;
+        int32_t endColumn;
+        int32_t offset;
+    };
+
     SymbolReader()
     {
         m_symbolReaderHandle = 0;
@@ -60,4 +71,5 @@ public:
     HRESULT GetNamedLocalVariableAndScope(ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex, WCHAR* paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32* pIlStart, ULONG32* pIlEnd);
     HRESULT ResolveSequencePoint(WCHAR* pFilename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset);
     HRESULT GetStepRangesFromIP(ULONG64 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
+    HRESULT GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points);
 };

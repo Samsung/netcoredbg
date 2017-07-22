@@ -41,6 +41,16 @@ namespace SOS
 
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct DbgSequencePoint
+        {
+            public int startLine;
+            public int startColumn;
+            public int endLine;
+            public int endColumn;
+            public int offset;
+        }
+
         /// <summary>
         /// Read memory callback
         /// </summary>
@@ -330,6 +340,65 @@ namespace SOS
                         return true;
                     }
                 }
+            }
+            catch
+            {
+            }
+            return false;
+        }
+
+        internal static bool GetSequencePoints(IntPtr symbolReaderHandle, int methodToken, out IntPtr points, out int pointsCount)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            pointsCount = 0;
+            points = IntPtr.Zero;
+
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+
+            GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+            MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+            try
+            {
+                Handle handle = MetadataTokens.Handle(methodToken);
+                if (handle.Kind != HandleKind.MethodDefinition)
+                    return false;
+
+                MethodDebugInformationHandle methodDebugHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
+                if (methodDebugHandle.IsNil)
+                    return false;
+
+                MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugHandle);
+                SequencePointCollection sequencePoints = methodDebugInfo.GetSequencePoints();
+
+                var list = new List<DbgSequencePoint>();
+                foreach (SequencePoint p in sequencePoints)
+                {
+                    list.Add(new DbgSequencePoint() {
+                        startLine = p.StartLine,
+                        endLine = p.EndLine,
+                        startColumn = p.StartColumn,
+                        endColumn = p.EndColumn,
+                        offset = p.Offset
+                    });
+                }
+
+                if (list.Count == 0)
+                    return true;
+
+                var structSize = Marshal.SizeOf<DbgSequencePoint>();
+                IntPtr allPoints = Marshal.AllocCoTaskMem(list.Count * structSize);
+                var currentPtr = allPoints;
+
+                foreach (var p in list)
+                {
+                    Marshal.StructureToPtr(p, currentPtr, false);
+                    currentPtr = (IntPtr)(currentPtr.ToInt64() + structSize);
+                }
+
+                points = allPoints;
+                pointsCount = list.Count;
+                return true;
             }
             catch
             {

@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include <string>
+#include <vector>
 
 #include "symbolreader.h"
 
@@ -13,6 +14,9 @@ ResolveSequencePointDelegate SymbolReader::resolveSequencePointDelegate;
 GetLocalVariableNameAndScope SymbolReader::getLocalVariableNameAndScopeDelegate;
 GetLineByILOffsetDelegate SymbolReader::getLineByILOffsetDelegate;
 GetStepRangesFromIPDelegate SymbolReader::getStepRangesFromIPDelegate;
+GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
+
+const int SymbolReader::HiddenLine = 0xfeefee;
 
 HRESULT SymbolReader::LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule)
 {
@@ -183,6 +187,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLineByILOffset", (void **)&getLineByILOffsetDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate));
 
     return Status;
 }
@@ -299,4 +304,30 @@ HRESULT SymbolReader::GetNamedLocalVariableAndScope(
         return E_FAIL;
     }
     return S_OK;
+}
+
+HRESULT SymbolReader::GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points)
+{
+    HRESULT Status = S_OK;
+
+    if (m_symbolReaderHandle != 0)
+    {
+        _ASSERTE(getSequencePointsDelegate != nullptr);
+
+        SequencePoint *allocatedPoints = nullptr;
+        int pointsCount = 0;
+
+        if (getSequencePointsDelegate(m_symbolReaderHandle, methodToken, (PVOID*)&allocatedPoints, &pointsCount) == FALSE)
+        {
+            return E_FAIL;
+        }
+
+        points.assign(allocatedPoints, allocatedPoints + pointsCount);
+
+        CoTaskMemFree(allocatedPoints);
+
+        return S_OK;
+    }
+
+    return E_FAIL;
 }
