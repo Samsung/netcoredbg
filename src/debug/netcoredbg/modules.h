@@ -1,6 +1,15 @@
 namespace Modules
 {
 
+struct SequencePoint {
+    int32_t startLine;
+    int32_t startColumn;
+    int32_t endLine;
+    int32_t endColumn;
+    int32_t offset;
+    std::string document;
+};
+
 HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
 
 HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
@@ -9,9 +18,7 @@ std::string GetModuleFileName(ICorDebugModule *pModule);
 
 HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          ULONG32 &ilOffset,
-                         mdMethodDef &methodToken,
-                         std::string &fullname,
-                         ULONG &linenum);
+                         Modules::SequencePoint &sequencePoint);
 
 HRESULT GetLocationInModule(ICorDebugModule *pModule,
                             std::string filename,

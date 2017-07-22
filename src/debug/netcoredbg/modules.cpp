@@ -120,12 +120,11 @@ HRESULT GetLocationInModule(ICorDebugModule *pModule,
 
 HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
                          ULONG32 &ilOffset,
-                         mdMethodDef &methodToken,
-                         std::string &fullname,
-                         ULONG &linenum)
+                         Modules::SequencePoint &sequencePoint)
 {
     HRESULT Status;
 
+    mdMethodDef methodToken;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
 
     ToRelease<ICorDebugFunction> pFunc;
@@ -149,6 +148,9 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
 
     WCHAR name[MAX_LONGPATH];
 
+    std::vector<SymbolReader::SequencePoint> points;
+    ULONG linenum;
+
     {
         std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
         auto info_pair = g_modulesInfo.find(modAddress);
@@ -158,11 +160,36 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
         }
 
         IfFailRet(info_pair->second.symbols->GetLineByILOffset(methodToken, ilOffset, &linenum, name, _countof(name)));
+        IfFailRet(info_pair->second.symbols->GetSequencePoints(methodToken, points));
     }
 
-    fullname = to_utf8(name);
+    if (points.empty())
+        return E_FAIL;
 
-    return S_OK;
+    // TODO: Merge with similar code in SymbolReader.cs
+
+    SymbolReader::SequencePoint &nearestPoint = points.front();
+
+    for (auto &p : points)
+    {
+        if (p.offset < ilOffset)
+        {
+            nearestPoint = p;
+            continue;
+        }
+        if (p.offset == ilOffset)
+            nearestPoint = p;
+
+        sequencePoint.startLine = nearestPoint.startLine;
+        sequencePoint.endLine = nearestPoint.endLine;
+        sequencePoint.startColumn = nearestPoint.startColumn;
+        sequencePoint.endColumn = nearestPoint.endColumn;
+        sequencePoint.offset = nearestPoint.offset;
+        sequencePoint.document = to_utf8(name);
+        return S_OK;
+    }
+
+    return E_FAIL;
 }
 
 HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)

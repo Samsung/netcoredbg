@@ -80,14 +80,16 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output)
 HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
 {
     HRESULT Status;
+
     ULONG32 ilOffset;
+    Modules::SequencePoint sp;
     mdMethodDef methodToken;
-    std::string fullname;
-    ULONG linenum;
 
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
-    IfFailRet(Modules::GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum));
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+
+    IfFailRet(Modules::GetFrameLocation(pFrame, ilOffset, sp));
 
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
@@ -95,10 +97,10 @@ HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
     {
         Breakpoint &b = it.second;
 
-        if (b.fullname == fullname &&
+        if (b.fullname == sp.document &&
             b.ilOffset == ilOffset &&
             b.methodToken == methodToken &&
-            b.linenum == linenum &&
+            b.linenum == sp.startLine &&
             b.enabled)
         {
             id = b.id;

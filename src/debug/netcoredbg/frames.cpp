@@ -70,22 +70,22 @@ HRESULT PrintThreadsState(ICorDebugController *controller, std::string &output)
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
+
     ULONG32 ilOffset;
-    mdMethodDef methodToken;
-    std::string fullname;
-    ULONG linenum;
+    Modules::SequencePoint sp;
     bool has_source = false;
 
     std::stringstream ss;
 
-    if (SUCCEEDED(Modules::GetFrameLocation(pFrame, ilOffset, methodToken, fullname, linenum)))
+    if (SUCCEEDED(Modules::GetFrameLocation(pFrame, ilOffset, sp)))
     {
-        ss << "line=\"" << linenum << "\","
-           << "fullname=\"" << Debugger::EscapeMIValue(fullname) << "\","
-            <<"file=\"" << GetFileName(fullname) << "\",";
+        ss << "line=\"" << sp.startLine << "\","
+           << "fullname=\"" << Debugger::EscapeMIValue(sp.document) << "\","
+           << "file=\"" << GetFileName(sp.document) << "\",";
         has_source = true;
     }
 
+    mdMethodDef methodToken;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
 
     ToRelease<ICorDebugFunction> pFunc;
