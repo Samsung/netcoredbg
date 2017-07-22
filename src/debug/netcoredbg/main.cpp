@@ -815,6 +815,11 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
         return Status;
     }
 
+    if (m_clrPath.empty())
+        m_clrPath = GetCLRPath(pid);
+
+    SymbolReader::SetCoreCLRPath(m_clrPath);
+
     ToRelease<ICorDebugProcess> pProcess;
     Status = pCorDebug->DebugActiveProcess(pid, FALSE, &pProcess);
     if (FAILED(Status))
@@ -827,10 +832,6 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
     m_pDebug = pCorDebug.Detach();
 
     m_processId = pid;
-    if (m_clrPath.empty())
-        m_clrPath = GetCLRPath(pid);
-
-    SymbolReader::SetCoreCLRPath(m_clrPath);
 
     return S_OK;
 }
