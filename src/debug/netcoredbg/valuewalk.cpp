@@ -361,6 +361,36 @@ HRESULT WalkMembers(ICorDebugValue *pValue, ICorDebugILFrame *pILFrame, WalkMemb
     return WalkMembers(pValue, pILFrame, nullptr, cb);
 }
 
+static HRESULT HandleSpecialLocalVar(const std::string &localName,
+                                     ICorDebugValue *pLocalValue,
+                                     ICorDebugILFrame *pILFrame,
+                                     WalkStackVarsCallback cb)
+{
+    static const std::string captureName = "CS$<>";
+
+    HRESULT Status;
+
+    if (!std::equal(captureName.begin(), captureName.end(), localName.begin()))
+        return S_FALSE;
+
+    // Substitute local value with its fields
+    IfFailRet(WalkMembers(pLocalValue, pILFrame, [&](
+        mdMethodDef,
+        ICorDebugModule *,
+        ICorDebugType *,
+        ICorDebugValue *pValue,
+        bool is_static,
+        const std::string &name)
+    {
+        HRESULT Status;
+        if (std::equal(captureName.begin(), captureName.end(), name.begin()))
+            return S_OK;
+        return cb(pILFrame, pValue, name);
+    }));
+
+    return S_OK;
+}
+
 static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
                                       ICorDebugILFrame *pILFrame,
                                       WalkStackVarsCallback cb)
@@ -394,6 +424,10 @@ static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
         bool is_static,
         const std::string &name)
     {
+        HRESULT Status;
+        IfFailRet(HandleSpecialLocalVar(name, pValue, pILFrame, cb));
+        if (Status == S_OK)
+            return S_OK;
         return cb(pILFrame, pValue, name.empty() ? "this" : name);
     }));
     return S_OK;
@@ -500,6 +534,10 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
 
             if (Status == S_FALSE)
                 break;
+
+            IfFailRet(HandleSpecialLocalVar(paramName, pValue, pILFrame, cb));
+            if (Status == S_OK)
+                continue;
 
             IfFailRet(cb(pILFrame, pValue, paramName));
         }
