@@ -13,7 +13,7 @@
 
 // JMC
 bool ShouldLoadSymbolsForModule(const std::string &moduleName);
-HRESULT SetJMCFromAttributes(ICorDebugModule *pModule);
+HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
 
 struct ModuleInfo
 {
@@ -274,7 +274,7 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
     {
         pModule2->SetJMCStatus(symbolsLoaded, 0, nullptr);
         if (symbolsLoaded)
-            SetJMCFromAttributes(pModule);
+            SetJMCFromAttributes(pModule, symbolReader.get());
     }
 
     IfFailRet(GetModuleId(pModule, id));
