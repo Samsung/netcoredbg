@@ -372,6 +372,44 @@ HRESULT WalkMembers(ICorDebugValue *pValue, ICorDebugILFrame *pILFrame, WalkMemb
     return WalkMembers(pValue, pILFrame, nullptr, cb);
 }
 
+static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
+                                      ICorDebugILFrame *pILFrame,
+                                      WalkStackVarsCallback cb)
+{
+    static const std::string displayClass = "<>c__DisplayClass";
+    static const std::string hideClass = "<>c";
+
+    HRESULT Status;
+
+    std::string typeName;
+    TypePrinter::GetTypeOfValue(pThisValue, typeName);
+
+    std::size_t start = typeName.find_last_of('.');
+    if (start == std::string::npos)
+        return S_FALSE;
+
+    typeName = typeName.substr(start + 1);
+
+    if (!std::equal(hideClass.begin(), hideClass.end(), typeName.begin()))
+        return S_FALSE;
+
+    if (!std::equal(displayClass.begin(), displayClass.end(), typeName.begin()))
+        return S_OK; // just do not show this value
+
+    // Substitute this with its fields
+    IfFailRet(WalkMembers(pThisValue, pILFrame, [&](
+        mdMethodDef,
+        ICorDebugModule *,
+        ICorDebugType *,
+        ICorDebugValue *pValue,
+        bool is_static,
+        const std::string &name)
+    {
+        return cb(pILFrame, pValue, name.empty() ? "this" : name);
+    }));
+    return S_OK;
+}
+
 HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
 {
     HRESULT Status;
@@ -410,7 +448,8 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
             mdParamDef paramDef;
             WCHAR paramName[mdNameLen] = W("\0");
 
-            if(i == 0 && (methodAttr & mdStatic) == 0)
+            bool thisParam = i == 0 && (methodAttr & mdStatic) == 0;
+            if (thisParam)
                 swprintf_s(paramName, mdNameLen, W("this\0"));
             else
             {
@@ -430,6 +469,14 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
 
             if (Status == S_FALSE)
                 break;
+
+            if (thisParam)
+            {
+                Status = HandleSpecialThisParam(pValue, pILFrame, cb);
+                IfFailRet(Status);
+                if (Status == S_OK)
+                    continue;
+            }
 
             IfFailRet(cb(pILFrame, pValue, to_utf8(paramName/*, paramNameLen*/)));
         }
