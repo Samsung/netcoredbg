@@ -435,19 +435,19 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
         {
             ULONG paramNameLen = 0;
             mdParamDef paramDef;
-            WCHAR paramName[mdNameLen] = W("\0");
+            WCHAR wParamName[mdNameLen] = W("\0");
 
             bool thisParam = i == 0 && (methodAttr & mdStatic) == 0;
             if (thisParam)
-                swprintf_s(paramName, mdNameLen, W("this\0"));
+                swprintf_s(wParamName, mdNameLen, W("this\0"));
             else
             {
                 int idx = ((methodAttr & mdStatic) == 0)? i : (i + 1);
                 if(SUCCEEDED(pMD->GetParamForMethodIndex(methodDef, idx, &paramDef)))
-                    pMD->GetParamProps(paramDef, NULL, NULL, paramName, mdNameLen, &paramNameLen, NULL, NULL, NULL, NULL);
+                    pMD->GetParamProps(paramDef, NULL, NULL, wParamName, mdNameLen, &paramNameLen, NULL, NULL, NULL, NULL);
             }
-            if(_wcslen(paramName) == 0)
-                swprintf_s(paramName, mdNameLen, W("param_%d\0"), i);
+            if(_wcslen(wParamName) == 0)
+                swprintf_s(wParamName, mdNameLen, W("param_%d\0"), i);
 
             ToRelease<ICorDebugValue> pValue;
             ULONG cArgsFetched;
@@ -459,15 +459,16 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
             if (Status == S_FALSE)
                 break;
 
+            std::string paramName = to_utf8(wParamName/*, paramNameLen*/);
+
             if (thisParam)
             {
-                Status = HandleSpecialThisParam(pValue, pILFrame, cb);
-                IfFailRet(Status);
+                IfFailRet(HandleSpecialThisParam(pValue, pILFrame, cb));
                 if (Status == S_OK)
                     continue;
             }
 
-            IfFailRet(cb(pILFrame, pValue, to_utf8(paramName/*, paramNameLen*/)));
+            IfFailRet(cb(pILFrame, pValue, paramName));
         }
     }
 
