@@ -364,6 +364,7 @@ HRESULT WalkMembers(ICorDebugValue *pValue, ICorDebugILFrame *pILFrame, WalkMemb
 static HRESULT HandleSpecialLocalVar(const std::string &localName,
                                      ICorDebugValue *pLocalValue,
                                      ICorDebugILFrame *pILFrame,
+                                     std::unordered_set<std::string> &locals,
                                      WalkStackVarsCallback cb)
 {
     static const std::string captureName = "CS$<>";
@@ -385,6 +386,8 @@ static HRESULT HandleSpecialLocalVar(const std::string &localName,
         HRESULT Status;
         if (std::equal(captureName.begin(), captureName.end(), name.begin()))
             return S_OK;
+        if (!locals.insert(name).second)
+            return S_OK; // already in the list
         return cb(pILFrame, pValue, name);
     }));
 
@@ -393,6 +396,7 @@ static HRESULT HandleSpecialLocalVar(const std::string &localName,
 
 static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
                                       ICorDebugILFrame *pILFrame,
+                                      std::unordered_set<std::string> &locals,
                                       WalkStackVarsCallback cb)
 {
     static const std::string displayClass = "<>c__DisplayClass";
@@ -425,9 +429,10 @@ static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
         const std::string &name)
     {
         HRESULT Status;
-        IfFailRet(HandleSpecialLocalVar(name, pValue, pILFrame, cb));
+        IfFailRet(HandleSpecialLocalVar(name, pValue, pILFrame, locals, cb));
         if (Status == S_OK)
             return S_OK;
+        locals.insert(name);
         return cb(pILFrame, pValue, name.empty() ? "this" : name);
     }));
     return S_OK;
@@ -459,6 +464,8 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
 
     IfFailRet(pILFrame->EnumerateArguments(&pParamEnum));
     IfFailRet(pParamEnum->GetCount(&cParams));
+
+    std::unordered_set<std::string> locals;
 
     if (cParams > 0)
     {
@@ -497,11 +504,12 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
 
             if (thisParam)
             {
-                IfFailRet(HandleSpecialThisParam(pValue, pILFrame, cb));
+                IfFailRet(HandleSpecialThisParam(pValue, pILFrame, locals, cb));
                 if (Status == S_OK)
                     continue;
             }
 
+            locals.insert(paramName);
             IfFailRet(cb(pILFrame, pValue, paramName));
         }
     }
@@ -535,10 +543,11 @@ HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
             if (Status == S_FALSE)
                 break;
 
-            IfFailRet(HandleSpecialLocalVar(paramName, pValue, pILFrame, cb));
+            IfFailRet(HandleSpecialLocalVar(paramName, pValue, pILFrame, locals, cb));
             if (Status == S_OK)
                 continue;
 
+            locals.insert(paramName);
             IfFailRet(cb(pILFrame, pValue, paramName));
         }
     }
