@@ -13,6 +13,8 @@
 #include "cputil.h"
 #include "modules.h"
 #include "typeprinter.h"
+#include "valuewalk.h"
+
 
 // Valueprint
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
@@ -161,7 +163,11 @@ static std::string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vec
     return ss.str();
 }
 
-static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFrame, ICorDebugType *pTypeCast, WalkMembersCallback cb)
+static HRESULT WalkMembers(ICorDebugValue *pInputValue,
+                           ICorDebugThread *pThread,
+                           ICorDebugILFrame *pILFrame,
+                           ICorDebugType *pTypeCast,
+                           WalkMembersCallback cb)
 {
     HRESULT Status = S_OK;
 
@@ -276,19 +282,17 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
                     name = name.substr(1, endOffset - 1);
                     backedProperies.insert(name);
                 }
-                if (isNull && !is_static)
-                    continue;
-                IfFailRet(cb(mdMethodDefNil, pModule, pType, pFieldVal, is_static, name));
             }
             else
             {
                 // no need for backing field when we can not get its value
                 if (name[0] == '<')
                     continue;
-                if (isNull && !is_static)
-                    continue;
-                IfFailRet(cb(mdMethodDefNil, pModule, pType, nullptr, is_static, name));
             }
+
+            if (isNull && !is_static)
+                continue;
+            IfFailRet(cb(mdMethodDefNil, pModule, pType, pFieldVal, is_static, name));
         }
     }
     pMD->CloseEnum(fEnum);
@@ -349,16 +353,19 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue, ICorDebugILFrame *pILFra
         else if(baseTypeName != "System.Object"  && baseTypeName != "System.ValueType")
         {
             // Add fields of base class
-            IfFailRet(WalkMembers(pInputValue, pILFrame, pBaseType, cb));
+            IfFailRet(WalkMembers(pInputValue, pThread, pILFrame, pBaseType, cb));
         }
     }
 
     return S_OK;
 }
 
-HRESULT WalkMembers(ICorDebugValue *pValue, ICorDebugILFrame *pILFrame, WalkMembersCallback cb)
+HRESULT WalkMembers(ICorDebugValue *pValue,
+                    ICorDebugThread *pThread,
+                    ICorDebugILFrame *pILFrame,
+                    WalkMembersCallback cb)
 {
-    return WalkMembers(pValue, pILFrame, nullptr, cb);
+    return WalkMembers(pValue, pThread, pILFrame, nullptr, cb);
 }
 
 static HRESULT HandleSpecialLocalVar(const std::string &localName,
@@ -375,7 +382,7 @@ static HRESULT HandleSpecialLocalVar(const std::string &localName,
         return S_FALSE;
 
     // Substitute local value with its fields
-    IfFailRet(WalkMembers(pLocalValue, pILFrame, [&](
+    IfFailRet(WalkMembers(pLocalValue, nullptr, pILFrame, [&](
         mdMethodDef,
         ICorDebugModule *,
         ICorDebugType *,
@@ -384,6 +391,8 @@ static HRESULT HandleSpecialLocalVar(const std::string &localName,
         const std::string &name)
     {
         HRESULT Status;
+        if (is_static)
+            return S_OK;
         if (std::equal(captureName.begin(), captureName.end(), name.begin()))
             return S_OK;
         if (!locals.insert(name).second)
@@ -420,7 +429,7 @@ static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
         return S_OK; // just do not show this value
 
     // Substitute this with its fields
-    IfFailRet(WalkMembers(pThisValue, pILFrame, [&](
+    IfFailRet(WalkMembers(pThisValue, nullptr, pILFrame, [&](
         mdMethodDef,
         ICorDebugModule *,
         ICorDebugType *,
@@ -429,6 +438,8 @@ static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
         const std::string &name)
     {
         HRESULT Status;
+        if (is_static)
+            return S_OK;
         IfFailRet(HandleSpecialLocalVar(name, pValue, pILFrame, locals, cb));
         if (Status == S_OK)
             return S_OK;
