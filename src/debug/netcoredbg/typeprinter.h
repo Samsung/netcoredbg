@@ -14,4 +14,6 @@ public:
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType);
     static HRESULT GetMethodName(ICorDebugFrame *pFrame, std::string &output);
     static HRESULT GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeName, std::string &methodName);
+    static std::string RenameToSystem(const std::string &typeName);
+    static std::string RenameToCSharp(const std::string &typeName);
 };

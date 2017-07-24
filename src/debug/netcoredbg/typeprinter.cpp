@@ -65,6 +65,56 @@ static std::string ConsumeGenericArgs(const std::string &name, std::list<std::st
     return ss.str();
 }
 
+std::string TypePrinter::RenameToSystem(const std::string &typeName)
+{
+    static const std::unordered_map<std::string, std::string> cs2system = {
+        {"bool",    "System.Boolean"},
+        {"byte",    "System.Byte"},
+        {"sbyte",   "System.SByte"},
+        {"char",    "System.Char"},
+        {"decimal", "System.Decimal"},
+        {"double",  "System.Double"},
+        {"float",   "System.Single"},
+        {"int",     "System.Int32"},
+        {"uint",    "System.UInt32"},
+        {"long",    "System.Int64"},
+        {"ulong",   "System.UInt64"},
+        {"object",  "System.Object"},
+        {"short",   "System.Int16"},
+        {"ushort",  "System.UInt16"},
+        {"string",  "System.String"},
+        {"IntPtr",  "System.IntPtr"},
+        {"UIntPtr", "System.UIntPtr"}
+    };
+    auto renamed = cs2system.find(typeName);
+    return renamed != cs2system.end() ? renamed->second : typeName;
+}
+
+std::string TypePrinter::RenameToCSharp(const std::string &typeName)
+{
+    static const std::unordered_map<std::string, std::string> system2cs = {
+        {"System.Boolean", "bool"},
+        {"System.Byte",    "byte"},
+        {"System.SByte",   "sbyte"},
+        {"System.Char",    "char"},
+        {"System.Decimal", "decimal"},
+        {"System.Double",  "double"},
+        {"System.Single",  "float"},
+        {"System.Int32",   "int"},
+        {"System.UInt32",  "uint"},
+        {"System.Int64",   "long"},
+        {"System.UInt64",  "ulong"},
+        {"System.Object",  "object"},
+        {"System.Int16",   "short"},
+        {"System.UInt16",  "ushort"},
+        {"System.String",  "string"},
+        {"System.IntPtr",  "IntPtr"},
+        {"System.UIntPtr", "UIntPtr"}
+    };
+    auto renamed = system2cs.find(typeName);
+    return renamed != system2cs.end() ? renamed->second : typeName;
+}
+
 // From metadata.cpp
 
 /**********************************************************************\
@@ -219,6 +269,10 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
             hr = E_FAIL;
     }
     PAL_CPP_ENDTRY
+    if (SUCCEEDED(hr))
+    {
+        mdName = RenameToCSharp(mdName);
+    }
     return hr;
 }
 
@@ -344,10 +398,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
 
                 if(SUCCEEDED(NameForToken(TokenFromRid(typeDef, mdtTypeDef), pMD, name, false, args)))
                 {
-                    if (name == "System.Decimal")
-                        ss << "decimal";
-                    else
-                        ss << name;
+                    ss << name;
                 }
             }
             elementType = ss.str();

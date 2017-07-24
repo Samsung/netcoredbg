@@ -378,31 +378,6 @@ HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string
     return S_OK;
 }
 
-static std::string RenameType(const std::string &shortTypeName)
-{
-    static const std::unordered_map<std::string, std::string> short2long = {
-        {"bool",    "System.Boolean"},
-        {"byte",    "System.Byte"},
-        {"sbyte",   "System.SByte"},
-        {"char",    "System.Char"},
-        {"decimal", "System.Decimal"},
-        {"double",  "System.Double"},
-        {"float",   "System.Single"},
-        {"int",     "System.Int32"},
-        {"uint",    "System.UInt32"},
-        {"long",    "System.Int64"},
-        {"ulong",   "System.UInt64"},
-        {"object",  "System.Object"},
-        {"short",   "System.Int16"},
-        {"ushort",  "System.UInt16"},
-        {"string",  "System.String"},
-        {"IntPtr",  "System.IntPtr"},
-        {"UIntPtr", "System.UIntPtr"}
-    };
-    auto renamed = short2long.find(shortTypeName);
-    return renamed != short2long.end() ? renamed->second : shortTypeName;
-}
-
 HRESULT FindType(
     const std::vector<std::string> &parts,
     int &nextPart, ICorDebugThread *pThread,
@@ -418,7 +393,7 @@ HRESULT GetType(const std::string &typeName,
     std::vector<int> ranks;
     std::vector<std::string> classParts = ParseType(typeName, ranks);
     if (classParts.size() == 1)
-        classParts[0] = RenameType(classParts[0]);
+        classParts[0] = TypePrinter::RenameToSystem(classParts[0]);
 
     ToRelease<ICorDebugType> pType;
     int nextClassPart = 0;
