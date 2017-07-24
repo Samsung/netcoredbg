@@ -460,6 +460,210 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
     return S_OK;
 }
 
+// From sildasm.cpp
+PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
+    PCCOR_SIGNATURE typePtr,
+    IMetaDataImport *pImport,
+    std::string &out,
+    std::string &appendix)
+{
+    mdToken tk;
+    const char* str;
+    int typ;
+    std::string tmp;
+    int n;
+
+    switch(typ = CorSigUncompressElementType(typePtr)) {
+        case ELEMENT_TYPE_VOID          :
+            out = "void"; break;
+        case ELEMENT_TYPE_BOOLEAN       :
+            out = "bool"; break;
+        case ELEMENT_TYPE_CHAR          :
+            out = "char"; break;
+        case ELEMENT_TYPE_I1            :
+            out = "sbyte"; break;
+        case ELEMENT_TYPE_U1            :
+            out = "byte"; break;
+        case ELEMENT_TYPE_I2            :
+            out = "short"; break;
+        case ELEMENT_TYPE_U2            :
+            out = "ushort"; break;
+        case ELEMENT_TYPE_I4            :
+            out = "int"; break;
+        case ELEMENT_TYPE_U4            :
+            out = "uint"; break;
+        case ELEMENT_TYPE_I8            :
+            out = "long"; break;
+        case ELEMENT_TYPE_U8            :
+            out = "ulong"; break;
+        case ELEMENT_TYPE_R4            :
+            out = "float"; break;
+        case ELEMENT_TYPE_R8            :
+            out = "double"; break;
+        case ELEMENT_TYPE_U             :
+            out = "UIntPtr"; break;
+        case ELEMENT_TYPE_I             :
+            out = "IntPtr"; break;
+        case ELEMENT_TYPE_OBJECT        :
+            out = "object"; break;
+        case ELEMENT_TYPE_STRING        :
+            out = "string"; break;
+        case ELEMENT_TYPE_TYPEDBYREF        :
+            out = "typedref"; break;
+
+        case ELEMENT_TYPE_VALUETYPE    :
+        case ELEMENT_TYPE_CLASS        :
+            {
+                typePtr += CorSigUncompressToken(typePtr, &tk);
+                std::list<std::string> empty_args;
+                TypePrinter::NameForToken(tk, pImport, out, true, empty_args);
+            }
+            break;
+
+        case ELEMENT_TYPE_SZARRAY    :
+            {
+                std::string subAppendix;
+                typePtr = NameForTypeSig(typePtr, pImport, out, subAppendix);
+                appendix = "[]" + subAppendix;
+            }
+            break;
+
+        case ELEMENT_TYPE_ARRAY       :
+            {
+                std::string subAppendix;
+                typePtr = NameForTypeSig(typePtr, pImport, out, subAppendix);
+                std::string newAppendix;
+                unsigned rank = CorSigUncompressData(typePtr);
+                // <TODO> what is the syntax for the rank 0 case? </TODO>
+                if (rank == 0) {
+                    newAppendix += "[BAD: RANK == 0!]";
+                }
+                else {
+                    std::vector<int> lowerBounds(rank, 0);
+                    std::vector<int> sizes(rank, 0);
+
+                    unsigned numSizes = CorSigUncompressData(typePtr);
+                    _ASSERTE(numSizes <= rank);
+                        unsigned i;
+                    for(i =0; i < numSizes; i++)
+                        sizes[i] = CorSigUncompressData(typePtr);
+
+                    unsigned numLowBounds = CorSigUncompressData(typePtr);
+                    _ASSERTE(numLowBounds <= rank);
+                    for(i = 0; i < numLowBounds; i++)
+                        typePtr+=CorSigUncompressSignedInt(typePtr,&lowerBounds[i]);
+
+                    newAppendix += '[';
+                    if (rank == 1 && numSizes == 0 && numLowBounds == 0)
+                        newAppendix += "..";
+                    else
+                    {
+                        for(i = 0; i < rank; i++)
+                        {
+                                 //if (sizes[i] != 0 || lowerBounds[i] != 0)
+                            // {
+                            //     if (i < numSizes && lowerBounds[i] == 0)
+                            //         out += std::to_string(sizes[i]);
+                            //     else
+                            //     {
+                            //         if(i < numLowBounds)
+                            //         {
+                            //             newAppendix +=  std::to_string(lowerBounds[i]);
+                            //             newAppendix += "..";
+                            //             if (/*sizes[i] != 0 && */i < numSizes)
+                            //                 newAppendix += std::to_string(lowerBounds[i] + sizes[i] - 1);
+                            //         }
+                            //     }
+                            // }
+                            if (i < rank-1)
+                                newAppendix += ',';
+                        }
+                    }
+                    newAppendix += ']';
+                }
+                appendix = newAppendix + subAppendix;
+            }
+            break;
+
+        case ELEMENT_TYPE_VAR        :
+            out += '!';
+            n  = CorSigUncompressData(typePtr);
+            out += std::to_string(n);
+            break;
+
+        case ELEMENT_TYPE_MVAR        :
+            out += "!!";
+            n  = CorSigUncompressData(typePtr);
+            out += std::to_string(n);
+            break;
+
+        case ELEMENT_TYPE_FNPTR :
+            out = "method ";
+            out += "METHOD"; // was: typePtr = PrettyPrintSignature(typePtr, 0x7FFF, "*", out, pIMDI, NULL);
+            break;
+
+        case ELEMENT_TYPE_GENERICINST :
+            {
+                //typePtr = NameForTypeSig(typePtr, pImport, out, appendix);
+                mdTypeDef tk;
+                CorElementType underlyingType;
+                typePtr += CorSigUncompressElementType(typePtr, &underlyingType);
+                typePtr += CorSigUncompressToken(typePtr, &tk);
+
+                std::list<std::string> args;
+
+                unsigned numArgs = CorSigUncompressData(typePtr);
+                bool needComma = false;
+                while(numArgs--)
+                {
+                    std::string genType;
+                    std::string genTypeAppendix;
+                    typePtr = NameForTypeSig(typePtr, pImport, genType, genTypeAppendix);
+                    args.push_back(genType + genTypeAppendix);
+                }
+                TypePrinter::NameForToken(tk, pImport, out, true, args);
+            }
+            break;
+
+        case ELEMENT_TYPE_PINNED	:
+            str = " pinned"; goto MODIFIER;
+        case ELEMENT_TYPE_PTR           :
+            str = "*"; goto MODIFIER;
+        case ELEMENT_TYPE_BYREF         :
+            str = "&"; goto MODIFIER;
+        MODIFIER:
+            {
+                std::string subAppendix;
+                typePtr = NameForTypeSig(typePtr, pImport, out, subAppendix);
+                appendix = str + subAppendix;
+            }
+            break;
+
+        default:
+        case ELEMENT_TYPE_SENTINEL      :
+        case ELEMENT_TYPE_END           :
+            //_ASSERTE(!"Unknown Type");
+            if(typ)
+            {
+                out = "/* UNKNOWN TYPE (0x%X)*/" + std::to_string(typ);
+            }
+            break;
+    } // end switch
+
+    return typePtr;
+}
+
+void TypePrinter::NameForTypeSig(
+    PCCOR_SIGNATURE typePtr,
+    IMetaDataImport *pImport,
+    std::string &typeName)
+{
+    std::string out;
+    std::string appendix;
+    NameForTypeSig(typePtr, pImport, out, appendix);
+    typeName = out + appendix;
+}
+
 HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
 {
     HRESULT Status;
