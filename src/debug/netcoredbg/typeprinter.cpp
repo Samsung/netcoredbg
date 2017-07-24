@@ -514,6 +514,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
 // From sildasm.cpp
 PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
     PCCOR_SIGNATURE typePtr,
+    const std::vector<std::string> &args,
     IMetaDataImport *pImport,
     std::string &out,
     std::string &appendix)
@@ -574,7 +575,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
         case ELEMENT_TYPE_SZARRAY    :
             {
                 std::string subAppendix;
-                typePtr = NameForTypeSig(typePtr, pImport, out, subAppendix);
+                typePtr = NameForTypeSig(typePtr, args, pImport, out, subAppendix);
                 appendix = "[]" + subAppendix;
             }
             break;
@@ -582,7 +583,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
         case ELEMENT_TYPE_ARRAY       :
             {
                 std::string subAppendix;
-                typePtr = NameForTypeSig(typePtr, pImport, out, subAppendix);
+                typePtr = NameForTypeSig(typePtr, args, pImport, out, subAppendix);
                 std::string newAppendix;
                 unsigned rank = CorSigUncompressData(typePtr);
                 // <TODO> what is the syntax for the rank 0 case? </TODO>
@@ -602,7 +603,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
                     unsigned numLowBounds = CorSigUncompressData(typePtr);
                     _ASSERTE(numLowBounds <= rank);
                     for(i = 0; i < numLowBounds; i++)
-                        typePtr+=CorSigUncompressSignedInt(typePtr,&lowerBounds[i]);
+                        typePtr += CorSigUncompressSignedInt(typePtr,&lowerBounds[i]);
 
                     newAppendix += '[';
                     if (rank == 1 && numSizes == 0 && numLowBounds == 0)
@@ -637,9 +638,8 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
             break;
 
         case ELEMENT_TYPE_VAR        :
-            out += '!';
             n  = CorSigUncompressData(typePtr);
-            out += std::to_string(n);
+            out = n < args.size() ? args.at(n) : "!" + std::to_string(n);
             break;
 
         case ELEMENT_TYPE_MVAR        :
@@ -655,13 +655,13 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
 
         case ELEMENT_TYPE_GENERICINST :
             {
-                //typePtr = NameForTypeSig(typePtr, pImport, out, appendix);
+                //typePtr = NameForTypeSig(typePtr, args, pImport, out, appendix);
                 mdTypeDef tk;
                 CorElementType underlyingType;
                 typePtr += CorSigUncompressElementType(typePtr, &underlyingType);
                 typePtr += CorSigUncompressToken(typePtr, &tk);
 
-                std::list<std::string> args;
+                std::list<std::string> genericArgs;
 
                 unsigned numArgs = CorSigUncompressData(typePtr);
                 bool needComma = false;
@@ -669,10 +669,10 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
                 {
                     std::string genType;
                     std::string genTypeAppendix;
-                    typePtr = NameForTypeSig(typePtr, pImport, genType, genTypeAppendix);
-                    args.push_back(genType + genTypeAppendix);
+                    typePtr = NameForTypeSig(typePtr, args, pImport, genType, genTypeAppendix);
+                    genericArgs.push_back(genType + genTypeAppendix);
                 }
-                TypePrinter::NameForToken(tk, pImport, out, true, args);
+                TypePrinter::NameForToken(tk, pImport, out, true, genericArgs);
             }
             break;
 
@@ -685,7 +685,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
         MODIFIER:
             {
                 std::string subAppendix;
-                typePtr = NameForTypeSig(typePtr, pImport, out, subAppendix);
+                typePtr = NameForTypeSig(typePtr, args, pImport, out, subAppendix);
                 appendix = str + subAppendix;
             }
             break;
@@ -706,12 +706,30 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
 
 void TypePrinter::NameForTypeSig(
     PCCOR_SIGNATURE typePtr,
+    ICorDebugType *enclosingType,
     IMetaDataImport *pImport,
     std::string &typeName)
 {
+    // Gather generic arguments from enclosing type
+    std::vector<std::string> args;
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+
+    if (SUCCEEDED(enclosingType->EnumerateTypeParameters(&pTypeEnum)))
+    {
+        ULONG fetched = 0;
+        ToRelease<ICorDebugType> pCurrentTypeParam;
+
+        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &fetched)) && fetched == 1)
+        {
+            std::string name;
+            GetTypeOfValue(pCurrentTypeParam, name);
+            args.emplace_back(name);
+        }
+    }
+
     std::string out;
     std::string appendix;
-    NameForTypeSig(typePtr, pImport, out, appendix);
+    NameForTypeSig(typePtr, args, pImport, out, appendix);
     typeName = out + appendix;
 }
 

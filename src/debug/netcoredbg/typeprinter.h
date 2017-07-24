@@ -4,11 +4,11 @@ class TypePrinter
                                   std::list<std::string> &args);
     static HRESULT AddGenericArgs(ICorDebugType *pType, std::list<std::string> &args);
     static HRESULT AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::string> &args);
-    static PCCOR_SIGNATURE NameForTypeSig(PCCOR_SIGNATURE typePtr, IMetaDataImport *pImport, std::string &out, std::string &appendix);
+    static PCCOR_SIGNATURE NameForTypeSig(PCCOR_SIGNATURE typePtr, const std::vector<std::string> &args, IMetaDataImport *pImport, std::string &out, std::string &appendix);
 public:
     static HRESULT NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::string &mdName, bool bClassName,
                                 std::list<std::string> &args);
-    static void NameForTypeSig(PCCOR_SIGNATURE typePtr, IMetaDataImport *pImport, std::string &typeName);
+    static void NameForTypeSig(PCCOR_SIGNATURE typePtr, ICorDebugType *enclosingType, IMetaDataImport *pImport, std::string &typeName);
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &output);
     static HRESULT GetTypeOfValue(ICorDebugValue *pValue, std::string &output);
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType);
