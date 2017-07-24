@@ -10,6 +10,7 @@
 #include <list>
 #include <iomanip>
 
+#include "debugger.h"
 #include "typeprinter.h"
 #include "modules.h"
 #include "valuewalk.h"
@@ -217,6 +218,59 @@ static std::vector<std::string> ParseExpression(const std::string &expression)
     return result;
 }
 
+static std::vector<std::string> ParseType(const std::string &expression, std::vector<int> &ranks)
+{
+    std::vector<std::string> result;
+    int paramDepth = 0;
+
+    result.push_back("");
+
+    for (char c : expression)
+    {
+        switch(c)
+        {
+            case '.':
+                if (paramDepth == 0)
+                {
+                    result.push_back("");
+                    continue;
+                }
+                break;
+            case '[':
+                if (paramDepth == 0)
+                {
+                    ranks.push_back(1);
+                    continue;
+                }
+                break;
+            case ']':
+                if (paramDepth == 0)
+                    continue;
+                break;
+            case ',':
+                if (paramDepth == 0)
+                {
+                    if (!ranks.empty())
+                        ranks.back()++;
+                    continue;
+                }
+                break;
+            case '<':
+                paramDepth++;
+                break;
+            case '>':
+                paramDepth--;
+                break;
+            case ' ':
+                continue;
+            default:
+                break;
+        }
+        result.back() += c;
+    }
+    return result;
+}
+
 static std::vector<std::string> ParseGenericParams(const std::string &part, std::string &typeName)
 {
     std::vector<std::string> result;
@@ -229,6 +283,7 @@ static std::vector<std::string> ParseGenericParams(const std::string &part, std:
     }
 
     int paramDepth = 0;
+    bool inArray = false;
 
     result.push_back("");
 
@@ -238,11 +293,17 @@ static std::vector<std::string> ParseGenericParams(const std::string &part, std:
         switch(c)
         {
             case ',':
-                if (paramDepth == 1)
+                if (paramDepth == 1 && !inArray)
                 {
                     result.push_back("");
                     continue;
                 }
+                break;
+            case '[':
+                inArray = true;
+                break;
+            case ']':
+                inArray = false;
                 break;
             case '<':
                 paramDepth++;
@@ -317,15 +378,6 @@ HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string
     return S_OK;
 }
 
-HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule = nullptr);
-
-HRESULT GetType(const std::string &typeName, ICorDebugType **ppType)
-{
-    std::vector<std::string> classParts = ParseExpression(typeName);
-    int nextClassPart = 0;
-    return FindType(classParts, nextClassPart, nullptr, ppType);
-}
-
 static std::string RenameType(const std::string &shortTypeName)
 {
     static const std::unordered_map<std::string, std::string> short2long = {
@@ -351,19 +403,69 @@ static std::string RenameType(const std::string &shortTypeName)
     return renamed != short2long.end() ? renamed->second : shortTypeName;
 }
 
-HRESULT ResolveParameters(const std::vector<std::string> &params, std::vector< ToRelease<ICorDebugType> > &types)
+HRESULT FindType(
+    const std::vector<std::string> &parts,
+    int &nextPart, ICorDebugThread *pThread,
+    ICorDebugModule *pModule,
+    ICorDebugType **ppType,
+    ICorDebugModule **ppModule = nullptr);
+
+HRESULT GetType(const std::string &typeName,
+                ICorDebugThread *pThread,
+                ICorDebugType **ppType)
+{
+    HRESULT Status;
+    std::vector<int> ranks;
+    std::vector<std::string> classParts = ParseType(typeName, ranks);
+    if (classParts.size() == 1)
+        classParts[0] = RenameType(classParts[0]);
+
+    ToRelease<ICorDebugType> pType;
+    int nextClassPart = 0;
+    IfFailRet(FindType(classParts, nextClassPart, pThread, nullptr, &pType));
+
+    if (!ranks.empty())
+    {
+        ToRelease<ICorDebugAppDomain2> pAppDomain2;
+        ToRelease<ICorDebugAppDomain> pAppDomain;
+        IfFailRet(pThread->GetAppDomain(&pAppDomain));
+        IfFailRet(pAppDomain->QueryInterface(IID_ICorDebugAppDomain2, (LPVOID*) &pAppDomain2));
+
+        for (auto irank = ranks.rbegin(); irank != ranks.rend(); ++irank)
+        {
+            ToRelease<ICorDebugType> pElementType(std::move(pType));
+            IfFailRet(pAppDomain2->GetArrayOrPointerType(
+                *irank > 1 ? ELEMENT_TYPE_ARRAY : ELEMENT_TYPE_SZARRAY,
+                *irank,
+                pElementType,
+                &pType));
+        }
+    }
+
+    *ppType = pType.Detach();
+    return S_OK;
+}
+
+HRESULT ResolveParameters(const std::vector<std::string> &params,
+                          ICorDebugThread *pThread,
+                          std::vector< ToRelease<ICorDebugType> > &types)
 {
     HRESULT Status;
     for (auto &p : params)
     {
         ICorDebugType *tmpType;
-        IfFailRet(GetType(RenameType(p), &tmpType));
+        IfFailRet(GetType(p, pThread, &tmpType));
         types.emplace_back(tmpType);
     }
     return S_OK;
 }
 
-HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule)
+HRESULT FindType(const std::vector<std::string> &parts,
+                 int &nextPart,
+                 ICorDebugThread *pThread,
+                 ICorDebugModule *pModule,
+                 ICorDebugType **ppType,
+                 ICorDebugModule **ppModule)
 {
     HRESULT Status;
 
@@ -397,7 +499,7 @@ HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebug
 
     std::vector<std::string> params = GatherParameters(parts, nextPart);
     std::vector< ToRelease<ICorDebugType> > types;
-    IfFailRet(ResolveParameters(params, types));
+    IfFailRet(ResolveParameters(params, pThread, types));
 
     ToRelease<ICorDebugClass> pClass;
     IfFailRet(pTypeModule->GetClassFromToken(typeToken, &pClass));
@@ -432,22 +534,27 @@ HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebug
     return S_OK;
 }
 
-static HRESULT FollowNested(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame, const std::string &methodClass, const std::vector<std::string> &parts, ICorDebugValue **ppResult)
+static HRESULT FollowNested(ICorDebugThread *pThread,
+                            ICorDebugILFrame *pILFrame,
+                            const std::string &methodClass,
+                            const std::vector<std::string> &parts,
+                            ICorDebugValue **ppResult)
 {
     HRESULT Status;
 
-    std::vector<std::string> classParts = ParseExpression(methodClass);
+    std::vector<int> ranks;
+    std::vector<std::string> classParts = ParseType(methodClass, ranks);
     int nextClassPart = 0;
 
     ToRelease<ICorDebugType> pType;
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(FindType(classParts, nextClassPart, nullptr, &pType, &pModule));
+    IfFailRet(FindType(classParts, nextClassPart, pThread, nullptr, &pType, &pModule));
 
     while (!classParts.empty())
     {
         ToRelease<ICorDebugType> pEnclosingType(std::move(pType));
         int nextClassPart = 0;
-        if (FAILED(FindType(classParts, nextClassPart, pModule, &pType)))
+        if (FAILED(FindType(classParts, nextClassPart, pThread, pModule, &pType)))
             break;
 
         ToRelease<ICorDebugValue> pTypeValue;
@@ -462,7 +569,10 @@ static HRESULT FollowNested(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame
     return E_FAIL;
 }
 
-HRESULT EvalExpr(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &expression, ICorDebugValue **ppResult)
+HRESULT EvalExpr(ICorDebugThread *pThread,
+                 ICorDebugFrame *pFrame,
+                 const std::string &expression,
+                 ICorDebugValue **ppResult)
 {
     HRESULT Status;
 
@@ -486,7 +596,9 @@ HRESULT EvalExpr(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::st
     }
     else
     {
-        IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
+        IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame,
+                                            ICorDebugValue *pValue,
+                                            const std::string &name) -> HRESULT
         {
             if (pResultValue)
                 return S_OK; // TODO: Create a fast way to exit
@@ -543,7 +655,7 @@ HRESULT EvalExpr(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::st
     else
     {
         ToRelease<ICorDebugType> pType;
-        IfFailRet(FindType(parts, nextPart, nullptr, &pType));
+        IfFailRet(FindType(parts, nextPart, pThread, nullptr, &pType));
         IfFailRet(EvalObjectNoConstructor(pThread, pType, &pResultValue));
         followMode = FollowStatic;
     }
