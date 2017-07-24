@@ -16,6 +16,9 @@
 #include "valuewalk.h"
 
 
+// Expr
+HRESULT GetType(const std::string &typeName, ICorDebugThread *pThread, ICorDebugType **ppType);
+
 // Valueprint
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
 
@@ -163,6 +166,170 @@ static std::string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vec
     return ss.str();
 }
 
+static HRESULT GetLiteralValue(ICorDebugThread *pThread,
+                               ICorDebugType *pType,
+                               ICorDebugModule *pModule,
+                               PCCOR_SIGNATURE pSignatureBlob,
+                               ULONG sigBlobLength,
+                               UVCP_CONSTANT pRawValue,
+                               ULONG rawValueLength,
+                               ICorDebugValue **ppLiteralValue)
+{
+    HRESULT Status = S_OK;
+
+    CorSigUncompressCallingConv(pSignatureBlob);
+    CorElementType underlyingType;
+    CorSigUncompressElementType(pSignatureBlob, &underlyingType);
+
+    if (!pRawValue || !pThread)
+        return S_FALSE;
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    ToRelease<ICorDebugEval> pEval;
+    IfFailRet(pThread->CreateEval(&pEval));
+
+    switch(underlyingType)
+    {
+        case ELEMENT_TYPE_OBJECT:
+            IfFailRet(pEval->CreateValue(ELEMENT_TYPE_CLASS, nullptr, ppLiteralValue));
+            break;
+        case ELEMENT_TYPE_CLASS:
+        {
+            // Get token and create null reference
+            mdTypeDef tk;
+            CorSigUncompressElementType(pSignatureBlob);
+            CorSigUncompressToken(pSignatureBlob, &tk);
+
+            ToRelease<ICorDebugClass> pValueClass;
+            IfFailRet(pModule->GetClassFromToken(tk, &pValueClass));
+
+            IfFailRet(pEval->CreateValue(ELEMENT_TYPE_CLASS, pValueClass, ppLiteralValue));
+            break;
+        }
+        case ELEMENT_TYPE_ARRAY:
+        case ELEMENT_TYPE_SZARRAY:
+        {
+            // Get type name from signature and get its ICorDebugType
+            std::string typeName;
+            TypePrinter::NameForTypeSig(pSignatureBlob, pType, pMD, typeName);
+            ToRelease<ICorDebugType> pElementType;
+            IfFailRet(GetType(typeName, pThread, &pElementType));
+
+            ToRelease<ICorDebugAppDomain2> pAppDomain2;
+            ToRelease<ICorDebugAppDomain> pAppDomain;
+            IfFailRet(pThread->GetAppDomain(&pAppDomain));
+            IfFailRet(pAppDomain->QueryInterface(IID_ICorDebugAppDomain2, (LPVOID*) &pAppDomain2));
+
+            // We can not direcly create null value of specific array type.
+            // Instead, we create one element array with element type set to our specific array type.
+            // Since array elements are initialized to null, we get our null value from the first array item.
+
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+
+            ULONG32 dims = 1;
+            ULONG32 bounds = 0;
+            IfFailRet(pEval2->NewParameterizedArray(pElementType, 1, &dims, &bounds));
+            ToRelease<ICorDebugProcess> pProcess;
+            IfFailRet(pThread->GetProcess(&pProcess));
+            ToRelease<ICorDebugValue> pTmpArrayValue;
+            IfFailRet(WaitEvalResult(pProcess, pEval, &pTmpArrayValue));
+
+            BOOL isNull = FALSE;
+            ToRelease<ICorDebugValue> pUnboxedResult;
+            IfFailRet(DereferenceAndUnboxValue(pTmpArrayValue, &pUnboxedResult, &isNull));
+
+            ToRelease<ICorDebugArrayValue> pArray;
+            IfFailRet(pUnboxedResult->QueryInterface(IID_ICorDebugArrayValue, (LPVOID*) &pArray));
+            IfFailRet(pArray->GetElementAtPosition(0, ppLiteralValue));
+            break;
+        }
+        case ELEMENT_TYPE_GENERICINST:
+        {
+            // Get type name from signature and get its ICorDebugType
+            std::string typeName;
+            TypePrinter::NameForTypeSig(pSignatureBlob, pType, pMD, typeName);
+            ToRelease<ICorDebugType> pValueType;
+            IfFailRet(GetType(typeName, pThread, &pValueType));
+
+            // Create value from ICorDebugType
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+            IfFailRet(pEval2->CreateValueForType(pValueType, ppLiteralValue));
+            break;
+        }
+        case ELEMENT_TYPE_VALUETYPE:
+        {
+            // Get type token
+            mdTypeDef tk;
+            CorSigUncompressElementType(pSignatureBlob);
+            CorSigUncompressToken(pSignatureBlob, &tk);
+
+            ToRelease<ICorDebugClass> pValueClass;
+            IfFailRet(pModule->GetClassFromToken(tk, &pValueClass));
+
+            // Create value (without calling a constructor)
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+            IfFailRet(pEval2->NewParameterizedObjectNoConstructor(pValueClass, 0, nullptr));
+
+            ToRelease<ICorDebugValue> pValue;
+            ToRelease<ICorDebugProcess> pProcess;
+            IfFailRet(pThread->GetProcess(&pProcess));
+            IfFailRet(WaitEvalResult(pProcess, pEval, &pValue));
+
+            // Set value
+            BOOL isNull = FALSE;
+            ToRelease<ICorDebugValue> pEditableValue;
+            IfFailRet(DereferenceAndUnboxValue(pValue, &pEditableValue, &isNull));
+
+            ToRelease<ICorDebugGenericValue> pGenericValue;
+            IfFailRet(pEditableValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+            IfFailRet(pGenericValue->SetValue((LPVOID)pRawValue));
+            *ppLiteralValue = pValue.Detach();
+            break;
+        }
+        case ELEMENT_TYPE_STRING:
+        {
+            ToRelease<ICorDebugProcess> pProcess;
+            IfFailRet(pThread->GetProcess(&pProcess));
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+            pEval2->NewStringWithLength((LPCWSTR)pRawValue, rawValueLength);
+            IfFailRet(WaitEvalResult(pProcess, pEval, ppLiteralValue));
+            break;
+        }
+        case ELEMENT_TYPE_BOOLEAN:
+        case ELEMENT_TYPE_CHAR:
+        case ELEMENT_TYPE_I1:
+        case ELEMENT_TYPE_U1:
+        case ELEMENT_TYPE_I2:
+        case ELEMENT_TYPE_U2:
+        case ELEMENT_TYPE_I4:
+        case ELEMENT_TYPE_U4:
+        case ELEMENT_TYPE_I8:
+        case ELEMENT_TYPE_U8:
+        case ELEMENT_TYPE_R4:
+        case ELEMENT_TYPE_R8:
+        {
+            ToRelease<ICorDebugValue> pValue;
+            IfFailRet(pEval->CreateValue(underlyingType, nullptr, &pValue));
+            ToRelease<ICorDebugGenericValue> pGenericValue;
+            IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+            IfFailRet(pGenericValue->SetValue((LPVOID)pRawValue));
+            *ppLiteralValue = pValue.Detach();
+            break;
+        }
+        default:
+            return E_FAIL;
+    }
+    return S_OK;
+}
+
 static HRESULT WalkMembers(ICorDebugValue *pInputValue,
                            ICorDebugThread *pThread,
                            ICorDebugILFrame *pILFrame,
@@ -251,18 +418,34 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue,
         ULONG nameLen = 0;
         DWORD fieldAttr = 0;
         WCHAR mdName[mdNameLen] = {0};
-        if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, _countof(mdName), &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
+        PCCOR_SIGNATURE pSignatureBlob = nullptr;
+        ULONG sigBlobLength = 0;
+        UVCP_CONSTANT pRawValue = nullptr;
+        ULONG rawValueLength = 0;
+        if (SUCCEEDED(pMD->GetFieldProps(fieldDef,
+                                         nullptr,
+                                         mdName,
+                                         _countof(mdName),
+                                         &nameLen,
+                                         &fieldAttr,
+                                         &pSignatureBlob,
+                                         &sigBlobLength,
+                                         nullptr,
+                                         &pRawValue,
+                                         &rawValueLength)))
         {
             std::string name = to_utf8(mdName /*, nameLen*/);
-
-            if(fieldAttr & fdLiteral)
-                continue;
 
             bool is_static = (fieldAttr & fdStatic);
 
             ToRelease<ICorDebugValue> pFieldVal;
 
-            if (fieldAttr & fdStatic)
+            if(fieldAttr & fdLiteral)
+            {
+                IfFailRet(GetLiteralValue(
+                    pThread, pType, pModule, pSignatureBlob, sigBlobLength, pRawValue, rawValueLength, &pFieldVal));
+            }
+            else if (fieldAttr & fdStatic)
             {
                 if (pILFrame)
                     pType->GetStaticFieldValue(fieldDef, pILFrame, &pFieldVal);
