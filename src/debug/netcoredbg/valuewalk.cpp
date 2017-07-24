@@ -28,13 +28,21 @@ typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::strin
 static std::mutex g_evalMutex;
 static std::condition_variable g_evalCV;
 static bool g_evalComplete = false;
+static bool g_evalStarted = false;
 
 void NotifyEvalComplete()
 {
     std::lock_guard<std::mutex> lock(g_evalMutex);
     g_evalComplete = true;
+    g_evalStarted = false;
     g_evalMutex.unlock();
     g_evalCV.notify_one();
+}
+
+bool IsEvalRunning()
+{
+    std::lock_guard<std::mutex> lock(g_evalMutex);
+    return g_evalStarted;
 }
 
 static HRESULT WaitEvalResult(ICorDebugProcess *pProcess,
@@ -44,6 +52,7 @@ static HRESULT WaitEvalResult(ICorDebugProcess *pProcess,
     HRESULT Status;
     std::unique_lock<std::mutex> lock(g_evalMutex);
     g_evalComplete = false;
+    g_evalStarted = true;
     IfFailRet(pProcess->Continue(0));
     g_evalCV.wait(lock, []{return g_evalComplete;});
 

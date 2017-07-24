@@ -13,3 +13,5 @@ HRESULT EvalObjectNoConstructor(
     ICorDebugThread *pThread,
     ICorDebugType *pType,
     ICorDebugValue **ppEvalResult);
+
+bool IsEvalRunning();

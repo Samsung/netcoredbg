@@ -15,6 +15,7 @@
 #include "typeprinter.h"
 #include "debugger.h"
 #include "modules.h"
+#include "valuewalk.h"
 
 #define __in
 #define __out
@@ -365,6 +366,12 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugBreakpoint *pBreakpoint)
         {
+            if (IsEvalRunning())
+            {
+                pAppDomain->Continue(0);
+                return S_OK;
+            }
+
             ULONG32 id = 0;
             ULONG32 times = 0;
             HitBreakpoint(pThread, id, times);
