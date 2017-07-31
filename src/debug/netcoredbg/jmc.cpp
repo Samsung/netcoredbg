@@ -9,6 +9,8 @@
 #include "symbolreader.h"
 
 static const char *g_nonUserCode = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";
+static const char *g_stepThrough = "System.Diagnostics.DebuggerStepThroughAttribute..ctor";
+// TODO: DebuggerStepThroughAttribute also affects breakpoints when JMC is enabled
 
 bool ShouldLoadSymbolsForModule(const std::string &moduleName)
 {
@@ -84,6 +86,8 @@ static HRESULT GetNonJMCMethodsForTypeDef(
                                      nullptr, nullptr, nullptr, nullptr, nullptr);
 
         if (HasAttribute(pMD, methodDef, g_nonUserCode))
+            excludeMethods.push_back(methodDef);
+        else if (HasAttribute(pMD, methodDef, g_stepThrough))
             excludeMethods.push_back(methodDef);
         else if (!HasSourceLocation(sr, methodDef))
             excludeMethods.push_back(methodDef);
