@@ -3,7 +3,9 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <unordered_set>
 
+#include "cputil.h"
 #include "typeprinter.h"
 #include "platform.h"
 #include "symbolreader.h"
@@ -11,6 +13,58 @@
 static const char *g_nonUserCode = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";
 static const char *g_stepThrough = "System.Diagnostics.DebuggerStepThroughAttribute..ctor";
 // TODO: DebuggerStepThroughAttribute also affects breakpoints when JMC is enabled
+
+// From ECMA-335
+static const std::unordered_set<std::string> g_operatorMethodNames
+{
+// Unary operators
+    "op_Decrement",                    // --
+    "op_Increment",                    // ++
+    "op_UnaryNegation",                // - (unary)
+    "op_UnaryPlus",                    // + (unary)
+    "op_LogicalNot",                   // !
+    "op_True",                         // Not defined
+    "op_False",                        // Not defined
+    "op_AddressOf",                    // & (unary)
+    "op_OnesComplement",               // ~
+    "op_PointerDereference",           // * (unary)
+// Binary operators
+    "op_Addition",                     // + (binary)
+    "op_Subtraction",                  // - (binary)
+    "op_Multiply",                     // * (binary)
+    "op_Division",                     // /
+    "op_Modulus",                      // %
+    "op_ExclusiveOr",                  // ^
+    "op_BitwiseAnd",                   // & (binary)
+    "op_BitwiseOr",                    // |
+    "op_LogicalAnd",                   // &&
+    "op_LogicalOr",                    // ||
+    "op_Assign",                       // Not defined (= is not the same)
+    "op_LeftShift",                    // <<
+    "op_RightShift",                   // >>
+    "op_SignedRightShift",             // Not defined
+    "op_UnsignedRightShift",           // Not defined
+    "op_Equality",                     // ==
+    "op_GreaterThan",                  // >
+    "op_LessThan",                     // <
+    "op_Inequality",                   // !=
+    "op_GreaterThanOrEqual",           // >=
+    "op_LessThanOrEqual",              // <=
+    "op_UnsignedRightShiftAssignment", // Not defined
+    "op_MemberSelection",              // ->
+    "op_RightShiftAssignment",         // >>=
+    "op_MultiplicationAssignment",     // *=
+    "op_PointerToMemberSelection",     // ->*
+    "op_SubtractionAssignment",        // -=
+    "op_ExclusiveOrAssignment",        // ^=
+    "op_LeftShiftAssignment",          // <<=
+    "op_ModulusAssignment",            // %=
+    "op_AdditionAssignment",           // +=
+    "op_BitwiseAndAssignment",         // &=
+    "op_BitwiseOrAssignment",          // |=
+    "op_Comma",                        // ,
+    "op_DivisionAssignment"            // /=
+};
 
 bool ShouldLoadSymbolsForModule(const std::string &moduleName)
 {
@@ -85,12 +139,13 @@ static HRESULT GetNonJMCMethodsForTypeDef(
                                      szFunctionName, _countof(szFunctionName), &nameLen,
                                      nullptr, nullptr, nullptr, nullptr, nullptr);
 
-        if (HasAttribute(pMD, methodDef, g_nonUserCode))
+        if ((g_operatorMethodNames.find(to_utf8(szFunctionName)) != g_operatorMethodNames.end())
+            || HasAttribute(pMD, methodDef, g_nonUserCode)
+            || HasAttribute(pMD, methodDef, g_stepThrough)
+            || !HasSourceLocation(sr, methodDef))
+        {
             excludeMethods.push_back(methodDef);
-        else if (HasAttribute(pMD, methodDef, g_stepThrough))
-            excludeMethods.push_back(methodDef);
-        else if (!HasSourceLocation(sr, methodDef))
-            excludeMethods.push_back(methodDef);
+        }
     }
     pMD->CloseEnum(fEnum);
 
