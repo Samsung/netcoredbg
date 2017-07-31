@@ -90,6 +90,38 @@ static HRESULT GetNonJMCMethodsForTypeDef(
     }
     pMD->CloseEnum(fEnum);
 
+    mdProperty propertyDef;
+    ULONG numProperties = 0;
+    HCORENUM propEnum = NULL;
+    while(SUCCEEDED(pMD->EnumProperties(&propEnum, typeDef, &propertyDef, 1, &numProperties)) && numProperties != 0)
+    {
+        mdMethodDef mdSetter;
+        mdMethodDef mdGetter;
+        if (SUCCEEDED(pMD->GetPropertyProps(propertyDef,
+                                            nullptr,
+                                            nullptr,
+                                            0,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            &mdSetter,
+                                            &mdGetter,
+                                            nullptr,
+                                            0,
+                                            nullptr)))
+        {
+            if (mdSetter != mdMethodDefNil)
+                excludeMethods.push_back(mdSetter);
+            if (mdGetter != mdMethodDefNil)
+                excludeMethods.push_back(mdGetter);
+        }
+    }
+    pMD->CloseEnum(propEnum);
+
     return S_OK;
 }
 
