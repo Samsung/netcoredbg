@@ -354,6 +354,13 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue,
 
     if (isNull && !pValue.GetPtr()) return S_OK;
 
+    CorElementType inputCorType;
+    IfFailRet(pInputValue->GetType(&inputCorType));
+    if (inputCorType == ELEMENT_TYPE_PTR)
+    {
+        return cb(mdMethodDefNil, nullptr, nullptr, pValue, false, "");
+    }
+
     ToRelease<ICorDebugArrayValue> pArrayValue;
     if (SUCCEEDED(pValue->QueryInterface(IID_ICorDebugArrayValue, (LPVOID *) &pArrayValue)))
     {
