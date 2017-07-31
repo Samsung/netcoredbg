@@ -887,6 +887,8 @@ HRESULT Debugger::RunProcess()
     if (!m_startupCV.wait_until(lock, now + startupCallbackWaitTimeout, [this](){return m_startupReady;}))
     {
         // Timed out
+        UnregisterForRuntimeStartup(m_unregisterToken);
+        m_unregisterToken = nullptr;
         return E_FAIL;
     }
 
