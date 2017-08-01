@@ -47,6 +47,28 @@ struct Breakpoint {
 
 static std::map<ULONG32, Breakpoint> g_breaks;
 
+static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
+{
+    HRESULT Status;
+
+    std::stringstream ss;
+
+    if (b.IsResolved())
+    {
+        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
+            "func=\"\",fullname=\"" << Debugger::EscapeMIValue(b.fullname) << "\",line=\"" << b.linenum << "\"}";
+        Status = S_OK;
+    }
+    else
+    {
+        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
+            "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
+        Status = S_FALSE;
+    }
+    output = ss.str();
+    return Status;
+}
+
 HRESULT PrintBreakpoint(ULONG32 id, std::string &output)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
@@ -56,25 +78,7 @@ HRESULT PrintBreakpoint(ULONG32 id, std::string &output)
     if (it == g_breaks.end())
         return E_FAIL;
 
-    Breakpoint &b = it->second;
-
-    std::stringstream ss;
-
-    HRESULT Status;
-    if (b.IsResolved())
-    {
-        ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "func=\"\",fullname=\"" << Debugger::EscapeMIValue(b.fullname) << "\",line=\"" << b.linenum << "\"}";
-        Status = S_OK;
-    }
-    else
-    {
-        ss << "bkpt={number=\"" << id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
-        Status = S_FALSE;
-    }
-    output = ss.str();
-    return S_OK;
+    return PrintBreakpoint(it->second, output);
 }
 
 HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
@@ -229,7 +233,12 @@ void TryResolveBreakpointsForModule(ICorDebugModule *pModule)
         if (b.IsResolved())
             continue;
 
-        ResolveBreakpointInModule(pModule, b);
+        if (SUCCEEDED(ResolveBreakpointInModule(pModule, b)))
+        {
+            std::string output;
+            PrintBreakpoint(b, output);
+            Debugger::Printf("=breakpoint-modified,%s\n", output.c_str());
+        }
     }
 }
 
