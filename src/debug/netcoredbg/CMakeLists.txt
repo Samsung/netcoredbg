@@ -15,6 +15,21 @@ set(netcoredbg_SRC
     jmc.cpp
     expr.cpp)
 
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
+# Set the RPATH of sos so that it can find dependencies without needing to set LD_LIBRARY_PATH
+# For more information: http://www.cmake.org/Wiki/CMake_RPATH_handling.
+if (CORECLR_SET_RPATH)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+  if(CLR_CMAKE_PLATFORM_DARWIN)
+    set(CMAKE_INSTALL_RPATH "@loader_path")
+  else()
+    set(CMAKE_INSTALL_RPATH "\$ORIGIN")
+  endif(CLR_CMAKE_PLATFORM_DARWIN)
+endif()
+
+add_definitions(-DPAL_STDCPP_COMPAT)
+
 if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
     add_definitions(-D_TARGET_AMD64_=1)
     add_definitions(-DDBG_TARGET_64BIT=1)
@@ -40,7 +55,6 @@ endif()
 add_executable(netcoredbg ${netcoredbg_SRC})
 
 add_compile_options(-fPIE)
-add_definitions(-DPAL_STDCPP_COMPAT)
 
 include_directories(${CLR_DIR}/src/inc)
 include_directories(${CLR_DIR}/src/pal/inc)
