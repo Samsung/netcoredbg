@@ -1,3 +1,4 @@
+#define UNICODE
 #include "common.h"
 
 #include <cstring>
@@ -10,6 +11,7 @@
 #include <mutex>
 #include <condition_variable>
 
+#include "platform.h"
 #include "debugger.h"
 #include "modules.h"
 
@@ -398,6 +400,11 @@ HRESULT Debugger::HandleCommand(std::string command,
         if (SUCCEEDED(Status))
             output = "^running";
         return Status;
+    }},
+    { "environment-cd", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (args.empty())
+            return E_INVALIDARG;
+        return SetWorkDir(args.at(0)) ? S_OK : E_FAIL;
     }},
     { "handshake", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (!args.empty() && args.at(0) == "init")

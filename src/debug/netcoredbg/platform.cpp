@@ -157,3 +157,8 @@ std::string GetExeAbsPath()
     return exe;
 #endif
 }
+
+bool SetWorkDir(const std::string &path)
+{
+    return chdir(path.c_str()) == 0;
+}
