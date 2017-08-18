@@ -69,31 +69,33 @@ include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
 
 # SymbolReader
 
-set(CORECLR_TOOLS ${CLR_DIR}/Tools)
-set(CORECLR_LIBS ${CORECLR_TOOLS}/dotnetcli/shared/Microsoft.NETCore.App/*)
+if (BUILD_MANAGED)
+    set(CORECLR_TOOLS ${CLR_DIR}/Tools)
+    set(CORECLR_LIBS ${CORECLR_TOOLS}/dotnetcli/shared/Microsoft.NETCore.App/*)
 
-find_file(CORLIB NAMES System.Private.CoreLib.dll PATHS ${CLR_BIN_DIR}/IL NO_DEFAULT_PATH)
-find_file(RUNTIMELIB NAMES System.Runtime.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-find_file(REFLECTIONLIB NAMES System.Reflection.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-find_file(METADATALIB NAMES System.Reflection.Metadata.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-find_file(COLLECTIONSLIB NAMES System.Collections.Immutable.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-find_file(IOLIB NAMES System.IO.FileSystem.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
+    find_file(CORLIB NAMES System.Private.CoreLib.dll PATHS ${CLR_BIN_DIR}/IL NO_DEFAULT_PATH)
+    find_file(RUNTIMELIB NAMES System.Runtime.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
+    find_file(REFLECTIONLIB NAMES System.Reflection.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
+    find_file(METADATALIB NAMES System.Reflection.Metadata.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
+    find_file(COLLECTIONSLIB NAMES System.Collections.Immutable.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
+    find_file(IOLIB NAMES System.IO.FileSystem.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
 
-set(SYMBOLREADER_DLL_NAME SOS.NETCore.dll)
+    set(SYMBOLREADER_DLL_NAME SOS.NETCore.dll)
 
-add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME}
-  COMMAND ${CORECLR_TOOLS}/dotnetcli/dotnet
-    ${CORECLR_TOOLS}/csc.exe
-    /r:${CORLIB} /r:${RUNTIMELIB} /r:${REFLECTIONLIB} /r:${IOLIB} /r:${METADATALIB} /r:${COLLECTIONSLIB} /out:"${SYMBOLREADER_DLL_NAME}" /debug:portable /unsafe /target:library
-    "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs"
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME}
+      COMMAND ${CORECLR_TOOLS}/dotnetcli/dotnet
+        ${CORECLR_TOOLS}/csc.exe
+        /r:${CORLIB} /r:${RUNTIMELIB} /r:${REFLECTIONLIB} /r:${IOLIB} /r:${METADATALIB} /r:${COLLECTIONSLIB} /out:"${SYMBOLREADER_DLL_NAME}" /debug:portable /unsafe /target:library
+        "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs"
 
-  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs"
-  COMMENT "Compiling SymbolReader.cs"
-  VERBATIM
-)
+      WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs"
+      COMMENT "Compiling SymbolReader.cs"
+      VERBATIM
+    )
 
-add_custom_target(symbolreader_dll ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME})
+    add_custom_target(symbolreader_dll ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME})
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME} DESTINATION ${INSTALL_DIR})
+endif()
 
 install(TARGETS netcoredbg DESTINATION ${INSTALL_DIR})
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME} DESTINATION ${INSTALL_DIR})

@@ -74,13 +74,14 @@ export C_INCLUDE_PATH="${LLVM_INCLUDEDIR}/llvm-c/:%{_includedir}"
 mkdir build
 cd build
 cmake ../netcoredbg \
-    -DCMAKE_C_COMPILER=clang \
-    -DCMAKE_CXX_COMPILER=clang++ \
+    -DCMAKE_C_COMPILER=/usr/bin/clang \
+    -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
     -DCLR_BIN_DIR=%{_datarootdir}/%{netcoreappdir} \
     -DCLR_DIR=%{_datarootdir}/%{netcoreappdir} \
-    -DINSTALL_DIR=%{_datarootdir}/%{sdktoolsdir}/netcoredbg \
+    -DINSTALL_DIR=%{_datarootdir}/%{netcoreappdir}/netcoredbg \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCLR_CMAKE_TARGET_ARCH_%{ARCH}=1
+    -DCLR_CMAKE_TARGET_ARCH_%{ARCH}=1 \
+    -DBUILD_MANAGED=OFF
 make %{?jobs:-j%jobs}
 
 %install
@@ -90,5 +91,4 @@ cd build
 %files
 %manifest netcoredbg.manifest
 %defattr(-,root,root,-)
-%{_datarootdir}/%{sdktoolsdir}/netcoredbg/netcoredbg
-%{_datarootdir}/%{sdktoolsdir}/netcoredbg/SOS.NETCore.dll
+%{_datarootdir}/%{netcoreappdir}/netcoredbg/netcoredbg
