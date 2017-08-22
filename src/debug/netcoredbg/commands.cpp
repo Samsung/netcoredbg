@@ -422,6 +422,9 @@ HRESULT Debugger::HandleCommand(std::string command,
         }
         return S_OK;
     }},
+    { "interpreter-exec", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        return S_OK;
+    }},
     { "break-exception-insert", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.empty())
             return E_FAIL;
