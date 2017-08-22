@@ -78,7 +78,7 @@ cmake ../netcoredbg \
     -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
     -DCLR_BIN_DIR=%{_datarootdir}/%{netcoreappdir} \
     -DCLR_DIR=%{_datarootdir}/%{netcoreappdir} \
-    -DINSTALL_DIR=%{_datarootdir}/%{netcoreappdir}/netcoredbg \
+    -DINSTALL_DIR=%{_datarootdir}/%{netcoreappdir} \
     -DCMAKE_BUILD_TYPE=Release \
     -DCLR_CMAKE_TARGET_ARCH_%{ARCH}=1 \
     -DBUILD_MANAGED=OFF
@@ -90,5 +90,4 @@ cd build
 
 %files
 %manifest netcoredbg.manifest
-%defattr(-,root,root,-)
-%{_datarootdir}/%{netcoreappdir}/netcoredbg/netcoredbg
+%{_datarootdir}/%{netcoreappdir}/netcoredbg
