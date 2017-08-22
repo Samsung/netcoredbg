@@ -81,6 +81,7 @@ cmake ../netcoredbg \
     -DINSTALL_DIR=%{_datarootdir}/%{netcoreappdir} \
     -DCMAKE_BUILD_TYPE=Release \
     -DCLR_CMAKE_TARGET_ARCH_%{ARCH}=1 \
+    -DCORECLR_SET_RPATH=ON \
     -DBUILD_MANAGED=OFF
 make %{?jobs:-j%jobs}
 
