@@ -309,7 +309,7 @@ public:
 
         void HandleEvent(ICorDebugController *controller, const char *eventName)
         {
-            Debugger::Printf("=message,text=\"event received %s\"\n", eventName);
+            Debugger::Printf("=message,text=\"Event received: '%s'\\n\",send-to=\"output-window\"\n", eventName);
             controller->Continue(0);
         }
 
