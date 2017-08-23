@@ -259,6 +259,10 @@ HRESULT Debugger::HandleCommand(std::string command,
     { "exec-step", std::bind(StepCommand, _1, _2, _3, STEP_IN) },
     { "exec-next", std::bind(StepCommand, _1, _2, _3, STEP_OVER) },
     { "exec-finish", std::bind(StepCommand, _1, _2, _3, STEP_OUT) },
+    { "exec-abort", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
+        this->TerminateProcess();
+        return S_OK;
+    }},
     { "target-attach", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
         if (args.size() != 1)
