@@ -91,6 +91,8 @@ HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
 
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
 
     IfFailRet(Modules::GetFrameLocation(pFrame, ilOffset, sp));

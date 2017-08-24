@@ -277,13 +277,15 @@ static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
 {
     HRESULT Status;
 
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
     ToRelease<ICorDebugValue> pExceptionValue;
     IfFailRet(pThread->GetCurrentException(&pExceptionValue));
 
     TypePrinter::GetTypeOfValue(pExceptionValue, excType);
 
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));
 
@@ -378,7 +380,7 @@ public:
 
             std::string output;
             ToRelease<ICorDebugFrame> pFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
                 PrintFrameLocation(pFrame, output);
 
             DWORD threadId = 0;
@@ -401,7 +403,7 @@ public:
             std::string output;
             ToRelease<ICorDebugFrame> pFrame;
             HRESULT Status = S_FALSE;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
                 Status = PrintFrameLocation(pFrame, output);
 
             const bool no_source = Status == S_FALSE;
@@ -435,7 +437,7 @@ public:
         {
             std::string output;
             ToRelease<ICorDebugFrame> pFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)))
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
                 PrintFrameLocation(pFrame, output);
 
             DWORD threadId = 0;

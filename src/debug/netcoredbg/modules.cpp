@@ -197,6 +197,8 @@ HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE
     HRESULT Status;
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
 
     mdMethodDef methodToken;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
