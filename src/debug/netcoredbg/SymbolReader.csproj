@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard1.6</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AssemblyName>SymbolReader</AssemblyName>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <OutputType>Library</OutputType>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <NoStdLib>true</NoStdLib>
+    <NoCompilerStandardLib>true</NoCompilerStandardLib>
+    <IsDotNetFrameworkProductAssembly>true</IsDotNetFrameworkProductAssembly>
+    <AssemblyKey>Open</AssemblyKey>
+    <ExcludeMscorlibFacade>true</ExcludeMscorlibFacade>
+    <ContainsPackageReferences>true</ContainsPackageReferences>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.FileSystem">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Runtime.InteropServices">
+      <Version>4.3.0</Version>
+    </PackageReference>
+    <PackageReference Include="System.Reflection.Metadata">
+      <Version>1.4.1</Version>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>
+

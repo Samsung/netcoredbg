@@ -1,0 +1,10 @@
+diff --git a/src/debug/netcoredbg/symbolreader.h b/src/debug/netcoredbg/symbolreader.h
+index a375c6e..6f761af 100644
+--- a/src/debug/netcoredbg/symbolreader.h
++++ b/src/debug/netcoredbg/symbolreader.h
+@@ -1,4 +1,4 @@
+-static const char *SymbolReaderDllName = "SOS.NETCore";
++static const char *SymbolReaderDllName = "SymbolReader";
+ static const char *SymbolReaderClassName = "SOS.SymbolReader";
+ 
+ typedef  int (*ReadMemoryDelegate)(ULONG64, char *, int);
