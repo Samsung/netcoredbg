@@ -1,0 +1,34 @@
+From 7b7b73c5ee5a152597f8547c5dc7d6786dd2938e Mon Sep 17 00:00:00 2001
+From: Igor Kulaychuk <i.kulaychuk@samsung.com>
+Date: Thu, 24 Aug 2017 23:44:38 +0300
+Subject: [PATCH 3/3] Enable Debug IPC
+
+---
+ packaging/coreclr.spec | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/packaging/coreclr.spec b/packaging/coreclr.spec
+index 81311b1..57aedb5 100644
+--- a/packaging/coreclr.spec
++++ b/packaging/coreclr.spec
+@@ -255,7 +255,7 @@ export PAL_DBG_CHANNELS=""
+ # No build native and mscorlib.
+ %else
+ # Build native only.
+-./build.sh %{_barch} %{_buildtype} clang3.8 skipmscorlib skipgenerateversion skipnuget %{testopt} cmakeargs "-DFEATURE_GDBJIT=TRUE -DFEATURE_DBGIPC=0 -DFEATURE_NI_BIND_FALLBACK=false -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++"
++./build.sh %{_barch} %{_buildtype} clang3.8 skipmscorlib skipgenerateversion skipnuget %{testopt} cmakeargs "-DFEATURE_GDBJIT=TRUE -DFEATURE_DBGIPC=1 -DFEATURE_NI_BIND_FALLBACK=false -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++"
+ %endif
+ %else
+ %if 0%{skipnative}
+@@ -263,7 +263,7 @@ export PAL_DBG_CHANNELS=""
+ ./build.sh %{_barch} %{_buildtype} -skiprestore skipnative skipnuget %{testopt}
+ %else
+ # Build native and mscorlib.
+-./build.sh %{_barch} %{_buildtype} clang3.8 skipgenerateversion -skiprestore skipnuget %{testopt} cmakeargs "-DFEATURE_GDBJIT=TRUE -DFEATURE_DBGIPC=0 -DFEATURE_NI_BIND_FALLBACK=false -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++"
++./build.sh %{_barch} %{_buildtype} clang3.8 skipgenerateversion -skiprestore skipnuget %{testopt} cmakeargs "-DFEATURE_GDBJIT=TRUE -DFEATURE_DBGIPC=1 -DFEATURE_NI_BIND_FALLBACK=false -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++"
+ %endif
+ %endif
+ 
+-- 
+2.7.4
+
