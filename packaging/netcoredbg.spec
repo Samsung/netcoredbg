@@ -58,30 +58,21 @@ cp %{SOURCE1001} ..
 
 %build
 
-export GCC_INSTALL_DIR=$(gcc -print-search-dirs | sed -ne '/install: /s/install: //p')
-export LLVM_LIBDIR=$(llvm-config --libdir)
-export LLVM_INCLUDEDIR=$(llvm-config --includedir)
-export GPP_INCLUDE_PATHS=$(cpp -xc++ -v < /dev/null 2>&1 | \
-          awk '/search starts here:/{flag=1;next}/End of search list/{flag=0}flag' | \
-          sed -e "s/^ //" | tr '\n' ':' | sed -e 's/.$//')
-export CLANG_INCLUDE_PATHS=$(clang++ -E -xc++ - -v < /dev/null 2>&1 | \
-          awk '/search starts here:/{flag=1;next}/End of search list/{flag=0}flag' | \
-          sed -e "s/^ //" | tr '\n' ':' | sed -e 's/.$//')
-export CLANG_HEADERS=$(clang++ -print-search-dirs 2>&1 | sed -ne '/libraries: /s/libraries: =//p' | sed -ne 's|:.*|/include|p')
-
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${LLVM_LIBDIR}:${GCC_INSTALL_DIR}
-export LIBRARY_PATH=$LIBRARY_PATH:${LLVM_LIBDIR}:${GCC_INSTALL_DIR}
-export CFLAGS=" -B${LLVM_LIBDIR} -B${GCC_INSTALL_DIR} -Wno-deprecated-declarations"
-export CPPFLAGS=" -B${LLVM_LIBDIR} -B${GCC_INSTALL_DIR} -Wno-deprecated-declarations"
-export CXXFLAGS=" -B${LLVM_LIBDIR} -B${GCC_INSTALL_DIR} -Wno-deprecated-declarations"
-export CPLUS_INCLUDE_PATH="${LLVM_INCLUDEDIR}/llvm/:${LLVM_INCLUDEDIR}/llvm-c/:${CLANG_HEADERS}:${GPP_INCLUDE_PATHS}:${CLANG_INCLUDE_PATHS}"
-export C_INCLUDE_PATH="${LLVM_INCLUDEDIR}/llvm-c/:%{_includedir}"
+%ifarch %{ix86}
+export CFLAGS=" --target=i586-tizen-linux-gnu -Wno-deprecated-declarations"
+export CXXFLAGS=" --target=i586-tizen-linux-gnu -Wno-deprecated-declarations"
+export ASMFLAGS=" --target=i586-tizen-linux-gnu"
+%else
+export CFLAGS=" --target=%{_host} -Wno-deprecated-declarations"
+export CXXFLAGS=" --target=%{_host} -Wno-deprecated-declarations"
+export ASMFLAGS=" --target=%{_host}"
+%endif
 
 mkdir build
 cd build
 cmake ../netcoredbg \
-    -DCMAKE_C_COMPILER=/usr/bin/clang \
-    -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+    -DCMAKE_C_COMPILER=clang \
+    -DCMAKE_CXX_COMPILER=clang++ \
     -DCLR_BIN_DIR=%{_datarootdir}/%{netcoreappdir} \
     -DCLR_DIR=%{_datarootdir}/%{netcoreappdir} \
     -DCMAKE_INSTALL_PREFIX=%{install_prefix} \
