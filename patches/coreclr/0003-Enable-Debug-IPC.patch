@@ -1,7 +1,7 @@
 From 7b7b73c5ee5a152597f8547c5dc7d6786dd2938e Mon Sep 17 00:00:00 2001
 From: Igor Kulaychuk <i.kulaychuk@samsung.com>
 Date: Thu, 24 Aug 2017 23:44:38 +0300
-Subject: [PATCH 3/3] Enable Debug IPC
+Subject: [PATCH 3/4] Enable Debug IPC
 
 ---
  packaging/coreclr.spec | 4 ++--
