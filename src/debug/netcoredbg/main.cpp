@@ -142,7 +142,7 @@ HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times);
 void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
 // Valuewalk
-void NotifyEvalComplete();
+void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
 
 // Frames
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output);
@@ -474,7 +474,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
-            NotifyEvalComplete();
+            NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
 
@@ -483,7 +483,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
-            NotifyEvalComplete();
+            NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
 
@@ -499,8 +499,8 @@ public:
         virtual HRESULT STDMETHODCALLTYPE ExitProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
+            NotifyEvalComplete(nullptr, nullptr);
             Debugger::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
-            NotifyEvalComplete();
             NotifyProcessExited();
             return S_OK;
         }
@@ -520,6 +520,7 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *thread)
         {
+            NotifyEvalComplete(thread, nullptr);
             HandleEvent(pAppDomain, "ExitThread");
             return S_OK;
         }

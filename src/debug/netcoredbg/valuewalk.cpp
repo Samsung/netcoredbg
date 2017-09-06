@@ -9,6 +9,8 @@
 #include <vector>
 #include <list>
 #include <iomanip>
+#include <future>
+#include <utility>
 
 #include "cputil.h"
 #include "modules.h"
@@ -26,37 +28,84 @@ typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDe
 typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
 static std::mutex g_evalMutex;
-static std::condition_variable g_evalCV;
-static bool g_evalComplete = false;
-static bool g_evalStarted = false;
+static std::unordered_map< DWORD, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > > g_evalResults;
 
-void NotifyEvalComplete()
+void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)
 {
     std::lock_guard<std::mutex> lock(g_evalMutex);
-    g_evalComplete = true;
-    g_evalStarted = false;
-    g_evalMutex.unlock();
-    g_evalCV.notify_one();
+    if (!pThread)
+    {
+        g_evalResults.clear();
+        return;
+    }
+
+    DWORD threadId = 0;
+    pThread->GetID(&threadId);
+
+    std::unique_ptr< ToRelease<ICorDebugValue> > ppEvalResult(new ToRelease<ICorDebugValue>());
+    if (pEval)
+    {
+        pEval->GetResult(&(*ppEvalResult));
+    }
+
+    auto it = g_evalResults.find(threadId);
+
+    if (it == g_evalResults.end())
+        return;
+
+    it->second.set_value(std::move(ppEvalResult));
+
+    g_evalResults.erase(it);
 }
 
 bool IsEvalRunning()
 {
     std::lock_guard<std::mutex> lock(g_evalMutex);
-    return g_evalStarted;
+    return !g_evalResults.empty();
 }
 
-static HRESULT WaitEvalResult(ICorDebugProcess *pProcess,
+std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
+    ICorDebugThread *pThread,
+    ICorDebugEval *pEval)
+{
+    std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > p;
+    auto f = p.get_future();
+
+    DWORD threadId = 0;
+    pThread->GetID(&threadId);
+
+    ToRelease<ICorDebugProcess> pProcess;
+    if (FAILED(pThread->GetProcess(&pProcess)))
+        return f;
+
+    std::lock_guard<std::mutex> lock(g_evalMutex);
+
+    if (!g_evalResults.insert(std::make_pair(threadId, std::move(p))).second)
+        return f; // Already running eval? The future will throw broken promise
+
+    if (FAILED(pProcess->Continue(0)))
+        g_evalResults.erase(threadId);
+
+    return f;
+}
+
+static HRESULT WaitEvalResult(ICorDebugThread *pThread,
                               ICorDebugEval *pEval,
                               ICorDebugValue **ppEvalResult)
 {
-    HRESULT Status;
-    std::unique_lock<std::mutex> lock(g_evalMutex);
-    g_evalComplete = false;
-    g_evalStarted = true;
-    IfFailRet(pProcess->Continue(0));
-    g_evalCV.wait(lock, []{return g_evalComplete;});
+    try
+    {
+        auto evalResult = RunEval(pThread, pEval).get();
+        if (!evalResult->GetPtr())
+            return E_FAIL;
+        *ppEvalResult = evalResult->Detach();
+    }
+    catch (const std::future_error& e)
+    {
+       return E_FAIL;
+    }
 
-    return pEval->GetResult(ppEvalResult);
+    return S_OK;
 }
 
 HRESULT EvalFunction(
@@ -70,8 +119,6 @@ HRESULT EvalFunction(
 
     ToRelease<ICorDebugEval> pEval;
 
-    ToRelease<ICorDebugProcess> pProcess;
-    IfFailRet(pThread->GetProcess(&pProcess));
     IfFailRet(pThread->CreateEval(&pEval));
 
     std::vector< ToRelease<ICorDebugType> > typeParams;
@@ -100,7 +147,7 @@ HRESULT EvalFunction(
         pArgValue ? &pArgValue : nullptr
     ));
 
-    return WaitEvalResult(pProcess, pEval, ppEvalResult);
+    return WaitEvalResult(pThread, pEval, ppEvalResult);
 }
 
 HRESULT EvalObjectNoConstructor(
@@ -112,8 +159,6 @@ HRESULT EvalObjectNoConstructor(
 
     ToRelease<ICorDebugEval> pEval;
 
-    ToRelease<ICorDebugProcess> pProcess;
-    IfFailRet(pThread->GetProcess(&pProcess));
     IfFailRet(pThread->CreateEval(&pEval));
 
     std::vector< ToRelease<ICorDebugType> > typeParams;
@@ -141,7 +186,7 @@ HRESULT EvalObjectNoConstructor(
         (ICorDebugType **)typeParams.data()
     ));
 
-    return WaitEvalResult(pProcess, pEval, ppEvalResult);
+    return WaitEvalResult(pThread, pEval, ppEvalResult);
 }
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)
@@ -243,10 +288,8 @@ static HRESULT GetLiteralValue(ICorDebugThread *pThread,
             ULONG32 dims = 1;
             ULONG32 bounds = 0;
             IfFailRet(pEval2->NewParameterizedArray(pElementType, 1, &dims, &bounds));
-            ToRelease<ICorDebugProcess> pProcess;
-            IfFailRet(pThread->GetProcess(&pProcess));
             ToRelease<ICorDebugValue> pTmpArrayValue;
-            IfFailRet(WaitEvalResult(pProcess, pEval, &pTmpArrayValue));
+            IfFailRet(WaitEvalResult(pThread, pEval, &pTmpArrayValue));
 
             BOOL isNull = FALSE;
             ToRelease<ICorDebugValue> pUnboxedResult;
@@ -287,9 +330,7 @@ static HRESULT GetLiteralValue(ICorDebugThread *pThread,
             IfFailRet(pEval2->NewParameterizedObjectNoConstructor(pValueClass, 0, nullptr));
 
             ToRelease<ICorDebugValue> pValue;
-            ToRelease<ICorDebugProcess> pProcess;
-            IfFailRet(pThread->GetProcess(&pProcess));
-            IfFailRet(WaitEvalResult(pProcess, pEval, &pValue));
+            IfFailRet(WaitEvalResult(pThread, pEval, &pValue));
 
             // Set value
             BOOL isNull = FALSE;
@@ -304,12 +345,10 @@ static HRESULT GetLiteralValue(ICorDebugThread *pThread,
         }
         case ELEMENT_TYPE_STRING:
         {
-            ToRelease<ICorDebugProcess> pProcess;
-            IfFailRet(pThread->GetProcess(&pProcess));
             ToRelease<ICorDebugEval2> pEval2;
             IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
             pEval2->NewStringWithLength((LPCWSTR)pRawValue, rawValueLength);
-            IfFailRet(WaitEvalResult(pProcess, pEval, ppLiteralValue));
+            IfFailRet(WaitEvalResult(pThread, pEval, ppLiteralValue));
             break;
         }
         case ELEMENT_TYPE_BOOLEAN:
