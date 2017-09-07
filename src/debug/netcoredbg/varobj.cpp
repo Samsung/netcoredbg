@@ -16,7 +16,7 @@
 #include "valuewalk.h"
 
 // Valueprint
-HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output);
+HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output, bool escape = true);
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
 
 HRESULT GetNumChild(ICorDebugValue *pValue,

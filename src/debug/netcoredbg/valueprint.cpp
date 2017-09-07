@@ -508,7 +508,7 @@ void EscapeString(std::string &s, char q = '\"')
     }
 }
 
-HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output)
+HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output, bool escape)
 {
     HRESULT Status;
 
@@ -538,6 +538,12 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
     {
         std::string raw_str;
         IfFailRet(PrintStringValue(pValue, raw_str));
+
+        if (!escape)
+        {
+            output = raw_str;
+            return S_OK;
+        }
 
         EscapeString(raw_str, '"');
 
@@ -609,6 +615,11 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std
         {
             WCHAR wc = * (WCHAR *) &(rgbValue[0]);
             std::string printableVal = to_utf8(&wc, 1);
+            if (!escape)
+            {
+                output = printableVal;
+                return S_OK;
+            }
             EscapeString(printableVal, '\'');
             ss << (unsigned int)wc << " '" << printableVal << "'";
         }
