@@ -143,6 +143,11 @@ void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
 // Valuewalk
 void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
+HRESULT ObjectToString(
+    ICorDebugThread *pThread,
+    ICorDebugValue *pValue,
+    std::function<void(const std::string&)> cb
+);
 
 // Frames
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output);
@@ -300,7 +305,7 @@ static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
     WCHAR mdName[mdNameLen];
     ULONG nameLen;
     IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
-    excModule = to_utf8(mdName, nameLen);
+    excModule = to_utf8(mdName);
     return S_OK;
 }
 
@@ -435,10 +440,10 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ BOOL unhandled)
         {
-            std::string output;
+            std::string frameLocation;
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                PrintFrameLocation(pFrame, output);
+                PrintFrameLocation(pFrame, frameLocation);
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
@@ -450,17 +455,26 @@ public:
 
             if (unhandled)
             {
+                ToRelease<ICorDebugValue> pExceptionValue;
                 std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
                 std::string category = "clr";
-                Debugger::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                    excType.c_str(),
-                    details.c_str(),
-                    unhandled ? "unhandled" : "handled",
-                    category.c_str(),
-                    (int)threadId,
-                    output.c_str());
-            } else {
-                ToRelease<ICorDebugValue> pExceptionValue;
+                auto printFunc = [=](const std::string &message) {
+                    Debugger::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                        excType.c_str(),
+                        Debugger::EscapeMIValue(message.empty() ? details : message).c_str(),
+                        unhandled ? "unhandled" : "handled",
+                        category.c_str(),
+                        (int)threadId,
+                        frameLocation.c_str());
+                };
+
+                if (FAILED(pThread->GetCurrentException(&pExceptionValue)) || FAILED(ObjectToString(pThread, pExceptionValue, printFunc)))
+                {
+                    printFunc(details);
+                }
+            }
+            else
+            {
                 Debugger::Printf("=message,text=\"Exception thrown: '%s' in %s\\n\",send-to=\"output-window\",source=\"target-exception\"\n",
                     excType.c_str(), excModule.c_str());
                 pAppDomain->Continue(0);

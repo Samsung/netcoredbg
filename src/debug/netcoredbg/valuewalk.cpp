@@ -23,6 +23,7 @@ HRESULT GetType(const std::string &typeName, ICorDebugThread *pThread, ICorDebug
 
 // Valueprint
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
+HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output, bool escape = true);
 
 typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
 typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
@@ -187,6 +188,126 @@ HRESULT EvalObjectNoConstructor(
     ));
 
     return WaitEvalResult(pThread, pEval, ppEvalResult);
+}
+
+static HRESULT FindMethod(ICorDebugType *pType, WCHAR *methodName, ICorDebugFunction **ppFunc)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugClass> pClass;
+    IfFailRet(pType->GetClass(&pClass));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pClass->GetModule(&pModule));
+
+    mdTypeDef currentTypeDef;
+    IfFailRet(pClass->GetToken(&currentTypeDef));
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    ULONG numMethods = 0;
+    HCORENUM fEnum = NULL;
+    mdMethodDef methodDef = mdMethodDefNil;
+
+    pMD->EnumMethodsWithName(&fEnum, currentTypeDef, methodName, &methodDef, 1, &numMethods);
+    pMD->CloseEnum(fEnum);
+
+    if (numMethods == 1)
+        return pModule->GetFunctionFromToken(methodDef, ppFunc);
+
+    std::string baseTypeName;
+    ToRelease<ICorDebugType> pBaseType;
+
+    if(SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL && SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
+    {
+        if(baseTypeName == "System.Enum")
+            return E_FAIL;
+        else if (baseTypeName != "System.Object" && baseTypeName != "System.ValueType")
+        {
+            return FindMethod(pBaseType, methodName, ppFunc);
+        }
+    }
+
+    return E_FAIL;
+}
+
+HRESULT ObjectToString(
+    ICorDebugThread *pThread,
+    ICorDebugValue *pValue,
+    std::function<void(const std::string&)> cb
+)
+{
+    HRESULT Status = S_OK;
+
+    // Get ToString method token
+
+    mdTypeDef currentTypeDef;
+    ToRelease<ICorDebugClass> pClass;
+    ToRelease<ICorDebugValue2> pValue2;
+    ToRelease<ICorDebugType> pType;
+
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+    IfFailRet(pValue2->GetExactType(&pType));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    WCHAR methodName[] = W("ToString\0");
+    IfFailRet(FindMethod(pType, methodName, &pFunc));
+
+    // Get function object by token and setup the call
+
+    ToRelease<ICorDebugEval> pEval;
+
+    ToRelease<ICorDebugProcess> pProcess;
+    IfFailRet(pThread->GetProcess(&pProcess));
+    IfFailRet(pThread->CreateEval(&pEval));
+
+    std::vector< ToRelease<ICorDebugType> > typeParams;
+
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+    if (SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
+    {
+        ICorDebugType *curType;
+        ULONG fetched = 0;
+        while (SUCCEEDED(pTypeEnum->Next(1, &curType, &fetched)) && fetched == 1)
+        {
+            typeParams.emplace_back(curType);
+        }
+    }
+
+    ToRelease<ICorDebugEval2> pEval2;
+    IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+
+    IfFailRet(pEval2->CallParameterizedFunction(
+        pFunc,
+        typeParams.size(),
+        (ICorDebugType **)typeParams.data(),
+        1,
+        &pValue
+    ));
+
+    std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > evalResult = RunEval(pThread, pEval);
+
+    std::thread(std::bind([=](std::future< std::unique_ptr<ToRelease<ICorDebugValue>> >& f)
+    {
+        std::string output;
+        try
+        {
+            bool escape = false;
+
+            auto result = f.get();
+            if (result->GetPtr())
+                PrintValue(result->GetPtr(), nullptr, output, escape);
+        }
+        catch (const std::future_error& e)
+        {
+        }
+        cb(output);
+    }, std::move(evalResult))).detach();
+
+    return S_OK;
 }
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)
