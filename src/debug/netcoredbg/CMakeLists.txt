@@ -69,7 +69,7 @@ set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/l
 add_library(palrt STATIC IMPORTED)
 set_target_properties(palrt PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libpalrt.a)
 
-target_link_libraries(netcoredbg corguids dbgshim mscordaccore palrt)
+target_link_libraries(netcoredbg corguids dbgshim mscordaccore palrt pthread)
 
 include_directories(${CLR_DIR}/src/inc)
 include_directories(${CLR_DIR}/src/pal/inc)
