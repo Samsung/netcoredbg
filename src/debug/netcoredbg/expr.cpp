@@ -20,7 +20,7 @@
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
 
 // Varobj
-HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame, ICorDebugValue *pValue);
+HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
 
 enum FollowMode {
     FollowInstance,
@@ -173,7 +173,7 @@ static HRESULT FollowFields(ICorDebugThread *pThread,
     for (int i = nextPart; i < (int)parts.size(); i++)
     {
         ToRelease<ICorDebugValue> pClassValue(std::move(pResultValue));
-        RunClassConstructor(pThread, pILFrame, pClassValue);
+        RunClassConstructor(pThread, pClassValue);
         IfFailRet(GetFieldOrPropertyWithName(
             pThread, pILFrame, pClassValue, parts[i], mode, &pResultValue));
         mode = FollowInstance; // we can only follow through instance fields

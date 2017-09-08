@@ -16,7 +16,7 @@
 #include "valuewalk.h"
 
 // Valueprint
-HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output, bool escape = true);
+HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true);
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
 
 HRESULT GetNumChild(ICorDebugValue *pValue,
@@ -152,7 +152,7 @@ static HRESULT FindFunction(ICorDebugModule *pModule,
     return pModule->GetFunctionFromToken(methodDef, ppFunction);
 }
 
-HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugILFrame *pILFrame, ICorDebugValue *pValue)
+HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
 {
     HRESULT Status;
 
@@ -286,7 +286,6 @@ static void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
 
 static void PrintVar(VarObjValue &v,
                      int print_values,
-                     ICorDebugILFrame *pILFrame,
                      std::string &output)
 {
     std::stringstream ss;
@@ -298,7 +297,7 @@ static void PrintVar(VarObjValue &v,
     {
         std::string strVal;
         if (v.value && !v.statics_only)
-            PrintValue(v.value, pILFrame, strVal);
+            PrintValue(v.value, strVal);
         ss << "value=\"" << strVal << "\",";
     }
     ss << "attributes=\"" << editable << "\",";
@@ -329,7 +328,7 @@ static VarObjValue & InsertVar(VarObjValue &varobj)
     return g_vars.emplace(std::make_pair(varName, std::move(varobj))).first->second;
 }
 
-static void PrintChildren(std::vector<VarObjValue> &members, int print_values, ICorDebugILFrame *pILFrame, bool has_more, std::string &output)
+static void PrintChildren(std::vector<VarObjValue> &members, int print_values, bool has_more, std::string &output)
 {
     std::stringstream ss;
     ss << "numchild=\"" << members.size() << "\"";
@@ -345,7 +344,7 @@ static void PrintChildren(std::vector<VarObjValue> &members, int print_values, I
     for (auto &m : members)
     {
         std::string varout;
-        PrintVar(InsertVar(m), print_values, pILFrame, varout);
+        PrintVar(InsertVar(m), print_values, varout);
 
         ss << sep;
         sep = ",";
@@ -391,7 +390,7 @@ HRESULT ListChildren(
 
         if (!objValue.statics_only && has_static_members)
         {
-            RunClassConstructor(pThread, pILFrame, objValue.value);
+            RunClassConstructor(pThread, objValue.value);
 
             objValue.value->AddRef();
             members.emplace_back(objValue.threadId, objValue.value);
@@ -400,7 +399,7 @@ HRESULT ListChildren(
         FixupInheritedFieldNames(members);
     }
 
-    PrintChildren(members, print_values, pILFrame, has_more, output);
+    PrintChildren(members, print_values, has_more, output);
 
     return S_OK;
 }
@@ -434,9 +433,6 @@ HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::str
     ToRelease<ICorDebugValue> pExceptionValue;
     if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
     {
-        ToRelease<ICorDebugILFrame> pILFrame;
-        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
         ss << sep;
         sep = ",";
 
@@ -444,7 +440,7 @@ HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::str
         if (printValues)
         {
             std::string strVal;
-            if (SUCCEEDED(PrintValue(pExceptionValue, pILFrame, strVal)))
+            if (SUCCEEDED(PrintValue(pExceptionValue, strVal)))
                 ss << ",value=\"" << strVal << "\"";
         }
         if (printTypes)
@@ -466,7 +462,7 @@ HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::str
         if (printValues)
         {
             std::string strVal;
-            if (SUCCEEDED(PrintValue(pValue, pILFrame, strVal)))
+            if (SUCCEEDED(PrintValue(pValue, strVal)))
                 ss << ",value=\"" << strVal << "\"";
         }
         if (printTypes)
@@ -495,16 +491,13 @@ HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::s
     DWORD threadId = 0;
     pThread->GetID(&threadId);
 
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
     ToRelease<ICorDebugValue> pResultValue;
 
     IfFailRet(EvalExpr(pThread, pFrame, expression, &pResultValue));
 
     VarObjValue tmpobj(threadId, expression, pResultValue.Detach(), "", varobjName);
     int print_values = 1;
-    PrintVar(InsertVar(tmpobj), print_values, pILFrame, output);
+    PrintVar(InsertVar(tmpobj), print_values, output);
 
     return S_OK;
 }

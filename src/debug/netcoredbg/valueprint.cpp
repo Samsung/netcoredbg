@@ -508,7 +508,7 @@ void EscapeString(std::string &s, char q = '\"')
     }
 }
 
-HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output, bool escape)
+HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape)
 {
     HRESULT Status;
 

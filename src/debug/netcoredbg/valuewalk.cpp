@@ -23,7 +23,7 @@ HRESULT GetType(const std::string &typeName, ICorDebugThread *pThread, ICorDebug
 
 // Valueprint
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
-HRESULT PrintValue(ICorDebugValue *pInputValue, ICorDebugILFrame * pILFrame, std::string &output, bool escape = true);
+HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true);
 
 typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
 typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
@@ -299,7 +299,7 @@ HRESULT ObjectToString(
 
             auto result = f.get();
             if (result->GetPtr())
-                PrintValue(result->GetPtr(), nullptr, output, escape);
+                PrintValue(result->GetPtr(), output, escape);
         }
         catch (const std::future_error& e)
         {
