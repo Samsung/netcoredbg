@@ -367,7 +367,7 @@ HRESULT Debugger::HandleCommand(std::string command,
         IfFailRet(pProcess->GetThread(threadId, &pThread));
 
         ToRelease<ICorDebugFrame> pFrame;
-        IfFailRet(pThread->GetActiveFrame(&pFrame));
+        pThread->GetActiveFrame(&pFrame);
         int childStart = 0;
         int childEnd = INT_MAX;
         StripArgs(args);
