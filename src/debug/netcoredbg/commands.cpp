@@ -368,8 +368,6 @@ HRESULT Debugger::HandleCommand(std::string command,
 
         ToRelease<ICorDebugFrame> pFrame;
         IfFailRet(pThread->GetActiveFrame(&pFrame));
-        if (pFrame == nullptr)
-            return E_FAIL;
         int childStart = 0;
         int childEnd = INT_MAX;
         StripArgs(args);

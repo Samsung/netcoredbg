@@ -356,7 +356,7 @@ static void PrintChildren(std::vector<VarObjValue> &members, int print_values, b
     output = ss.str();
 }
 
-HRESULT ListChildren(
+static HRESULT ListChildren(
     int childStart,
     int childEnd,
     VarObjValue &objValue,
@@ -368,7 +368,8 @@ HRESULT ListChildren(
     HRESULT Status;
 
     ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+    if (pFrame)
+        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
     std::vector<VarObjValue> members;
 
