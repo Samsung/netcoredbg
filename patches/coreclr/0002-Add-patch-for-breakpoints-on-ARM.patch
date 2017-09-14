@@ -1,7 +1,7 @@
 From cf1d582145e4ae064593b4d351b60477e0673299 Mon Sep 17 00:00:00 2001
 From: Igor Kulaychuk <i.kulaychuk@samsung.com>
 Date: Thu, 24 Aug 2017 23:39:57 +0300
-Subject: [PATCH 2/4] Add patch for breakpoints on ARM
+Subject: [PATCH 2/5] Add patch for breakpoints on ARM
 
 ---
  packaging/coreclr.spec              |   4 +-

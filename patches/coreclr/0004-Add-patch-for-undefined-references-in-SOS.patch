@@ -1,7 +1,7 @@
 From 84eb6d8886363b7495881717e0d48fbe95ac6ec1 Mon Sep 17 00:00:00 2001
 From: Igor Kulaychuk <i.kulaychuk@samsung.com>
 Date: Thu, 31 Aug 2017 20:22:56 +0300
-Subject: [PATCH 4/4] Add patch for undefined references in SOS
+Subject: [PATCH 4/5] Add patch for undefined references in SOS
 
 ---
  packaging/coreclr.spec                          |   2 +
