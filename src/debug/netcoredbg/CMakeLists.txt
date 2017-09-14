@@ -84,32 +84,20 @@ include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
 # SymbolReader
 
 if (BUILD_MANAGED)
-    set(CORECLR_TOOLS ${CLR_DIR}/Tools)
-    set(CORECLR_LIBS ${CORECLR_TOOLS}/dotnetcli/shared/Microsoft.NETCore.App/*)
+    set(SYMBOLREADER_DLL_NAME SymbolReader.dll)
+    set(DOTNET_BUILD_RESULT ${CMAKE_CURRENT_SOURCE_DIR}/bin/Debug/netstandard1.6/${SYMBOLREADER_DLL_NAME})
 
-    find_file(CORLIB NAMES System.Private.CoreLib.dll PATHS ${CLR_BIN_DIR}/IL NO_DEFAULT_PATH)
-    find_file(RUNTIMELIB NAMES System.Runtime.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-    find_file(REFLECTIONLIB NAMES System.Reflection.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-    find_file(METADATALIB NAMES System.Reflection.Metadata.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-    find_file(COLLECTIONSLIB NAMES System.Collections.Immutable.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-    find_file(IOLIB NAMES System.IO.FileSystem.dll PATHS ${CORECLR_LIBS} NO_DEFAULT_PATH)
-
-    set(SYMBOLREADER_DLL_NAME SOS.NETCore.dll)
-
-    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME}
-      COMMAND ${CORECLR_TOOLS}/dotnetcli/dotnet
-        ${CORECLR_TOOLS}/csc.exe
-        /r:${CORLIB} /r:${RUNTIMELIB} /r:${REFLECTIONLIB} /r:${IOLIB} /r:${METADATALIB} /r:${COLLECTIONSLIB} /out:"${SYMBOLREADER_DLL_NAME}" /debug:portable /unsafe /target:library
-        "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs"
+    add_custom_command(OUTPUT ${DOTNET_BUILD_RESULT}
+      COMMAND dotnet build ${CMAKE_CURRENT_SOURCE_DIR}
 
       WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs"
+      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs" "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.csproj"
       COMMENT "Compiling SymbolReader.cs"
       VERBATIM
     )
 
-    add_custom_target(symbolreader_dll ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME})
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX})
+    add_custom_target(symbolreader_dll ALL DEPENDS ${DOTNET_BUILD_RESULT})
+    install(FILES ${DOTNET_BUILD_RESULT} DESTINATION ${CMAKE_INSTALL_PREFIX})
 endif()
 
 install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
