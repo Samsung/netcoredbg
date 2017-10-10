@@ -1,3 +1,7 @@
+// Copyright (c) 2017 Samsung Electronics Co., LTD
+// Distributed under the MIT License.
+// See the LICENSE file in the project root for more information.
+
 class TypePrinter
 {
     static HRESULT NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImport, std::string &mdName,

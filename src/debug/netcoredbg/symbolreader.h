@@ -1,3 +1,9 @@
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+// Copyright (c) 2017 Samsung Electronics Co., LTD
+
 static const char *SymbolReaderDllName = "SOS.NETCore";
 static const char *SymbolReaderClassName = "SOS.SymbolReader";
 
