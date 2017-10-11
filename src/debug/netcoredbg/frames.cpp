@@ -271,22 +271,19 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
         IfFailRet(pStackWalk->GetFrame(&pFrame));
         if (Status == S_FALSE)
         {
-            // we've hit a native frame, we need to store the CONTEXT
+            // We've hit a native frame, we need to store the CONTEXT
             memset(&ctxUnmanagedChain, 0, sizeof(CONTEXT));
             ULONG32 contextSize;
             IfFailRet(pStackWalk->GetContext(ctxFlags, sizeof(CONTEXT), &contextSize, (BYTE*) &ctxUnmanagedChain));
             ctxUnmanagedChainValid = true;
-            // we need to invalidate the currentCtx since it won't be valid on the next loop iteration
+            // We need to invalidate the currentCtx since it won't be valid on the next loop iteration
             memset(&currentCtx, 0, sizeof(CONTEXT));
             currentCtxValid = false;
             continue;
         }
 
-        // If we get a RuntimeUnwindableFrame, then the stackwalker is also stopped at a native
-        // stack frame, but it's a native stack frame which requires special unwinding help from
-        // the runtime. When a debugger gets a RuntimeUnwindableFrame, it should use the runtime
-        // to unwind, but it has to do inspection on its own. It can call
-        // ICorDebugStackWalk::GetContext() to retrieve the context of the native stack frame.
+        // If we get a RuntimeUnwindableFrame, then the stackwalker is stopped at a native
+        // stack frame, but requires special unwinding help from the runtime.
         ToRelease<ICorDebugRuntimeUnwindableFrame> pRuntimeUnwindableFrame;
         Status = pFrame->QueryInterface(IID_ICorDebugRuntimeUnwindableFrame, (LPVOID *) &pRuntimeUnwindableFrame);
         if (SUCCEEDED(Status))
@@ -294,13 +291,13 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
             continue;
         }
 
-        // check for an internal frame...if the internal frame happens to come after the last
-        // managed frame, any call to GetContext() will assert
+        // We need to check for an internal frame.
+        // If the internal frame happens to come after the last managed frame, any call to GetContext() will assert
         ToRelease<ICorDebugInternalFrame> pInternalFrame;
         if (FAILED(pFrame->QueryInterface(IID_ICorDebugInternalFrame, (LPVOID*) &pInternalFrame)))
         {
-            // we need to store the CONTEXT when we're at a managed frame, if there's an internal frame
-            // after this, then we'll need this CONTEXT
+            // We need to store the CONTEXT when we're at a managed frame.
+            // If there's an internal frame after this, then we'll use this CONTEXT
             memset(&currentCtx, 0, sizeof(CONTEXT));
             ULONG32 contextSize;
             IfFailRet(pStackWalk->GetContext(ctxFlags, sizeof(CONTEXT), &contextSize, (BYTE*) &currentCtx));
@@ -308,14 +305,14 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
         }
         else if (ctxUnmanagedChainValid)
         {
-            // we need to check to see if this internal frame could have been sandwiched between
-            // native frames, this will be the case if ctxUnmanagedChain is not null
+            // We need to check if this internal frame could have been sandwiched between native frames,
+            // this will be the case if ctxUnmanagedChain is valid
 
-            // we need to store ALL internal frames until we hit the next managed frame
+            // We need to store ALL internal frames until we hit the next managed frame
             iFrameCache.emplace_back(std::move(pFrame));
             continue;
         }
-        // else we'll use the 'stored' currentCtx if we're at an InternalFrame
+        // Else we'll use the 'stored' currentCtx if we're at an InternalFrame
 
         uint64_t pEndVal = std::numeric_limits<uint64_t>::max();
         if (currentCtxValid)
@@ -323,19 +320,19 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
             pEndVal = GetSP(&currentCtx);
         }
 
-        // check to see if we have native frames to unwind
+        // Check if we have native frames to unwind
         std::vector<NativeFrame> nFrames;
         if (ctxUnmanagedChainValid)
             IfFailRet(UnwindNativeFrames(pThread, GetSP(&ctxUnmanagedChain), pEndVal, nFrames));
         IfFailRet(StitchInternalFrames(pThread, iFrameCache, nFrames, cb));
 
-        // clear out the CONTEXT and native frame cache
+        // Clear out the CONTEXT and native frame cache
         memset(&ctxUnmanagedChain, 0, sizeof(CONTEXT));
         ctxUnmanagedChainValid = false;
         nFrames.clear();
         iFrameCache.clear();
 
-        // return the managed frame
+        // Return the managed frame
         ToRelease<ICorDebugFunction> pFunction;
         Status = pFrame->GetFunction(&pFunction);
         if (SUCCEEDED(Status))
@@ -363,7 +360,7 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
         IfFailRet(cb(frameType, pFrame, nullptr, nullptr));
     }
 
-    // we may have native frames at the end of the stack
+    // We may have native frames at the end of the stack
     uint64_t pEndVal = std::numeric_limits<uint64_t>::max();
     std::vector<NativeFrame> nFrames;
     if (ctxUnmanagedChainValid)
