@@ -4,19 +4,19 @@ BASEDIR=$(dirname "$0")
 
 FILES="
 	breakpoints.cpp
+	breakpoints.h
 	commands.cpp
 	common.h
 	cputil.h
 	debugger.h
 	expr.cpp
+	expr.h
 	frames.cpp
+	frames.h
 	jmc.cpp
 	main.cpp
 	modules.cpp
 	modules.h
-	native.cpp
-	native.h
-	native_stubs.cpp
 	platform.cpp
 	platform.h
 	symbolreader.cpp
@@ -25,9 +25,11 @@ FILES="
 	typeprinter.cpp
 	typeprinter.h
 	valueprint.cpp
+	valueprint.h
 	valuewalk.cpp
 	valuewalk.h
 	varobj.cpp
+	varobj.h
 "
 
 OWNER=i-kulaychuk
