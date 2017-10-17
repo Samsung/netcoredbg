@@ -15,6 +15,8 @@
 
 #include "debugger.h"
 #include "modules.h"
+#include "breakpoints.h"
+
 
 static std::mutex g_breakMutex;
 static ULONG32 g_breakIndex = 1;

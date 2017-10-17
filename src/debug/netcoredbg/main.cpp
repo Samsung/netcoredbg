@@ -20,6 +20,10 @@
 #include "debugger.h"
 #include "modules.h"
 #include "valuewalk.h"
+#include "breakpoints.h"
+#include "valuewalk.h"
+#include "varobj.h"
+#include "frames.h"
 
 #define __in
 #define __out
@@ -139,25 +143,6 @@ void Debugger::Message(const char *fmt, ...)
 
     Printf("=message,text=\"%s\",send-to=\"output-window\"\n", EscapeMIValue(data).c_str());
 }
-
-// Breakpoints
-void DeleteAllBreakpoints();
-HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times);
-void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
-
-// Valuewalk
-void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
-HRESULT ObjectToString(
-    ICorDebugThread *pThread,
-    ICorDebugValue *pValue,
-    std::function<void(const std::string&)> cb
-);
-
-// Frames
-HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output);
-
-// Varobj
-void CleanupVars();
 
 // TODO: Merge with EscapeString
 std::string Debugger::EscapeMIValue(const std::string &str)

@@ -18,43 +18,18 @@
 #include "platform.h"
 #include "debugger.h"
 #include "modules.h"
+#include "breakpoints.h"
+#include "varobj.h"
+#include "frames.h"
+
 
 using namespace std::placeholders;
-
-// Varobj
-HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
-HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output);
-HRESULT ListChildren(int childStart, int childEnd, const std::string &name, int print_values, ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output);
-HRESULT DeleteVar(const std::string &varobjName);
-
-// Breakpoints
-HRESULT DeleteBreakpoint(ULONG32 id);
-HRESULT InsertBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
-HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
-ULONG32 InsertExceptionBreakpoint(const std::string &name);
-
-// Frames
-HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
-
-// Main
-HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
-
 
 typedef std::function<HRESULT(
     ICorDebugProcess *pProcess,
     const std::vector<std::string> &args,
     std::string &output)> CommandCallback;
 
-HRESULT PrintThreadsState(ICorDebugController *controller, std::string &output);
-HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame = 0, int highFrame = INT_MAX);
-
-// Breakpoints
-HRESULT CreateBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id);
-HRESULT PrintBreakpoint(ULONG32 id, std::string &output);
-
-// Debug events
-int GetLastStoppedThreadId();
-void WaitProcessExited();
 
 static int ParseInt(const std::string &s, bool &ok)
 {

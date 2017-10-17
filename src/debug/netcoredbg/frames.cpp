@@ -17,6 +17,7 @@
 #include "platform.h"
 #include "debugger.h"
 #include "modules.h"
+#include "frames.h"
 
 
 HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
@@ -428,7 +429,7 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
     }
 }
 
-HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame = 0, int highFrame = INT_MAX)
+HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame, int highFrame)
 {
     HRESULT Status;
     std::stringstream ss;

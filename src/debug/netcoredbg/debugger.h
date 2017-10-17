@@ -76,3 +76,7 @@ public:
 
     void CommandLoop();
 };
+
+HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
+int GetLastStoppedThreadId();
+void WaitProcessExited();

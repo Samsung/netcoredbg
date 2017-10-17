@@ -18,10 +18,10 @@
 #include "typeprinter.h"
 #include "modules.h"
 #include "valuewalk.h"
+#include "valueprint.h"
+#include "varobj.h"
+#include "expr.h"
 
-// Valueprint
-HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true);
-HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
 
 HRESULT GetNumChild(ICorDebugValue *pValue,
                     unsigned int &numchild,
@@ -486,8 +486,6 @@ HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::str
     output = ss.str();
     return S_OK;
 }
-
-HRESULT EvalExpr(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &expression, ICorDebugValue **ppResult);
 
 HRESULT CreateVar(ICorDebugThread *pThread, ICorDebugFrame *pFrame, const std::string &varobjName, const std::string &expression, std::string &output)
 {

@@ -18,13 +18,10 @@
 #include "typeprinter.h"
 #include "modules.h"
 #include "valuewalk.h"
+#include "valueprint.h"
+#include "varobj.h"
+#include "expr.h"
 
-
-// Valueprint
-HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
-
-// Varobj
-HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
 
 enum FollowMode {
     FollowInstance,

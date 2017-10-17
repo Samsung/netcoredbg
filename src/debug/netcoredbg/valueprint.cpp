@@ -16,9 +16,11 @@
 
 #include "cputil.h"
 #include "typeprinter.h"
+#include "valueprint.h"
+
 
 // From strike.cpp
-HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL)
+HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull)
 {
     HRESULT Status = S_OK;
     *ppOutputValue = NULL;

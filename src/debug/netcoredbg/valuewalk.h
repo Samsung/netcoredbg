@@ -19,3 +19,9 @@ HRESULT EvalObjectNoConstructor(
     ICorDebugValue **ppEvalResult);
 
 bool IsEvalRunning();
+void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
+HRESULT ObjectToString(
+    ICorDebugThread *pThread,
+    ICorDebugValue *pValue,
+    std::function<void(const std::string&)> cb
+);

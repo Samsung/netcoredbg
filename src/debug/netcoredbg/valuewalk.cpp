@@ -20,17 +20,9 @@
 #include "modules.h"
 #include "typeprinter.h"
 #include "valuewalk.h"
+#include "valueprint.h"
+#include "expr.h"
 
-
-// Expr
-HRESULT GetType(const std::string &typeName, ICorDebugThread *pThread, ICorDebugType **ppType);
-
-// Valueprint
-HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = NULL);
-HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true);
-
-typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
-typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
 static std::mutex g_evalMutex;
 static std::unordered_map< DWORD, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > > g_evalResults;
