@@ -4,7 +4,7 @@
 
 // Copyright (c) 2017 Samsung Electronics Co., LTD
 
-static const char *SymbolReaderDllName = "SOS.NETCore";
+static const char *SymbolReaderDllName = "SymbolReader";
 static const char *SymbolReaderClassName = "SOS.SymbolReader";
 
 typedef  int (*ReadMemoryDelegate)(ULONG64, char *, int);
