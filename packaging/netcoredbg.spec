@@ -6,7 +6,6 @@ Group:     Development/Toolchain
 License:   MIT
 Source0:   netcoredbg.tar.gz
 Source1001: netcoredbg.manifest
-Patch0:     SOS-rename.patch
 AutoReqProv: no
 
 BuildRequires: cmake
@@ -53,8 +52,6 @@ This is a CoreCLR debugger for Tizen.
 gzip -dc %{SOURCE0} | tar -xvf -
 cd netcoredbg
 cp %{SOURCE1001} ..
-
-%patch0 -p1
 
 %build
 
