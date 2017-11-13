@@ -2,7 +2,33 @@
 
 This is the repo for Tizen build of managed code debugger for CoreCLR called `netcoredbg`.
 
-The debugger sources are located in https://github.sec.samsung.net/i-kulaychuk/coreclr/tree/debugger
+## Build (Ubuntu x64)
+
+1. Install .NET Core SDK 2.x from https://dot.net/core
+
+2. Build and install coreclr and corefx, see https://github.com/dotnet/coreclr for details
+
+3. Use the following script as a reference to build the debugger (assuming current directory is project root):
+   ```
+       #!/bin/sh
+
+       # Path to coreclr source root
+       CORECLR_PATH=$HOME/git/coreclr
+       # Path to coreclr build output (use .Relese for release build)
+       CORECLR_BIN=$CORECLR_PATH/bin/Product/Linux.x64.Debug
+       # Path to generated coreclr overlay (where coreclr and corefx binaries are installed)
+       CORECLR_OVERLAY=$HOME/git/overlay
+
+       rm -rf build
+       mkdir build
+       cd build
+
+       CC=clang CXX=clang++ cmake ../ -DCMAKE_INSTALL_PREFIX=$CORECLR_OVERLAY -DCLR_DIR=$CORECLR_PATH -DCLR_BIN_DIR=$CORECLR_BIN -DCLR_CMAKE_TARGET_ARCH_AMD64=1 -DCORECLR_SET_RPATH=\$ORIGIN
+       make -j
+       make install
+   ```
+
+   The script produces `netcoredbg` and `SymbolReader.dll` binaries inside the overlay directory.
 
 ## Build (GBS)
 
