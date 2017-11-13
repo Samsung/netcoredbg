@@ -11,22 +11,22 @@ The debugger provides GDB/MI interface and allows to debug .NET apps using ICorD
 
 3. Use the following script as a reference to build the debugger (assuming current directory is project root):
    ```
-       #!/bin/sh
+   #!/bin/sh
 
-       # Path to coreclr source root
-       CORECLR_PATH=$HOME/git/coreclr
-       # Path to coreclr build output (use .Relese for release build)
-       CORECLR_BIN=$CORECLR_PATH/bin/Product/Linux.x64.Debug
-       # Path to generated coreclr overlay (where coreclr and corefx binaries are installed)
-       CORECLR_OVERLAY=$HOME/git/overlay
+   # Path to coreclr source root
+   CORECLR_PATH=$HOME/git/coreclr
+   # Path to coreclr build output (use .Relese for release build)
+   CORECLR_BIN=$CORECLR_PATH/bin/Product/Linux.x64.Debug
+   # Path to generated coreclr overlay (where coreclr and corefx binaries are installed)
+   CORECLR_OVERLAY=$HOME/git/overlay
 
-       rm -rf build
-       mkdir build
-       cd build
+   rm -rf build
+   mkdir build
+   cd build
 
-       CC=clang CXX=clang++ cmake ../ -DCMAKE_INSTALL_PREFIX=$CORECLR_OVERLAY -DCLR_DIR=$CORECLR_PATH -DCLR_BIN_DIR=$CORECLR_BIN -DCLR_CMAKE_TARGET_ARCH_AMD64=1 -DCORECLR_SET_RPATH=\$ORIGIN
-       make -j
-       make install
+   CC=clang CXX=clang++ cmake ../ -DCMAKE_INSTALL_PREFIX=$CORECLR_OVERLAY -DCLR_DIR=$CORECLR_PATH -DCLR_BIN_DIR=$CORECLR_BIN -DCLR_CMAKE_TARGET_ARCH_AMD64=1 -DCORECLR_SET_RPATH=\$ORIGIN
+   make -j
+   make install
    ```
 
    The script produces `netcoredbg` and `SymbolReader.dll` binaries inside the overlay directory.
@@ -51,7 +51,7 @@ The debugger provides GDB/MI interface and allows to debug .NET apps using ICorD
 
    Clone the repo and build as usual:
    ```
-       gbs build -A armv7l --include-all --spec netcoredbg.spec
+   gbs build -A armv7l --include-all --spec netcoredbg.spec
    ```
 
 4. Build modified `dotnet-launcher` package
@@ -67,7 +67,7 @@ The debugger provides GDB/MI interface and allows to debug .NET apps using ICorD
 
    You may also need to remove AOT images:
    ```
-       sdb shell "find / -name '*.ni.dll' -exec rm {} \;"
+   sdb shell "find / -name '*.ni.dll' -exec rm {} \;"
    ```
 
    Reboot the device/emulator.
