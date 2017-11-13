@@ -22,9 +22,8 @@ The debugger sources are located in https://github.sec.samsung.net/i-kulaychuk/c
 
 3. Build the `netcoredbg` package
 
-   Clone the repo, run `init.sh` script to download debugger sources and build as usual:
+   Clone the repo and build as usual:
    ```
-       ./init.sh
        gbs build -A armv7l --include-all --spec netcoredbg.spec
    ```
 
