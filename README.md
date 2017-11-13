@@ -1,6 +1,7 @@
-# Managed code debugger for CoreCLR
+# Managed code debugger for .NET Core runtime
 
-This is the repo for Tizen build of managed code debugger for CoreCLR called `netcoredbg`.
+The debugger provides GDB/MI interface and allows to debug .NET apps using ICorDebug API of CoreCLR.
+
 
 ## Build (Ubuntu x64)
 
