@@ -120,12 +120,12 @@ void Debugger::Message(const char *fmt, ...)
 
     va_start(args, fmt);
     char buf[32];
-    size_t n = std::vsnprintf(buf, sizeof(buf), fmt, args);
+    int n = std::vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
     std::string text;
 
-    if (n >= sizeof(buf))
+    if (n >= (int)sizeof(buf))
     {
         // Static buffer too small
         text.resize(n + 1, 0);
