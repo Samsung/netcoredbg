@@ -235,7 +235,7 @@ HRESULT SymbolReader::GetLineByILOffset(
         _ASSERTE(getLineByILOffsetDelegate != nullptr);
 
         BSTR bstrFileName = SysAllocStringLen(0, MAX_LONGPATH);
-        if (bstrFileName == nullptr)
+        if (SysStringLen(bstrFileName) == 0)
         {
             return E_OUTOFMEMORY;
         }
@@ -290,7 +290,7 @@ HRESULT SymbolReader::GetNamedLocalVariableAndScope(
     _ASSERTE(getLocalVariableNameAndScopeDelegate != nullptr);
 
     BSTR wszParamName = SysAllocStringLen(0, mdNameLen);
-    if (wszParamName == NULL)
+    if (SysStringLen(wszParamName) == 0)
     {
         return E_OUTOFMEMORY;
     }
