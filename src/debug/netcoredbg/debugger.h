@@ -2,6 +2,9 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
+#include "protocol.h"
+
+
 class ManagedCallback;
 
 class Debugger

@@ -20,56 +20,32 @@
 #include "frames.h"
 
 
-HRESULT PrintThread(ICorDebugThread *pThread, std::string &output)
-{
-    HRESULT Status = S_OK;
-
-    std::stringstream ss;
-
-    DWORD threadId = 0;
-    IfFailRet(pThread->GetID(&threadId));
-
-    ToRelease<ICorDebugProcess> pProcess;
-    IfFailRet(pThread->GetProcess(&pProcess));
-    BOOL running = FALSE;
-    IfFailRet(pProcess->IsRunning(&running));
-
-    ss << "{id=\"" << threadId
-       << "\",name=\"<No name>\",state=\""
-       << (running ? "running" : "stopped") << "\"}";
-
-    output = ss.str();
-
-    return S_OK;
-}
-
-HRESULT PrintThreadsState(ICorDebugController *controller, std::string &output)
+static HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads)
 {
     HRESULT Status = S_OK;
 
     ToRelease<ICorDebugThreadEnum> pThreads;
     IfFailRet(controller->EnumerateThreads(&pThreads));
 
-    std::stringstream ss;
-
-    ss << "threads=[";
-
     ICorDebugThread *handle;
     ULONG fetched;
-    const char *sep = "";
+
     while (SUCCEEDED(Status = pThreads->Next(1, &handle, &fetched)) && fetched == 1)
     {
         ToRelease<ICorDebugThread> pThread(handle);
 
-        std::string threadOutput;
-        PrintThread(pThread, threadOutput);
+        DWORD threadId = 0;
+        IfFailRet(pThread->GetID(&threadId));
 
-        ss << sep << threadOutput;
-        sep = ",";
+        ToRelease<ICorDebugProcess> pProcess;
+        IfFailRet(pThread->GetProcess(&pProcess));
+        BOOL running = FALSE;
+        IfFailRet(pProcess->IsRunning(&running));
+
+        threads.emplace_back(threadId, "<No name>", running);
+        std::string threadOutput;
     }
 
-    ss << "]";
-    output = ss.str();
     return S_OK;
 }
 

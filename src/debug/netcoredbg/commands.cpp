@@ -205,7 +205,28 @@ HRESULT Debugger::StepCommand(ICorDebugProcess *pProcess,
 static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &output)
 {
     if (!pProcess) return E_FAIL;
-    return PrintThreadsState(pProcess, output);
+
+    HRESULT Status = S_OK;
+
+    std::vector<Thread> threads;
+    IfFailRet(GetThreadsState(pProcess, threads));
+
+    std::stringstream ss;
+
+    ss << "threads=[";
+
+    const char *sep = "";
+    for (const Thread& thread : threads)
+    {
+        ss << "{id=\"" << thread.id
+           << "\",name=\"" << Debugger::EscapeMIValue(thread.name) << "\",state=\""
+           << (thread.running ? "running" : "stopped") << "\"}" << sep;
+        sep = ",";
+    }
+
+    ss << "]";
+    output = ss.str();
+    return S_OK;
 }
 
 HRESULT Debugger::HandleCommand(std::string command,

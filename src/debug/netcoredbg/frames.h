@@ -5,5 +5,5 @@
 HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output);
 HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
 
-HRESULT PrintThreadsState(ICorDebugController *controller, std::string &output);
+HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads);
 HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame = 0, int highFrame = INT_MAX);
