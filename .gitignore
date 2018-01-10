@@ -1,0 +1,5 @@
+/build/
+/obj/
+/src/debug/netcoredbg/bin/
+/src/debug/netcoredbg/obj/
+/.vscode/
