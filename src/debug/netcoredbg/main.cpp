@@ -406,12 +406,9 @@ public:
             {
                 DWORD threadId = 0;
                 pThread->GetID(&threadId);
-                std::string output;
-                PrintFrameLocation(stackFrame, output);
-                Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                    (int)threadId, output.c_str());
 
                 SetLastStoppedThread(pThread);
+                m_debugger->EmitStoppedEvent(StoppedEvent(StopStep, threadId));
             }
             return S_OK;
         }

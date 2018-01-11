@@ -350,25 +350,31 @@ HRESULT Debugger::EmitStoppedEvent(StoppedEvent event)
 {
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(event.threadId, &pThread));
+
+    StackFrame stackFrame;
+    ToRelease<ICorDebugFrame> pFrame;
+    if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+        GetFrameLocation(pFrame, stackFrame);
+
+    std::string frameLocation;
+    PrintFrameLocation(stackFrame, frameLocation);
 
     switch(event.reason)
     {
         case StopBreakpoint:
         {
-            IfFailRet(m_pProcess->GetThread(event.threadId, &pThread));
-
-            StackFrame stackFrame;
-            ToRelease<ICorDebugFrame> pFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                GetFrameLocation(pFrame, stackFrame);
-
             Breakpoint b;
             IfFailRet(GetCurrentBreakpoint(pThread, b));
 
-            std::string output;
-            PrintFrameLocation(stackFrame, output);
             Debugger::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
-                event.threadId, (unsigned int)b.id, (unsigned int)b.hitCount, output.c_str());
+                event.threadId, (unsigned int)b.id, (unsigned int)b.hitCount, frameLocation.c_str());
+            return S_OK;
+        }
+        case StopStep:
+        {
+            Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                event.threadId, frameLocation.c_str());
             return S_OK;
         }
         default:
