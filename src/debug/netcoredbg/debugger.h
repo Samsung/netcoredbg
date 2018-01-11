@@ -83,3 +83,5 @@ public:
 HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
 int GetLastStoppedThreadId();
 void WaitProcessExited();
+
+HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);

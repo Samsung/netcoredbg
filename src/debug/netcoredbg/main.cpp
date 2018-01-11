@@ -372,14 +372,16 @@ public:
             ULONG32 times = 0;
             HitBreakpoint(pThread, id, times);
 
-            std::string output;
+            StackFrame stackFrame;
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                PrintFrameLocation(pFrame, output);
+                GetFrameLocation(pFrame, stackFrame);
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
+            std::string output;
+            PrintFrameLocation(stackFrame, output);
             Debugger::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
                 (int)threadId, (unsigned int)id, (unsigned int)times, output.c_str());
 
@@ -394,11 +396,11 @@ public:
             /* [in] */ ICorDebugStepper *pStepper,
             /* [in] */ CorDebugStepReason reason)
         {
-            std::string output;
+            StackFrame stackFrame;
             ToRelease<ICorDebugFrame> pFrame;
             HRESULT Status = S_FALSE;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                Status = PrintFrameLocation(pFrame, output);
+                Status = GetFrameLocation(pFrame, stackFrame);
 
             const bool no_source = Status == S_FALSE;
 
@@ -411,7 +413,8 @@ public:
             {
                 DWORD threadId = 0;
                 pThread->GetID(&threadId);
-
+                std::string output;
+                PrintFrameLocation(stackFrame, output);
                 Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                     (int)threadId, output.c_str());
 
@@ -429,10 +432,10 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ BOOL unhandled)
         {
-            std::string frameLocation;
+            StackFrame stackFrame;
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                PrintFrameLocation(pFrame, frameLocation);
+                GetFrameLocation(pFrame, stackFrame);
 
             DWORD threadId = 0;
             pThread->GetID(&threadId);
@@ -444,6 +447,8 @@ public:
 
             if (unhandled)
             {
+                std::string frameLocation;
+                PrintFrameLocation(stackFrame, frameLocation);
                 ToRelease<ICorDebugValue> pExceptionValue;
                 std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
                 std::string category = "clr";

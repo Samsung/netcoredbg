@@ -8,7 +8,6 @@
 #include <vector>
 #include <list>
 #include <functional>
-#include <iomanip>
 #include <mutex>
 #include <condition_variable>
 #include <algorithm>
@@ -49,40 +48,30 @@ static HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thre
     return S_OK;
 }
 
-static std::string AddrToString(uint64_t addr)
-{
-    std::stringstream ss;
-    ss << "0x" << std::setw(2 * sizeof(void*)) << std::setfill('0') << std::hex << addr;
-    return ss.str();
-}
-
-static std::string FrameAddrToString(ICorDebugFrame *pFrame)
+static uint64_t FrameAddr(ICorDebugFrame *pFrame)
 {
     CORDB_ADDRESS startAddr = 0;
     CORDB_ADDRESS endAddr = 0;
     pFrame->GetStackRange(&startAddr, &endAddr);
-    return AddrToString(startAddr);
+    return startAddr;
 }
 
-HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
+HRESULT GetFrameLocation(ICorDebugFrame *pFrame, StackFrame &stackFrame)
 {
     HRESULT Status;
 
+    stackFrame.id = FrameAddr(pFrame);
+
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
-    bool has_source = false;
-
-    std::stringstream ss;
 
     if (SUCCEEDED(Modules::GetFrameLocation(pFrame, ilOffset, sp)))
     {
-        ss << "file=\"" << GetFileName(sp.document) << "\","
-           << "fullname=\"" << Debugger::EscapeMIValue(sp.document) << "\","
-           << "line=\"" << sp.startLine << "\","
-           << "col=\"" << sp.startColumn << "\","
-           << "end-line=\"" << sp.endLine << "\","
-           << "end-col=\"" << sp.endColumn << "\",";
-        has_source = true;
+        stackFrame.source = Source(sp.document);
+        stackFrame.line = sp.startLine;
+        stackFrame.column = sp.startColumn;
+        stackFrame.endLine = sp.endLine;
+        stackFrame.endColumn = sp.endColumn;
     }
 
     mdMethodDef methodToken;
@@ -105,21 +94,15 @@ HRESULT PrintFrameLocation(ICorDebugFrame *pFrame, std::string &output)
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
 
-    std::string id;
-    IfFailRet(Modules::GetModuleId(pModule, id));
+    IfFailRet(Modules::GetModuleId(pModule, stackFrame.moduleId));
 
-    ss << "clr-addr={module-id=\"{" << id << "}\","
-       << "method-token=\"0x" << std::setw(8) << std::setfill('0') << std::hex << methodToken << "\","
-       << "il-offset=\"" << std::dec << ilOffset << "\",native-offset=\"" << nOffset << "\"},";
+    stackFrame.clrAddr.methodToken = methodToken;
+    stackFrame.clrAddr.ilOffset = ilOffset;
+    stackFrame.clrAddr.nativeOffset = nOffset;
 
-    std::string methodName;
-    TypePrinter::GetMethodName(pFrame, methodName);
-    ss << "func=\"" << methodName << "\",";
-    ss << "addr=\"" << FrameAddrToString(pFrame) << "\"";
+    TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
-    output = ss.str();
-
-    return has_source ? S_OK : S_FALSE;
+    return stackFrame.source.isNull() ? S_FALSE : S_OK;
 }
 
 struct NativeFrame
@@ -405,15 +388,12 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
     }
 }
 
-HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame, int highFrame)
+HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
 {
     HRESULT Status;
     std::stringstream ss;
 
     int currentFrame = -1;
-
-    ss << "stack=[";
-    const char *sep = "";
 
     IfFailRet(WalkFrames(pThread, [&](
         FrameType frameType,
@@ -428,23 +408,18 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame,
         if (currentFrame > highFrame)
             return S_OK; // Todo implement fast break mechanism
 
-        ss << sep;
-        sep = ",";
-
         switch(frameType)
         {
             case FrameUnknown:
-                ss << "frame={level=\"" << currentFrame << "\",func=\"?\"}";
+                stackFrames.emplace_back(FrameAddr(pFrame), "?");
                 break;
             case FrameNative:
-                ss << "frame={level=\"" << currentFrame << "\",func=\"" << pNative->symbol << "\","
-                   << "file=\"" << pNative->file << "\","
-                   << "line=\"" << pNative->linenum << "\","
-                   << "addr=\"" << AddrToString(pNative->addr) << "\"}";
+                stackFrames.emplace_back(pNative->addr, pNative->symbol);
+                stackFrames.back().source = Source(pNative->file);
+                stackFrames.back().line = pNative->linenum;
                 break;
             case FrameCLRNative:
-                ss << "frame={level=\"" << currentFrame << "\",func=\"[Native Frame]\","
-                   << "addr=\"" << FrameAddrToString(pFrame) << "\"}";
+                stackFrames.emplace_back(FrameAddr(pFrame), "[Native Frame]");
                 break;
             case FrameCLRInternal:
                 {
@@ -452,28 +427,22 @@ HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame,
                     IfFailRet(pFrame->QueryInterface(IID_ICorDebugInternalFrame, (LPVOID*) &pInternalFrame));
                     CorDebugInternalFrameType frameType;
                     IfFailRet(pInternalFrame->GetFrameType(&frameType));
-                    ss << "frame={level=\"" << currentFrame << "\",func=\"[" << GetInternalTypeName(frameType) << "]\","
-                       << "addr=\"" << FrameAddrToString(pFrame) << "\"}";
+                    std::string name = "[";
+                    name += GetInternalTypeName(frameType);
+                    name += "]";
+                    stackFrames.emplace_back(FrameAddr(pFrame), name);
                 }
                 break;
             case FrameCLRManaged:
                 {
-                    std::string frameLocation;
-                    PrintFrameLocation(pFrame, frameLocation);
-
-                    ss << "frame={level=\"" << currentFrame << "\"";
-                    if (!frameLocation.empty())
-                        ss << "," << frameLocation;
-                    ss << "}";
+                    StackFrame stackFrame;
+                    GetFrameLocation(pFrame, stackFrame);
+                    stackFrames.push_back(stackFrame);
                 }
                 break;
         }
         return S_OK;
     }));
-
-    ss << "]";
-
-    output = ss.str();
 
     return S_OK;
 }

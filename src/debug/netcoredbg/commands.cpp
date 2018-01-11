@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <mutex>
 #include <condition_variable>
+#include <iomanip>
 
 #include "platform.h"
 #include "debugger.h"
@@ -199,6 +200,82 @@ HRESULT Debugger::StepCommand(ICorDebugProcess *pProcess,
     IfFailRet(SetupStep(pThread, stepType));
     IfFailRet(pProcess->Continue(0));
     output = "^running";
+    return S_OK;
+}
+
+static std::string AddrToString(uint64_t addr)
+{
+    std::stringstream ss;
+    ss << "0x" << std::setw(2 * sizeof(void*)) << std::setfill('0') << std::hex << addr;
+    return ss.str();
+}
+
+HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
+{
+    HRESULT Status;
+
+    std::stringstream ss;
+
+    if (!stackFrame.source.isNull())
+    {
+        ss << "file=\"" << Debugger::EscapeMIValue(stackFrame.source.name) << "\","
+           << "fullname=\"" << Debugger::EscapeMIValue(stackFrame.source.path) << "\","
+           << "line=\"" << stackFrame.line << "\","
+           << "col=\"" << stackFrame.column << "\","
+           << "end-line=\"" << stackFrame.endLine << "\","
+           << "end-col=\"" << stackFrame.endColumn << "\",";
+    }
+
+    if (stackFrame.clrAddr.methodToken != 0)
+    {
+        ss << "clr-addr={module-id=\"{" << stackFrame.moduleId << "}\","
+           << "method-token=\"0x"
+           << std::setw(8) << std::setfill('0') << std::hex << stackFrame.clrAddr.methodToken << "\","
+           << "il-offset=\"" << std::dec << stackFrame.clrAddr.ilOffset
+           << "\",native-offset=\"" << stackFrame.clrAddr.nativeOffset << "\"},";
+    }
+
+    ss << "func=\"" << stackFrame.name << "\"";
+    if (stackFrame.id != 0)
+        ss << ",addr=\"" << AddrToString(stackFrame.id) << "\"";
+
+    output = ss.str();
+
+    return stackFrame.source.isNull() ? S_FALSE : S_OK;
+}
+
+static HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame, int highFrame)
+{
+    HRESULT Status;
+    std::stringstream ss;
+
+    std::vector<StackFrame> stackFrames;
+    IfFailRet(GetStackTrace(pThread, lowFrame, highFrame, stackFrames));
+
+    int currentFrame = lowFrame;
+
+    ss << "stack=[";
+    const char *sep = "";
+
+    for (const StackFrame &stackFrame : stackFrames)
+    {
+        ss << sep;
+        sep = ",";
+
+        std::string frameLocation;
+        PrintFrameLocation(stackFrame, frameLocation);
+
+        ss << "frame={level=\"" << currentFrame << "\"";
+        if (!frameLocation.empty())
+            ss << "," << frameLocation;
+        ss << "}";
+        currentFrame++;
+    }
+
+    ss << "]";
+
+    output = ss.str();
+
     return S_OK;
 }
 
