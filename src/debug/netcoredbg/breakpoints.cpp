@@ -98,7 +98,7 @@ HRESULT GetCurrentBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint)
     return E_FAIL;
 }
 
-HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
+HRESULT HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
@@ -126,8 +126,8 @@ HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
             b.linenum == sp.startLine &&
             b.enabled)
         {
-            id = b.id;
-            times = ++b.times;
+            ++b.times;
+            b.ToBreakpoint(breakpoint);
             return S_OK;
         }
     }

@@ -54,13 +54,13 @@ class Debugger
                                const std::vector<std::string> &args,
                                std::string &output, StepType stepType);
 
-    HRESULT EmitStoppedEvent(StoppedEvent event);
-    HRESULT EmitExitedEvent(ExitedEvent event);
-    HRESULT EmitThreadEvent(ThreadEvent event);
-    HRESULT EmitOutputEvent(OutputEvent event);
+    static void EmitStoppedEvent(StoppedEvent event);
+    static void EmitExitedEvent(ExitedEvent event);
+    static void EmitThreadEvent(ThreadEvent event);
+    static void EmitOutputEvent(OutputEvent event);
 
 public:
-    static HRESULT EmitBreakpointEvent(BreakpointEvent event);
+    static void EmitBreakpointEvent(BreakpointEvent event);
 
     static bool IsJustMyCode() { return m_justMyCode; }
     static void SetJustMyCode(bool enable) { m_justMyCode = enable; }

@@ -149,7 +149,7 @@ static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
     return Status;
 }
 
-HRESULT Debugger::EmitBreakpointEvent(BreakpointEvent event)
+void Debugger::EmitBreakpointEvent(BreakpointEvent event)
 {
     switch(event.reason)
     {
@@ -158,10 +158,10 @@ HRESULT Debugger::EmitBreakpointEvent(BreakpointEvent event)
             std::string output;
             PrintBreakpoint(event.breakpoint, output);
             Debugger::Printf("=breakpoint-modified,%s\n", output.c_str());
-            return S_OK;
+            return;
         }
         default:
-            return S_OK;
+            break;
     }
 }
 
@@ -346,36 +346,26 @@ static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<s
     return S_OK;
 }
 
-HRESULT Debugger::EmitStoppedEvent(StoppedEvent event)
+void Debugger::EmitStoppedEvent(StoppedEvent event)
 {
     HRESULT Status;
-    ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(event.threadId, &pThread));
-
-    StackFrame stackFrame;
-    ToRelease<ICorDebugFrame> pFrame;
-    if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-        GetFrameLocation(pFrame, stackFrame);
 
     std::string frameLocation;
-    PrintFrameLocation(stackFrame, frameLocation);
+    PrintFrameLocation(event.frame, frameLocation);
 
     switch(event.reason)
     {
         case StopBreakpoint:
         {
-            Breakpoint b;
-            IfFailRet(GetCurrentBreakpoint(pThread, b));
-
             Debugger::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
-                event.threadId, (unsigned int)b.id, (unsigned int)b.hitCount, frameLocation.c_str());
-            return S_OK;
+                event.threadId, (unsigned int)event.breakpoint.id, (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
+            return;
         }
         case StopStep:
         {
             Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 event.threadId, frameLocation.c_str());
-            return S_OK;
+            return;
         }
         case StopException:
         {
@@ -390,17 +380,16 @@ HRESULT Debugger::EmitStoppedEvent(StoppedEvent event)
                 frameLocation.c_str());
         }
         default:
-            return S_OK;
+            break;
     }
 }
 
-HRESULT Debugger::EmitExitedEvent(ExitedEvent event)
+void Debugger::EmitExitedEvent(ExitedEvent event)
 {
     Debugger::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", event.exitCode);
-    return S_OK;
 }
 
-HRESULT Debugger::EmitThreadEvent(ThreadEvent event)
+void Debugger::EmitThreadEvent(ThreadEvent event)
 {
     const char *reasonText = "";
     switch(event.reason)
@@ -413,10 +402,9 @@ HRESULT Debugger::EmitThreadEvent(ThreadEvent event)
             break;
     }
     Debugger::Printf("=%s,id=\"%i\"\n", reasonText, event.threadId);
-    return S_OK;
 }
 
-HRESULT Debugger::EmitOutputEvent(OutputEvent event)
+void Debugger::EmitOutputEvent(OutputEvent event)
 {
     if (event.source.empty())
         Debugger::Printf("=message,text=\"%s\",send-to=\"output-window\"\"\n",
@@ -425,8 +413,6 @@ HRESULT Debugger::EmitOutputEvent(OutputEvent event)
         Debugger::Printf("=message,text=\"%s\",send-to=\"output-window\",source=\"%s\"\n",
             Debugger::EscapeMIValue(event.output).c_str(),
             Debugger::EscapeMIValue(event.source).c_str());
-
-    return S_OK;
 }
 
 HRESULT Debugger::HandleCommand(std::string command,

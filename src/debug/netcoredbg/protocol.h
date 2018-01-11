@@ -54,26 +54,6 @@ struct StackFrame
     StackFrame(uint64_t id, std::string name) : id(id), name(name) {}
 };
 
-enum StopReason
-{
-    StopStep,
-    StopBreakpoint,
-    StopException,
-    StopPause,
-    StopEntry
-};
-
-struct StoppedEvent
-{
-    StopReason reason;
-    std::string description;
-    int threadId;
-    std::string text;
-    bool allThreadsStopped;
-
-    StoppedEvent(StopReason reason, int threadId = 0) : reason(reason), threadId(threadId), allThreadsStopped(true) {}
-};
-
 struct Breakpoint
 {
     uint32_t id;
@@ -92,6 +72,29 @@ enum BreakpointReason
     BreakpointChanged,
     BreakpointNew,
     BreakpointRemoved
+};
+
+enum StopReason
+{
+    StopStep,
+    StopBreakpoint,
+    StopException,
+    StopPause,
+    StopEntry
+};
+
+struct StoppedEvent
+{
+    StopReason reason;
+    std::string description;
+    int threadId;
+    std::string text;
+    bool allThreadsStopped;
+
+    StackFrame frame; // exposed for MI protocol
+    Breakpoint breakpoint; // exposed for MI protocol
+
+    StoppedEvent(StopReason reason, int threadId = 0) : reason(reason), threadId(threadId), allThreadsStopped(true) {}
 };
 
 struct BreakpointEvent

@@ -342,12 +342,15 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
-            ULONG32 id = 0;
-            ULONG32 times = 0;
-            HitBreakpoint(pThread, id, times);
+            StoppedEvent event(StopBreakpoint, threadId);
+            HitBreakpoint(pThread, event.breakpoint);
+
+            ToRelease<ICorDebugFrame> pFrame;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+                GetFrameLocation(pFrame, event.frame);
 
             SetLastStoppedThread(pThread);
-            m_debugger->EmitStoppedEvent(StoppedEvent(StopBreakpoint, threadId));
+            m_debugger->EmitStoppedEvent(event);
 
             return S_OK;
         }
@@ -376,8 +379,11 @@ public:
                 DWORD threadId = 0;
                 pThread->GetID(&threadId);
 
+                StoppedEvent event(StopStep, threadId);
+                event.frame = stackFrame;
+
                 SetLastStoppedThread(pThread);
-                m_debugger->EmitStoppedEvent(StoppedEvent(StopStep, threadId));
+                m_debugger->EmitStoppedEvent(event);
             }
             return S_OK;
         }
@@ -400,6 +406,11 @@ public:
                 DWORD threadId = 0;
                 pThread->GetID(&threadId);
 
+                StackFrame stackFrame;
+                ToRelease<ICorDebugFrame> pFrame;
+                if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+                    GetFrameLocation(pFrame, stackFrame);
+
                 SetLastStoppedThread(pThread);
 
                 std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
@@ -410,6 +421,7 @@ public:
                     StoppedEvent event(StopException, threadId);
                     event.text = excType;
                     event.description = message.empty() ? details : message;
+                    event.frame = stackFrame;
                     m_debugger->EmitStoppedEvent(event);
                 };
 
