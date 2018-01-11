@@ -57,6 +57,7 @@ class Debugger
     HRESULT EmitStoppedEvent(StoppedEvent event);
     HRESULT EmitExitedEvent(ExitedEvent event);
     HRESULT EmitThreadEvent(ThreadEvent event);
+    HRESULT EmitOutputEvent(OutputEvent event);
 
 public:
     static HRESULT EmitBreakpointEvent(BreakpointEvent event);
@@ -79,7 +80,7 @@ public:
     void SetManagedCallback(ManagedCallback *managedCallback);
 
     static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
-    static void Message(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
+
     static std::string EscapeMIValue(const std::string &str);
 
     HRESULT AttachToProcess(int pid);

@@ -416,6 +416,19 @@ HRESULT Debugger::EmitThreadEvent(ThreadEvent event)
     return S_OK;
 }
 
+HRESULT Debugger::EmitOutputEvent(OutputEvent event)
+{
+    if (event.source.empty())
+        Debugger::Printf("=message,text=\"%s\",send-to=\"output-window\"\"\n",
+            Debugger::EscapeMIValue(event.output).c_str());
+    else
+        Debugger::Printf("=message,text=\"%s\",send-to=\"output-window\",source=\"%s\"\n",
+            Debugger::EscapeMIValue(event.output).c_str(),
+            Debugger::EscapeMIValue(event.source).c_str());
+
+    return S_OK;
+}
+
 HRESULT Debugger::HandleCommand(std::string command,
                                 const std::vector<std::string> &args,
                                 std::string &output)

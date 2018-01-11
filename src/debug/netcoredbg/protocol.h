@@ -122,3 +122,20 @@ struct ThreadEvent
 
     ThreadEvent(ThreadReason reason, int threadId) : reason(reason), threadId(threadId) {}
 };
+
+enum OutputCategory
+{
+    OutputConsole,
+    OutputStdOut,
+    OutputStdErr
+};
+
+struct OutputEvent
+{
+    OutputCategory category;
+    std::string output;
+
+    std::string source; // exposed for MI protocol
+
+    OutputEvent(OutputCategory category, std::string output) : category(OutputConsole), output(output) {}
+};
