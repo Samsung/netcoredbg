@@ -21,7 +21,7 @@
 static std::mutex g_breakMutex;
 static ULONG32 g_breakIndex = 1;
 
-struct Breakpoint {
+struct ManagedBreakpoint {
     ULONG32 id;
     CORDB_ADDRESS modAddress;
     mdMethodDef methodToken;
@@ -37,23 +37,23 @@ struct Breakpoint {
         return modAddress != 0;
     }
 
-    Breakpoint() :
+    ManagedBreakpoint() :
         id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr), enabled(true), times(0) {}
 
-    ~Breakpoint()
+    ~ManagedBreakpoint()
     {
         if (breakpoint)
             breakpoint->Activate(0);
     }
 
-    Breakpoint(Breakpoint &&that) = default;
+    ManagedBreakpoint(ManagedBreakpoint &&that) = default;
 
-    Breakpoint(const Breakpoint &that) = delete;
+    ManagedBreakpoint(const ManagedBreakpoint &that) = delete;
 };
 
-static std::map<ULONG32, Breakpoint> g_breaks;
+static std::map<ULONG32, ManagedBreakpoint> g_breaks;
 
-static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
+static HRESULT PrintBreakpoint(const ManagedBreakpoint &b, std::string &output)
 {
     HRESULT Status;
 
@@ -107,7 +107,7 @@ HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
 
     for (auto &it : g_breaks)
     {
-        Breakpoint &b = it.second;
+        ManagedBreakpoint &b = it.second;
 
         if (b.fullname == sp.document &&
             b.ilOffset == ilOffset &&
@@ -124,7 +124,7 @@ HRESULT HitBreakpoint(ICorDebugThread *pThread, ULONG32 &id, ULONG32 &times)
     return E_FAIL;
 }
 
-static ULONG32 InsertBreakpoint(Breakpoint &bp)
+static ULONG32 InsertBreakpoint(ManagedBreakpoint &bp)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
     ULONG32 id = g_breakIndex++;
@@ -135,7 +135,7 @@ static ULONG32 InsertBreakpoint(Breakpoint &bp)
 
 ULONG32 InsertExceptionBreakpoint(const std::string &name)
 {
-    Breakpoint bp;
+    ManagedBreakpoint bp;
     return InsertBreakpoint(bp);
 }
 
@@ -155,7 +155,7 @@ void DeleteAllBreakpoints()
     g_breaks.clear();
 }
 
-static HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, Breakpoint &bp)
+static HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp)
 {
     HRESULT Status;
 
@@ -191,7 +191,7 @@ static HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, Breakpoint &b
     return S_OK;
 }
 
-static HRESULT ResolveBreakpoint(Breakpoint &bp)
+static HRESULT ResolveBreakpoint(ManagedBreakpoint &bp)
 {
     HRESULT Status;
 
@@ -236,7 +236,7 @@ void TryResolveBreakpointsForModule(ICorDebugModule *pModule)
 
     for (auto &it : g_breaks)
     {
-        Breakpoint &b = it.second;
+        ManagedBreakpoint &b = it.second;
 
         if (b.IsResolved())
             continue;
@@ -250,7 +250,7 @@ void TryResolveBreakpointsForModule(ICorDebugModule *pModule)
     }
 }
 
-static HRESULT CreateBreakpointInProcess(Breakpoint &bp, ULONG32 &id)
+static HRESULT CreateBreakpointInProcess(ManagedBreakpoint &bp, ULONG32 &id)
 {
     if (SUCCEEDED(ResolveBreakpoint(bp)))
     {
@@ -262,7 +262,7 @@ static HRESULT CreateBreakpointInProcess(Breakpoint &bp, ULONG32 &id)
 
 HRESULT InsertBreakpointInProcess(ICorDebugProcess *pProcess, std::string filename, int linenum, ULONG32 &id)
 {
-    Breakpoint bp;
+    ManagedBreakpoint bp;
     bp.fullname = filename;
     bp.linenum = linenum;
 
