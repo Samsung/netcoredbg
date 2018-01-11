@@ -422,39 +422,31 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ BOOL unhandled)
         {
-            StackFrame stackFrame;
-            ToRelease<ICorDebugFrame> pFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                GetFrameLocation(pFrame, stackFrame);
-
-            DWORD threadId = 0;
-            pThread->GetID(&threadId);
-            SetLastStoppedThread(pThread);
-
             std::string excType;
             std::string excModule;
             GetExceptionInfo(pThread, excType, excModule);
 
             if (unhandled)
             {
-                std::string frameLocation;
-                PrintFrameLocation(stackFrame, frameLocation);
-                ToRelease<ICorDebugValue> pExceptionValue;
+                DWORD threadId = 0;
+                pThread->GetID(&threadId);
+
+                SetLastStoppedThread(pThread);
+
                 std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
-                std::string category = "clr";
-                auto printFunc = [=](const std::string &message) {
-                    Debugger::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                        excType.c_str(),
-                        Debugger::EscapeMIValue(message.empty() ? details : message).c_str(),
-                        unhandled ? "unhandled" : "handled",
-                        category.c_str(),
-                        (int)threadId,
-                        frameLocation.c_str());
+
+                ToRelease<ICorDebugValue> pExceptionValue;
+
+                auto emitFunc = [=](const std::string &message) {
+                    StoppedEvent event(StopException, threadId);
+                    event.text = excType;
+                    event.description = message.empty() ? details : message;
+                    m_debugger->EmitStoppedEvent(event);
                 };
 
-                if (FAILED(pThread->GetCurrentException(&pExceptionValue)) || FAILED(ObjectToString(pThread, pExceptionValue, printFunc)))
+                if (FAILED(pThread->GetCurrentException(&pExceptionValue)) || FAILED(ObjectToString(pThread, pExceptionValue, emitFunc)))
                 {
-                    printFunc(details);
+                    emitFunc(details);
                 }
             }
             else

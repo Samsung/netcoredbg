@@ -377,6 +377,18 @@ HRESULT Debugger::EmitStoppedEvent(StoppedEvent event)
                 event.threadId, frameLocation.c_str());
             return S_OK;
         }
+        case StopException:
+        {
+            std::string category = "clr";
+            std::string stage = "unhandled";
+            Debugger::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                event.text.c_str(),
+                Debugger::EscapeMIValue(event.description).c_str(),
+                stage.c_str(),
+                category.c_str(),
+                event.threadId,
+                frameLocation.c_str());
+        }
         default:
             return S_OK;
     }
