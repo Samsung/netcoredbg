@@ -400,6 +400,22 @@ HRESULT Debugger::EmitExitedEvent(ExitedEvent event)
     return S_OK;
 }
 
+HRESULT Debugger::EmitThreadEvent(ThreadEvent event)
+{
+    const char *reasonText = "";
+    switch(event.reason)
+    {
+        case ThreadStarted:
+            reasonText = "thread-created";
+            break;
+        case ThreadExited:
+            reasonText = "thread-exited";
+            break;
+    }
+    Debugger::Printf("=%s,id=\"%i\"\n", reasonText, event.threadId);
+    return S_OK;
+}
+
 HRESULT Debugger::HandleCommand(std::string command,
                                 const std::vector<std::string> &args,
                                 std::string &output)

@@ -501,7 +501,7 @@ public:
         {
             DWORD threadId = 0;
             thread->GetID(&threadId);
-            Debugger::Printf("=thread-created,id=\"%i\"\n", (int)threadId);
+            m_debugger->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -511,7 +511,10 @@ public:
             /* [in] */ ICorDebugThread *thread)
         {
             NotifyEvalComplete(thread, nullptr);
-            HandleEvent(pAppDomain, "ExitThread");
+            DWORD threadId = 0;
+            thread->GetID(&threadId);
+            m_debugger->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
+            pAppDomain->Continue(0);
             return S_OK;
         }
 

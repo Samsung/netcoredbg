@@ -56,6 +56,7 @@ class Debugger
 
     HRESULT EmitStoppedEvent(StoppedEvent event);
     HRESULT EmitExitedEvent(ExitedEvent event);
+    HRESULT EmitThreadEvent(ThreadEvent event);
 
 public:
     static HRESULT EmitBreakpointEvent(BreakpointEvent event);

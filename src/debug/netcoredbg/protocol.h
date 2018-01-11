@@ -108,3 +108,17 @@ struct ExitedEvent
 
     ExitedEvent(int exitCode) : exitCode(exitCode) {}
 };
+
+enum ThreadReason
+{
+    ThreadStarted,
+    ThreadExited
+};
+
+struct ThreadEvent
+{
+    ThreadReason reason;
+    int threadId;
+
+    ThreadEvent(ThreadReason reason, int threadId) : reason(reason), threadId(threadId) {}
+};
