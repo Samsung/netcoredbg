@@ -55,8 +55,8 @@ class Debugger
                                std::string &output, StepType stepType);
 
     HRESULT EmitStoppedEvent(StoppedEvent event);
+    HRESULT EmitExitedEvent(ExitedEvent event);
 
-    
 public:
     static HRESULT EmitBreakpointEvent(BreakpointEvent event);
 

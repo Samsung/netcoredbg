@@ -490,7 +490,7 @@ public:
             /* [in] */ ICorDebugProcess *pProcess)
         {
             NotifyEvalComplete(nullptr, nullptr);
-            Debugger::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", 0);
+            m_debugger->EmitExitedEvent(ExitedEvent(0));
             NotifyProcessExited();
             return S_OK;
         }

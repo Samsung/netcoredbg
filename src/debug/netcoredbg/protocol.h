@@ -101,3 +101,10 @@ struct BreakpointEvent
 
     BreakpointEvent(BreakpointReason reason, Breakpoint breakpoint) : reason(reason), breakpoint(breakpoint) {}
 };
+
+struct ExitedEvent
+{
+    int exitCode;
+
+    ExitedEvent(int exitCode) : exitCode(exitCode) {}
+};

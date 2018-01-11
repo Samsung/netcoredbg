@@ -394,6 +394,12 @@ HRESULT Debugger::EmitStoppedEvent(StoppedEvent event)
     }
 }
 
+HRESULT Debugger::EmitExitedEvent(ExitedEvent event)
+{
+    Debugger::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", event.exitCode);
+    return S_OK;
+}
+
 HRESULT Debugger::HandleCommand(std::string command,
                                 const std::vector<std::string> &args,
                                 std::string &output)
