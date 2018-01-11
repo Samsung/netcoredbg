@@ -53,12 +53,18 @@ class Debugger
     static HRESULT StepCommand(ICorDebugProcess *pProcess,
                                const std::vector<std::string> &args,
                                std::string &output, StepType stepType);
+
+    HRESULT EmitStoppedEvent(StoppedEvent event);
+
+    
 public:
+    static HRESULT EmitBreakpointEvent(BreakpointEvent event);
+
     static bool IsJustMyCode() { return m_justMyCode; }
     static void SetJustMyCode(bool enable) { m_justMyCode = enable; }
 
-    Debugger(ManagedCallback *cb) :
-        m_managedCallback(cb),
+    Debugger() :
+        m_managedCallback(nullptr),
         m_pDebug(nullptr),
         m_pProcess(nullptr),
         m_exit(false),
@@ -68,6 +74,8 @@ public:
         m_processId(0) {}
 
     ~Debugger();
+
+    void SetManagedCallback(ManagedCallback *managedCallback);
 
     static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
     static void Message(const char *fmt, ...) __attribute__((format (printf, 1, 2)));

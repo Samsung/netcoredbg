@@ -300,7 +300,9 @@ static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
 
 class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2
 {
+    friend class Debugger;
     ULONG m_refCount;
+    Debugger *m_debugger;
 public:
 
         void HandleEvent(ICorDebugController *controller, const char *eventName)
@@ -309,7 +311,7 @@ public:
             controller->Continue(0);
         }
 
-        ManagedCallback() : m_refCount(1) {}
+        ManagedCallback() : m_refCount(1), m_debugger(nullptr) {}
         virtual ~ManagedCallback() {}
 
         // IUnknown
@@ -368,24 +370,15 @@ public:
                 return S_OK;
             }
 
+            DWORD threadId = 0;
+            pThread->GetID(&threadId);
+
             ULONG32 id = 0;
             ULONG32 times = 0;
             HitBreakpoint(pThread, id, times);
 
-            StackFrame stackFrame;
-            ToRelease<ICorDebugFrame> pFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                GetFrameLocation(pFrame, stackFrame);
-
-            DWORD threadId = 0;
-            pThread->GetID(&threadId);
-
-            std::string output;
-            PrintFrameLocation(stackFrame, output);
-            Debugger::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
-                (int)threadId, (unsigned int)id, (unsigned int)times, output.c_str());
-
             SetLastStoppedThread(pThread);
+            m_debugger->EmitStoppedEvent(StoppedEvent(StopBreakpoint, threadId));
 
             return S_OK;
         }
@@ -711,6 +704,12 @@ public:
 };
 
 bool Debugger::m_justMyCode = true;
+
+void Debugger::SetManagedCallback(ManagedCallback *managedCallback)
+{
+    m_managedCallback = managedCallback;
+    m_managedCallback->m_debugger = this;
+}
 
 Debugger::~Debugger()
 {
@@ -1052,7 +1051,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    Debugger debugger(new ManagedCallback());
+    Debugger debugger;
+    debugger.SetManagedCallback(new ManagedCallback());
 
     if (pidDebuggee != 0)
     {

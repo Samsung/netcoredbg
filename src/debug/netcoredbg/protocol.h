@@ -42,10 +42,58 @@ struct StackFrame
     int endColumn;
     std::string moduleId;
 
-    ClrAddr clrAddr;
+    ClrAddr clrAddr; // exposed for MI protocol
 
     StackFrame() :
         id(0), line(0), column(0), endLine(0), endColumn(0) {}
 
     StackFrame(uint64_t id, std::string name) : id(id), name(name) {}
+};
+
+enum StopReason
+{
+    StopStep,
+    StopBreakpoint,
+    StopException,
+    StopPause,
+    StopEntry
+};
+
+struct StoppedEvent
+{
+    StopReason reason;
+    std::string description;
+    int threadId;
+    std::string text;
+    bool allThreadsStopped;
+
+    StoppedEvent(StopReason reason, int threadId = 0) : reason(reason), threadId(threadId), allThreadsStopped(true) {}
+};
+
+struct Breakpoint
+{
+    uint32_t id;
+    bool verified;
+    std::string message;
+    Source source;
+    int line;
+
+    uint32_t hitCount; // exposed for MI protocol
+
+    Breakpoint() : id(0), verified(false), line(0), hitCount(0) {}
+};
+
+enum BreakpointReason
+{
+    BreakpointChanged,
+    BreakpointNew,
+    BreakpointRemoved
+};
+
+struct BreakpointEvent
+{
+    BreakpointReason reason;
+    Breakpoint breakpoint;
+
+    BreakpointEvent(BreakpointReason reason, Breakpoint breakpoint) : reason(reason), breakpoint(breakpoint) {}
 };

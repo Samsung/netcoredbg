@@ -126,6 +126,45 @@ bool ParseBreakpoint(const std::vector<std::string> &args_orig, std::string &fil
     return ok && linenum > 0;
 }
 
+
+static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
+{
+    HRESULT Status;
+
+    std::stringstream ss;
+
+    if (b.verified)
+    {
+        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
+            "func=\"\",fullname=\"" << Debugger::EscapeMIValue(b.source.path) << "\",line=\"" << b.line << "\"}";
+        Status = S_OK;
+    }
+    else
+    {
+        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
+            "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
+        Status = S_FALSE;
+    }
+    output = ss.str();
+    return Status;
+}
+
+HRESULT Debugger::EmitBreakpointEvent(BreakpointEvent event)
+{
+    switch(event.reason)
+    {
+        case StopBreakpoint:
+        {
+            std::string output;
+            PrintBreakpoint(event.breakpoint, output);
+            Debugger::Printf("=breakpoint-modified,%s\n", output.c_str());
+            return S_OK;
+        }
+        default:
+            return S_OK;
+    }
+}
+
 static HRESULT BreakInsertCommand(
     ICorDebugProcess *pProcess,
     const std::vector<std::string> &args,
@@ -134,10 +173,11 @@ static HRESULT BreakInsertCommand(
     std::string filename;
     unsigned int linenum;
     ULONG32 id;
+    Breakpoint breakpoint;
     if (ParseBreakpoint(args, filename, linenum)
-        && SUCCEEDED(InsertBreakpointInProcess(pProcess, filename, linenum, id)))
+        && SUCCEEDED(InsertBreakpointInProcess(pProcess, filename, linenum, breakpoint)))
     {
-        PrintBreakpoint(id, output);
+        PrintBreakpoint(breakpoint, output);
         return S_OK;
     }
 
@@ -304,6 +344,36 @@ static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<s
     ss << "]";
     output = ss.str();
     return S_OK;
+}
+
+HRESULT Debugger::EmitStoppedEvent(StoppedEvent event)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugThread> pThread;
+
+    switch(event.reason)
+    {
+        case StopBreakpoint:
+        {
+            IfFailRet(m_pProcess->GetThread(event.threadId, &pThread));
+
+            StackFrame stackFrame;
+            ToRelease<ICorDebugFrame> pFrame;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+                GetFrameLocation(pFrame, stackFrame);
+
+            Breakpoint b;
+            IfFailRet(GetCurrentBreakpoint(pThread, b));
+
+            std::string output;
+            PrintFrameLocation(stackFrame, output);
+            Debugger::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
+                event.threadId, (unsigned int)b.id, (unsigned int)b.hitCount, output.c_str());
+            return S_OK;
+        }
+        default:
+            return S_OK;
+    }
 }
 
 HRESULT Debugger::HandleCommand(std::string command,
@@ -518,10 +588,11 @@ HRESULT Debugger::HandleCommand(std::string command,
         ss << "bkpt=[";
         for (; i < args.size(); i++)
         {
-            ULONG32 id = InsertExceptionBreakpoint(args.at(i));
+            Breakpoint b;
+            InsertExceptionBreakpoint(args.at(i), b);
             ss << sep;
             sep = ",";
-            ss << "{number=\"" << id << "\"}";
+            ss << "{number=\"" << b.id << "\"}";
         }
         ss << "]";
         output = ss.str();
