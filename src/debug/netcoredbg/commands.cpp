@@ -165,32 +165,6 @@ void MIProtocol::EmitBreakpointEvent(BreakpointEvent event)
     }
 }
 
-static HRESULT BreakInsertCommand(
-    ICorDebugProcess *pProcess,
-    const std::vector<std::string> &args,
-    std::string &output)
-{
-    std::string filename;
-    unsigned int linenum;
-    ULONG32 id;
-    Breakpoint breakpoint;
-    if (ParseBreakpoint(args, filename, linenum)
-        && SUCCEEDED(InsertBreakpointInProcess(pProcess, filename, linenum, breakpoint)))
-    {
-        PrintBreakpoint(breakpoint, output);
-        return S_OK;
-    }
-
-    output = "Unknown breakpoint location format";
-    return E_FAIL;
-}
-
-enum StepType {
-    STEP_IN = 0,
-    STEP_OVER,
-    STEP_OUT
-};
-
 HRESULT Debugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepType)
 {
     HRESULT Status;
@@ -238,6 +212,45 @@ HRESULT Debugger::StepCommand(int threadId,
     IfFailRet(SetupStep(pThread, stepType));
     IfFailRet(m_pProcess->Continue(0));
     return S_OK;
+}
+
+HRESULT Debugger::Continue()
+{
+    if (!m_pProcess)
+        return E_FAIL;
+    return m_pProcess->Continue(0);
+}
+
+HRESULT Debugger::Pause()
+{
+    if (!m_pProcess)
+        return E_FAIL;
+    HRESULT Status = m_pProcess->Stop(0);
+    if (Status == S_OK)
+        m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, 0));
+    return Status;
+}
+
+HRESULT Debugger::GetThreads(std::vector<Thread> &threads)
+{
+    if (!m_pProcess)
+        return E_FAIL;
+    return GetThreadsState(m_pProcess, threads);
+}
+
+HRESULT Debugger::SetBreakpoint(std::string filename, int linenum, Breakpoint &breakpoint)
+{
+    return InsertBreakpointInProcess(m_pProcess, filename, linenum, breakpoint);
+}
+
+HRESULT Debugger::GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
+{
+    HRESULT Status;
+    if (!m_pProcess)
+        return E_FAIL;
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
+    return ::GetStackTrace(pThread, lowFrame, highFrame, stackFrames);
 }
 
 HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
@@ -292,13 +305,13 @@ HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
     return stackFrame.source.IsNull() ? S_FALSE : S_OK;
 }
 
-static HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame, int highFrame)
+HRESULT MIProtocol::PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame)
 {
     HRESULT Status;
     std::stringstream ss;
 
     std::vector<StackFrame> stackFrames;
-    IfFailRet(GetStackTrace(pThread, lowFrame, highFrame, stackFrames));
+    IfFailRet(m_debugger->GetStackTrace(threadId, lowFrame, highFrame, stackFrames));
 
     int currentFrame = lowFrame;
 
@@ -324,33 +337,6 @@ static HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lo
 
     output = ss.str();
 
-    return S_OK;
-}
-
-static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &output)
-{
-    if (!pProcess) return E_FAIL;
-
-    HRESULT Status = S_OK;
-
-    std::vector<Thread> threads;
-    IfFailRet(GetThreadsState(pProcess, threads));
-
-    std::stringstream ss;
-
-    ss << "threads=[";
-
-    const char *sep = "";
-    for (const Thread& thread : threads)
-    {
-        ss << "{id=\"" << thread.id
-           << "\",name=\"" << MIProtocol::EscapeMIValue(thread.name) << "\",state=\""
-           << (thread.running ? "running" : "stopped") << "\"}" << sep;
-        sep = ",";
-    }
-
-    ss << "]";
-    output = ss.str();
     return S_OK;
 }
 
@@ -386,6 +372,12 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
                 category.c_str(),
                 event.threadId,
                 frameLocation.c_str());
+            return;
+        }
+        case StopPause:
+        {
+            MIProtocol::Printf("*stopped,reason=\"interrupted\",stopped-threads=\"all\"\n");
+            return;
         }
         default:
             break;
@@ -428,18 +420,56 @@ HRESULT MIProtocol::HandleCommand(std::string command,
                                   std::string &output)
 {
     static std::unordered_map<std::string, CommandCallback> commands {
-    { "thread-info", ThreadInfoCommand },
-    { "exec-continue", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &output){
+    { "thread-info", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output){
+        HRESULT Status = S_OK;
+
+        std::vector<Thread> threads;
+        IfFailRet(m_debugger->GetThreads(threads));
+
+        std::stringstream ss;
+
+        ss << "threads=[";
+
+        const char *sep = "";
+        for (const Thread& thread : threads)
+        {
+            ss << "{id=\"" << thread.id
+            << "\",name=\"" << MIProtocol::EscapeMIValue(thread.name) << "\",state=\""
+            << (thread.running ? "running" : "stopped") << "\"}" << sep;
+            sep = ",";
+        }
+
+        ss << "]";
+        output = ss.str();
+        return S_OK;
+    } },
+    { "exec-continue", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output){
         HRESULT Status;
-        if (!pProcess) return E_FAIL;
-        IfFailRet(pProcess->Continue(0));
+        IfFailRet(m_debugger->Continue());
         output = "^running";
         return S_OK;
     } },
-    { "exec-interrupt", [](ICorDebugProcess *pProcess, const std::vector<std::string> &, std::string &){
-        if (!pProcess) return E_FAIL;
-        return pProcess->Stop(0); } },
-    { "break-insert", BreakInsertCommand },
+    { "exec-interrupt", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output){
+        HRESULT Status;
+        IfFailRet(m_debugger->Pause());
+        output = "^done";
+        return S_OK;
+    } },
+    { "break-insert", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        std::string filename;
+        unsigned int linenum;
+        ULONG32 id;
+        Breakpoint breakpoint;
+        if (ParseBreakpoint(args, filename, linenum)
+            && SUCCEEDED(m_debugger->SetBreakpoint(filename, linenum, breakpoint)))
+        {
+            PrintBreakpoint(breakpoint, output);
+            return S_OK;
+        }
+
+        output = "Unknown breakpoint location format";
+        return E_FAIL;
+    } },
     { "break-delete", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &) -> HRESULT {
         for (const std::string &idStr : args)
         {
@@ -481,19 +511,14 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         m_debugger->DetachFromProcess();
         return S_OK;
     }},
-    { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
-        if (!pProcess) return E_FAIL;
+    { "stack-list-frames", [this](ICorDebugProcess *, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         std::vector<std::string> args = args_orig;
-        HRESULT Status;
-        ToRelease<ICorDebugThread> pThread;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
-        IfFailRet(pProcess->GetThread(threadId, &pThread));
         int lowFrame = 0;
         int highFrame = INT_MAX;
         StripArgs(args);
         GetIndices(args, lowFrame, highFrame);
-        IfFailRet(PrintFrames(pThread, output, lowFrame, highFrame));
-        return S_OK;
+        return PrintFrames(threadId, output, lowFrame, highFrame);
     }},
     { "stack-list-variables", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (!pProcess) return E_FAIL;

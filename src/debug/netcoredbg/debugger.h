@@ -71,7 +71,11 @@ public:
     HRESULT TerminateProcess();
 
     ICorDebugProcess *GetProcess() { return m_pProcess; }
-
+    HRESULT Continue();
+    HRESULT Pause();
+    HRESULT GetThreads(std::vector<Thread> &threads);
+    HRESULT SetBreakpoint(std::string filename, int linenum, Breakpoint &breakpoint);
+    HRESULT GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
     HRESULT StepCommand(int threadId, StepType stepType);
 };
 
@@ -116,6 +120,7 @@ private:
     HRESULT StepCommand(const std::vector<std::string> &args,
                         std::string &output,
                         Debugger::StepType stepType);
+    HRESULT PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame);
 };
 
 HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
