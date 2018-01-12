@@ -98,9 +98,9 @@ BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
     return bRet;
 }
 
-std::mutex Debugger::m_outMutex;
+std::mutex MIProtocol::m_outMutex;
 
-void Debugger::Printf(const char *fmt, ...)
+void MIProtocol::Printf(const char *fmt, ...)
 {
     std::lock_guard<std::mutex> lock(m_outMutex);
     va_list arg;
@@ -113,7 +113,7 @@ void Debugger::Printf(const char *fmt, ...)
 }
 
 // TODO: Merge with EscapeString
-std::string Debugger::EscapeMIValue(const std::string &str)
+std::string MIProtocol::EscapeMIValue(const std::string &str)
 {
     std::string s(str);
 
@@ -276,7 +276,7 @@ public:
         void HandleEvent(ICorDebugController *controller, const std::string &eventName)
         {
             std::string text = "Event received: '" + eventName + "'\n";
-            m_debugger->EmitOutputEvent(OutputEvent(OutputConsole, text));
+            m_debugger->m_protocol->EmitOutputEvent(OutputEvent(OutputConsole, text));
             controller->Continue(0);
         }
 
@@ -350,7 +350,7 @@ public:
                 GetFrameLocation(pFrame, threadId, 0, event.frame);
 
             SetLastStoppedThread(pThread);
-            m_debugger->EmitStoppedEvent(event);
+            m_debugger->m_protocol->EmitStoppedEvent(event);
 
             return S_OK;
         }
@@ -383,7 +383,7 @@ public:
                 event.frame = stackFrame;
 
                 SetLastStoppedThread(pThread);
-                m_debugger->EmitStoppedEvent(event);
+                m_debugger->m_protocol->EmitStoppedEvent(event);
             }
             return S_OK;
         }
@@ -422,7 +422,7 @@ public:
                     event.text = excType;
                     event.description = message.empty() ? details : message;
                     event.frame = stackFrame;
-                    m_debugger->EmitStoppedEvent(event);
+                    m_debugger->m_protocol->EmitStoppedEvent(event);
                 };
 
                 if (FAILED(pThread->GetCurrentException(&pExceptionValue)) || FAILED(ObjectToString(pThread, pExceptionValue, emitFunc)))
@@ -435,7 +435,7 @@ public:
                 std::string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
                 OutputEvent event(OutputConsole, text);
                 event.source = "target-exception";
-                m_debugger->EmitOutputEvent(event);
+                m_debugger->m_protocol->EmitOutputEvent(event);
                 pAppDomain->Continue(0);
             }
 
@@ -473,7 +473,7 @@ public:
             /* [in] */ ICorDebugProcess *pProcess)
         {
             NotifyEvalComplete(nullptr, nullptr);
-            m_debugger->EmitExitedEvent(ExitedEvent(0));
+            m_debugger->m_protocol->EmitExitedEvent(ExitedEvent(0));
             NotifyProcessExited();
             return S_OK;
         }
@@ -484,7 +484,7 @@ public:
         {
             DWORD threadId = 0;
             thread->GetID(&threadId);
-            m_debugger->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
+            m_debugger->m_protocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -496,7 +496,7 @@ public:
             NotifyEvalComplete(thread, nullptr);
             DWORD threadId = 0;
             thread->GetID(&threadId);
-            m_debugger->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
+            m_debugger->m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -515,15 +515,15 @@ public:
 
             std::stringstream ss;
             ss << "id=\"{" << id << "}\","
-                << "target-name=\"" << Debugger::EscapeMIValue(name) << "\","
-                << "host-name=\"" << Debugger::EscapeMIValue(name) << "\","
+                << "target-name=\"" << MIProtocol::EscapeMIValue(name) << "\","
+                << "host-name=\"" << MIProtocol::EscapeMIValue(name) << "\","
                 << "symbols-loaded=\"" << symbolsLoaded << "\","
                 << "base-address=\"0x" << std::hex << baseAddress << "\","
                 << "size=\"" << std::dec << size << "\"";
-            Debugger::Printf("=library-loaded,%s\n", ss.str().c_str());
+            MIProtocol::Printf("=library-loaded,%s\n", ss.str().c_str());
 
             if (symbolsLoaded)
-                TryResolveBreakpointsForModule(pModule);
+                m_debugger->TryResolveBreakpointsForModule(pModule);
 
             pAppDomain->Continue(0);
             return S_OK;
@@ -828,7 +828,7 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
     return S_OK;
 }
 
-HRESULT Debugger::RunProcess()
+HRESULT Debugger::RunProcess(std::string fileExec, std::vector<std::string> execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
     HRESULT Status;
@@ -836,10 +836,10 @@ HRESULT Debugger::RunProcess()
     IfFailRet(CheckNoProcess());
 
     std::stringstream ss;
-    ss << "\"" << m_fileExec << "\"";
-    for (std::string &arg : m_execArgs)
+    ss << "\"" << fileExec << "\"";
+    for (std::string &arg : execArgs)
     {
-        ss << " \"" << EscapeMIValue(arg) << "\"";
+        ss << " \"" << MIProtocol::EscapeMIValue(arg) << "\"";
     }
     std::string cmdString = ss.str();
     std::unique_ptr<WCHAR[]> cmd(new WCHAR[cmdString.size() + 1]);
@@ -1029,6 +1029,9 @@ int main(int argc, char *argv[])
     Debugger debugger;
     debugger.SetManagedCallback(new ManagedCallback());
 
+    MIProtocol protocol;
+    protocol.SetDebugger(&debugger);
+
     if (pidDebuggee != 0)
     {
         HRESULT Status = debugger.AttachToProcess(pidDebuggee);
@@ -1039,7 +1042,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    debugger.CommandLoop();
+    protocol.CommandLoop();
 
     return EXIT_SUCCESS;
 }

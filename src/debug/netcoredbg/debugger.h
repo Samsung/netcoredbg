@@ -6,20 +6,25 @@
 
 
 class ManagedCallback;
+class Protocol;
 
 class Debugger
 {
+public:
+    enum StepType {
+        STEP_IN = 0,
+        STEP_OVER,
+        STEP_OUT
+    };
+
+private:
     friend class ManagedCallback;
+    Protocol *m_protocol;
     ManagedCallback *m_managedCallback;
     ICorDebug *m_pDebug;
     ICorDebugProcess *m_pProcess;
-    bool m_exit;
 
     static bool m_justMyCode;
-    static std::mutex m_outMutex;
-
-    std::string m_fileExec;
-    std::vector<std::string> m_execArgs;
 
     std::mutex m_startupMutex;
     std::condition_variable m_startupCV;
@@ -32,36 +37,14 @@ class Debugger
 
     HRESULT CheckNoProcess();
 
-    HRESULT HandleCommand(std::string command,
-                          const std::vector<std::string> &args,
-                          std::string &output);
-
     static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
     HRESULT Startup(IUnknown *punk, int pid);
 
-    HRESULT RunProcess();
-
     void Cleanup();
 
-    enum StepType {
-        STEP_IN = 0,
-        STEP_OVER,
-        STEP_OUT
-    };
-
     static HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
-    static HRESULT StepCommand(ICorDebugProcess *pProcess,
-                               const std::vector<std::string> &args,
-                               std::string &output, StepType stepType);
-
-    static void EmitStoppedEvent(StoppedEvent event);
-    static void EmitExitedEvent(ExitedEvent event);
-    static void EmitThreadEvent(ThreadEvent event);
-    static void EmitOutputEvent(OutputEvent event);
 
 public:
-    static void EmitBreakpointEvent(BreakpointEvent event);
-
     static bool IsJustMyCode() { return m_justMyCode; }
     static void SetJustMyCode(bool enable) { m_justMyCode = enable; }
 
@@ -69,7 +52,6 @@ public:
         m_managedCallback(nullptr),
         m_pDebug(nullptr),
         m_pProcess(nullptr),
-        m_exit(false),
         m_startupReady(false),
         m_startupResult(S_OK),
         m_unregisterToken(nullptr),
@@ -77,17 +59,63 @@ public:
 
     ~Debugger();
 
+    void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
+
+    void SetProtocol(Protocol *protocol) { m_protocol = protocol; }
     void SetManagedCallback(ManagedCallback *managedCallback);
 
-    static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
-
-    static std::string EscapeMIValue(const std::string &str);
+    HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
 
     HRESULT AttachToProcess(int pid);
     HRESULT DetachFromProcess();
     HRESULT TerminateProcess();
 
-    void CommandLoop();
+    ICorDebugProcess *GetProcess() { return m_pProcess; }
+
+    HRESULT StepCommand(int threadId, StepType stepType);
+};
+
+class Protocol
+{
+public:
+    virtual void EmitStoppedEvent(StoppedEvent event) = 0;
+    virtual void EmitExitedEvent(ExitedEvent event) = 0;
+    virtual void EmitThreadEvent(ThreadEvent event) = 0;
+    virtual void EmitOutputEvent(OutputEvent event) = 0;
+    virtual void EmitBreakpointEvent(BreakpointEvent event) = 0;
+    virtual void CommandLoop() = 0;
+};
+
+class MIProtocol : public Protocol
+{
+    static std::mutex m_outMutex;
+    bool m_exit;
+    Debugger *m_debugger;
+
+    std::string m_fileExec;
+    std::vector<std::string> m_execArgs;
+public:
+    void SetDebugger(Debugger *debugger) { m_debugger = debugger; m_debugger->SetProtocol(this); }
+    static std::string EscapeMIValue(const std::string &str);
+
+    MIProtocol() : m_exit(false) {}
+    void EmitStoppedEvent(StoppedEvent event) override;
+    void EmitExitedEvent(ExitedEvent event) override;
+    void EmitThreadEvent(ThreadEvent event) override;
+    void EmitOutputEvent(OutputEvent event) override;
+    void EmitBreakpointEvent(BreakpointEvent event) override;
+    void CommandLoop() override;
+
+    static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
+
+private:
+    HRESULT HandleCommand(std::string command,
+                          const std::vector<std::string> &args,
+                          std::string &output);
+
+    HRESULT StepCommand(const std::vector<std::string> &args,
+                        std::string &output,
+                        Debugger::StepType stepType);
 };
 
 HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);

@@ -9,4 +9,3 @@ HRESULT GetCurrentBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint);
 
 void DeleteAllBreakpoints();
 HRESULT HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint);
-void TryResolveBreakpointsForModule(ICorDebugModule *pModule);

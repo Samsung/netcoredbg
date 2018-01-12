@@ -241,7 +241,7 @@ static HRESULT ResolveBreakpoint(ManagedBreakpoint &bp)
     return S_OK;
 }
 
-void TryResolveBreakpointsForModule(ICorDebugModule *pModule)
+void Debugger::TryResolveBreakpointsForModule(ICorDebugModule *pModule)
 {
     std::lock_guard<std::mutex> lock(g_breakMutex);
 
@@ -256,7 +256,7 @@ void TryResolveBreakpointsForModule(ICorDebugModule *pModule)
         {
             Breakpoint breakpoint;
             b.ToBreakpoint(breakpoint);
-            Debugger::EmitBreakpointEvent(BreakpointEvent(BreakpointChanged, breakpoint));
+            m_protocol->EmitBreakpointEvent(BreakpointEvent(BreakpointChanged, breakpoint));
         }
     }
 }

@@ -136,7 +136,7 @@ static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
     if (b.verified)
     {
         ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "func=\"\",fullname=\"" << Debugger::EscapeMIValue(b.source.path) << "\",line=\"" << b.line << "\"}";
+            "func=\"\",fullname=\"" << MIProtocol::EscapeMIValue(b.source.path) << "\",line=\"" << b.line << "\"}";
         Status = S_OK;
     }
     else
@@ -149,7 +149,7 @@ static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
     return Status;
 }
 
-void Debugger::EmitBreakpointEvent(BreakpointEvent event)
+void MIProtocol::EmitBreakpointEvent(BreakpointEvent event)
 {
     switch(event.reason)
     {
@@ -157,7 +157,7 @@ void Debugger::EmitBreakpointEvent(BreakpointEvent event)
         {
             std::string output;
             PrintBreakpoint(event.breakpoint, output);
-            Debugger::Printf("=breakpoint-modified,%s\n", output.c_str());
+            MIProtocol::Printf("=breakpoint-modified,%s\n", output.c_str());
             return;
         }
         default:
@@ -228,17 +228,25 @@ HRESULT Debugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepTyp
     return S_OK;
 }
 
-HRESULT Debugger::StepCommand(ICorDebugProcess *pProcess,
-                              const std::vector<std::string> &args,
-                              std::string &output, StepType stepType)
+HRESULT Debugger::StepCommand(int threadId,
+                              StepType stepType)
 {
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
-    DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
-    IfFailRet(pProcess->GetThread(threadId, &pThread));
-    DisableAllSteppers(pProcess);
+    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
+    DisableAllSteppers(m_pProcess);
     IfFailRet(SetupStep(pThread, stepType));
-    IfFailRet(pProcess->Continue(0));
+    IfFailRet(m_pProcess->Continue(0));
+    return S_OK;
+}
+
+HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
+                                std::string &output,
+                                Debugger::StepType stepType)
+{
+    HRESULT Status;
+    DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+    m_debugger->StepCommand(threadId, stepType);
     output = "^running";
     return S_OK;
 }
@@ -258,8 +266,8 @@ HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 
     if (!stackFrame.source.IsNull())
     {
-        ss << "file=\"" << Debugger::EscapeMIValue(stackFrame.source.name) << "\","
-           << "fullname=\"" << Debugger::EscapeMIValue(stackFrame.source.path) << "\","
+        ss << "file=\"" << MIProtocol::EscapeMIValue(stackFrame.source.name) << "\","
+           << "fullname=\"" << MIProtocol::EscapeMIValue(stackFrame.source.path) << "\","
            << "line=\"" << stackFrame.line << "\","
            << "col=\"" << stackFrame.column << "\","
            << "end-line=\"" << stackFrame.endLine << "\","
@@ -336,7 +344,7 @@ static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<s
     for (const Thread& thread : threads)
     {
         ss << "{id=\"" << thread.id
-           << "\",name=\"" << Debugger::EscapeMIValue(thread.name) << "\",state=\""
+           << "\",name=\"" << MIProtocol::EscapeMIValue(thread.name) << "\",state=\""
            << (thread.running ? "running" : "stopped") << "\"}" << sep;
         sep = ",";
     }
@@ -346,7 +354,7 @@ static HRESULT ThreadInfoCommand(ICorDebugProcess *pProcess, const std::vector<s
     return S_OK;
 }
 
-void Debugger::EmitStoppedEvent(StoppedEvent event)
+void MIProtocol::EmitStoppedEvent(StoppedEvent event)
 {
     HRESULT Status;
 
@@ -357,13 +365,13 @@ void Debugger::EmitStoppedEvent(StoppedEvent event)
     {
         case StopBreakpoint:
         {
-            Debugger::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
+            MIProtocol::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
                 event.threadId, (unsigned int)event.breakpoint.id, (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
             return;
         }
         case StopStep:
         {
-            Debugger::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+            MIProtocol::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 event.threadId, frameLocation.c_str());
             return;
         }
@@ -371,9 +379,9 @@ void Debugger::EmitStoppedEvent(StoppedEvent event)
         {
             std::string category = "clr";
             std::string stage = "unhandled";
-            Debugger::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+            MIProtocol::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 event.text.c_str(),
-                Debugger::EscapeMIValue(event.description).c_str(),
+                MIProtocol::EscapeMIValue(event.description).c_str(),
                 stage.c_str(),
                 category.c_str(),
                 event.threadId,
@@ -384,12 +392,12 @@ void Debugger::EmitStoppedEvent(StoppedEvent event)
     }
 }
 
-void Debugger::EmitExitedEvent(ExitedEvent event)
+void MIProtocol::EmitExitedEvent(ExitedEvent event)
 {
-    Debugger::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", event.exitCode);
+    MIProtocol::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", event.exitCode);
 }
 
-void Debugger::EmitThreadEvent(ThreadEvent event)
+void MIProtocol::EmitThreadEvent(ThreadEvent event)
 {
     const char *reasonText = "";
     switch(event.reason)
@@ -401,23 +409,23 @@ void Debugger::EmitThreadEvent(ThreadEvent event)
             reasonText = "thread-exited";
             break;
     }
-    Debugger::Printf("=%s,id=\"%i\"\n", reasonText, event.threadId);
+    MIProtocol::Printf("=%s,id=\"%i\"\n", reasonText, event.threadId);
 }
 
-void Debugger::EmitOutputEvent(OutputEvent event)
+void MIProtocol::EmitOutputEvent(OutputEvent event)
 {
     if (event.source.empty())
-        Debugger::Printf("=message,text=\"%s\",send-to=\"output-window\"\"\n",
-            Debugger::EscapeMIValue(event.output).c_str());
+        MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\"\"\n",
+            MIProtocol::EscapeMIValue(event.output).c_str());
     else
-        Debugger::Printf("=message,text=\"%s\",send-to=\"output-window\",source=\"%s\"\n",
-            Debugger::EscapeMIValue(event.output).c_str(),
-            Debugger::EscapeMIValue(event.source).c_str());
+        MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\",source=\"%s\"\n",
+            MIProtocol::EscapeMIValue(event.output).c_str(),
+            MIProtocol::EscapeMIValue(event.source).c_str());
 }
 
-HRESULT Debugger::HandleCommand(std::string command,
-                                const std::vector<std::string> &args,
-                                std::string &output)
+HRESULT MIProtocol::HandleCommand(std::string command,
+                                  const std::vector<std::string> &args,
+                                  std::string &output)
 {
     static std::unordered_map<std::string, CommandCallback> commands {
     { "thread-info", ThreadInfoCommand },
@@ -442,11 +450,17 @@ HRESULT Debugger::HandleCommand(std::string command,
         }
         return S_OK;
     } },
-    { "exec-step", std::bind(StepCommand, _1, _2, _3, STEP_IN) },
-    { "exec-next", std::bind(StepCommand, _1, _2, _3, STEP_OVER) },
-    { "exec-finish", std::bind(StepCommand, _1, _2, _3, STEP_OUT) },
+    { "exec-step", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        return StepCommand(args, output, Debugger::STEP_IN);
+    }},
+    { "exec-next", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        return StepCommand(args, output, Debugger::STEP_OVER);
+    }},
+    { "exec-finish", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        return StepCommand(args, output, Debugger::STEP_OUT);
+    }},
     { "exec-abort", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
-        this->TerminateProcess();
+        m_debugger->TerminateProcess();
         return S_OK;
     }},
     { "target-attach", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -459,12 +473,12 @@ HRESULT Debugger::HandleCommand(std::string command,
         bool ok;
         int pid = ParseInt(args.at(0), ok);
         if (!ok) return E_INVALIDARG;
-        IfFailRet(this->AttachToProcess(pid));
+        IfFailRet(m_debugger->AttachToProcess(pid));
         // TODO: print succeessful result
         return S_OK;
     }},
     { "target-detach", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
-        this->DetachFromProcess();
+        m_debugger->DetachFromProcess();
         return S_OK;
     }},
     { "stack-list-frames", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
@@ -571,7 +585,7 @@ HRESULT Debugger::HandleCommand(std::string command,
     { "gdb-exit", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         this->m_exit = true;
 
-        this->TerminateProcess();
+        m_debugger->TerminateProcess();
 
         return S_OK;
     }},
@@ -586,7 +600,7 @@ HRESULT Debugger::HandleCommand(std::string command,
         return S_OK;
     }},
     { "exec-run", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        HRESULT Status = RunProcess();
+        HRESULT Status = m_debugger->RunProcess(m_fileExec, m_execArgs);
         if (SUCCEEDED(Status))
             output = "^running";
         return Status;
@@ -652,7 +666,7 @@ HRESULT Debugger::HandleCommand(std::string command,
         return E_FAIL;
     }
 
-    return command_it->second(m_pProcess, args, output);
+    return command_it->second(m_debugger->GetProcess(), args, output);
 }
 
 static std::vector<std::string> TokenizeString(const std::string &str, const char *delimiters = " \t\n\r")
@@ -732,7 +746,7 @@ static bool ParseLine(const std::string &str,
     return true;
 }
 
-void Debugger::CommandLoop()
+void MIProtocol::CommandLoop()
 {
     static char inputBuffer[1024];
     std::string token;
@@ -779,7 +793,7 @@ void Debugger::CommandLoop()
     }
 
     if (!m_exit)
-        TerminateProcess();
+        m_debugger->TerminateProcess();
 
     Printf("%s^exit\n", token.c_str());
 }
