@@ -22,7 +22,7 @@ struct Source
     std::string path;
 
     Source(std::string path = std::string()) : name(GetFileName(path)), path(path) {}
-    bool isNull() const { return name.empty() && path.empty(); }
+    bool IsNull() const { return name.empty() && path.empty(); }
 };
 
 struct ClrAddr
@@ -32,7 +32,7 @@ struct ClrAddr
     uint32_t methodToken;
 
     ClrAddr() : ilOffset(0), nativeOffset(0), methodToken(0) {}
-    bool isNull() const { return methodToken == 0; }
+    bool IsNull() const { return methodToken == 0; }
 };
 
 struct StackFrame

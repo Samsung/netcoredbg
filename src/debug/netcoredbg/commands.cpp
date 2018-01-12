@@ -256,7 +256,7 @@ HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 
     std::stringstream ss;
 
-    if (!stackFrame.source.isNull())
+    if (!stackFrame.source.IsNull())
     {
         ss << "file=\"" << Debugger::EscapeMIValue(stackFrame.source.name) << "\","
            << "fullname=\"" << Debugger::EscapeMIValue(stackFrame.source.path) << "\","
@@ -281,7 +281,7 @@ HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 
     output = ss.str();
 
-    return stackFrame.source.isNull() ? S_FALSE : S_OK;
+    return stackFrame.source.IsNull() ? S_FALSE : S_OK;
 }
 
 static HRESULT PrintFrames(ICorDebugThread *pThread, std::string &output, int lowFrame, int highFrame)

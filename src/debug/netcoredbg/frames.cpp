@@ -102,7 +102,7 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, S
 
     TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
-    return stackFrame.source.isNull() ? S_FALSE : S_OK;
+    return stackFrame.source.IsNull() ? S_FALSE : S_OK;
 }
 
 struct NativeFrame
