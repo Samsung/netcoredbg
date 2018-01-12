@@ -277,7 +277,7 @@ HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 
     ss << "func=\"" << stackFrame.name << "\"";
     if (stackFrame.id != 0)
-        ss << ",addr=\"" << AddrToString(stackFrame.id) << "\"";
+        ss << ",addr=\"" << AddrToString(stackFrame.addr) << "\"";
 
     output = ss.str();
 

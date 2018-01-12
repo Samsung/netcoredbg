@@ -56,7 +56,7 @@ static uint64_t FrameAddr(ICorDebugFrame *pFrame)
     return startAddr;
 }
 
-HRESULT GetFrameLocation(ICorDebugFrame *pFrame, StackFrame &stackFrame)
+HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame)
 {
     HRESULT Status;
 
@@ -393,6 +393,9 @@ HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std
     HRESULT Status;
     std::stringstream ss;
 
+    DWORD threadId = 0;
+    pThread->GetID(&threadId);
+
     int currentFrame = -1;
 
     IfFailRet(WalkFrames(pThread, [&](
@@ -411,15 +414,18 @@ HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std
         switch(frameType)
         {
             case FrameUnknown:
-                stackFrames.emplace_back(FrameAddr(pFrame), "?");
+                stackFrames.emplace_back(threadId, currentFrame, "?");
+                stackFrames.back().addr = FrameAddr(pFrame);
                 break;
             case FrameNative:
-                stackFrames.emplace_back(pNative->addr, pNative->symbol);
+                stackFrames.emplace_back(threadId, currentFrame, pNative->symbol);
+                stackFrames.back().addr = pNative->addr;
                 stackFrames.back().source = Source(pNative->file);
                 stackFrames.back().line = pNative->linenum;
                 break;
             case FrameCLRNative:
-                stackFrames.emplace_back(FrameAddr(pFrame), "[Native Frame]");
+                stackFrames.emplace_back(threadId, currentFrame, "[Native Frame]");
+                stackFrames.back().addr = FrameAddr(pFrame);
                 break;
             case FrameCLRInternal:
                 {
@@ -430,13 +436,14 @@ HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std
                     std::string name = "[";
                     name += GetInternalTypeName(frameType);
                     name += "]";
-                    stackFrames.emplace_back(FrameAddr(pFrame), name);
+                    stackFrames.emplace_back(threadId, currentFrame, name);
+                    stackFrames.back().addr = FrameAddr(pFrame);
                 }
                 break;
             case FrameCLRManaged:
                 {
                     StackFrame stackFrame;
-                    GetFrameLocation(pFrame, stackFrame);
+                    GetFrameLocation(pFrame, threadId, currentFrame, stackFrame);
                     stackFrames.push_back(stackFrame);
                 }
                 break;

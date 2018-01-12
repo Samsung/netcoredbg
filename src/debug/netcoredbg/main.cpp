@@ -347,7 +347,7 @@ public:
 
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                GetFrameLocation(pFrame, event.frame);
+                GetFrameLocation(pFrame, threadId, 0, event.frame);
 
             SetLastStoppedThread(pThread);
             m_debugger->EmitStoppedEvent(event);
@@ -361,11 +361,14 @@ public:
             /* [in] */ ICorDebugStepper *pStepper,
             /* [in] */ CorDebugStepReason reason)
         {
+            DWORD threadId = 0;
+            pThread->GetID(&threadId);
+
             StackFrame stackFrame;
             ToRelease<ICorDebugFrame> pFrame;
             HRESULT Status = S_FALSE;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                Status = GetFrameLocation(pFrame, stackFrame);
+                Status = GetFrameLocation(pFrame, threadId, 0, stackFrame);
 
             const bool no_source = Status == S_FALSE;
 
@@ -376,9 +379,6 @@ public:
             }
             else
             {
-                DWORD threadId = 0;
-                pThread->GetID(&threadId);
-
                 StoppedEvent event(StopStep, threadId);
                 event.frame = stackFrame;
 
@@ -409,7 +409,7 @@ public:
                 StackFrame stackFrame;
                 ToRelease<ICorDebugFrame> pFrame;
                 if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                    GetFrameLocation(pFrame, stackFrame);
+                    GetFrameLocation(pFrame, threadId, 0, stackFrame);
 
                 SetLastStoppedThread(pThread);
 
