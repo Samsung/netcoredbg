@@ -4,7 +4,7 @@ set(netcoredbg_SRC
     platform.cpp
     breakpoints.cpp
     modules.cpp
-    varobj.cpp
+    variables.cpp
     typeprinter.cpp
     valuewalk.cpp
     valueprint.cpp
