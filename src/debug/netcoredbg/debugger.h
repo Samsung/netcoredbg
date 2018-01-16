@@ -162,6 +162,7 @@ public:
     virtual void EmitBreakpointEvent(BreakpointEvent event) = 0;
     virtual void Cleanup() = 0;
     virtual void CommandLoop() = 0;
+    virtual ~Protocol() {}
 };
 
 class MIProtocol : public Protocol
