@@ -21,6 +21,7 @@
 #include "valueprint.h"
 #include "varobj.h"
 #include "expr.h"
+#include "frames.h"
 
 
 HRESULT GetNumChild(ICorDebugValue *pValue,
@@ -275,6 +276,85 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
     return S_OK;
 }
 
+struct Member
+{
+    std::string name;
+    std::string ownerType;
+    ToRelease<ICorDebugValue> value;
+    Member(const std::string &name, const std::string ownerType, ToRelease<ICorDebugValue> value) :
+        name(name),
+        ownerType(ownerType),
+        value(std::move(value))
+    {}
+    Member(Member &&that) = default;
+private:
+    Member(const Member &that) = delete;
+};
+
+static HRESULT FetchFieldsAndProperties2(ICorDebugValue *pInputValue,
+                                        ICorDebugThread *pThread,
+                                        ICorDebugILFrame *pILFrame,
+                                        std::vector<Member> &members,
+                                        bool fetchOnlyStatic,
+                                        bool &hasStaticMembers,
+                                        int childStart,
+                                        int childEnd)
+{
+    hasStaticMembers = false;
+    HRESULT Status;
+
+    DWORD threadId = 0;
+    IfFailRet(pThread->GetID(&threadId));
+
+    int currentIndex = -1;
+
+    IfFailRet(WalkMembers(pInputValue, pThread, pILFrame, [&](
+        mdMethodDef mdGetter,
+        ICorDebugModule *pModule,
+        ICorDebugType *pType,
+        ICorDebugValue *pValue,
+        bool is_static,
+        const std::string &name)
+    {
+        if (is_static)
+            hasStaticMembers = true;
+
+        bool addMember = fetchOnlyStatic ? is_static : !is_static;
+        if (!addMember)
+            return S_OK;
+
+        ++currentIndex;
+        if (currentIndex < childStart)
+            return S_OK;
+        if (currentIndex >= childEnd)
+            return S_OK;
+
+        std::string className;
+        if (pType)
+            TypePrinter::GetTypeOfValue(pType, className);
+
+        ToRelease<ICorDebugValue> pResultValue;
+
+        if (mdGetter != mdMethodDefNil)
+        {
+            ToRelease<ICorDebugFunction> pFunc;
+            if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
+                EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResultValue);
+        }
+        else
+        {
+            if (pValue)
+                pValue->AddRef();
+            pResultValue = pValue;
+        }
+
+        members.emplace_back(name, className, std::move(pResultValue));
+        return S_OK;
+    }));
+
+    return S_OK;
+}
+
 static void FixupInheritedFieldNames(std::vector<VarObjValue> &members)
 {
     std::unordered_set<std::string> names;
@@ -424,66 +504,207 @@ HRESULT ListChildren(
     return ListChildren(childStart, childEnd, it->second, print_values, pThread, pFrame, output);
 }
 
-HRESULT ListVariables(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::string &output)
+HRESULT Debugger::GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables)
 {
-    const bool printValues = true;
-    const bool printTypes = false;
+    auto it = m_variables.find(variablesReference);
+    if (it == m_variables.end())
+        return E_FAIL;
+
+    VariableReference &ref = it->second;
 
     HRESULT Status;
 
-    std::stringstream ss;
-    ss << "variables=[";
-    const char *sep = "";
+    StackFrame stackFrame(ref.frameId);
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
+
+    // Named and Indexed variables are in the same index (internally), Named variables go first
+    if (filter == VariablesNamed && (start + count > ref.namedVariables || count == 0))
+        count = ref.namedVariables - start;
+    if (filter == VariablesIndexed)
+        start += ref.namedVariables;
+
+    if (ref.IsScope())
+    {
+        IfFailRet(GetStackVariables(ref.frameId, pThread, pFrame, start, count, variables));
+    } else {
+        IfFailRet(GetChildren(ref, pThread, pFrame, start, count, variables));
+    }
+    return S_OK;
+}
+
+void Debugger::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, VariableReference::ValueKind valueKind)
+{
+    HRESULT Status;
+    unsigned int numChild = 0;
+    GetNumChild(value, numChild, valueKind == VariableReference::ValueIsClass);
+    if (numChild == 0)
+        return;
+
+    variable.namedVariables = numChild;
+    variable.variablesReference = m_nextVariableReference++;
+    value->AddRef();
+    VariableReference variableReference(variable.variablesReference, frameId, value, valueKind);
+    variableReference.evaluateName = variable.evaluateName;
+    m_variables.emplace(std::make_pair(variable.variablesReference, std::move(variableReference)));
+}
+
+HRESULT Debugger::GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables)
+{
+    HRESULT Status;
+
+    int currentIndex = -1;
 
     ToRelease<ICorDebugValue> pExceptionValue;
     if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
     {
-        ss << sep;
-        sep = ",";
-
-        ss << "{name=\"" << "$exception" << "\"";
-        if (printValues)
+        ++currentIndex;
+        bool outOfRange = currentIndex < start || (count != 0 && currentIndex >= start + count);
+        if (!outOfRange)
         {
-            std::string strVal;
-            if (SUCCEEDED(PrintValue(pExceptionValue, strVal)))
-                ss << ",value=\"" << strVal << "\"";
+            Variable var;
+            var.name = "$exception";
+            var.evaluateName = var.name;
+            bool escape = true;
+            PrintValue(pExceptionValue, var.value, escape);
+            TypePrinter::GetTypeOfValue(pExceptionValue, var.type);
+            AddVariableReference(var, frameId, pExceptionValue, VariableReference::ValueIsVariable);
+            variables.push_back(var);
         }
-        if (printTypes)
-        {
-            std::string strVal;
-            if (SUCCEEDED(TypePrinter::GetTypeOfValue(pExceptionValue, strVal)))
-                ss << ",type=\"" << strVal << "\"";
-        }
-
-        ss << "}";
     }
 
     IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
     {
-        ss << sep;
-        sep = ",";
-
-        ss << "{name=\"" << name << "\"";
-        if (printValues)
-        {
-            std::string strVal;
-            if (SUCCEEDED(PrintValue(pValue, strVal)))
-                ss << ",value=\"" << strVal << "\"";
-        }
-        if (printTypes)
-        {
-            std::string strVal;
-            if (SUCCEEDED(TypePrinter::GetTypeOfValue(pValue, strVal)))
-                ss << ",type=\"" << strVal << "\"";
-        }
-
-        ss << "}";
-
+        ++currentIndex;
+        if (currentIndex < start || (count != 0 && currentIndex >= start + count))
+            return S_OK;
+        Variable var;
+        var.name = name;
+        var.evaluateName = var.name;
+        bool escape = true;
+        PrintValue(pValue, var.value, escape);
+        TypePrinter::GetTypeOfValue(pValue, var.type);
+        AddVariableReference(var, frameId, pValue, VariableReference::ValueIsVariable);
+        variables.push_back(var);
         return S_OK;
     }));
 
-    ss << "]";
-    output = ss.str();
+    return S_OK;
+}
+
+HRESULT Debugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
+{
+    HRESULT Status;
+
+    StackFrame stackFrame(frameId);
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
+
+    int namedVariables = 0;
+    uint32_t variablesReference = 0;
+
+    ToRelease<ICorDebugValue> pExceptionValue;
+    if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
+        namedVariables++;
+
+    IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
+    {
+        namedVariables++;
+        return S_OK;
+    }));
+
+    if (namedVariables > 0)
+    {
+        variablesReference = m_nextVariableReference++;
+        VariableReference scopeReference(variablesReference, frameId, namedVariables);
+        m_variables.emplace(std::make_pair(variablesReference, std::move(scopeReference)));
+    }
+
+    scopes.emplace_back(variablesReference, "Locals", frameId);
+
+    return S_OK;
+}
+
+static void FixupInheritedFieldNames2(std::vector<Member> &members)
+{
+    std::unordered_set<std::string> names;
+    for (auto &it : members)
+    {
+        auto r = names.insert(it.name);
+        if (!r.second)
+        {
+            it.name += " (" + it.ownerType + ")";
+        }
+    }
+}
+
+HRESULT Debugger::GetChildren(VariableReference &ref,
+                              ICorDebugThread *pThread,
+                              ICorDebugFrame *pFrame,
+                              int start,
+                              int count,
+                              std::vector<Variable> &variables)
+{
+    if (ref.IsScope())
+        return E_INVALIDARG;
+
+    HRESULT Status;
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    if (pFrame)
+        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    std::vector<Member> members;
+
+    bool hasStaticMembers = false;
+
+    if (!ref.value)
+        return S_OK;
+
+    IfFailRet(FetchFieldsAndProperties2(ref.value,
+                                       pThread,
+                                       pILFrame,
+                                       members,
+                                       ref.valueKind == VariableReference::ValueIsClass,
+                                       hasStaticMembers,
+                                       start,
+                                       count == 0 ? INT_MAX : start + count));
+
+    FixupInheritedFieldNames2(members);
+
+    for (auto &it : members)
+    {
+        Variable var;
+        var.name = it.name;
+        bool isIndex = !it.name.empty() && it.name.at(0) == '[';
+        if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
+            var.evaluateName = ref.evaluateName + (isIndex ? "" : ".") + var.name;
+        bool escape = true;
+        PrintValue(it.value, var.value, escape);
+        TypePrinter::GetTypeOfValue(it.value, var.type);
+        AddVariableReference(var, ref.frameId, it.value, VariableReference::ValueIsVariable);
+        variables.push_back(var);
+    }
+
+    if (ref.valueKind == VariableReference::ValueIsVariable && hasStaticMembers)
+    {
+        bool staticsInRange = start < ref.namedVariables && (count == 0 || start + count >= ref.namedVariables);
+        if (staticsInRange)
+        {
+            RunClassConstructor(pThread, ref.value);
+
+            Variable var;
+            var.name = "Static members";
+            TypePrinter::GetTypeOfValue(ref.value, var.evaluateName); // do not expose type for this fake variable
+            AddVariableReference(var, ref.frameId, ref.value, VariableReference::ValueIsClass);
+            variables.push_back(var);
+        }
+    }
+
     return S_OK;
 }
 

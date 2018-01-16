@@ -340,6 +340,32 @@ HRESULT MIProtocol::PrintFrames(int threadId, std::string &output, int lowFrame,
     return S_OK;
 }
 
+HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::string &output)
+{
+    const bool printValues = true;
+    const bool printTypes = false;
+
+    HRESULT Status;
+
+    std::stringstream ss;
+    ss << "variables=[";
+    const char *sep = "";
+
+    for (const Variable &var : variables)
+    {
+        ss << sep;
+        sep = ",";
+
+        ss << "{name=\"" << EscapeMIValue(var.name) << "\"";
+        ss << ",value=\"" << EscapeMIValue(var.value) << "\"";
+        ss << "}";
+    }
+
+    ss << "]";
+    output = ss.str();
+    return S_OK;
+}
+
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
 {
     HRESULT Status;
@@ -520,17 +546,19 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         GetIndices(args, lowFrame, highFrame);
         return PrintFrames(threadId, output, lowFrame, highFrame);
     }},
-    { "stack-list-variables", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        if (!pProcess) return E_FAIL;
+    { "stack-list-variables", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
-        ToRelease<ICorDebugThread> pThread;
-        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
-        IfFailRet(pProcess->GetThread(threadId, &pThread));
 
-        ToRelease<ICorDebugFrame> pFrame;
-        IfFailRet(GetFrameAt(pThread, GetIntArg(args, "--frame", 0), &pFrame));
+        StackFrame stackFrame(GetIntArg(args, "--thread", GetLastStoppedThreadId()), GetIntArg(args, "--frame", 0), "");
+        std::vector<Scope> scopes;
+        std::vector<Variable> variables;
+        IfFailRet(m_debugger->GetScopes(stackFrame.id, scopes));
+        if (!scopes.empty() && scopes[0].variablesReference != 0)
+        {
+            IfFailRet(m_debugger->GetVariables(scopes[0].variablesReference, VariablesNamed, 0, 0, variables));
+        }
 
-        IfFailRet(ListVariables(pThread, pFrame, output));
+        PrintVariables(variables, output);
 
         return S_OK;
     }},

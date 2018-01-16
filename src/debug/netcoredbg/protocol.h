@@ -7,6 +7,8 @@
 #include "platform.h"
 #include <string>
 
+// From https://github.com/Microsoft/vscode-debugadapter-node/blob/master/protocol/src/debugProtocol.ts
+
 struct Thread
 {
     int id;
@@ -58,6 +60,8 @@ struct StackFrame
         id <<= 32;
         id |= level;
     }
+
+    StackFrame(uint64_t id) : id(id), line(0), column(0), endLine(0), endColumn(0) {}
 
     uint32_t GetLevel() const { return id & 0xFFFFFFFFul; }
     int GetThreadId() const { return id >> 32; }
@@ -150,4 +154,52 @@ struct OutputEvent
     std::string source; // exposed for MI protocol
 
     OutputEvent(OutputCategory category, std::string output) : category(OutputConsole), output(output) {}
+};
+
+struct Scope
+{
+    std::string name;
+    uint32_t variablesReference;
+    int namedVariables;
+    int indexedVariables;
+    bool expensive;
+
+    Scope() : variablesReference(0), namedVariables(0), expensive(false) {}
+
+    Scope(uint32_t variablesReference, const std::string &name, int namedVariables) :
+        name(name),
+        variablesReference(variablesReference),
+        namedVariables(namedVariables),
+        expensive(false)
+    {}
+};
+
+
+// TODO: Replace strings with enums
+struct VariablePresentationHint
+{
+    std::string kind;
+    std::vector<std::string> attributes;
+    std::string visibility;
+};
+
+struct Variable
+{
+    std::string name;
+    std::string value;
+    std::string type;
+    VariablePresentationHint presentationHint;
+    std::string evaluateName;
+    uint32_t variablesReference;
+    int namedVariables;
+    int indexedVariables;
+
+    Variable() : variablesReference(0), namedVariables(0), indexedVariables(0) {}
+};
+
+enum VariablesFilter
+{
+    VariablesNamed,
+    VariablesIndexed,
+    VariablesBoth
 };
