@@ -127,22 +127,12 @@ public:
     static bool IsJustMyCode() { return m_justMyCode; }
     static void SetJustMyCode(bool enable) { m_justMyCode = enable; }
 
-    Debugger() :
-        m_managedCallback(nullptr),
-        m_pDebug(nullptr),
-        m_pProcess(nullptr),
-        m_startupReady(false),
-        m_startupResult(S_OK),
-        m_unregisterToken(nullptr),
-        m_processId(0),
-        m_nextVariableReference(1) {}
-
+    Debugger();
     ~Debugger();
 
     void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
     void SetProtocol(Protocol *protocol) { m_protocol = protocol; }
-    void SetManagedCallback(ManagedCallback *managedCallback);
 
     HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
 

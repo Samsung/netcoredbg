@@ -678,9 +678,16 @@ public:
 
 bool Debugger::m_justMyCode = true;
 
-void Debugger::SetManagedCallback(ManagedCallback *managedCallback)
+Debugger::Debugger() :
+        m_managedCallback(new ManagedCallback()),
+        m_pDebug(nullptr),
+        m_pProcess(nullptr),
+        m_startupReady(false),
+        m_startupResult(S_OK),
+        m_unregisterToken(nullptr),
+        m_processId(0),
+        m_nextVariableReference(1)
 {
-    m_managedCallback = managedCallback;
     m_managedCallback->m_debugger = this;
 }
 
@@ -1029,7 +1036,6 @@ int main(int argc, char *argv[])
     }
 
     Debugger debugger;
-    debugger.SetManagedCallback(new ManagedCallback());
 
     MIProtocol protocol;
     protocol.SetDebugger(&debugger);
