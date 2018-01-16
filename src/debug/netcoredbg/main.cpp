@@ -22,7 +22,6 @@
 #include "valuewalk.h"
 #include "breakpoints.h"
 #include "valuewalk.h"
-#include "varobj.h"
 #include "frames.h"
 
 #define __in
@@ -943,6 +942,10 @@ HRESULT Debugger::TerminateProcess()
 void Debugger::Cleanup()
 {
     Modules::CleanupAllModules();
+    if (m_pRunClassConstructor)
+        m_pRunClassConstructor->Release();
+    if (m_pGetTypeHandle)
+        m_pGetTypeHandle->Release();
     m_protocol->Cleanup();
     // TODO: Cleanup libcoreclr.so instance
 }

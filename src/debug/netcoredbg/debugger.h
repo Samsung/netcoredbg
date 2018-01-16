@@ -35,6 +35,13 @@ private:
     DWORD m_processId;
     std::string m_clrPath;
 
+    enum ValueKind
+    {
+        ValueIsScope,
+        ValueIsClass,
+        ValueIsVariable
+    };
+
     struct VariableReference
     {
         uint32_t variablesReference; // key
@@ -43,12 +50,6 @@ private:
 
         std::string evaluateName;
 
-        enum ValueKind
-        {
-            ValueIsScope,
-            ValueIsClass,
-            ValueIsVariable
-        };
         ValueKind valueKind;
         ToRelease<ICorDebugValue> value;
         uint64_t frameId;
@@ -81,7 +82,7 @@ private:
     std::unordered_map<uint32_t, VariableReference> m_variables;
     uint32_t m_nextVariableReference;
 
-    void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, VariableReference::ValueKind valueKind);
+    void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
 
     HRESULT CheckNoProcess();
 
@@ -94,6 +95,34 @@ private:
 
     HRESULT GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
     HRESULT GetChildren(VariableReference &ref, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
+
+    HRESULT EvalExpr(ICorDebugThread *pThread,
+                     ICorDebugFrame *pFrame,
+                     const std::string &expression,
+                     ICorDebugValue **ppResult);
+    HRESULT FollowNested(ICorDebugThread *pThread,
+                         ICorDebugILFrame *pILFrame,
+                         const std::string &methodClass,
+                         const std::vector<std::string> &parts,
+                         ICorDebugValue **ppResult);
+    HRESULT FollowFields(ICorDebugThread *pThread,
+                         ICorDebugILFrame *pILFrame,
+                         ICorDebugValue *pValue,
+                         ValueKind valueKind,
+                         const std::vector<std::string> &parts,
+                         int nextPart,
+                         ICorDebugValue **ppResult);
+    HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
+                                       ICorDebugILFrame *pILFrame,
+                                       ICorDebugValue *pInputValue,
+                                       ValueKind valueKind,
+                                       const std::string &name,
+                                       ICorDebugValue **ppResultValue);
+
+    ToRelease<ICorDebugFunction> m_pRunClassConstructor;
+    ToRelease<ICorDebugFunction> m_pGetTypeHandle;
+    HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
+
 public:
     static bool IsJustMyCode() { return m_justMyCode; }
     static void SetJustMyCode(bool enable) { m_justMyCode = enable; }

@@ -19,14 +19,8 @@
 #include "modules.h"
 #include "valuewalk.h"
 #include "valueprint.h"
-#include "varobj.h"
 #include "expr.h"
 
-
-enum FollowMode {
-    FollowInstance,
-    FollowStatic
-};
 
 static HRESULT ParseIndices(const std::string &s, std::vector<ULONG32> &indices)
 {
@@ -58,12 +52,12 @@ static HRESULT ParseIndices(const std::string &s, std::vector<ULONG32> &indices)
     return S_OK;
 }
 
-static HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
-                                          ICorDebugILFrame *pILFrame,
-                                          ICorDebugValue *pInputValue,
-                                          const std::string &name,
-                                          FollowMode mode,
-                                          ICorDebugValue **ppResultValue)
+HRESULT Debugger::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
+                                             ICorDebugILFrame *pILFrame,
+                                             ICorDebugValue *pInputValue,
+                                             ValueKind valueKind,
+                                             const std::string &name,
+                                             ICorDebugValue **ppResultValue)
 {
     HRESULT Status;
 
@@ -74,7 +68,7 @@ static HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
 
     if (name.back() == ']')
     {
-        if (mode == FollowStatic)
+        if (valueKind == ValueIsClass)
             return E_FAIL;
 
         BOOL isNull = FALSE;
@@ -109,9 +103,9 @@ static HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
         bool is_static,
         const std::string &memberName)
     {
-        if (is_static && mode == FollowInstance)
+        if (is_static && valueKind == ValueIsVariable)
             return S_OK;
-        if (!is_static && mode == FollowStatic)
+        if (!is_static && valueKind == ValueIsClass)
             return S_OK;
 
         if (pResult)
@@ -156,13 +150,13 @@ static mdTypeDef GetTypeTokenForName(IMetaDataImport *pMD, mdTypeDef tkEnclosing
     return typeToken;
 }
 
-static HRESULT FollowFields(ICorDebugThread *pThread,
-                            ICorDebugILFrame *pILFrame,
-                            ICorDebugValue *pValue,
-                            const std::vector<std::string> &parts,
-                            int nextPart,
-                            FollowMode mode,
-                            ICorDebugValue **ppResult)
+HRESULT Debugger::FollowFields(ICorDebugThread *pThread,
+                              ICorDebugILFrame *pILFrame,
+                              ICorDebugValue *pValue,
+                              ValueKind valueKind,
+                              const std::vector<std::string> &parts,
+                              int nextPart,
+                              ICorDebugValue **ppResult)
 {
     HRESULT Status;
 
@@ -176,8 +170,8 @@ static HRESULT FollowFields(ICorDebugThread *pThread,
         ToRelease<ICorDebugValue> pClassValue(std::move(pResultValue));
         RunClassConstructor(pThread, pClassValue);
         IfFailRet(GetFieldOrPropertyWithName(
-            pThread, pILFrame, pClassValue, parts[i], mode, &pResultValue));
-        mode = FollowInstance; // we can only follow through instance fields
+            pThread, pILFrame, pClassValue, valueKind, parts[i], &pResultValue));
+        valueKind = ValueIsVariable; // we can only follow through instance fields
     }
 
     *ppResult = pResultValue.Detach();
@@ -510,11 +504,11 @@ HRESULT FindType(const std::vector<std::string> &parts,
     return S_OK;
 }
 
-static HRESULT FollowNested(ICorDebugThread *pThread,
-                            ICorDebugILFrame *pILFrame,
-                            const std::string &methodClass,
-                            const std::vector<std::string> &parts,
-                            ICorDebugValue **ppResult)
+HRESULT Debugger::FollowNested(ICorDebugThread *pThread,
+                               ICorDebugILFrame *pILFrame,
+                               const std::string &methodClass,
+                               const std::vector<std::string> &parts,
+                               ICorDebugValue **ppResult)
 {
     HRESULT Status;
 
@@ -536,7 +530,7 @@ static HRESULT FollowNested(ICorDebugThread *pThread,
         ToRelease<ICorDebugValue> pTypeValue;
         IfFailRet(EvalObjectNoConstructor(pThread, pType, &pTypeValue));
 
-        if (SUCCEEDED(FollowFields(pThread, pILFrame, pTypeValue, parts, 0, FollowStatic, ppResult)))
+        if (SUCCEEDED(FollowFields(pThread, pILFrame, pTypeValue, ValueIsClass, parts, 0, ppResult)))
             return S_OK;
 
         classParts.pop_back();
@@ -545,10 +539,10 @@ static HRESULT FollowNested(ICorDebugThread *pThread,
     return E_FAIL;
 }
 
-HRESULT EvalExpr(ICorDebugThread *pThread,
-                 ICorDebugFrame *pFrame,
-                 const std::string &expression,
-                 ICorDebugValue **ppResult)
+HRESULT Debugger::EvalExpr(ICorDebugThread *pThread,
+                           ICorDebugFrame *pFrame,
+                           const std::string &expression,
+                           ICorDebugValue **ppResult)
 {
     HRESULT Status;
 
@@ -601,7 +595,7 @@ HRESULT EvalExpr(ICorDebugThread *pThread,
 
     if (!pResultValue && pThisValue) // check this.*
     {
-        if (SUCCEEDED(FollowFields(pThread, pILFrame, pThisValue, parts, nextPart, FollowInstance, &pResultValue)))
+        if (SUCCEEDED(FollowFields(pThread, pILFrame, pThisValue, ValueIsVariable, parts, nextPart, &pResultValue)))
         {
             *ppResult = pResultValue.Detach();
             return S_OK;
@@ -617,7 +611,7 @@ HRESULT EvalExpr(ICorDebugThread *pThread,
         }
     }
 
-    FollowMode followMode;
+    ValueKind valueKind;;
     if (pResultValue)
     {
         nextPart++;
@@ -626,17 +620,17 @@ HRESULT EvalExpr(ICorDebugThread *pThread,
             *ppResult = pResultValue.Detach();
             return S_OK;
         }
-        followMode = FollowInstance;
+        valueKind = ValueIsVariable;
     }
     else
     {
         ToRelease<ICorDebugType> pType;
         IfFailRet(FindType(parts, nextPart, pThread, nullptr, &pType));
         IfFailRet(EvalObjectNoConstructor(pThread, pType, &pResultValue));
-        followMode = FollowStatic;
+        valueKind = ValueIsClass;
     }
 
-    IfFailRet(FollowFields(pThread, pILFrame, pResultValue, parts, nextPart, followMode, &pResultValue));
+    IfFailRet(FollowFields(pThread, pILFrame, pResultValue, valueKind, parts, nextPart, &pResultValue));
 
     *ppResult = pResultValue.Detach();
 

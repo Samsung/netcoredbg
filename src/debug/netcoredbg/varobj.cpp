@@ -19,7 +19,6 @@
 #include "modules.h"
 #include "valuewalk.h"
 #include "valueprint.h"
-#include "varobj.h"
 #include "expr.h"
 #include "frames.h"
 
@@ -60,18 +59,6 @@ HRESULT GetNumChild(ICorDebugValue *pValue,
     return S_OK;
 }
 
-static ToRelease<ICorDebugFunction> g_pRunClassConstructor;
-static ToRelease<ICorDebugFunction> g_pGetTypeHandle;
-
-// TODO: Move this into debugger
-void CleanupVars()
-{
-    if (g_pRunClassConstructor)
-        g_pRunClassConstructor->Release();
-    if (g_pGetTypeHandle)
-        g_pGetTypeHandle->Release();
-}
-
 static HRESULT GetMethodToken(IMetaDataImport *pMD, mdTypeDef cl, const WCHAR *methodName)
 {
     ULONG numMethods = 0;
@@ -106,11 +93,11 @@ static HRESULT FindFunction(ICorDebugModule *pModule,
     return pModule->GetFunctionFromToken(methodDef, ppFunction);
 }
 
-HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
+HRESULT Debugger::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
 {
     HRESULT Status;
 
-    if (!g_pRunClassConstructor && !g_pGetTypeHandle)
+    if (!m_pRunClassConstructor && !m_pGetTypeHandle)
     {
         ToRelease<ICorDebugModule> pModule;
         IfFailRet(Modules::GetModuleWithName("System.Private.CoreLib.dll", &pModule));
@@ -119,8 +106,8 @@ HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
         static const WCHAR runCCTorMethodName[] = W("RunClassConstructor");
         static const WCHAR typeName[] = W("System.Type");
         static const WCHAR getTypeHandleMethodName[] = W("GetTypeHandle");
-        IfFailRet(FindFunction(pModule, helpersName, runCCTorMethodName, &g_pRunClassConstructor));
-        IfFailRet(FindFunction(pModule, typeName, getTypeHandleMethodName, &g_pGetTypeHandle));
+        IfFailRet(FindFunction(pModule, helpersName, runCCTorMethodName, &m_pRunClassConstructor));
+        IfFailRet(FindFunction(pModule, typeName, getTypeHandleMethodName, &m_pGetTypeHandle));
     }
 
     ToRelease<ICorDebugValue> pNewValue;
@@ -147,10 +134,10 @@ HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
     }
 
     ToRelease<ICorDebugValue> pRuntimeHandleValue;
-    IfFailRet(EvalFunction(pThread, g_pGetTypeHandle, nullptr, pNewValue ? pNewValue.GetPtr() : pValue, &pRuntimeHandleValue));
+    IfFailRet(EvalFunction(pThread, m_pGetTypeHandle, nullptr, pNewValue ? pNewValue.GetPtr() : pValue, &pRuntimeHandleValue));
 
     ToRelease<ICorDebugValue> pResultValue;
-    IfFailRet(EvalFunction(pThread, g_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue));
+    IfFailRet(EvalFunction(pThread, m_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue));
 
     return S_OK;
 }
@@ -273,11 +260,11 @@ HRESULT Debugger::GetVariables(uint32_t variablesReference, VariablesFilter filt
     return S_OK;
 }
 
-void Debugger::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, VariableReference::ValueKind valueKind)
+void Debugger::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind)
 {
     HRESULT Status;
     unsigned int numChild = 0;
-    GetNumChild(value, numChild, valueKind == VariableReference::ValueIsClass);
+    GetNumChild(value, numChild, valueKind == ValueIsClass);
     if (numChild == 0)
         return;
 
@@ -307,7 +294,7 @@ HRESULT Debugger::GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, 
             bool escape = true;
             PrintValue(pExceptionValue, var.value, escape);
             TypePrinter::GetTypeOfValue(pExceptionValue, var.type);
-            AddVariableReference(var, frameId, pExceptionValue, VariableReference::ValueIsVariable);
+            AddVariableReference(var, frameId, pExceptionValue, ValueIsVariable);
             variables.push_back(var);
         }
     }
@@ -323,7 +310,7 @@ HRESULT Debugger::GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, 
         bool escape = true;
         PrintValue(pValue, var.value, escape);
         TypePrinter::GetTypeOfValue(pValue, var.type);
-        AddVariableReference(var, frameId, pValue, VariableReference::ValueIsVariable);
+        AddVariableReference(var, frameId, pValue, ValueIsVariable);
         variables.push_back(var);
         return S_OK;
     }));
@@ -406,7 +393,7 @@ HRESULT Debugger::GetChildren(VariableReference &ref,
                                        pThread,
                                        pILFrame,
                                        members,
-                                       ref.valueKind == VariableReference::ValueIsClass,
+                                       ref.valueKind == ValueIsClass,
                                        hasStaticMembers,
                                        start,
                                        count == 0 ? INT_MAX : start + count));
@@ -423,11 +410,11 @@ HRESULT Debugger::GetChildren(VariableReference &ref,
         bool escape = true;
         PrintValue(it.value, var.value, escape);
         TypePrinter::GetTypeOfValue(it.value, var.type);
-        AddVariableReference(var, ref.frameId, it.value, VariableReference::ValueIsVariable);
+        AddVariableReference(var, ref.frameId, it.value, ValueIsVariable);
         variables.push_back(var);
     }
 
-    if (ref.valueKind == VariableReference::ValueIsVariable && hasStaticMembers)
+    if (ref.valueKind == ValueIsVariable && hasStaticMembers)
     {
         bool staticsInRange = start < ref.namedVariables && (count == 0 || start + count >= ref.namedVariables);
         if (staticsInRange)
@@ -437,7 +424,7 @@ HRESULT Debugger::GetChildren(VariableReference &ref,
             Variable var;
             var.name = "Static members";
             TypePrinter::GetTypeOfValue(ref.value, var.evaluateName); // do not expose type for this fake variable
-            AddVariableReference(var, ref.frameId, ref.value, VariableReference::ValueIsClass);
+            AddVariableReference(var, ref.frameId, ref.value, ValueIsClass);
             variables.push_back(var);
         }
     }
@@ -463,7 +450,7 @@ HRESULT Debugger::Evaluate(uint64_t frameId, const std::string &expression, Vari
     bool escape = true;
     PrintValue(pResultValue, variable.value, escape);
     TypePrinter::GetTypeOfValue(pResultValue, variable.type);
-    AddVariableReference(variable, frameId, pResultValue, VariableReference::ValueIsVariable);
+    AddVariableReference(variable, frameId, pResultValue, ValueIsVariable);
 
     return S_OK;
 }

@@ -20,7 +20,6 @@
 #include "debugger.h"
 #include "modules.h"
 #include "breakpoints.h"
-#include "varobj.h"
 #include "frames.h"
 
 
