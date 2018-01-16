@@ -24,7 +24,7 @@ private:
     ICorDebug *m_pDebug;
     ICorDebugProcess *m_pProcess;
 
-    static bool m_justMyCode;
+    bool m_justMyCode;
 
     std::mutex m_startupMutex;
     std::condition_variable m_startupCV;
@@ -91,7 +91,7 @@ private:
 
     void Cleanup();
 
-    static HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
+    HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
 
     HRESULT GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
     HRESULT GetChildren(VariableReference &ref, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
@@ -124,11 +124,11 @@ private:
     HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
 
 public:
-    static bool IsJustMyCode() { return m_justMyCode; }
-    static void SetJustMyCode(bool enable) { m_justMyCode = enable; }
-
     Debugger();
     ~Debugger();
+
+    bool IsJustMyCode() { return m_justMyCode; }
+    void SetJustMyCode(bool enable) { m_justMyCode = enable; }
 
     void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 

@@ -370,9 +370,9 @@ public:
 
             const bool no_source = Status == S_FALSE;
 
-            if (Debugger::IsJustMyCode() && no_source)
+            if (m_debugger->IsJustMyCode() && no_source)
             {
-                Debugger::SetupStep(pThread, Debugger::STEP_OVER);
+                m_debugger->SetupStep(pThread, Debugger::STEP_OVER);
                 pAppDomain->Continue(0);
             }
             else
@@ -676,12 +676,11 @@ public:
             /* [in] */ ICorDebugMDA *pMDA) { HandleEvent(pController, "MDANotification"); return S_OK; }
 };
 
-bool Debugger::m_justMyCode = true;
-
 Debugger::Debugger() :
         m_managedCallback(new ManagedCallback()),
         m_pDebug(nullptr),
         m_pProcess(nullptr),
+        m_justMyCode(true),
         m_startupReady(false),
         m_startupResult(S_OK),
         m_unregisterToken(nullptr),

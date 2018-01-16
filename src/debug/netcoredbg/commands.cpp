@@ -179,7 +179,7 @@ HRESULT Debugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepTyp
     ToRelease<ICorDebugStepper2> pStepper2;
     IfFailRet(pStepper->QueryInterface(IID_ICorDebugStepper2, (LPVOID *)&pStepper2));
 
-    IfFailRet(pStepper2->SetJMC(Debugger::IsJustMyCode()));
+    IfFailRet(pStepper2->SetJMC(IsJustMyCode()));
 
     if (stepType == STEP_OUT)
     {
@@ -778,7 +778,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         {
             if (args.at(0) == "just-my-code")
             {
-                Debugger::SetJustMyCode(args.at(1) == "1");
+                m_debugger->SetJustMyCode(args.at(1) == "1");
             }
         }
         return S_OK;
