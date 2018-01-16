@@ -53,10 +53,11 @@ private:
         ToRelease<ICorDebugValue> value;
         uint64_t frameId;
 
-        VariableReference(uint32_t variablesReference, uint64_t frameId, ToRelease<ICorDebugValue> value, ValueKind valueKind) :
-            variablesReference(variablesReference),
-            namedVariables(0),
-            indexedVariables(0),
+        VariableReference(const Variable &variable, uint64_t frameId, ToRelease<ICorDebugValue> value, ValueKind valueKind) :
+            variablesReference(variable.variablesReference),
+            namedVariables(variable.namedVariables),
+            indexedVariables(variable.indexedVariables),
+            evaluateName(variable.evaluateName),
             valueKind(valueKind),
             value(std::move(value)),
             frameId(frameId)
@@ -129,6 +130,8 @@ public:
     HRESULT StepCommand(int threadId, StepType stepType);
     HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes);
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables);
+    int GetNamedVariables(uint32_t variablesReference);
+    HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable);
 };
 
 class Protocol
@@ -139,6 +142,7 @@ public:
     virtual void EmitThreadEvent(ThreadEvent event) = 0;
     virtual void EmitOutputEvent(OutputEvent event) = 0;
     virtual void EmitBreakpointEvent(BreakpointEvent event) = 0;
+    virtual void Cleanup() = 0;
     virtual void CommandLoop() = 0;
 };
 
@@ -150,16 +154,20 @@ class MIProtocol : public Protocol
 
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
+
+    unsigned int m_varCounter;
+    std::unordered_map<std::string, Variable> m_vars;
 public:
     void SetDebugger(Debugger *debugger) { m_debugger = debugger; m_debugger->SetProtocol(this); }
     static std::string EscapeMIValue(const std::string &str);
 
-    MIProtocol() : m_exit(false) {}
+    MIProtocol() : m_exit(false), m_varCounter(0) {}
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitOutputEvent(OutputEvent event) override;
     void EmitBreakpointEvent(BreakpointEvent event) override;
+    void Cleanup() override;
     void CommandLoop() override;
 
     static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
@@ -174,6 +182,11 @@ private:
                         Debugger::StepType stepType);
     HRESULT PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame);
     HRESULT PrintVariables(const std::vector<Variable> &variables, std::string &output);
+    HRESULT CreateVar(int threadId, int level, const std::string &varobjName, const std::string &expression, std::string &output);
+    HRESULT DeleteVar(const std::string &varobjName);
+    void PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output);
+    void PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output);
+    HRESULT ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
 };
 
 HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);

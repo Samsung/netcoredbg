@@ -490,25 +490,25 @@ void EscapeString(std::string &s, char q = '\"')
         switch (c)
         {
             case '\'':
-                count = c != q ? 0 : 2;
+                count = c != q ? 0 : 1;
                 s.insert(i, count, '\\');
                 break;
             case '\"':
-                count = c != q ? 1 : 3;
+                count = c != q ? 0 : 1;
                 s.insert(i, count, '\\');
                 break;
             case '\\':
-                count = 3;
+                count = 1;
                 s.insert(i, count, '\\');
                 break;
-            case '\0': count = 2; s.insert(i, count, '\\'); s[i + count] = '0'; break;
-            case '\a': count = 2; s.insert(i, count, '\\'); s[i + count] = 'a'; break;
-            case '\b': count = 2; s.insert(i, count, '\\'); s[i + count] = 'b'; break;
-            case '\f': count = 2; s.insert(i, count, '\\'); s[i + count] = 'f'; break;
-            case '\n': count = 2; s.insert(i, count, '\\'); s[i + count] = 'n'; break;
-            case '\r': count = 2; s.insert(i, count, '\\'); s[i + count] = 'r'; break;
-            case '\t': count = 2; s.insert(i, count, '\\'); s[i + count] = 't'; break;
-            case '\v': count = 2; s.insert(i, count, '\\'); s[i + count] = 'v'; break;
+            case '\0': count = 1; s.insert(i, count, '\\'); s[i + count] = '0'; break;
+            case '\a': count = 1; s.insert(i, count, '\\'); s[i + count] = 'a'; break;
+            case '\b': count = 1; s.insert(i, count, '\\'); s[i + count] = 'b'; break;
+            case '\f': count = 1; s.insert(i, count, '\\'); s[i + count] = 'f'; break;
+            case '\n': count = 1; s.insert(i, count, '\\'); s[i + count] = 'n'; break;
+            case '\r': count = 1; s.insert(i, count, '\\'); s[i + count] = 'r'; break;
+            case '\t': count = 1; s.insert(i, count, '\\'); s[i + count] = 't'; break;
+            case '\v': count = 1; s.insert(i, count, '\\'); s[i + count] = 'v'; break;
         }
         i += count;
     }
@@ -554,7 +554,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
         EscapeString(raw_str, '"');
 
         std::stringstream ss;
-        ss << "\\\"" << raw_str << "\\\"";
+        ss << "\"" << raw_str << "\"";
         output = ss.str();
         return S_OK;
     }

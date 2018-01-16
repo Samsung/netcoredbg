@@ -366,6 +366,120 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
     return S_OK;
 }
 
+static void PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output)
+{
+    std::stringstream ss;
+
+    std::string editable = "noneditable";
+
+    ss << "name=\"" << varobjName << "\",";
+    if (print_values)
+    {
+        ss << "value=\"" << MIProtocol::EscapeMIValue(v.value) << "\",";
+    }
+    ss << "attributes=\"" << editable << "\",";
+    ss << "exp=\"" << (v.name.empty() ? v.evaluateName : v.name) << "\",";
+    ss << "numchild=\"" << v.namedVariables << "\",";
+    ss << "type=\"" << v.type << "\",";
+    ss << "thread-id=\"" << threadId << "\"";
+    //,has_more="0"}
+
+    output = ss.str();
+}
+
+void MIProtocol::PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output)
+{
+    if (varobjName.empty() || varobjName == "-")
+    {
+        varobjName = "var" + std::to_string(m_varCounter++);
+    }
+
+    m_vars[varobjName] = v;
+
+    PrintVar(varobjName, v, threadId, print_values, output);
+}
+
+HRESULT MIProtocol::CreateVar(int threadId, int level, const std::string &varobjName, const std::string &expression, std::string &output)
+{
+    HRESULT Status;
+
+    uint64_t frameId = StackFrame(threadId, level, "").id;
+
+    Variable variable;
+    IfFailRet(m_debugger->Evaluate(frameId, expression, variable));
+
+    int print_values = 1;
+    PrintNewVar(varobjName, variable, threadId, print_values, output);
+
+    return S_OK;
+}
+
+HRESULT MIProtocol::DeleteVar(const std::string &varobjName)
+{
+    return m_vars.erase(varobjName) == 0 ? E_FAIL : S_OK;
+}
+
+void MIProtocol::Cleanup()
+{
+    m_vars.clear();
+    m_varCounter = 0;
+}
+
+void MIProtocol::PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output)
+{
+    std::stringstream ss;
+    ss << "numchild=\"" << children.size() << "\"";
+
+    if (children.empty())
+    {
+        output = ss.str();
+        return;
+    }
+    ss << ",children=[";
+
+    const char *sep = "";
+    for (auto &child : children)
+    {
+        std::string varout;
+        PrintNewVar("-", child, threadId, print_values, varout);
+
+        ss << sep;
+        sep = ",";
+        ss << "child={" << varout << "}";
+    }
+
+    ss << "]";
+    ss << ",has_more=\"" << (has_more ? 1 : 0) << "\"";
+    output = ss.str();
+}
+
+HRESULT MIProtocol::ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output)
+{
+    HRESULT Status;
+
+    StackFrame stackFrame(threadId, level, "");
+
+    std::vector<Variable> variables;
+
+    auto it = m_vars.find(varName);
+    if (it == m_vars.end())
+        return E_FAIL;
+
+    uint32_t variablesReference = it->second.variablesReference;
+
+    bool has_more = false;
+
+    if (variablesReference > 0)
+    {
+        IfFailRet(m_debugger->GetVariables(variablesReference, VariablesNamed, childStart, childEnd - childStart, variables));
+        has_more = childEnd < m_debugger->GetNamedVariables(variablesReference);
+    }
+
+    PrintChildren(variables, threadId, print_values, has_more, output);
+
+    return S_OK;
+}
+
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
 {
     HRESULT Status;
@@ -562,8 +676,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         return S_OK;
     }},
-    { "var-create", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        if (!pProcess) return E_FAIL;
+    { "var-create", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
 
         if (args.size() < 2)
@@ -572,28 +685,22 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             return E_FAIL;
         }
 
-        ToRelease<ICorDebugThread> pThread;
-        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
-        IfFailRet(pProcess->GetThread(threadId, &pThread));
+        int threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+        int level = GetIntArg(args, "--frame", 0);
 
-        ToRelease<ICorDebugFrame> pFrame;
-        IfFailRet(GetFrameAt(pThread, GetIntArg(args, "--frame", 0), &pFrame));
+        std::string varName = args.at(0);
+        std::string varExpr = args.at(1);
+        if (varExpr == "*" && args.size() >= 3)
+            varExpr = args.at(2);
 
-        std::string var_name = args.at(0);
-        std::string var_expr = args.at(1);
-        if (var_expr == "*" && args.size() >= 3)
-            var_expr = args.at(2);
-
-        return CreateVar(pThread, pFrame, var_name, var_expr, output);
+        return CreateVar(threadId, level, varName, varExpr, output);
     }},
-    { "var-list-children", [](ICorDebugProcess *pProcess, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
-        if (!pProcess) return E_FAIL;
+    { "var-list-children", [this](ICorDebugProcess *, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         HRESULT Status;
 
         std::vector<std::string> args = args_orig;
 
         int print_values = 0;
-        int var_index = 0;
         if (!args.empty())
         {
             auto first_arg_it = args.begin();
@@ -615,19 +722,18 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             return E_FAIL;
         }
 
-        ToRelease<ICorDebugThread> pThread;
-        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
-        IfFailRet(pProcess->GetThread(threadId, &pThread));
+        int threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+        int level = GetIntArg(args, "--frame", 0);
 
-        ToRelease<ICorDebugFrame> pFrame;
-        pThread->GetActiveFrame(&pFrame);
         int childStart = 0;
         int childEnd = INT_MAX;
         StripArgs(args);
         GetIndices(args, childStart, childEnd);
-        return ListChildren(childStart, childEnd, args.at(var_index), print_values, pThread, pFrame, output);
+        std::string varName = args.at(0);
+
+        return ListChildren(threadId, level, childStart, childEnd, varName, print_values, output);
     }},
-    { "var-delete", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "var-delete", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.size() < 1)
         {
             output = "Command requires at least 1 argument";

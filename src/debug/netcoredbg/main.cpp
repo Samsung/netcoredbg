@@ -112,7 +112,6 @@ void MIProtocol::Printf(const char *fmt, ...)
     fflush(stdout);
 }
 
-// TODO: Merge with EscapeString
 std::string MIProtocol::EscapeMIValue(const std::string &str)
 {
     std::string s(str);
@@ -944,7 +943,7 @@ HRESULT Debugger::TerminateProcess()
 void Debugger::Cleanup()
 {
     Modules::CleanupAllModules();
-    CleanupVars();
+    m_protocol->Cleanup();
     // TODO: Cleanup libcoreclr.so instance
 }
 
