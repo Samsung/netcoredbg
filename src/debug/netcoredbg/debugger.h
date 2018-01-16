@@ -121,7 +121,6 @@ public:
     HRESULT DetachFromProcess();
     HRESULT TerminateProcess();
 
-    ICorDebugProcess *GetProcess() { return m_pProcess; }
     HRESULT Continue();
     HRESULT Pause();
     HRESULT GetThreads(std::vector<Thread> &threads);

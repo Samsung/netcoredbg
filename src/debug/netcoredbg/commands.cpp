@@ -27,7 +27,6 @@
 using namespace std::placeholders;
 
 typedef std::function<HRESULT(
-    ICorDebugProcess *pProcess,
     const std::vector<std::string> &args,
     std::string &output)> CommandCallback;
 
@@ -560,7 +559,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
                                   std::string &output)
 {
     static std::unordered_map<std::string, CommandCallback> commands {
-    { "thread-info", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output){
+    { "thread-info", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status = S_OK;
 
         std::vector<Thread> threads;
@@ -583,19 +582,19 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         output = ss.str();
         return S_OK;
     } },
-    { "exec-continue", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output){
+    { "exec-continue", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
         IfFailRet(m_debugger->Continue());
         output = "^running";
         return S_OK;
     } },
-    { "exec-interrupt", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output){
+    { "exec-interrupt", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
         IfFailRet(m_debugger->Pause());
         output = "^done";
         return S_OK;
     } },
-    { "break-insert", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "break-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         std::string filename;
         unsigned int linenum;
         ULONG32 id;
@@ -610,7 +609,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         output = "Unknown breakpoint location format";
         return E_FAIL;
     } },
-    { "break-delete", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &) -> HRESULT {
+    { "break-delete", [](const std::vector<std::string> &args, std::string &) -> HRESULT {
         for (const std::string &idStr : args)
         {
             bool ok;
@@ -620,20 +619,20 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         }
         return S_OK;
     } },
-    { "exec-step", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "exec-step", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return StepCommand(args, output, Debugger::STEP_IN);
     }},
-    { "exec-next", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "exec-next", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return StepCommand(args, output, Debugger::STEP_OVER);
     }},
-    { "exec-finish", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "exec-finish", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return StepCommand(args, output, Debugger::STEP_OUT);
     }},
-    { "exec-abort", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
+    { "exec-abort", [this](const std::vector<std::string> &, std::string &output) -> HRESULT {
         m_debugger->TerminateProcess();
         return S_OK;
     }},
-    { "target-attach", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "target-attach", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
         if (args.size() != 1)
         {
@@ -647,11 +646,11 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         // TODO: print succeessful result
         return S_OK;
     }},
-    { "target-detach", [this](ICorDebugProcess *, const std::vector<std::string> &, std::string &output) -> HRESULT {
+    { "target-detach", [this](const std::vector<std::string> &, std::string &output) -> HRESULT {
         m_debugger->DetachFromProcess();
         return S_OK;
     }},
-    { "stack-list-frames", [this](ICorDebugProcess *, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
+    { "stack-list-frames", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         std::vector<std::string> args = args_orig;
         DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
         int lowFrame = 0;
@@ -660,7 +659,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         GetIndices(args, lowFrame, highFrame);
         return PrintFrames(threadId, output, lowFrame, highFrame);
     }},
-    { "stack-list-variables", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "stack-list-variables", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
 
         StackFrame stackFrame(GetIntArg(args, "--thread", GetLastStoppedThreadId()), GetIntArg(args, "--frame", 0), "");
@@ -676,7 +675,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         return S_OK;
     }},
-    { "var-create", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "var-create", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
 
         if (args.size() < 2)
@@ -695,7 +694,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         return CreateVar(threadId, level, varName, varExpr, output);
     }},
-    { "var-list-children", [this](ICorDebugProcess *, const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
+    { "var-list-children", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         HRESULT Status;
 
         std::vector<std::string> args = args_orig;
@@ -733,7 +732,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         return ListChildren(threadId, level, childStart, childEnd, varName, print_values, output);
     }},
-    { "var-delete", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "var-delete", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.size() < 1)
         {
             output = "Command requires at least 1 argument";
@@ -741,41 +740,41 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         }
         return DeleteVar(args.at(0));
     }},
-    { "gdb-exit", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "gdb-exit", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         this->m_exit = true;
 
         m_debugger->TerminateProcess();
 
         return S_OK;
     }},
-    { "file-exec-and-symbols", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "file-exec-and-symbols", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.empty())
             return E_INVALIDARG;
         m_fileExec = args.at(0);
         return S_OK;
     }},
-    { "exec-arguments", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "exec-arguments", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         m_execArgs = args;
         return S_OK;
     }},
-    { "exec-run", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "exec-run", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status = m_debugger->RunProcess(m_fileExec, m_execArgs);
         if (SUCCEEDED(Status))
             output = "^running";
         return Status;
     }},
-    { "environment-cd", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "environment-cd", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.empty())
             return E_INVALIDARG;
         return SetWorkDir(args.at(0)) ? S_OK : E_FAIL;
     }},
-    { "handshake", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "handshake", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (!args.empty() && args.at(0) == "init")
             output = "request=\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\"";
 
         return S_OK;
     }},
-    { "gdb-set", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "gdb-set", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.size() == 2)
         {
             if (args.at(0) == "just-my-code")
@@ -785,10 +784,10 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         }
         return S_OK;
     }},
-    { "interpreter-exec", [this](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "interpreter-exec", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return S_OK;
     }},
-    { "break-exception-insert", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "break-exception-insert", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.empty())
             return E_FAIL;
         size_t i = 1;
@@ -811,7 +810,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         return S_OK;
     }},
-    { "var-show-attributes", [](ICorDebugProcess *, const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "var-show-attributes", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         output = "status=\"noneditable\"";
         return S_OK;
     }},
@@ -825,7 +824,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         return E_FAIL;
     }
 
-    return command_it->second(m_debugger->GetProcess(), args, output);
+    return command_it->second(args, output);
 }
 
 static std::vector<std::string> TokenizeString(const std::string &str, const char *delimiters = " \t\n\r")
