@@ -147,6 +147,20 @@ public:
 
 private:
     friend class ManagedCallback;
+    enum ProcessAttachedState
+    {
+        ProcessAttached,
+        ProcessUnattached
+    };
+    std::mutex m_processAttachedMutex;
+    std::condition_variable m_processAttachedCV;
+    ProcessAttachedState m_processAttachedState;
+
+    void NotifyProcessCreated();
+    void NotifyProcessExited();
+    void WaitProcessExited();
+    HRESULT CheckNoProcess();
+
     Evaluator m_evaluator;
     Protocol *m_protocol;
     ManagedCallback *m_managedCallback;
@@ -237,8 +251,6 @@ private:
 
     HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
     HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
-
-    HRESULT CheckNoProcess();
 
     static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
     HRESULT Startup(IUnknown *punk, int pid);

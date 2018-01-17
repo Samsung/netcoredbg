@@ -27,31 +27,26 @@
 #undef __in
 #undef __out
 
-static std::mutex g_processMutex;
-static std::condition_variable g_processCV;
-static ICorDebugProcess *g_process = nullptr;
 
-static void ProcessCreated(ICorDebugProcess *pProcess)
+void Debugger::NotifyProcessCreated()
 {
-    std::lock_guard<std::mutex> lock(g_processMutex);
-    pProcess->AddRef();
-    g_process = pProcess;
+    std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+    m_processAttachedState = ProcessAttached;
 }
 
-static void NotifyProcessExited()
+void Debugger::NotifyProcessExited()
 {
-    std::lock_guard<std::mutex> lock(g_processMutex);
-    g_process->Release();
-    g_process = nullptr;
-    g_processMutex.unlock();
-    g_processCV.notify_one();
+    std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+    m_processAttachedState = ProcessUnattached;
+    m_processAttachedMutex.unlock();
+    m_processAttachedCV.notify_one();
 }
 
-void WaitProcessExited()
+void Debugger::WaitProcessExited()
 {
-    std::unique_lock<std::mutex> lock(g_processMutex);
-    if (g_process)
-        g_processCV.wait(lock, []{return g_process == nullptr;});
+    std::unique_lock<std::mutex> lock(m_processAttachedMutex);
+    if (m_processAttachedState != ProcessUnattached)
+        m_processAttachedCV.wait(lock, [this]{return m_processAttachedState == ProcessUnattached;});
 }
 
 size_t NextOSPageAddress (size_t addr)
@@ -71,27 +66,29 @@ size_t NextOSPageAddress (size_t addr)
 BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
                      PULONG lpcbBytesRead)
 {
-    std::lock_guard<std::mutex> lock(g_processMutex);
+    return FALSE;
+    // TODO: In-memory PDB?
+    // std::lock_guard<std::mutex> lock(g_processMutex);
 
-    if (!g_process)
-        return FALSE;
+    // if (!g_process)
+    //     return FALSE;
 
-    BOOL bRet = FALSE;
+    // BOOL bRet = FALSE;
 
-    SIZE_T bytesRead = 0;
+    // SIZE_T bytesRead = 0;
 
-    bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
-                                           &bytesRead));
+    // bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
+    //                                        &bytesRead));
 
-    if (!bRet)
-    {
-        cb   = (ULONG)(NextOSPageAddress(offset) - offset);
-        bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
-                                            &bytesRead));
-    }
+    // if (!bRet)
+    // {
+    //     cb   = (ULONG)(NextOSPageAddress(offset) - offset);
+    //     bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
+    //                                         &bytesRead));
+    // }
 
-    *lpcbBytesRead = bytesRead;
-    return bRet;
+    // *lpcbBytesRead = bytesRead;
+    // return bRet;
 }
 
 std::mutex MIProtocol::m_outMutex;
@@ -457,7 +454,7 @@ public:
             /* [in] */ ICorDebugProcess *pProcess)
         {
             //HandleEvent(pProcess, "CreateProcess");
-            ProcessCreated(pProcess);
+            m_debugger->NotifyProcessCreated();
             pProcess->Continue(0);
             return S_OK;
         }
@@ -467,7 +464,7 @@ public:
         {
             m_debugger->m_evaluator.NotifyEvalComplete(nullptr, nullptr);
             m_debugger->m_protocol->EmitExitedEvent(ExitedEvent(0));
-            NotifyProcessExited();
+            m_debugger->NotifyProcessExited();
             return S_OK;
         }
 
@@ -672,16 +669,17 @@ public:
 };
 
 Debugger::Debugger() :
-        m_managedCallback(new ManagedCallback()),
-        m_pDebug(nullptr),
-        m_pProcess(nullptr),
-        m_justMyCode(true),
-        m_startupReady(false),
-        m_startupResult(S_OK),
-        m_unregisterToken(nullptr),
-        m_processId(0),
-        m_nextVariableReference(1),
-        m_nextBreakpointId(1)
+    m_processAttachedState(ProcessUnattached),
+    m_managedCallback(new ManagedCallback()),
+    m_pDebug(nullptr),
+    m_pProcess(nullptr),
+    m_justMyCode(true),
+    m_startupReady(false),
+    m_startupResult(S_OK),
+    m_unregisterToken(nullptr),
+    m_processId(0),
+    m_nextVariableReference(1),
+    m_nextBreakpointId(1)
 {
     m_managedCallback->m_debugger = this;
 }
@@ -884,10 +882,10 @@ HRESULT Debugger::CheckNoProcess()
 {
     if (m_pProcess || m_pDebug)
     {
-        std::lock_guard<std::mutex> lock(g_processMutex);
-        if (g_process)
+        std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+        if (m_processAttachedState == ProcessAttached)
             return E_FAIL; // Already attached
-        g_processMutex.unlock();
+        m_processAttachedMutex.unlock();
 
         TerminateProcess();
     }
