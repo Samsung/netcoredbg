@@ -241,7 +241,6 @@ namespace SOS
 
             try
             {
-                string fileName = GetFileName(filePath);
                 foreach (MethodDebugInformationHandle methodDebugInformationHandle in reader.MethodDebugInformation)
                 {
                     MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugInformationHandle);
@@ -249,7 +248,7 @@ namespace SOS
                     foreach (SequencePoint point in sequencePoints)
                     {
                         string sourceName = reader.GetString(reader.GetDocument(point.Document).Name);
-                        if (point.StartLine == lineNumber && GetFileName(sourceName) == fileName)
+                        if (point.StartLine == lineNumber && sourceName == filePath)
                         {
                             methodToken = MetadataTokens.GetToken(methodDebugInformationHandle.ToDefinitionHandle());
                             ilOffset = point.Offset;
