@@ -19,7 +19,6 @@
 #include "typeprinter.h"
 #include "debugger.h"
 #include "modules.h"
-#include "valuewalk.h"
 #include "frames.h"
 
 #define __in
@@ -326,7 +325,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugBreakpoint *pBreakpoint)
         {
-            if (IsEvalRunning())
+            if (m_debugger->m_evaluator.IsEvalRunning())
             {
                 pAppDomain->Continue(0);
                 return S_OK;
@@ -418,7 +417,8 @@ public:
                     m_debugger->m_protocol->EmitStoppedEvent(event);
                 };
 
-                if (FAILED(pThread->GetCurrentException(&pExceptionValue)) || FAILED(ObjectToString(pThread, pExceptionValue, emitFunc)))
+                if (FAILED(pThread->GetCurrentException(&pExceptionValue)) ||
+                    FAILED(m_debugger->m_evaluator.ObjectToString(pThread, pExceptionValue, emitFunc)))
                 {
                     emitFunc(details);
                 }
@@ -440,7 +440,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
-            NotifyEvalComplete(pThread, pEval);
+            m_debugger->m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
 
@@ -449,7 +449,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
-            NotifyEvalComplete(pThread, pEval);
+            m_debugger->m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
 
@@ -465,7 +465,7 @@ public:
         virtual HRESULT STDMETHODCALLTYPE ExitProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
-            NotifyEvalComplete(nullptr, nullptr);
+            m_debugger->m_evaluator.NotifyEvalComplete(nullptr, nullptr);
             m_debugger->m_protocol->EmitExitedEvent(ExitedEvent(0));
             NotifyProcessExited();
             return S_OK;
@@ -486,7 +486,7 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *thread)
         {
-            NotifyEvalComplete(thread, nullptr);
+            m_debugger->m_evaluator.NotifyEvalComplete(thread, nullptr);
             DWORD threadId = 0;
             thread->GetID(&threadId);
             m_debugger->m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
@@ -942,13 +942,18 @@ HRESULT Debugger::TerminateProcess()
     return S_OK;
 }
 
-void Debugger::Cleanup()
+void Evaluator::Cleanup()
 {
-    Modules::CleanupAllModules();
     if (m_pRunClassConstructor)
         m_pRunClassConstructor->Release();
     if (m_pGetTypeHandle)
         m_pGetTypeHandle->Release();
+}
+
+void Debugger::Cleanup()
+{
+    Modules::CleanupAllModules();
+    m_evaluator.Cleanup();
     m_protocol->Cleanup();
     // TODO: Cleanup libcoreclr.so instance
 }

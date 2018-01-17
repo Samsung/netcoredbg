@@ -17,15 +17,15 @@
 #include "debugger.h"
 #include "typeprinter.h"
 #include "modules.h"
-#include "valuewalk.h"
 #include "valueprint.h"
 #include "expr.h"
 #include "frames.h"
 
 
-HRESULT GetNumChild(ICorDebugValue *pValue,
-                    unsigned int &numchild,
-                    bool static_members = false)
+HRESULT Debugger::GetNumChild(
+    ICorDebugValue *pValue,
+    unsigned int &numchild,
+    bool static_members)
 {
     HRESULT Status = S_OK;
     numchild = 0;
@@ -33,7 +33,7 @@ HRESULT GetNumChild(ICorDebugValue *pValue,
     ULONG numstatic = 0;
     ULONG numinstance = 0;
 
-    IfFailRet(WalkMembers(pValue, nullptr, nullptr, [&numstatic, &numinstance](
+    IfFailRet(m_evaluator.WalkMembers(pValue, nullptr, nullptr, [&numstatic, &numinstance](
         mdMethodDef,
         ICorDebugModule *,
         ICorDebugType *,
@@ -93,7 +93,7 @@ static HRESULT FindFunction(ICorDebugModule *pModule,
     return pModule->GetFunctionFromToken(methodDef, ppFunction);
 }
 
-HRESULT Debugger::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
+HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
 {
     HRESULT Status;
 
@@ -157,14 +157,15 @@ private:
     Member(const Member &that) = delete;
 };
 
-static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
-                                        ICorDebugThread *pThread,
-                                        ICorDebugILFrame *pILFrame,
-                                        std::vector<Member> &members,
-                                        bool fetchOnlyStatic,
-                                        bool &hasStaticMembers,
-                                        int childStart,
-                                        int childEnd)
+HRESULT Debugger::FetchFieldsAndProperties(
+    ICorDebugValue *pInputValue,
+    ICorDebugThread *pThread,
+    ICorDebugILFrame *pILFrame,
+    std::vector<Member> &members,
+    bool fetchOnlyStatic,
+    bool &hasStaticMembers,
+    int childStart,
+    int childEnd)
 {
     hasStaticMembers = false;
     HRESULT Status;
@@ -174,7 +175,7 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
 
     int currentIndex = -1;
 
-    IfFailRet(WalkMembers(pInputValue, pThread, pILFrame, [&](
+    IfFailRet(m_evaluator.WalkMembers(pInputValue, pThread, pILFrame, [&](
         mdMethodDef mdGetter,
         ICorDebugModule *pModule,
         ICorDebugType *pType,
@@ -205,7 +206,7 @@ static HRESULT FetchFieldsAndProperties(ICorDebugValue *pInputValue,
         {
             ToRelease<ICorDebugFunction> pFunc;
             if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
-                EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResultValue);
+                m_evaluator.EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResultValue);
         }
         else
         {
@@ -299,7 +300,10 @@ HRESULT Debugger::GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, 
         }
     }
 
-    IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
+    IfFailRet(m_evaluator.WalkStackVars(pFrame, [&](
+        ICorDebugILFrame *pILFrame,
+        ICorDebugValue *pValue,
+        const std::string &name) -> HRESULT
     {
         ++currentIndex;
         if (currentIndex < start || (count != 0 && currentIndex >= start + count))
@@ -335,7 +339,10 @@ HRESULT Debugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
     if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
         namedVariables++;
 
-    IfFailRet(WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame, ICorDebugValue *pValue, const std::string &name) -> HRESULT
+    IfFailRet(m_evaluator.WalkStackVars(pFrame, [&](
+        ICorDebugILFrame *pILFrame,
+        ICorDebugValue *pValue,
+        const std::string &name) -> HRESULT
     {
         namedVariables++;
         return S_OK;
@@ -419,7 +426,7 @@ HRESULT Debugger::GetChildren(VariableReference &ref,
         bool staticsInRange = start < ref.namedVariables && (count == 0 || start + count >= ref.namedVariables);
         if (staticsInRange)
         {
-            RunClassConstructor(pThread, ref.value);
+            m_evaluator.RunClassConstructor(pThread, ref.value);
 
             Variable var;
             var.name = "Static members";
@@ -443,7 +450,7 @@ HRESULT Debugger::Evaluate(uint64_t frameId, const std::string &expression, Vari
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
     ToRelease<ICorDebugValue> pResultValue;
-    IfFailRet(EvalExpr(pThread, pFrame, expression, &pResultValue));
+    IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue));
 
     variable.evaluateName = expression;
 

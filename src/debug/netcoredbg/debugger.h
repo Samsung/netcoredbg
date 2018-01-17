@@ -7,9 +7,134 @@
 #include <unordered_set>
 #include <vector>
 #include <condition_variable>
+#include <future>
 
 class ManagedCallback;
 class Protocol;
+
+struct Member;
+
+enum ValueKind
+{
+    ValueIsScope,
+    ValueIsClass,
+    ValueIsVariable
+};
+
+class Evaluator
+{
+public:
+
+    typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
+    typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
+
+private:
+
+    ToRelease<ICorDebugFunction> m_pRunClassConstructor;
+    ToRelease<ICorDebugFunction> m_pGetTypeHandle;
+
+    std::mutex m_evalMutex;
+    std::unordered_map< DWORD, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > > m_evalResults;
+
+    HRESULT FollowNested(ICorDebugThread *pThread,
+                         ICorDebugILFrame *pILFrame,
+                         const std::string &methodClass,
+                         const std::vector<std::string> &parts,
+                         ICorDebugValue **ppResult);
+    HRESULT FollowFields(ICorDebugThread *pThread,
+                         ICorDebugILFrame *pILFrame,
+                         ICorDebugValue *pValue,
+                         ValueKind valueKind,
+                         const std::vector<std::string> &parts,
+                         int nextPart,
+                         ICorDebugValue **ppResult);
+    HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
+                                       ICorDebugILFrame *pILFrame,
+                                       ICorDebugValue *pInputValue,
+                                       ValueKind valueKind,
+                                       const std::string &name,
+                                       ICorDebugValue **ppResultValue);
+
+    HRESULT WaitEvalResult(ICorDebugThread *pThread,
+                           ICorDebugEval *pEval,
+                           ICorDebugValue **ppEvalResult);
+
+    HRESULT EvalObjectNoConstructor(
+        ICorDebugThread *pThread,
+        ICorDebugType *pType,
+        ICorDebugValue **ppEvalResult);
+
+    std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
+        ICorDebugThread *pThread,
+        ICorDebugEval *pEval);
+
+    HRESULT WalkMembers(
+        ICorDebugValue *pInputValue,
+        ICorDebugThread *pThread,
+        ICorDebugILFrame *pILFrame,
+        ICorDebugType *pTypeCast,
+        WalkMembersCallback cb);
+
+    HRESULT HandleSpecialLocalVar(
+        const std::string &localName,
+        ICorDebugValue *pLocalValue,
+        ICorDebugILFrame *pILFrame,
+        std::unordered_set<std::string> &locals,
+        WalkStackVarsCallback cb);
+
+    HRESULT HandleSpecialThisParam(
+        ICorDebugValue *pThisValue,
+        ICorDebugILFrame *pILFrame,
+        std::unordered_set<std::string> &locals,
+        WalkStackVarsCallback cb);
+
+    HRESULT GetLiteralValue(
+        ICorDebugThread *pThread,
+        ICorDebugType *pType,
+        ICorDebugModule *pModule,
+        PCCOR_SIGNATURE pSignatureBlob,
+        ULONG sigBlobLength,
+        UVCP_CONSTANT pRawValue,
+        ULONG rawValueLength,
+        ICorDebugValue **ppLiteralValue);
+
+public:
+
+    HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
+
+    HRESULT EvalFunction(
+        ICorDebugThread *pThread,
+        ICorDebugFunction *pFunc,
+        ICorDebugType *pType, // may be nullptr
+        ICorDebugValue *pArgValue, // may be nullptr
+        ICorDebugValue **ppEvalResult);
+
+    HRESULT EvalExpr(ICorDebugThread *pThread,
+                     ICorDebugFrame *pFrame,
+                     const std::string &expression,
+                     ICorDebugValue **ppResult);
+
+    bool IsEvalRunning();
+
+    // Should be called by ICorDebugManagedCallback
+    void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
+
+    HRESULT ObjectToString(
+        ICorDebugThread *pThread,
+        ICorDebugValue *pValue,
+        std::function<void(const std::string&)> cb
+    );
+
+    HRESULT WalkMembers(
+        ICorDebugValue *pValue,
+        ICorDebugThread *pThread,
+        ICorDebugILFrame *pILFrame,
+        WalkMembersCallback cb);
+
+    HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb);
+
+    void Cleanup();
+};
 
 class Debugger
 {
@@ -22,6 +147,7 @@ public:
 
 private:
     friend class ManagedCallback;
+    Evaluator m_evaluator;
     Protocol *m_protocol;
     ManagedCallback *m_managedCallback;
     ICorDebug *m_pDebug;
@@ -37,13 +163,6 @@ private:
     PVOID m_unregisterToken;
     DWORD m_processId;
     std::string m_clrPath;
-
-    enum ValueKind
-    {
-        ValueIsScope,
-        ValueIsClass,
-        ValueIsVariable
-    };
 
     struct VariableReference
     {
@@ -117,7 +236,7 @@ private:
     void DeleteAllBreakpoints();
 
     HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
-    HRESULT Debugger::ResolveBreakpoint(ManagedBreakpoint &bp);
+    HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
 
     HRESULT CheckNoProcess();
 
@@ -131,33 +250,20 @@ private:
     HRESULT GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
     HRESULT GetChildren(VariableReference &ref, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
 
-    HRESULT EvalExpr(ICorDebugThread *pThread,
-                     ICorDebugFrame *pFrame,
-                     const std::string &expression,
-                     ICorDebugValue **ppResult);
-    HRESULT FollowNested(ICorDebugThread *pThread,
-                         ICorDebugILFrame *pILFrame,
-                         const std::string &methodClass,
-                         const std::vector<std::string> &parts,
-                         ICorDebugValue **ppResult);
-    HRESULT FollowFields(ICorDebugThread *pThread,
-                         ICorDebugILFrame *pILFrame,
-                         ICorDebugValue *pValue,
-                         ValueKind valueKind,
-                         const std::vector<std::string> &parts,
-                         int nextPart,
-                         ICorDebugValue **ppResult);
-    HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
-                                       ICorDebugILFrame *pILFrame,
-                                       ICorDebugValue *pInputValue,
-                                       ValueKind valueKind,
-                                       const std::string &name,
-                                       ICorDebugValue **ppResultValue);
+    HRESULT FetchFieldsAndProperties(
+        ICorDebugValue *pInputValue,
+        ICorDebugThread *pThread,
+        ICorDebugILFrame *pILFrame,
+        std::vector<Member> &members,
+        bool fetchOnlyStatic,
+        bool &hasStaticMembers,
+        int childStart,
+        int childEnd);
 
-    ToRelease<ICorDebugFunction> m_pRunClassConstructor;
-    ToRelease<ICorDebugFunction> m_pGetTypeHandle;
-    HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
-
+    HRESULT GetNumChild(
+        ICorDebugValue *pValue,
+        unsigned int &numchild,
+        bool static_members = false);
 public:
     Debugger();
     ~Debugger();

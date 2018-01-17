@@ -17,7 +17,6 @@
 #include "debugger.h"
 #include "typeprinter.h"
 #include "modules.h"
-#include "valuewalk.h"
 #include "valueprint.h"
 #include "expr.h"
 
@@ -52,12 +51,12 @@ static HRESULT ParseIndices(const std::string &s, std::vector<ULONG32> &indices)
     return S_OK;
 }
 
-HRESULT Debugger::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
-                                             ICorDebugILFrame *pILFrame,
-                                             ICorDebugValue *pInputValue,
-                                             ValueKind valueKind,
-                                             const std::string &name,
-                                             ICorDebugValue **ppResultValue)
+HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
+                                              ICorDebugILFrame *pILFrame,
+                                              ICorDebugValue *pInputValue,
+                                              ValueKind valueKind,
+                                              const std::string &name,
+                                              ICorDebugValue **ppResultValue)
 {
     HRESULT Status;
 
@@ -150,13 +149,13 @@ static mdTypeDef GetTypeTokenForName(IMetaDataImport *pMD, mdTypeDef tkEnclosing
     return typeToken;
 }
 
-HRESULT Debugger::FollowFields(ICorDebugThread *pThread,
-                              ICorDebugILFrame *pILFrame,
-                              ICorDebugValue *pValue,
-                              ValueKind valueKind,
-                              const std::vector<std::string> &parts,
-                              int nextPart,
-                              ICorDebugValue **ppResult)
+HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
+                                ICorDebugILFrame *pILFrame,
+                                ICorDebugValue *pValue,
+                                ValueKind valueKind,
+                                const std::vector<std::string> &parts,
+                                int nextPart,
+                                ICorDebugValue **ppResult)
 {
     HRESULT Status;
 
@@ -504,11 +503,11 @@ HRESULT FindType(const std::vector<std::string> &parts,
     return S_OK;
 }
 
-HRESULT Debugger::FollowNested(ICorDebugThread *pThread,
-                               ICorDebugILFrame *pILFrame,
-                               const std::string &methodClass,
-                               const std::vector<std::string> &parts,
-                               ICorDebugValue **ppResult)
+HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
+                                ICorDebugILFrame *pILFrame,
+                                const std::string &methodClass,
+                                const std::vector<std::string> &parts,
+                                ICorDebugValue **ppResult)
 {
     HRESULT Status;
 
@@ -539,10 +538,10 @@ HRESULT Debugger::FollowNested(ICorDebugThread *pThread,
     return E_FAIL;
 }
 
-HRESULT Debugger::EvalExpr(ICorDebugThread *pThread,
-                           ICorDebugFrame *pFrame,
-                           const std::string &expression,
-                           ICorDebugValue **ppResult)
+HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
+                            ICorDebugFrame *pFrame,
+                            const std::string &expression,
+                            ICorDebugValue **ppResult)
 {
     HRESULT Status;
 

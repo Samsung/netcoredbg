@@ -13,26 +13,22 @@
 #include <vector>
 #include <list>
 #include <iomanip>
-#include <future>
 #include <utility>
 
 #include "cputil.h"
 #include "modules.h"
 #include "typeprinter.h"
-#include "valuewalk.h"
 #include "valueprint.h"
 #include "expr.h"
+#include "debugger.h"
 
 
-static std::mutex g_evalMutex;
-static std::unordered_map< DWORD, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > > g_evalResults;
-
-void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)
+void Evaluator::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)
 {
-    std::lock_guard<std::mutex> lock(g_evalMutex);
+    std::lock_guard<std::mutex> lock(m_evalMutex);
     if (!pThread)
     {
-        g_evalResults.clear();
+        m_evalResults.clear();
         return;
     }
 
@@ -45,23 +41,23 @@ void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)
         pEval->GetResult(&(*ppEvalResult));
     }
 
-    auto it = g_evalResults.find(threadId);
+    auto it = m_evalResults.find(threadId);
 
-    if (it == g_evalResults.end())
+    if (it == m_evalResults.end())
         return;
 
     it->second.set_value(std::move(ppEvalResult));
 
-    g_evalResults.erase(it);
+    m_evalResults.erase(it);
 }
 
-bool IsEvalRunning()
+bool Evaluator::IsEvalRunning()
 {
-    std::lock_guard<std::mutex> lock(g_evalMutex);
-    return !g_evalResults.empty();
+    std::lock_guard<std::mutex> lock(m_evalMutex);
+    return !m_evalResults.empty();
 }
 
-std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
+std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > Evaluator::RunEval(
     ICorDebugThread *pThread,
     ICorDebugEval *pEval)
 {
@@ -75,20 +71,20 @@ std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
     if (FAILED(pThread->GetProcess(&pProcess)))
         return f;
 
-    std::lock_guard<std::mutex> lock(g_evalMutex);
+    std::lock_guard<std::mutex> lock(m_evalMutex);
 
-    if (!g_evalResults.insert(std::make_pair(threadId, std::move(p))).second)
+    if (!m_evalResults.insert(std::make_pair(threadId, std::move(p))).second)
         return f; // Already running eval? The future will throw broken promise
 
     if (FAILED(pProcess->Continue(0)))
-        g_evalResults.erase(threadId);
+        m_evalResults.erase(threadId);
 
     return f;
 }
 
-static HRESULT WaitEvalResult(ICorDebugThread *pThread,
-                              ICorDebugEval *pEval,
-                              ICorDebugValue **ppEvalResult)
+HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
+                                  ICorDebugEval *pEval,
+                                  ICorDebugValue **ppEvalResult)
 {
     try
     {
@@ -105,7 +101,7 @@ static HRESULT WaitEvalResult(ICorDebugThread *pThread,
     return S_OK;
 }
 
-HRESULT EvalFunction(
+HRESULT Evaluator::EvalFunction(
     ICorDebugThread *pThread,
     ICorDebugFunction *pFunc,
     ICorDebugType *pType, // may be nullptr
@@ -147,7 +143,7 @@ HRESULT EvalFunction(
     return WaitEvalResult(pThread, pEval, ppEvalResult);
 }
 
-HRESULT EvalObjectNoConstructor(
+HRESULT Evaluator::EvalObjectNoConstructor(
     ICorDebugThread *pThread,
     ICorDebugType *pType,
     ICorDebugValue **ppEvalResult)
@@ -230,7 +226,7 @@ static HRESULT FindMethod(ICorDebugType *pType, WCHAR *methodName, ICorDebugFunc
     return E_FAIL;
 }
 
-HRESULT ObjectToString(
+HRESULT Evaluator::ObjectToString(
     ICorDebugThread *pThread,
     ICorDebugValue *pValue,
     std::function<void(const std::string&)> cb
@@ -337,14 +333,15 @@ static std::string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vec
     return ss.str();
 }
 
-static HRESULT GetLiteralValue(ICorDebugThread *pThread,
-                               ICorDebugType *pType,
-                               ICorDebugModule *pModule,
-                               PCCOR_SIGNATURE pSignatureBlob,
-                               ULONG sigBlobLength,
-                               UVCP_CONSTANT pRawValue,
-                               ULONG rawValueLength,
-                               ICorDebugValue **ppLiteralValue)
+HRESULT Evaluator::GetLiteralValue(
+    ICorDebugThread *pThread,
+    ICorDebugType *pType,
+    ICorDebugModule *pModule,
+    PCCOR_SIGNATURE pSignatureBlob,
+    ULONG sigBlobLength,
+    UVCP_CONSTANT pRawValue,
+    ULONG rawValueLength,
+    ICorDebugValue **ppLiteralValue)
 {
     HRESULT Status = S_OK;
 
@@ -495,11 +492,12 @@ static HRESULT GetLiteralValue(ICorDebugThread *pThread,
     return S_OK;
 }
 
-static HRESULT WalkMembers(ICorDebugValue *pInputValue,
-                           ICorDebugThread *pThread,
-                           ICorDebugILFrame *pILFrame,
-                           ICorDebugType *pTypeCast,
-                           WalkMembersCallback cb)
+HRESULT Evaluator::WalkMembers(
+    ICorDebugValue *pInputValue,
+    ICorDebugThread *pThread,
+    ICorDebugILFrame *pILFrame,
+    ICorDebugType *pTypeCast,
+    WalkMembersCallback cb)
 {
     HRESULT Status = S_OK;
 
@@ -715,19 +713,21 @@ static HRESULT WalkMembers(ICorDebugValue *pInputValue,
     return S_OK;
 }
 
-HRESULT WalkMembers(ICorDebugValue *pValue,
-                    ICorDebugThread *pThread,
-                    ICorDebugILFrame *pILFrame,
-                    WalkMembersCallback cb)
+HRESULT Evaluator::WalkMembers(
+    ICorDebugValue *pValue,
+    ICorDebugThread *pThread,
+    ICorDebugILFrame *pILFrame,
+    WalkMembersCallback cb)
 {
     return WalkMembers(pValue, pThread, pILFrame, nullptr, cb);
 }
 
-static HRESULT HandleSpecialLocalVar(const std::string &localName,
-                                     ICorDebugValue *pLocalValue,
-                                     ICorDebugILFrame *pILFrame,
-                                     std::unordered_set<std::string> &locals,
-                                     WalkStackVarsCallback cb)
+HRESULT Evaluator::HandleSpecialLocalVar(
+    const std::string &localName,
+    ICorDebugValue *pLocalValue,
+    ICorDebugILFrame *pILFrame,
+    std::unordered_set<std::string> &locals,
+    WalkStackVarsCallback cb)
 {
     static const std::string captureName = "CS$<>";
 
@@ -758,10 +758,11 @@ static HRESULT HandleSpecialLocalVar(const std::string &localName,
     return S_OK;
 }
 
-static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
-                                      ICorDebugILFrame *pILFrame,
-                                      std::unordered_set<std::string> &locals,
-                                      WalkStackVarsCallback cb)
+HRESULT Evaluator::HandleSpecialThisParam(
+    ICorDebugValue *pThisValue,
+    ICorDebugILFrame *pILFrame,
+    std::unordered_set<std::string> &locals,
+    WalkStackVarsCallback cb)
 {
     static const std::string displayClass = "<>c__DisplayClass";
     static const std::string hideClass = "<>c";
@@ -804,7 +805,7 @@ static HRESULT HandleSpecialThisParam(ICorDebugValue *pThisValue,
     return S_OK;
 }
 
-HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
+HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
 {
     HRESULT Status;
 
