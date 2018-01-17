@@ -263,7 +263,7 @@ static std::string AddrToString(uint64_t addr)
     return ss.str();
 }
 
-HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
+HRESULT MIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 {
     HRESULT Status;
 

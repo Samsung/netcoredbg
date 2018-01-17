@@ -262,6 +262,8 @@ private:
 
     void Cleanup();
 
+    static HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
+
     HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
 
     HRESULT GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
@@ -370,8 +372,5 @@ private:
     HRESULT ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, Breakpoint &breakpoints);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
+    static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
 };
-
-HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
-
-HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
