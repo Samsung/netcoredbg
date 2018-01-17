@@ -6,6 +6,7 @@
 
 #include "platform.h"
 #include <string>
+#include <vector>
 
 // From https://github.com/Microsoft/vscode-debugadapter-node/blob/master/protocol/src/debugProtocol.ts
 

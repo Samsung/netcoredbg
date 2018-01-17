@@ -20,8 +20,6 @@
 #include "debugger.h"
 #include "modules.h"
 #include "valuewalk.h"
-#include "breakpoints.h"
-#include "valuewalk.h"
 #include "frames.h"
 
 #define __in
@@ -188,9 +186,6 @@ static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *p
         }
     }
 
-    // FIXME: Delete all or Release all?
-    DeleteAllBreakpoints();
-
     DisableAllSteppersInAppDomain(pAppDomain);
 
     return S_OK;
@@ -341,7 +336,7 @@ public:
             pThread->GetID(&threadId);
 
             StoppedEvent event(StopBreakpoint, threadId);
-            HitBreakpoint(pThread, event.breakpoint);
+            m_debugger->HitBreakpoint(pThread, event.breakpoint);
 
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
@@ -685,7 +680,8 @@ Debugger::Debugger() :
         m_startupResult(S_OK),
         m_unregisterToken(nullptr),
         m_processId(0),
-        m_nextVariableReference(1)
+        m_nextVariableReference(1),
+        m_nextBreakpointId(1)
 {
     m_managedCallback->m_debugger = this;
 }
@@ -905,6 +901,7 @@ HRESULT Debugger::DetachFromProcess()
 
     if (SUCCEEDED(m_pProcess->Stop(0)))
     {
+        DeleteAllBreakpoints();
         DisableAllBreakpointsAndSteppers(m_pProcess);
         m_pProcess->Detach();
     }

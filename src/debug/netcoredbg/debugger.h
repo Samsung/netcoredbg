@@ -4,6 +4,9 @@
 
 #include "protocol.h"
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
+#include <condition_variable>
 
 class ManagedCallback;
 class Protocol;
@@ -84,6 +87,38 @@ private:
 
     void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
 
+    struct ManagedBreakpoint {
+        uint32_t id;
+        CORDB_ADDRESS modAddress;
+        mdMethodDef methodToken;
+        ULONG32 ilOffset;
+        std::string fullname;
+        int linenum;
+        ToRelease<ICorDebugBreakpoint> breakpoint;
+        bool enabled;
+        ULONG32 times;
+
+        bool IsResolved() const { return modAddress != 0; }
+
+        ManagedBreakpoint();
+        ~ManagedBreakpoint();
+
+        void ToBreakpoint(Breakpoint &breakpoint);
+
+        ManagedBreakpoint(ManagedBreakpoint &&that) = default;
+    private:
+        ManagedBreakpoint(const ManagedBreakpoint &that) = delete;
+    };
+
+    uint32_t m_nextBreakpointId;
+    std::mutex m_breakpointsMutex;
+    std::unordered_map<std::string, std::unordered_map<int, ManagedBreakpoint> > m_breakpoints;
+    HRESULT HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint);
+    void DeleteAllBreakpoints();
+
+    HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
+    HRESULT Debugger::ResolveBreakpoint(ManagedBreakpoint &bp);
+
     HRESULT CheckNoProcess();
 
     static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
@@ -143,7 +178,8 @@ public:
     HRESULT Continue();
     HRESULT Pause();
     HRESULT GetThreads(std::vector<Thread> &threads);
-    HRESULT SetBreakpoint(std::string filename, int linenum, Breakpoint &breakpoint);
+    HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints);
+    void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint);
     HRESULT GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
     HRESULT StepCommand(int threadId, StepType stepType);
     HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes);
@@ -176,6 +212,7 @@ class MIProtocol : public Protocol
 
     unsigned int m_varCounter;
     std::unordered_map<std::string, Variable> m_vars;
+    std::unordered_map<std::string, std::unordered_map<int32_t, int> > m_breakpoints;
 public:
     void SetDebugger(Debugger *debugger) { m_debugger = debugger; m_debugger->SetProtocol(this); }
     static std::string EscapeMIValue(const std::string &str);
@@ -206,6 +243,8 @@ private:
     void PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output);
     void PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output);
     HRESULT ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
+    HRESULT SetBreakpoint(const std::string &filename, int linenum, Breakpoint &breakpoints);
+    void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
 };
 
 HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);

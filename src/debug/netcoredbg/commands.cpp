@@ -19,7 +19,6 @@
 #include "platform.h"
 #include "debugger.h"
 #include "modules.h"
-#include "breakpoints.h"
 #include "frames.h"
 
 
@@ -151,7 +150,7 @@ void MIProtocol::EmitBreakpointEvent(BreakpointEvent event)
 {
     switch(event.reason)
     {
-        case StopBreakpoint:
+        case BreakpointChanged:
         {
             std::string output;
             PrintBreakpoint(event.breakpoint, output);
@@ -234,11 +233,6 @@ HRESULT Debugger::GetThreads(std::vector<Thread> &threads)
     if (!m_pProcess)
         return E_FAIL;
     return GetThreadsState(m_pProcess, threads);
-}
-
-HRESULT Debugger::SetBreakpoint(std::string filename, int linenum, Breakpoint &breakpoint)
-{
-    return InsertBreakpointInProcess(m_pProcess, filename, linenum, breakpoint);
 }
 
 HRESULT Debugger::GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
@@ -421,6 +415,7 @@ void MIProtocol::Cleanup()
 {
     m_vars.clear();
     m_varCounter = 0;
+    m_breakpoints.clear();
 }
 
 void MIProtocol::PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output)
@@ -476,6 +471,47 @@ HRESULT MIProtocol::ListChildren(int threadId, int level, int childStart, int ch
     PrintChildren(variables, threadId, print_values, has_more, output);
 
     return S_OK;
+}
+
+HRESULT MIProtocol::SetBreakpoint(const std::string &filename, int linenum, Breakpoint &breakpoint)
+{
+    HRESULT Status;
+
+    auto &breakpointsInSource = m_breakpoints[filename];
+    std::vector<int> lines;
+    for (auto it : breakpointsInSource)
+    {
+        lines.push_back(it.second);
+    }
+    lines.push_back(linenum);
+
+    std::vector<Breakpoint> breakpoints;
+    IfFailRet(m_debugger->SetBreakpoints(filename, lines, breakpoints));
+
+    breakpoint = breakpoints.back();
+    breakpointsInSource.insert(std::make_pair(breakpoint.id, linenum));
+
+    return S_OK;
+}
+
+void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
+{
+    for (auto &breakpointsIter : m_breakpoints)
+    {
+        std::vector<int> remainingLines;
+        for (auto it : breakpointsIter.second)
+        {
+            if (ids.find(it.first) == ids.end())
+                remainingLines.push_back(it.second);
+        }
+        if (remainingLines.size() == breakpointsIter.second.size())
+            continue;
+
+        std::string filename = breakpointsIter.first;
+
+        std::vector<Breakpoint> tmpBreakpoints;
+        m_debugger->SetBreakpoints(filename, remainingLines, tmpBreakpoints);
+    }
 }
 
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
@@ -599,7 +635,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         ULONG32 id;
         Breakpoint breakpoint;
         if (ParseBreakpoint(args, filename, linenum)
-            && SUCCEEDED(m_debugger->SetBreakpoint(filename, linenum, breakpoint)))
+            && SUCCEEDED(SetBreakpoint(filename, linenum, breakpoint)))
         {
             PrintBreakpoint(breakpoint, output);
             return S_OK;
@@ -608,14 +644,16 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         output = "Unknown breakpoint location format";
         return E_FAIL;
     } },
-    { "break-delete", [](const std::vector<std::string> &args, std::string &) -> HRESULT {
+    { "break-delete", [this](const std::vector<std::string> &args, std::string &) -> HRESULT {
+        std::unordered_set<uint32_t> ids;
         for (const std::string &idStr : args)
         {
             bool ok;
             int id = ParseInt(idStr, ok);
             if (ok)
-                DeleteBreakpoint(id);
+                ids.insert(id);
         }
+        DeleteBreakpoints(ids);
         return S_OK;
     } },
     { "exec-step", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -786,7 +824,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     { "interpreter-exec", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return S_OK;
     }},
-    { "break-exception-insert", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "break-exception-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.empty())
             return E_FAIL;
         size_t i = 1;
@@ -799,7 +837,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         for (; i < args.size(); i++)
         {
             Breakpoint b;
-            InsertExceptionBreakpoint(args.at(i), b);
+            m_debugger->InsertExceptionBreakpoint(args.at(i), b);
             ss << sep;
             sep = ",";
             ss << "{number=\"" << b.id << "\"}";
