@@ -250,7 +250,7 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
                                 Debugger::StepType stepType)
 {
     HRESULT Status;
-    DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+    DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
     m_debugger->StepCommand(threadId, stepType);
     output = "^running";
     return S_OK;
@@ -689,7 +689,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     }},
     { "stack-list-frames", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         std::vector<std::string> args = args_orig;
-        DWORD threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+        DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
         int lowFrame = 0;
         int highFrame = INT_MAX;
         StripArgs(args);
@@ -699,7 +699,8 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     { "stack-list-variables", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
 
-        StackFrame stackFrame(GetIntArg(args, "--thread", GetLastStoppedThreadId()), GetIntArg(args, "--frame", 0), "");
+        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
+        StackFrame stackFrame(threadId, GetIntArg(args, "--frame", 0), "");
         std::vector<Scope> scopes;
         std::vector<Variable> variables;
         IfFailRet(m_debugger->GetScopes(stackFrame.id, scopes));
@@ -721,7 +722,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             return E_FAIL;
         }
 
-        int threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
         int level = GetIntArg(args, "--frame", 0);
 
         std::string varName = args.at(0);
@@ -758,7 +759,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             return E_FAIL;
         }
 
-        int threadId = GetIntArg(args, "--thread", GetLastStoppedThreadId());
+        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
         int level = GetIntArg(args, "--frame", 0);
 
         int childStart = 0;

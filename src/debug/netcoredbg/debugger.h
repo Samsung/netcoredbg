@@ -161,6 +161,11 @@ private:
     void WaitProcessExited();
     HRESULT CheckNoProcess();
 
+    std::mutex m_lastStoppedThreadIdMutex;
+    int m_lastStoppedThreadId;
+
+    void SetLastStoppedThread(ICorDebugThread *pThread);
+
     Evaluator m_evaluator;
     Protocol *m_protocol;
     ManagedCallback *m_managedCallback;
@@ -293,6 +298,8 @@ public:
     HRESULT DetachFromProcess();
     HRESULT TerminateProcess();
 
+    int GetLastStoppedThreadId();
+
     HRESULT Continue();
     HRESULT Pause();
     HRESULT GetThreads(std::vector<Thread> &threads);
@@ -366,7 +373,5 @@ private:
 };
 
 HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
-int GetLastStoppedThreadId();
-void WaitProcessExited();
 
 HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);

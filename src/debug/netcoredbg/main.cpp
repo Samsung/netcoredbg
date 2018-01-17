@@ -204,22 +204,19 @@ HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
     return S_OK;
 }
 
-static std::mutex g_lastStoppedThreadIdMutex;
-static int g_lastStoppedThreadId = 0;
-
-void SetLastStoppedThread(ICorDebugThread *pThread)
+void Debugger::SetLastStoppedThread(ICorDebugThread *pThread)
 {
     DWORD threadId = 0;
     pThread->GetID(&threadId);
 
-    std::lock_guard<std::mutex> lock(g_lastStoppedThreadIdMutex);
-    g_lastStoppedThreadId = threadId;
+    std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
+    m_lastStoppedThreadId = threadId;
 }
 
-int GetLastStoppedThreadId()
+int Debugger::GetLastStoppedThreadId()
 {
-    std::lock_guard<std::mutex> lock(g_lastStoppedThreadIdMutex);
-    return g_lastStoppedThreadId;
+    std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
+    return m_lastStoppedThreadId;
 }
 
 static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
@@ -338,7 +335,7 @@ public:
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
                 GetFrameLocation(pFrame, threadId, 0, event.frame);
 
-            SetLastStoppedThread(pThread);
+            m_debugger->SetLastStoppedThread(pThread);
             m_debugger->m_protocol->EmitStoppedEvent(event);
 
             return S_OK;
@@ -371,7 +368,7 @@ public:
                 StoppedEvent event(StopStep, threadId);
                 event.frame = stackFrame;
 
-                SetLastStoppedThread(pThread);
+                m_debugger->SetLastStoppedThread(pThread);
                 m_debugger->m_protocol->EmitStoppedEvent(event);
             }
             return S_OK;
@@ -400,7 +397,7 @@ public:
                 if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
                     GetFrameLocation(pFrame, threadId, 0, stackFrame);
 
-                SetLastStoppedThread(pThread);
+                m_debugger->SetLastStoppedThread(pThread);
 
                 std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
 
