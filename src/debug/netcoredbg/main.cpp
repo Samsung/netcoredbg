@@ -149,7 +149,7 @@ static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
     return S_OK;
 }
 
-HRESULT DisableAllSteppers(ICorDebugProcess *pProcess)
+HRESULT Debugger::DisableAllSteppers(ICorDebugProcess *pProcess)
 {
     HRESULT Status;
 
