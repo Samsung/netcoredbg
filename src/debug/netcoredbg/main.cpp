@@ -942,14 +942,6 @@ HRESULT Debugger::TerminateProcess()
     return S_OK;
 }
 
-void Evaluator::Cleanup()
-{
-    if (m_pRunClassConstructor)
-        m_pRunClassConstructor->Release();
-    if (m_pGetTypeHandle)
-        m_pGetTypeHandle->Release();
-}
-
 void Debugger::Cleanup()
 {
     Modules::CleanupAllModules();

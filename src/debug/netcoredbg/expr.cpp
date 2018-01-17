@@ -149,6 +149,97 @@ static mdTypeDef GetTypeTokenForName(IMetaDataImport *pMD, mdTypeDef tkEnclosing
     return typeToken;
 }
 
+static HRESULT GetMethodToken(IMetaDataImport *pMD, mdTypeDef cl, const WCHAR *methodName)
+{
+    ULONG numMethods = 0;
+    HCORENUM mEnum = NULL;
+    mdMethodDef methodDef = mdTypeDefNil;
+    pMD->EnumMethodsWithName(&mEnum, cl, methodName, &methodDef, 1, &numMethods);
+    pMD->CloseEnum(mEnum);
+    return methodDef;
+}
+
+static HRESULT FindFunction(ICorDebugModule *pModule,
+                            const WCHAR *typeName,
+                            const WCHAR *methodName,
+                            ICorDebugFunction **ppFunction)
+{
+    HRESULT Status;
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    mdTypeDef typeDef = mdTypeDefNil;
+
+    IfFailRet(pMD->FindTypeDefByName(typeName, mdTypeDefNil, &typeDef));
+
+    mdMethodDef methodDef = GetMethodToken(pMD, typeDef, methodName);
+
+    if (methodDef == mdMethodDefNil)
+        return E_FAIL;
+
+    return pModule->GetFunctionFromToken(methodDef, ppFunction);
+}
+
+HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
+{
+    HRESULT Status;
+
+    if (!m_pRunClassConstructor && !m_pGetTypeHandle)
+    {
+        ToRelease<ICorDebugModule> pModule;
+        IfFailRet(Modules::GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+
+        static const WCHAR helpersName[] = W("System.Runtime.CompilerServices.RuntimeHelpers");
+        static const WCHAR runCCTorMethodName[] = W("RunClassConstructor");
+        static const WCHAR typeName[] = W("System.Type");
+        static const WCHAR getTypeHandleMethodName[] = W("GetTypeHandle");
+        IfFailRet(FindFunction(pModule, helpersName, runCCTorMethodName, &m_pRunClassConstructor));
+        IfFailRet(FindFunction(pModule, typeName, getTypeHandleMethodName, &m_pGetTypeHandle));
+    }
+
+    ToRelease<ICorDebugValue> pNewValue;
+
+    ToRelease<ICorDebugValue> pUnboxedValue;
+    BOOL isNull = FALSE;
+    IfFailRet(DereferenceAndUnboxValue(pValue, &pUnboxedValue, &isNull));
+
+    CorElementType et;
+    IfFailRet(pUnboxedValue->GetType(&et));
+
+    if (et != ELEMENT_TYPE_CLASS)
+        return S_OK;
+
+    if (isNull)
+    {
+        ToRelease<ICorDebugValue2> pValue2;
+        ToRelease<ICorDebugType> pType;
+
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+        IfFailRet(pValue2->GetExactType(&pType));
+
+        EvalObjectNoConstructor(pThread, pType, &pNewValue);
+    }
+
+    ToRelease<ICorDebugValue> pRuntimeHandleValue;
+    IfFailRet(EvalFunction(pThread, m_pGetTypeHandle, nullptr, pNewValue ? pNewValue.GetPtr() : pValue, &pRuntimeHandleValue));
+
+    ToRelease<ICorDebugValue> pResultValue;
+    IfFailRet(EvalFunction(pThread, m_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue));
+
+    return S_OK;
+}
+
+void Evaluator::Cleanup()
+{
+    if (m_pRunClassConstructor)
+        m_pRunClassConstructor->Release();
+    if (m_pGetTypeHandle)
+        m_pGetTypeHandle->Release();
+}
+
 HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
                                 ICorDebugILFrame *pILFrame,
                                 ICorDebugValue *pValue,
