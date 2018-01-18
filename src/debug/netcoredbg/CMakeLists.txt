@@ -9,7 +9,7 @@ set(netcoredbg_SRC
     typeprinter.cpp
     valuewalk.cpp
     valueprint.cpp
-    commands.cpp
+    miprotocol.cpp
     frames.cpp
     jmc.cpp
     expr.cpp)
