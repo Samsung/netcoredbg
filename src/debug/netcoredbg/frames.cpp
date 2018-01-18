@@ -18,7 +18,7 @@
 #include "frames.h"
 
 
-static HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads)
+HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads)
 {
     HRESULT Status = S_OK;
 
