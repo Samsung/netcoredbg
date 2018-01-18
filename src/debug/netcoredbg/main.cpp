@@ -253,19 +253,18 @@ static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
 
 class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2
 {
-    friend class Debugger;
     ULONG m_refCount;
-    Debugger *m_debugger;
+    Debugger &m_debugger;
 public:
 
         void HandleEvent(ICorDebugController *controller, const std::string &eventName)
         {
             std::string text = "Event received: '" + eventName + "'\n";
-            m_debugger->m_protocol->EmitOutputEvent(OutputEvent(OutputConsole, text));
+            m_debugger.m_protocol->EmitOutputEvent(OutputEvent(OutputConsole, text));
             controller->Continue(0);
         }
 
-        ManagedCallback() : m_refCount(1), m_debugger(nullptr) {}
+        ManagedCallback(Debugger &debugger) : m_refCount(1), m_debugger(debugger) {}
         virtual ~ManagedCallback() {}
 
         // IUnknown
@@ -318,7 +317,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugBreakpoint *pBreakpoint)
         {
-            if (m_debugger->m_evaluator.IsEvalRunning())
+            if (m_debugger.m_evaluator.IsEvalRunning())
             {
                 pAppDomain->Continue(0);
                 return S_OK;
@@ -328,14 +327,14 @@ public:
             pThread->GetID(&threadId);
 
             StoppedEvent event(StopBreakpoint, threadId);
-            m_debugger->HitBreakpoint(pThread, event.breakpoint);
+            m_debugger.HitBreakpoint(pThread, event.breakpoint);
 
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                m_debugger->GetFrameLocation(pFrame, threadId, 0, event.frame);
+                m_debugger.GetFrameLocation(pFrame, threadId, 0, event.frame);
 
-            m_debugger->SetLastStoppedThread(pThread);
-            m_debugger->m_protocol->EmitStoppedEvent(event);
+            m_debugger.SetLastStoppedThread(pThread);
+            m_debugger.m_protocol->EmitStoppedEvent(event);
 
             return S_OK;
         }
@@ -353,13 +352,13 @@ public:
             ToRelease<ICorDebugFrame> pFrame;
             HRESULT Status = S_FALSE;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                Status = m_debugger->GetFrameLocation(pFrame, threadId, 0, stackFrame);
+                Status = m_debugger.GetFrameLocation(pFrame, threadId, 0, stackFrame);
 
             const bool no_source = Status == S_FALSE;
 
-            if (m_debugger->IsJustMyCode() && no_source)
+            if (m_debugger.IsJustMyCode() && no_source)
             {
-                m_debugger->SetupStep(pThread, Debugger::STEP_OVER);
+                m_debugger.SetupStep(pThread, Debugger::STEP_OVER);
                 pAppDomain->Continue(0);
             }
             else
@@ -367,8 +366,8 @@ public:
                 StoppedEvent event(StopStep, threadId);
                 event.frame = stackFrame;
 
-                m_debugger->SetLastStoppedThread(pThread);
-                m_debugger->m_protocol->EmitStoppedEvent(event);
+                m_debugger.SetLastStoppedThread(pThread);
+                m_debugger.m_protocol->EmitStoppedEvent(event);
             }
             return S_OK;
         }
@@ -394,9 +393,9 @@ public:
                 StackFrame stackFrame;
                 ToRelease<ICorDebugFrame> pFrame;
                 if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                    m_debugger->GetFrameLocation(pFrame, threadId, 0, stackFrame);
+                    m_debugger.GetFrameLocation(pFrame, threadId, 0, stackFrame);
 
-                m_debugger->SetLastStoppedThread(pThread);
+                m_debugger.SetLastStoppedThread(pThread);
 
                 std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
 
@@ -407,11 +406,11 @@ public:
                     event.text = excType;
                     event.description = message.empty() ? details : message;
                     event.frame = stackFrame;
-                    m_debugger->m_protocol->EmitStoppedEvent(event);
+                    m_debugger.m_protocol->EmitStoppedEvent(event);
                 };
 
                 if (FAILED(pThread->GetCurrentException(&pExceptionValue)) ||
-                    FAILED(m_debugger->m_evaluator.ObjectToString(pThread, pExceptionValue, emitFunc)))
+                    FAILED(m_debugger.m_evaluator.ObjectToString(pThread, pExceptionValue, emitFunc)))
                 {
                     emitFunc(details);
                 }
@@ -421,7 +420,7 @@ public:
                 std::string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
                 OutputEvent event(OutputConsole, text);
                 event.source = "target-exception";
-                m_debugger->m_protocol->EmitOutputEvent(event);
+                m_debugger.m_protocol->EmitOutputEvent(event);
                 pAppDomain->Continue(0);
             }
 
@@ -433,7 +432,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
-            m_debugger->m_evaluator.NotifyEvalComplete(pThread, pEval);
+            m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
 
@@ -442,7 +441,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
-            m_debugger->m_evaluator.NotifyEvalComplete(pThread, pEval);
+            m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
 
@@ -450,7 +449,7 @@ public:
             /* [in] */ ICorDebugProcess *pProcess)
         {
             //HandleEvent(pProcess, "CreateProcess");
-            m_debugger->NotifyProcessCreated();
+            m_debugger.NotifyProcessCreated();
             pProcess->Continue(0);
             return S_OK;
         }
@@ -458,9 +457,9 @@ public:
         virtual HRESULT STDMETHODCALLTYPE ExitProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
-            m_debugger->m_evaluator.NotifyEvalComplete(nullptr, nullptr);
-            m_debugger->m_protocol->EmitExitedEvent(ExitedEvent(0));
-            m_debugger->NotifyProcessExited();
+            m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
+            m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(0));
+            m_debugger.NotifyProcessExited();
             return S_OK;
         }
 
@@ -470,7 +469,7 @@ public:
         {
             DWORD threadId = 0;
             thread->GetID(&threadId);
-            m_debugger->m_protocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
+            m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -479,10 +478,10 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *thread)
         {
-            m_debugger->m_evaluator.NotifyEvalComplete(thread, nullptr);
+            m_debugger.m_evaluator.NotifyEvalComplete(thread, nullptr);
             DWORD threadId = 0;
             thread->GetID(&threadId);
-            m_debugger->m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
+            m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -497,7 +496,7 @@ public:
             CORDB_ADDRESS baseAddress = 0;
             ULONG32 size = 0;
 
-            m_debugger->m_modules.TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
+            m_debugger.m_modules.TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
 
             std::stringstream ss;
             ss << "id=\"{" << id << "}\","
@@ -509,7 +508,7 @@ public:
             MIProtocol::Printf("=library-loaded,%s\n", ss.str().c_str());
 
             if (symbolsLoaded)
-                m_debugger->TryResolveBreakpointsForModule(pModule);
+                m_debugger.TryResolveBreakpointsForModule(pModule);
 
             pAppDomain->Continue(0);
             return S_OK;
@@ -667,7 +666,7 @@ public:
 Debugger::Debugger() :
     m_processAttachedState(ProcessUnattached),
     m_evaluator(m_modules),
-    m_managedCallback(new ManagedCallback()),
+    m_managedCallback(new ManagedCallback(*this)),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
     m_justMyCode(true),
@@ -678,12 +677,10 @@ Debugger::Debugger() :
     m_nextVariableReference(1),
     m_nextBreakpointId(1)
 {
-    m_managedCallback->m_debugger = this;
 }
 
 Debugger::~Debugger()
 {
-    m_managedCallback->Release();
 }
 
 VOID Debugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)

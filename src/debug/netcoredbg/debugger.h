@@ -191,7 +191,7 @@ private:
     Modules m_modules;
     Evaluator m_evaluator;
     Protocol *m_protocol;
-    ManagedCallback *m_managedCallback;
+    ToRelease<ManagedCallback> m_managedCallback;
     ICorDebug *m_pDebug;
     ICorDebugProcess *m_pProcess;
 
