@@ -327,7 +327,7 @@ public:
             pThread->GetID(&threadId);
 
             StoppedEvent event(StopBreakpoint, threadId);
-            m_debugger.HitBreakpoint(pThread, event.breakpoint);
+            m_debugger.m_breakpoints.HitBreakpoint(pThread, event.breakpoint);
 
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
@@ -508,7 +508,12 @@ public:
             MIProtocol::Printf("=library-loaded,%s\n", ss.str().c_str());
 
             if (symbolsLoaded)
-                m_debugger.TryResolveBreakpointsForModule(pModule);
+            {
+                std::vector<BreakpointEvent> events;
+                m_debugger.m_breakpoints.TryResolveBreakpointsForModule(pModule, events);
+                for (const BreakpointEvent &event : events)
+                    m_debugger.m_protocol->EmitBreakpointEvent(event);
+            }
 
             pAppDomain->Continue(0);
             return S_OK;
@@ -666,6 +671,7 @@ public:
 Debugger::Debugger() :
     m_processAttachedState(ProcessUnattached),
     m_evaluator(m_modules),
+    m_breakpoints(m_modules),
     m_managedCallback(new ManagedCallback(*this)),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
@@ -674,8 +680,7 @@ Debugger::Debugger() :
     m_startupResult(S_OK),
     m_unregisterToken(nullptr),
     m_processId(0),
-    m_nextVariableReference(1),
-    m_nextBreakpointId(1)
+    m_nextVariableReference(1)
 {
 }
 
@@ -893,7 +898,7 @@ HRESULT Debugger::DetachFromProcess()
 
     if (SUCCEEDED(m_pProcess->Stop(0)))
     {
-        DeleteAllBreakpoints();
+        m_breakpoints.DeleteAllBreakpoints();
         DisableAllBreakpointsAndSteppers(m_pProcess);
         m_pProcess->Detach();
     }

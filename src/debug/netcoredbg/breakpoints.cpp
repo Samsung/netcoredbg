@@ -11,17 +11,17 @@
 #include "debugger.h"
 
 
-Debugger::ManagedBreakpoint::ManagedBreakpoint() :
+Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
     id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr), enabled(true), times(0)
 {}
 
-Debugger::ManagedBreakpoint::~ManagedBreakpoint()
+Breakpoints::ManagedBreakpoint::~ManagedBreakpoint()
 {
     if (breakpoint)
         breakpoint->Activate(0);
 }
 
-void Debugger::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
+void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
 {
     breakpoint.id = this->id;
     breakpoint.verified = this->IsResolved();
@@ -30,7 +30,7 @@ void Debugger::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
     breakpoint.hitCount = this->times;
 }
 
-HRESULT Debugger::HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint)
+HRESULT Breakpoints::HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
@@ -73,18 +73,23 @@ HRESULT Debugger::HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint
 
 void Debugger::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
 {
+    m_breakpoints.InsertExceptionBreakpoint(name, breakpoint);
+}
+
+void Breakpoints::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
+{
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
     m_nextBreakpointId++;
 }
 
-void Debugger::DeleteAllBreakpoints()
+void Breakpoints::DeleteAllBreakpoints()
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
     m_breakpoints.clear();
 }
 
-HRESULT Debugger::ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp)
+HRESULT Breakpoints::ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp)
 {
     HRESULT Status;
 
@@ -121,7 +126,7 @@ HRESULT Debugger::ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBre
     return S_OK;
 }
 
-void Debugger::TryResolveBreakpointsForModule(ICorDebugModule *pModule)
+void Breakpoints::TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
@@ -138,13 +143,13 @@ void Debugger::TryResolveBreakpointsForModule(ICorDebugModule *pModule)
             {
                 Breakpoint breakpoint;
                 b.ToBreakpoint(breakpoint);
-                m_protocol->EmitBreakpointEvent(BreakpointEvent(BreakpointChanged, breakpoint));
+                events.emplace_back(BreakpointChanged, breakpoint);
             }
         }
     }
 }
 
-HRESULT Debugger::ResolveBreakpoint(ManagedBreakpoint &bp)
+HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
 {
     HRESULT Status;
 
@@ -183,9 +188,19 @@ HRESULT Debugger::ResolveBreakpoint(ManagedBreakpoint &bp)
     return S_OK;
 }
 
-HRESULT Debugger::SetBreakpoints(std::string filename,
-                                 const std::vector<int> &lines,
-                                 std::vector<Breakpoint> &breakpoints)
+HRESULT Debugger::SetBreakpoints(
+    std::string filename,
+    const std::vector<int> &lines,
+    std::vector<Breakpoint> &breakpoints)
+{
+    return m_breakpoints.SetBreakpoints(m_pProcess, filename, lines, breakpoints);
+}
+
+HRESULT Breakpoints::SetBreakpoints(
+    ICorDebugProcess *pProcess,
+    std::string filename,
+    const std::vector<int> &lines,
+    std::vector<Breakpoint> &breakpoints)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
@@ -232,7 +247,7 @@ HRESULT Debugger::SetBreakpoints(std::string filename,
             bp.fullname = filename;
             bp.linenum = line;
 
-            if (m_pProcess)
+            if (pProcess)
                 ResolveBreakpoint(bp);
 
             bp.ToBreakpoint(breakpoint);

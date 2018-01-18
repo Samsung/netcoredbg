@@ -158,6 +158,55 @@ public:
     void Cleanup();
 };
 
+class Breakpoints
+{
+    struct ManagedBreakpoint {
+        uint32_t id;
+        CORDB_ADDRESS modAddress;
+        mdMethodDef methodToken;
+        ULONG32 ilOffset;
+        std::string fullname;
+        int linenum;
+        ToRelease<ICorDebugBreakpoint> breakpoint;
+        bool enabled;
+        ULONG32 times;
+
+        bool IsResolved() const { return modAddress != 0; }
+
+        ManagedBreakpoint();
+        ~ManagedBreakpoint();
+
+        void ToBreakpoint(Breakpoint &breakpoint);
+
+        ManagedBreakpoint(ManagedBreakpoint &&that) = default;
+        ManagedBreakpoint(const ManagedBreakpoint &that) = delete;
+    };
+
+    Modules &m_modules;
+    uint32_t m_nextBreakpointId;
+    std::mutex m_breakpointsMutex;
+    std::unordered_map<std::string, std::unordered_map<int, ManagedBreakpoint> > m_breakpoints;
+
+    HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
+    HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
+
+public:
+    Breakpoints(Modules &modules) : m_modules(modules), m_nextBreakpointId(1) {}
+
+    HRESULT HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint);
+    void DeleteAllBreakpoints();
+
+    void TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events);
+
+    void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint);
+
+    HRESULT SetBreakpoints(
+        ICorDebugProcess *pProcess,
+        std::string filename,
+        const std::vector<int> &lines,
+        std::vector<Breakpoint> &breakpoints);
+};
+
 class Debugger
 {
 public:
@@ -190,6 +239,7 @@ private:
 
     Modules m_modules;
     Evaluator m_evaluator;
+    Breakpoints m_breakpoints;
     Protocol *m_protocol;
     ToRelease<ManagedCallback> m_managedCallback;
     ICorDebug *m_pDebug;
@@ -248,38 +298,6 @@ private:
 
     void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
 
-    struct ManagedBreakpoint {
-        uint32_t id;
-        CORDB_ADDRESS modAddress;
-        mdMethodDef methodToken;
-        ULONG32 ilOffset;
-        std::string fullname;
-        int linenum;
-        ToRelease<ICorDebugBreakpoint> breakpoint;
-        bool enabled;
-        ULONG32 times;
-
-        bool IsResolved() const { return modAddress != 0; }
-
-        ManagedBreakpoint();
-        ~ManagedBreakpoint();
-
-        void ToBreakpoint(Breakpoint &breakpoint);
-
-        ManagedBreakpoint(ManagedBreakpoint &&that) = default;
-    private:
-        ManagedBreakpoint(const ManagedBreakpoint &that) = delete;
-    };
-
-    uint32_t m_nextBreakpointId;
-    std::mutex m_breakpointsMutex;
-    std::unordered_map<std::string, std::unordered_map<int, ManagedBreakpoint> > m_breakpoints;
-    HRESULT HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint);
-    void DeleteAllBreakpoints();
-
-    HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
-    HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
-
     static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
     HRESULT Startup(IUnknown *punk, int pid);
 
@@ -315,8 +333,6 @@ public:
 
     bool IsJustMyCode() { return m_justMyCode; }
     void SetJustMyCode(bool enable) { m_justMyCode = enable; }
-
-    void TryResolveBreakpointsForModule(ICorDebugModule *pModule);
 
     void SetProtocol(Protocol *protocol) { m_protocol = protocol; }
 
