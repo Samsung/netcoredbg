@@ -90,47 +90,6 @@ BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
     // return bRet;
 }
 
-std::mutex MIProtocol::m_outMutex;
-
-void MIProtocol::Printf(const char *fmt, ...)
-{
-    std::lock_guard<std::mutex> lock(m_outMutex);
-    va_list arg;
-
-    va_start(arg, fmt);
-    vfprintf(stdout, fmt, arg);
-    va_end(arg);
-
-    fflush(stdout);
-}
-
-std::string MIProtocol::EscapeMIValue(const std::string &str)
-{
-    std::string s(str);
-
-    for (std::size_t i = 0; i < s.size(); ++i)
-    {
-        int count = 0;
-        char c = s.at(i);
-        switch (c)
-        {
-            case '\"': count = 1; s.insert(i, count, '\\'); s[i + count] = '\"'; break;
-            case '\\': count = 1; s.insert(i, count, '\\'); s[i + count] = '\\'; break;
-            case '\0': count = 1; s.insert(i, count, '\\'); s[i + count] = '0'; break;
-            case '\a': count = 1; s.insert(i, count, '\\'); s[i + count] = 'a'; break;
-            case '\b': count = 1; s.insert(i, count, '\\'); s[i + count] = 'b'; break;
-            case '\f': count = 1; s.insert(i, count, '\\'); s[i + count] = 'f'; break;
-            case '\n': count = 1; s.insert(i, count, '\\'); s[i + count] = 'n'; break;
-            case '\r': count = 1; s.insert(i, count, '\\'); s[i + count] = 'r'; break;
-            case '\t': count = 1; s.insert(i, count, '\\'); s[i + count] = 't'; break;
-            case '\v': count = 1; s.insert(i, count, '\\'); s[i + count] = 'v'; break;
-        }
-        i += count;
-    }
-
-    return s;
-}
-
 static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
     HRESULT Status;
