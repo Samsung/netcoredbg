@@ -672,6 +672,7 @@ Debugger::Debugger() :
     m_processAttachedState(ProcessUnattached),
     m_evaluator(m_modules),
     m_breakpoints(m_modules),
+    m_variables(m_evaluator),
     m_managedCallback(new ManagedCallback(*this)),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
@@ -679,8 +680,7 @@ Debugger::Debugger() :
     m_startupReady(false),
     m_startupResult(S_OK),
     m_unregisterToken(nullptr),
-    m_processId(0),
-    m_nextVariableReference(1)
+    m_processId(0)
 {
 }
 

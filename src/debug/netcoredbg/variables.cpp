@@ -20,7 +20,7 @@
 #include "frames.h"
 
 
-HRESULT Debugger::GetNumChild(
+HRESULT Variables::GetNumChild(
     ICorDebugValue *pValue,
     unsigned int &numchild,
     bool static_members)
@@ -57,7 +57,7 @@ HRESULT Debugger::GetNumChild(
     return S_OK;
 }
 
-struct Member
+struct Variables::Member
 {
     std::string name;
     std::string ownerType;
@@ -68,11 +68,10 @@ struct Member
         value(std::move(value))
     {}
     Member(Member &&that) = default;
-private:
     Member(const Member &that) = delete;
 };
 
-HRESULT Debugger::FetchFieldsAndProperties(
+HRESULT Variables::FetchFieldsAndProperties(
     ICorDebugValue *pInputValue,
     ICorDebugThread *pThread,
     ICorDebugILFrame *pILFrame,
@@ -139,14 +138,38 @@ HRESULT Debugger::FetchFieldsAndProperties(
 
 int Debugger::GetNamedVariables(uint32_t variablesReference)
 {
+    return m_variables.GetNamedVariables(variablesReference);
+}
+
+int Variables::GetNamedVariables(uint32_t variablesReference)
+{
     auto it = m_variables.find(variablesReference);
     if (it == m_variables.end())
         return 0;
     return it->second.namedVariables;
 }
 
-HRESULT Debugger::GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables)
+HRESULT Debugger::GetVariables(
+    uint32_t variablesReference,
+    VariablesFilter filter,
+    int start,
+    int count,
+    std::vector<Variable> &variables)
 {
+    return m_variables.GetVariables(m_pProcess, variablesReference, filter, start, count, variables);
+}
+
+HRESULT Variables::GetVariables(
+    ICorDebugProcess *pProcess,
+    uint32_t variablesReference,
+    VariablesFilter filter,
+    int start,
+    int count,
+    std::vector<Variable> &variables)
+{
+    if (pProcess == nullptr)
+        return E_FAIL;
+
     auto it = m_variables.find(variablesReference);
     if (it == m_variables.end())
         return E_FAIL;
@@ -157,7 +180,7 @@ HRESULT Debugger::GetVariables(uint32_t variablesReference, VariablesFilter filt
 
     StackFrame stackFrame(ref.frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -176,7 +199,7 @@ HRESULT Debugger::GetVariables(uint32_t variablesReference, VariablesFilter filt
     return S_OK;
 }
 
-void Debugger::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind)
+void Variables::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind)
 {
     HRESULT Status;
     unsigned int numChild = 0;
@@ -191,7 +214,13 @@ void Debugger::AddVariableReference(Variable &variable, uint64_t frameId, ICorDe
     m_variables.emplace(std::make_pair(variable.variablesReference, std::move(variableReference)));
 }
 
-HRESULT Debugger::GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables)
+HRESULT Variables::GetStackVariables(
+    uint64_t frameId,
+    ICorDebugThread *pThread,
+    ICorDebugFrame *pFrame,
+    int start,
+    int count,
+    std::vector<Variable> &variables)
 {
     HRESULT Status;
 
@@ -239,11 +268,19 @@ HRESULT Debugger::GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, 
 
 HRESULT Debugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
 {
+    return m_variables.GetScopes(m_pProcess, frameId, scopes);
+}
+
+HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes)
+{
+    if (pProcess == nullptr)
+        return E_FAIL;
+
     HRESULT Status;
 
     StackFrame stackFrame(frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -275,7 +312,7 @@ HRESULT Debugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
     return S_OK;
 }
 
-static void FixupInheritedFieldNames(std::vector<Member> &members)
+void Variables::FixupInheritedFieldNames(std::vector<Member> &members)
 {
     std::unordered_set<std::string> names;
     for (auto &it : members)
@@ -288,12 +325,13 @@ static void FixupInheritedFieldNames(std::vector<Member> &members)
     }
 }
 
-HRESULT Debugger::GetChildren(VariableReference &ref,
-                              ICorDebugThread *pThread,
-                              ICorDebugFrame *pFrame,
-                              int start,
-                              int count,
-                              std::vector<Variable> &variables)
+HRESULT Variables::GetChildren(
+    VariableReference &ref,
+    ICorDebugThread *pThread,
+    ICorDebugFrame *pFrame,
+    int start,
+    int count,
+    std::vector<Variable> &variables)
 {
     if (ref.IsScope())
         return E_INVALIDARG;
@@ -356,11 +394,23 @@ HRESULT Debugger::GetChildren(VariableReference &ref,
 
 HRESULT Debugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable)
 {
+    return m_variables.Evaluate(m_pProcess, frameId, expression, variable);
+}
+
+HRESULT Variables::Evaluate(
+    ICorDebugProcess *pProcess,
+    uint64_t frameId,
+    const std::string &expression,
+    Variable &variable)
+{
+    if (pProcess == nullptr)
+        return E_FAIL;
+
     HRESULT Status;
 
     StackFrame stackFrame(frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 

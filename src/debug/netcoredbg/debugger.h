@@ -13,8 +13,6 @@
 class ManagedCallback;
 class Protocol;
 
-struct Member;
-
 enum ValueKind
 {
     ValueIsScope,
@@ -207,55 +205,8 @@ public:
         std::vector<Breakpoint> &breakpoints);
 };
 
-class Debugger
+class Variables
 {
-public:
-    enum StepType {
-        STEP_IN = 0,
-        STEP_OVER,
-        STEP_OUT
-    };
-
-private:
-    friend class ManagedCallback;
-    enum ProcessAttachedState
-    {
-        ProcessAttached,
-        ProcessUnattached
-    };
-    std::mutex m_processAttachedMutex;
-    std::condition_variable m_processAttachedCV;
-    ProcessAttachedState m_processAttachedState;
-
-    void NotifyProcessCreated();
-    void NotifyProcessExited();
-    void WaitProcessExited();
-    HRESULT CheckNoProcess();
-
-    std::mutex m_lastStoppedThreadIdMutex;
-    int m_lastStoppedThreadId;
-
-    void SetLastStoppedThread(ICorDebugThread *pThread);
-
-    Modules m_modules;
-    Evaluator m_evaluator;
-    Breakpoints m_breakpoints;
-    Protocol *m_protocol;
-    ToRelease<ManagedCallback> m_managedCallback;
-    ICorDebug *m_pDebug;
-    ICorDebugProcess *m_pProcess;
-
-    bool m_justMyCode;
-
-    std::mutex m_startupMutex;
-    std::condition_variable m_startupCV;
-    bool m_startupReady;
-    HRESULT m_startupResult;
-
-    PVOID m_unregisterToken;
-    DWORD m_processId;
-    std::string m_clrPath;
-
     struct VariableReference
     {
         uint32_t variablesReference; // key
@@ -290,25 +241,35 @@ private:
         bool IsScope() const { return valueKind == ValueIsScope; }
 
         VariableReference(VariableReference &&that) = default;
-    private:
         VariableReference(const VariableReference &that) = delete;
     };
+
+    Evaluator &m_evaluator;
+
     std::unordered_map<uint32_t, VariableReference> m_variables;
     uint32_t m_nextVariableReference;
 
     void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
 
-    static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
-    HRESULT Startup(IUnknown *punk, int pid);
+    HRESULT GetStackVariables(
+        uint64_t frameId,
+        ICorDebugThread *pThread,
+        ICorDebugFrame *pFrame,
+        int start,
+        int count,
+        std::vector<Variable> &variables);
 
-    void Cleanup();
+    HRESULT GetChildren(
+        VariableReference &ref,
+        ICorDebugThread *pThread,
+        ICorDebugFrame *pFrame,
+        int start,
+        int count,
+        std::vector<Variable> &variables);
 
-    static HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
+    struct Member;
 
-    HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
-
-    HRESULT GetStackVariables(uint64_t frameId, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
-    HRESULT GetChildren(VariableReference &ref, ICorDebugThread *pThread, ICorDebugFrame *pFrame, int start, int count, std::vector<Variable> &variables);
+    static void FixupInheritedFieldNames(std::vector<Member> &members);
 
     HRESULT FetchFieldsAndProperties(
         ICorDebugValue *pInputValue,
@@ -324,6 +285,84 @@ private:
         ICorDebugValue *pValue,
         unsigned int &numchild,
         bool static_members = false);
+
+public:
+
+    Variables(Evaluator &evaluator) : m_evaluator(evaluator), m_nextVariableReference(1) {}
+
+    int GetNamedVariables(uint32_t variablesReference);
+
+    HRESULT Variables::GetVariables(
+        ICorDebugProcess *pProcess,
+        uint32_t variablesReference,
+        VariablesFilter filter,
+        int start,
+        int count,
+        std::vector<Variable> &variables);
+
+    HRESULT GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes);
+
+    HRESULT Evaluate(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression, Variable &variable);
+};
+
+class Debugger
+{
+public:
+    enum StepType {
+        STEP_IN = 0,
+        STEP_OVER,
+        STEP_OUT
+    };
+
+private:
+    friend class ManagedCallback;
+    enum ProcessAttachedState
+    {
+        ProcessAttached,
+        ProcessUnattached
+    };
+    std::mutex m_processAttachedMutex;
+    std::condition_variable m_processAttachedCV;
+    ProcessAttachedState m_processAttachedState;
+
+    void NotifyProcessCreated();
+    void NotifyProcessExited();
+    void WaitProcessExited();
+    HRESULT CheckNoProcess();
+
+    std::mutex m_lastStoppedThreadIdMutex;
+    int m_lastStoppedThreadId;
+
+    void SetLastStoppedThread(ICorDebugThread *pThread);
+
+    Modules m_modules;
+    Evaluator m_evaluator;
+    Breakpoints m_breakpoints;
+    Variables m_variables;
+    Protocol *m_protocol;
+    ToRelease<ManagedCallback> m_managedCallback;
+    ICorDebug *m_pDebug;
+    ICorDebugProcess *m_pProcess;
+
+    bool m_justMyCode;
+
+    std::mutex m_startupMutex;
+    std::condition_variable m_startupCV;
+    bool m_startupReady;
+    HRESULT m_startupResult;
+
+    PVOID m_unregisterToken;
+    DWORD m_processId;
+    std::string m_clrPath;
+
+    static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
+    HRESULT Startup(IUnknown *punk, int pid);
+
+    void Cleanup();
+
+    static HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
+
+    HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
 
     HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame);
