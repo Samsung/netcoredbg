@@ -12,6 +12,7 @@
 
 class ManagedCallback;
 class Protocol;
+class Debugger;
 
 enum ValueKind
 {
@@ -314,6 +315,34 @@ public:
         STEP_OUT
     };
 
+    virtual ~Debugger() {}
+
+    virtual bool IsJustMyCode() = 0;
+    virtual void SetJustMyCode(bool enable) = 0;
+
+    virtual HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs) = 0;
+
+    virtual HRESULT AttachToProcess(int pid) = 0;
+    virtual HRESULT DetachFromProcess() = 0;
+    virtual HRESULT TerminateProcess() = 0;
+
+    virtual int GetLastStoppedThreadId() = 0;
+
+    virtual HRESULT Continue() = 0;
+    virtual HRESULT Pause() = 0;
+    virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
+    virtual HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints) = 0;
+    virtual void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) = 0;
+    virtual HRESULT GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames) = 0;
+    virtual HRESULT StepCommand(int threadId, StepType stepType) = 0;
+    virtual HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) = 0;
+    virtual HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) = 0;
+    virtual int GetNamedVariables(uint32_t variablesReference) = 0;
+    virtual HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable) = 0;
+};
+
+class ManagedDebugger : public Debugger
+{
 private:
     friend class ManagedCallback;
     enum ProcessAttachedState
@@ -367,33 +396,33 @@ private:
     HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame);
 public:
-    Debugger();
-    ~Debugger();
-
-    bool IsJustMyCode() { return m_justMyCode; }
-    void SetJustMyCode(bool enable) { m_justMyCode = enable; }
+    ManagedDebugger();
+    ~ManagedDebugger() override;
 
     void SetProtocol(Protocol *protocol) { m_protocol = protocol; }
 
-    HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
+    bool IsJustMyCode() override { return m_justMyCode; }
+    void SetJustMyCode(bool enable) override { m_justMyCode = enable; }
 
-    HRESULT AttachToProcess(int pid);
-    HRESULT DetachFromProcess();
-    HRESULT TerminateProcess();
+    HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs) override;
 
-    int GetLastStoppedThreadId();
+    HRESULT AttachToProcess(int pid) override;
+    HRESULT DetachFromProcess() override;
+    HRESULT TerminateProcess() override;
 
-    HRESULT Continue();
-    HRESULT Pause();
-    HRESULT GetThreads(std::vector<Thread> &threads);
-    HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints);
-    void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint);
-    HRESULT GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
-    HRESULT StepCommand(int threadId, StepType stepType);
-    HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes);
-    HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables);
-    int GetNamedVariables(uint32_t variablesReference);
-    HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable);
+    int GetLastStoppedThreadId() override;
+
+    HRESULT Continue() override;
+    HRESULT Pause() override;
+    HRESULT GetThreads(std::vector<Thread> &threads) override;
+    HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints) override;
+    void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) override;
+    HRESULT GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames) override;
+    HRESULT StepCommand(int threadId, StepType stepType) override;
+    HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) override;
+    HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;
+    int GetNamedVariables(uint32_t variablesReference) override;
+    HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable) override;
 };
 
 class Protocol
@@ -422,7 +451,7 @@ class MIProtocol : public Protocol
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<int32_t, int> > m_breakpoints;
 public:
-    void SetDebugger(Debugger *debugger) { m_debugger = debugger; m_debugger->SetProtocol(this); }
+    void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
     static std::string EscapeMIValue(const std::string &str);
 
     MIProtocol() : m_exit(false), m_varCounter(0) {}

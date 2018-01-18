@@ -27,13 +27,13 @@
 #undef __out
 
 
-void Debugger::NotifyProcessCreated()
+void ManagedDebugger::NotifyProcessCreated()
 {
     std::lock_guard<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessAttached;
 }
 
-void Debugger::NotifyProcessExited()
+void ManagedDebugger::NotifyProcessExited()
 {
     std::lock_guard<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessUnattached;
@@ -41,7 +41,7 @@ void Debugger::NotifyProcessExited()
     m_processAttachedCV.notify_one();
 }
 
-void Debugger::WaitProcessExited()
+void ManagedDebugger::WaitProcessExited()
 {
     std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     if (m_processAttachedState != ProcessUnattached)
@@ -148,7 +148,7 @@ static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
     return S_OK;
 }
 
-HRESULT Debugger::DisableAllSteppers(ICorDebugProcess *pProcess)
+HRESULT ManagedDebugger::DisableAllSteppers(ICorDebugProcess *pProcess)
 {
     HRESULT Status;
 
@@ -203,7 +203,7 @@ HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
     return S_OK;
 }
 
-void Debugger::SetLastStoppedThread(ICorDebugThread *pThread)
+void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
 {
     DWORD threadId = 0;
     pThread->GetID(&threadId);
@@ -212,7 +212,7 @@ void Debugger::SetLastStoppedThread(ICorDebugThread *pThread)
     m_lastStoppedThreadId = threadId;
 }
 
-int Debugger::GetLastStoppedThreadId()
+int ManagedDebugger::GetLastStoppedThreadId()
 {
     std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
     return m_lastStoppedThreadId;
@@ -254,7 +254,7 @@ static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
 class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2
 {
     ULONG m_refCount;
-    Debugger &m_debugger;
+    ManagedDebugger &m_debugger;
 public:
 
         void HandleEvent(ICorDebugController *controller, const std::string &eventName)
@@ -264,7 +264,7 @@ public:
             controller->Continue(0);
         }
 
-        ManagedCallback(Debugger &debugger) : m_refCount(1), m_debugger(debugger) {}
+        ManagedCallback(ManagedDebugger &debugger) : m_refCount(1), m_debugger(debugger) {}
         virtual ~ManagedCallback() {}
 
         // IUnknown
@@ -645,7 +645,7 @@ public:
           //     case DEBUG_EXCEPTION_UNHANDLED: cbTypeName = "UNHANDLED"; break;
           //     default: cbTypeName = "?"; break;
           // }
-          // Debugger::Printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
+          // ManagedDebugger::Printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
           //     cbTypeName);
             pAppDomain->Continue(0);
             return S_OK;
@@ -668,7 +668,7 @@ public:
             /* [in] */ ICorDebugMDA *pMDA) { HandleEvent(pController, "MDANotification"); return S_OK; }
 };
 
-Debugger::Debugger() :
+ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
     m_evaluator(m_modules),
     m_breakpoints(m_modules),
@@ -684,13 +684,95 @@ Debugger::Debugger() :
 {
 }
 
-Debugger::~Debugger()
+ManagedDebugger::~ManagedDebugger()
 {
 }
 
-VOID Debugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
+HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepType)
 {
-    Debugger *self = static_cast<Debugger*>(parameter);
+    HRESULT Status;
+
+    ToRelease<ICorDebugStepper> pStepper;
+    IfFailRet(pThread->CreateStepper(&pStepper));
+
+    CorDebugIntercept mask = (CorDebugIntercept)(INTERCEPT_ALL & ~(INTERCEPT_SECURITY | INTERCEPT_CLASS_INIT));
+    IfFailRet(pStepper->SetInterceptMask(mask));
+
+    CorDebugUnmappedStop stopMask = STOP_NONE;
+    IfFailRet(pStepper->SetUnmappedStopMask(stopMask));
+
+    ToRelease<ICorDebugStepper2> pStepper2;
+    IfFailRet(pStepper->QueryInterface(IID_ICorDebugStepper2, (LPVOID *)&pStepper2));
+
+    IfFailRet(pStepper2->SetJMC(IsJustMyCode()));
+
+    if (stepType == STEP_OUT)
+    {
+        IfFailRet(pStepper->StepOut());
+        return S_OK;
+    }
+
+    BOOL bStepIn = stepType == STEP_IN;
+
+    COR_DEBUG_STEP_RANGE range;
+    if (SUCCEEDED(m_modules.GetStepRangeFromCurrentIP(pThread, &range)))
+    {
+        IfFailRet(pStepper->StepRange(bStepIn, &range, 1));
+    } else {
+        IfFailRet(pStepper->Step(bStepIn));
+    }
+
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
+    DisableAllSteppers(m_pProcess);
+    IfFailRet(SetupStep(pThread, stepType));
+    IfFailRet(m_pProcess->Continue(0));
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::Continue()
+{
+    if (!m_pProcess)
+        return E_FAIL;
+    return m_pProcess->Continue(0);
+}
+
+HRESULT ManagedDebugger::Pause()
+{
+    if (!m_pProcess)
+        return E_FAIL;
+    HRESULT Status = m_pProcess->Stop(0);
+    if (Status == S_OK)
+        m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, 0));
+    return Status;
+}
+
+HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
+{
+    if (!m_pProcess)
+        return E_FAIL;
+    return GetThreadsState(m_pProcess, threads);
+}
+
+HRESULT ManagedDebugger::GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
+{
+    HRESULT Status;
+    if (!m_pProcess)
+        return E_FAIL;
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
+    return GetStackTrace(pThread, lowFrame, highFrame, stackFrames);
+}
+
+VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
+{
+    ManagedDebugger *self = static_cast<ManagedDebugger*>(parameter);
 
     std::unique_lock<std::mutex> lock(self->m_startupMutex);
 
@@ -786,7 +868,7 @@ static std::string GetCLRPath(int pid)
     return result;
 }
 
-HRESULT Debugger::Startup(IUnknown *punk, int pid)
+HRESULT ManagedDebugger::Startup(IUnknown *punk, int pid)
 {
     HRESULT Status;
 
@@ -825,7 +907,7 @@ HRESULT Debugger::Startup(IUnknown *punk, int pid)
     return S_OK;
 }
 
-HRESULT Debugger::RunProcess(std::string fileExec, std::vector<std::string> execArgs)
+HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::string> execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
     HRESULT Status;
@@ -852,15 +934,15 @@ HRESULT Debugger::RunProcess(std::string fileExec, std::vector<std::string> exec
     HANDLE resumeHandle;
     IfFailRet(CreateProcessForLaunch(&cmd[0], bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
 
-    IfFailRet(RegisterForRuntimeStartup(m_processId, Debugger::StartupCallback, this, &m_unregisterToken));
+    IfFailRet(RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 
     // Resume the process so that StartupCallback can run
     IfFailRet(ResumeProcess(resumeHandle));
     CloseResumeHandle(resumeHandle);
 
-    // Wait for Debugger::StartupCallback to complete
+    // Wait for ManagedDebugger::StartupCallback to complete
 
-    // FIXME: if the process exits too soon the Debugger::StartupCallback()
+    // FIXME: if the process exits too soon the ManagedDebugger::StartupCallback()
     // is never called (bug in dbgshim?).
     // The workaround is to wait with timeout.
     auto now = std::chrono::system_clock::now();
@@ -877,7 +959,7 @@ HRESULT Debugger::RunProcess(std::string fileExec, std::vector<std::string> exec
     return m_startupResult;
 }
 
-HRESULT Debugger::CheckNoProcess()
+HRESULT ManagedDebugger::CheckNoProcess()
 {
     if (m_pProcess || m_pDebug)
     {
@@ -891,7 +973,7 @@ HRESULT Debugger::CheckNoProcess()
     return S_OK;
 }
 
-HRESULT Debugger::DetachFromProcess()
+HRESULT ManagedDebugger::DetachFromProcess()
 {
     if (!m_pProcess || !m_pDebug)
         return E_FAIL;
@@ -914,7 +996,7 @@ HRESULT Debugger::DetachFromProcess()
     return S_OK;
 }
 
-HRESULT Debugger::TerminateProcess()
+HRESULT ManagedDebugger::TerminateProcess()
 {
     if (!m_pProcess || !m_pDebug)
         return E_FAIL;
@@ -939,7 +1021,7 @@ HRESULT Debugger::TerminateProcess()
     return S_OK;
 }
 
-void Debugger::Cleanup()
+void ManagedDebugger::Cleanup()
 {
     m_modules.CleanupAllModules();
     m_evaluator.Cleanup();
@@ -947,7 +1029,7 @@ void Debugger::Cleanup()
     // TODO: Cleanup libcoreclr.so instance
 }
 
-HRESULT Debugger::AttachToProcess(int pid)
+HRESULT ManagedDebugger::AttachToProcess(int pid)
 {
     HRESULT Status;
 
@@ -1025,10 +1107,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    Debugger debugger;
-
+    ManagedDebugger debugger;
     MIProtocol protocol;
+
     protocol.SetDebugger(&debugger);
+    debugger.SetProtocol(&protocol);
 
     if (pidDebuggee != 0)
     {

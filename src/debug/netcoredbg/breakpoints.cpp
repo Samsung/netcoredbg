@@ -71,7 +71,7 @@ HRESULT Breakpoints::HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpo
     return E_FAIL;
 }
 
-void Debugger::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
+void ManagedDebugger::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
 {
     m_breakpoints.InsertExceptionBreakpoint(name, breakpoint);
 }
@@ -188,7 +188,7 @@ HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
     return S_OK;
 }
 
-HRESULT Debugger::SetBreakpoints(
+HRESULT ManagedDebugger::SetBreakpoints(
     std::string filename,
     const std::vector<int> &lines,
     std::vector<Breakpoint> &breakpoints)

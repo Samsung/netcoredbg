@@ -136,7 +136,7 @@ HRESULT Variables::FetchFieldsAndProperties(
     return S_OK;
 }
 
-int Debugger::GetNamedVariables(uint32_t variablesReference)
+int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)
 {
     return m_variables.GetNamedVariables(variablesReference);
 }
@@ -149,7 +149,7 @@ int Variables::GetNamedVariables(uint32_t variablesReference)
     return it->second.namedVariables;
 }
 
-HRESULT Debugger::GetVariables(
+HRESULT ManagedDebugger::GetVariables(
     uint32_t variablesReference,
     VariablesFilter filter,
     int start,
@@ -266,7 +266,7 @@ HRESULT Variables::GetStackVariables(
     return S_OK;
 }
 
-HRESULT Debugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
+HRESULT ManagedDebugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
 {
     return m_variables.GetScopes(m_pProcess, frameId, scopes);
 }
@@ -392,7 +392,7 @@ HRESULT Variables::GetChildren(
     return S_OK;
 }
 
-HRESULT Debugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable)
+HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable)
 {
     return m_variables.Evaluate(m_pProcess, frameId, expression, variable);
 }

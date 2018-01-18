@@ -55,7 +55,7 @@ static uint64_t FrameAddr(ICorDebugFrame *pFrame)
     return startAddr;
 }
 
-HRESULT Debugger::GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame)
+HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame)
 {
     HRESULT Status;
 
@@ -387,7 +387,7 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
     }
 }
 
-HRESULT Debugger::GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
+HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
 {
     HRESULT Status;
     std::stringstream ss;
