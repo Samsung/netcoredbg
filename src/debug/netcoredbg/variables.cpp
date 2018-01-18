@@ -16,9 +16,7 @@
 
 #include "debugger.h"
 #include "typeprinter.h"
-#include "modules.h"
 #include "valueprint.h"
-#include "expr.h"
 #include "frames.h"
 
 

@@ -16,9 +16,7 @@
 
 #include "debugger.h"
 #include "typeprinter.h"
-#include "modules.h"
 #include "valueprint.h"
-#include "expr.h"
 
 
 static HRESULT ParseIndices(const std::string &s, std::vector<ULONG32> &indices)
@@ -190,7 +188,7 @@ HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue 
     if (!m_pRunClassConstructor && !m_pGetTypeHandle)
     {
         ToRelease<ICorDebugModule> pModule;
-        IfFailRet(Modules::GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+        IfFailRet(m_modules.GetModuleWithName("System.Private.CoreLib.dll", &pModule));
 
         static const WCHAR helpersName[] = W("System.Runtime.CompilerServices.RuntimeHelpers");
         static const WCHAR runCCTorMethodName[] = W("RunClassConstructor");
@@ -463,16 +461,10 @@ HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string
     return S_OK;
 }
 
-HRESULT FindType(
-    const std::vector<std::string> &parts,
-    int &nextPart, ICorDebugThread *pThread,
-    ICorDebugModule *pModule,
-    ICorDebugType **ppType,
-    ICorDebugModule **ppModule = nullptr);
-
-HRESULT GetType(const std::string &typeName,
-                ICorDebugThread *pThread,
-                ICorDebugType **ppType)
+HRESULT Evaluator::GetType(
+    const std::string &typeName,
+    ICorDebugThread *pThread,
+    ICorDebugType **ppType)
 {
     HRESULT Status;
     std::vector<int> ranks;
@@ -506,9 +498,10 @@ HRESULT GetType(const std::string &typeName,
     return S_OK;
 }
 
-HRESULT ResolveParameters(const std::vector<std::string> &params,
-                          ICorDebugThread *pThread,
-                          std::vector< ToRelease<ICorDebugType> > &types)
+HRESULT Evaluator::ResolveParameters(
+    const std::vector<std::string> &params,
+    ICorDebugThread *pThread,
+    std::vector< ToRelease<ICorDebugType> > &types)
 {
     HRESULT Status;
     for (auto &p : params)
@@ -520,12 +513,13 @@ HRESULT ResolveParameters(const std::vector<std::string> &params,
     return S_OK;
 }
 
-HRESULT FindType(const std::vector<std::string> &parts,
-                 int &nextPart,
-                 ICorDebugThread *pThread,
-                 ICorDebugModule *pModule,
-                 ICorDebugType **ppType,
-                 ICorDebugModule **ppModule)
+HRESULT Evaluator::FindType(
+    const std::vector<std::string> &parts,
+    int &nextPart,
+    ICorDebugThread *pThread,
+    ICorDebugModule *pModule,
+    ICorDebugType **ppType,
+    ICorDebugModule **ppModule)
 {
     HRESULT Status;
 
@@ -537,7 +531,7 @@ HRESULT FindType(const std::vector<std::string> &parts,
 
     if (!pTypeModule)
     {
-        Modules::ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
+        m_modules.ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
             if (typeToken != mdTypeDefNil) // already found
                 return S_OK;
 

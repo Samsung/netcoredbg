@@ -16,10 +16,8 @@
 #include <utility>
 
 #include "cputil.h"
-#include "modules.h"
 #include "typeprinter.h"
 #include "valueprint.h"
-#include "expr.h"
 #include "debugger.h"
 
 
@@ -899,7 +897,7 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
             ToRelease<ICorDebugValue> pValue;
             ULONG32 ilStart;
             ULONG32 ilEnd;
-            Status = Modules::GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd);
+            Status = m_modules.GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd);
 
             if (FAILED(Status))
                 continue;

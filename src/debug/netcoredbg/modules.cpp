@@ -20,26 +20,13 @@
 bool ShouldLoadSymbolsForModule(const std::string &moduleName);
 HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
 
-namespace Modules {
-struct ModuleInfo
+void Modules::CleanupAllModules()
 {
-    std::unique_ptr<SymbolReader> symbols;
-    ToRelease<ICorDebugModule> module;
-
-    ModuleInfo(ModuleInfo &&) = default;
-    ModuleInfo(const ModuleInfo &) = delete;
-};
-
-std::mutex g_modulesInfoMutex;
-std::unordered_map<CORDB_ADDRESS, ModuleInfo> g_modulesInfo;
-
-void CleanupAllModules()
-{
-    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-    g_modulesInfo.clear();
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    m_modulesInfo.clear();
 }
 
-std::string GetModuleFileName(ICorDebugModule *pModule)
+std::string Modules::GetModuleFileName(ICorDebugModule *pModule)
 {
     WCHAR name[mdNameLen];
     ULONG32 name_len = 0;
@@ -50,12 +37,13 @@ std::string GetModuleFileName(ICorDebugModule *pModule)
     return std::string();
 }
 
-HRESULT GetLocationInAny(std::string filename,
-                         ULONG linenum,
-                         ULONG32 &ilOffset,
-                         mdMethodDef &methodToken,
-                         std::string &fullname,
-                         ICorDebugModule **ppModule)
+HRESULT Modules::GetLocationInAny(
+    std::string filename,
+    ULONG linenum,
+    ULONG32 &ilOffset,
+    mdMethodDef &methodToken,
+    std::string &fullname,
+    ICorDebugModule **ppModule)
 {
     HRESULT Status;
 
@@ -63,9 +51,9 @@ HRESULT GetLocationInAny(std::string filename,
 
     Status = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), filename.size() + 1, nameBuffer, MAX_LONGPATH);
 
-    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
 
-    for (auto &info_pair : g_modulesInfo)
+    for (auto &info_pair : m_modulesInfo)
     {
         ModuleInfo &mdInfo = info_pair.second;
 
@@ -88,12 +76,13 @@ HRESULT GetLocationInAny(std::string filename,
     return E_FAIL;
 }
 
-HRESULT GetLocationInModule(ICorDebugModule *pModule,
-                            std::string filename,
-                            ULONG linenum,
-                            ULONG32 &ilOffset,
-                            mdMethodDef &methodToken,
-                            std::string &fullname)
+HRESULT Modules::GetLocationInModule(
+    ICorDebugModule *pModule,
+    std::string filename,
+    ULONG linenum,
+    ULONG32 &ilOffset,
+    mdMethodDef &methodToken,
+    std::string &fullname)
 {
     HRESULT Status;
 
@@ -104,9 +93,9 @@ HRESULT GetLocationInModule(ICorDebugModule *pModule,
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-    auto info_pair = g_modulesInfo.find(modAddress);
-    if (info_pair == g_modulesInfo.end())
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
     {
         return E_FAIL;
     }
@@ -122,9 +111,10 @@ HRESULT GetLocationInModule(ICorDebugModule *pModule,
     return S_OK;
 }
 
-HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
-                         ULONG32 &ilOffset,
-                         Modules::SequencePoint &sequencePoint)
+HRESULT Modules::GetFrameILAndSequencePoint(
+    ICorDebugFrame *pFrame,
+    ULONG32 &ilOffset,
+    Modules::SequencePoint &sequencePoint)
 {
     HRESULT Status;
 
@@ -156,9 +146,9 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
     ULONG linenum;
 
     {
-        std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        auto info_pair = g_modulesInfo.find(modAddress);
-        if (info_pair == g_modulesInfo.end())
+        std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+        auto info_pair = m_modulesInfo.find(modAddress);
+        if (info_pair == m_modulesInfo.end())
         {
             return E_FAIL;
         }
@@ -196,7 +186,7 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame,
     return E_FAIL;
 }
 
-HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)
+HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)
 {
     HRESULT Status;
     ToRelease<ICorDebugFrame> pFrame;
@@ -227,9 +217,9 @@ HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE
     ULONG32 ilEndOffset;
 
     {
-        std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        auto info_pair = g_modulesInfo.find(modAddress);
-        if (info_pair == g_modulesInfo.end())
+        std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+        auto info_pair = m_modulesInfo.find(modAddress);
+        if (info_pair == m_modulesInfo.end())
         {
             return E_FAIL;
         }
@@ -250,7 +240,7 @@ HRESULT GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE
     return S_OK;
 }
 
-HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
+HRESULT Modules::GetModuleId(ICorDebugModule *pModule, std::string &id)
 {
     HRESULT Status;
 
@@ -279,12 +269,13 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
     return S_OK;
 }
 
-HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
-                             std::string &id,
-                             std::string &name,
-                             bool &symbolsLoaded,
-                             CORDB_ADDRESS &baseAddress,
-                             ULONG32 &size)
+HRESULT Modules::TryLoadModuleSymbols(
+    ICorDebugModule *pModule,
+    std::string &id,
+    std::string &name,
+    bool &symbolsLoaded,
+    CORDB_ADDRESS &baseAddress,
+    ULONG32 &size)
 {
     HRESULT Status;
 
@@ -318,16 +309,16 @@ HRESULT TryLoadModuleSymbols(ICorDebugModule *pModule,
     IfFailRet(pModule->GetSize(&size));
 
     {
-        std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+        std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
         pModule->AddRef();
         ModuleInfo mdInfo { std::move(symbolReader), pModule };
-        g_modulesInfo.insert(std::make_pair(baseAddress, std::move(mdInfo)));
+        m_modulesInfo.insert(std::make_pair(baseAddress, std::move(mdInfo)));
     }
 
     return S_OK;
 }
 
-HRESULT GetFrameNamedLocalVariable(
+HRESULT Modules::GetFrameNamedLocalVariable(
     ICorDebugModule *pModule,
     ICorDebugILFrame *pILFrame,
     mdMethodDef methodToken,
@@ -345,9 +336,9 @@ HRESULT GetFrameNamedLocalVariable(
     WCHAR wParamName[mdNameLen] = W("\0");
 
     {
-        std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
-        auto info_pair = g_modulesInfo.find(modAddress);
-        if (info_pair == g_modulesInfo.end())
+        std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+        auto info_pair = m_modulesInfo.find(modAddress);
+        if (info_pair == m_modulesInfo.end())
         {
             return E_FAIL;
         }
@@ -360,11 +351,11 @@ HRESULT GetFrameNamedLocalVariable(
     return S_OK;
 }
 
-HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule)
+HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **ppModule)
 {
-    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
 
-    for (auto &info_pair : g_modulesInfo)
+    for (auto &info_pair : m_modulesInfo)
     {
         ModuleInfo &mdInfo = info_pair.second;
 
@@ -380,17 +371,15 @@ HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule)
     return E_FAIL;
 }
 
-HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb)
+HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb)
 {
     HRESULT Status;
-    std::lock_guard<std::mutex> lock(g_modulesInfoMutex);
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
 
-    for (auto &info_pair : g_modulesInfo)
+    for (auto &info_pair : m_modulesInfo)
     {
         ModuleInfo &mdInfo = info_pair.second;
         IfFailRet(cb(mdInfo.module));
     }
     return S_OK;
 }
-
-} // Modules namespace

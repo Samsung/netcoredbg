@@ -9,7 +9,6 @@
 #include <unordered_set>
 
 #include "debugger.h"
-#include "modules.h"
 
 
 Debugger::ManagedBreakpoint::ManagedBreakpoint() :
@@ -45,7 +44,7 @@ HRESULT Debugger::HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint
         return E_FAIL;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
 
-    IfFailRet(Modules::GetFrameLocation(pFrame, ilOffset, sp));
+    IfFailRet(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
 
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
@@ -93,7 +92,7 @@ HRESULT Debugger::ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBre
     ULONG32 ilOffset;
     std::string fullname;
 
-    IfFailRet(Modules::GetLocationInModule(
+    IfFailRet(m_modules.GetLocationInModule(
         pModule,
         bp.fullname,
         bp.linenum,
@@ -155,7 +154,7 @@ HRESULT Debugger::ResolveBreakpoint(ManagedBreakpoint &bp)
 
     ToRelease<ICorDebugModule> pModule;
 
-    IfFailRet(Modules::GetLocationInAny(
+    IfFailRet(m_modules.GetLocationInAny(
         bp.fullname,
         bp.linenum,
         ilOffset,

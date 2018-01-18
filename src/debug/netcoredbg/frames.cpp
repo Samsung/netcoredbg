@@ -15,7 +15,6 @@
 #include "typeprinter.h"
 #include "platform.h"
 #include "debugger.h"
-#include "modules.h"
 #include "frames.h"
 
 
@@ -56,7 +55,7 @@ static uint64_t FrameAddr(ICorDebugFrame *pFrame)
     return startAddr;
 }
 
-HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame)
+HRESULT Debugger::GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame)
 {
     HRESULT Status;
 
@@ -65,7 +64,7 @@ HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, S
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
 
-    if (SUCCEEDED(Modules::GetFrameLocation(pFrame, ilOffset, sp)))
+    if (SUCCEEDED(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
     {
         stackFrame.source = Source(sp.document);
         stackFrame.line = sp.startLine;
@@ -388,7 +387,7 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
     }
 }
 
-HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
+HRESULT Debugger::GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
 {
     HRESULT Status;
     std::stringstream ss;

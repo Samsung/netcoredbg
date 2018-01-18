@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include "protocol.h"
+#include "modules.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -28,6 +29,7 @@ public:
     typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
     typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
+    Modules &m_modules;
 private:
 
     ToRelease<ICorDebugFunction> m_pRunClassConstructor;
@@ -98,7 +100,22 @@ private:
         ULONG rawValueLength,
         ICorDebugValue **ppLiteralValue);
 
+    HRESULT FindType(
+        const std::vector<std::string> &parts,
+        int &nextPart,
+        ICorDebugThread *pThread,
+        ICorDebugModule *pModule,
+        ICorDebugType **ppType,
+        ICorDebugModule **ppModule = nullptr);
+
+    HRESULT ResolveParameters(
+        const std::vector<std::string> &params,
+        ICorDebugThread *pThread,
+        std::vector< ToRelease<ICorDebugType> > &types);
+
 public:
+
+    Evaluator(Modules &modules) : m_modules(modules) {}
 
     HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
 
@@ -124,6 +141,11 @@ public:
         ICorDebugValue *pValue,
         std::function<void(const std::string&)> cb
     );
+
+    HRESULT GetType(
+        const std::string &typeName,
+        ICorDebugThread *pThread,
+        ICorDebugType **ppType);
 
     HRESULT WalkMembers(
         ICorDebugValue *pValue,
@@ -166,6 +188,7 @@ private:
 
     void SetLastStoppedThread(ICorDebugThread *pThread);
 
+    Modules m_modules;
     Evaluator m_evaluator;
     Protocol *m_protocol;
     ManagedCallback *m_managedCallback;
@@ -283,6 +306,9 @@ private:
         ICorDebugValue *pValue,
         unsigned int &numchild,
         bool static_members = false);
+
+    HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
+    HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame);
 public:
     Debugger();
     ~Debugger();

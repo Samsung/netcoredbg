@@ -18,7 +18,6 @@
 
 #include "platform.h"
 #include "debugger.h"
-#include "modules.h"
 #include "frames.h"
 
 
@@ -189,7 +188,7 @@ HRESULT Debugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepTyp
     BOOL bStepIn = stepType == STEP_IN;
 
     COR_DEBUG_STEP_RANGE range;
-    if (SUCCEEDED(Modules::GetStepRangeFromCurrentIP(pThread, &range)))
+    if (SUCCEEDED(m_modules.GetStepRangeFromCurrentIP(pThread, &range)))
     {
         IfFailRet(pStepper->StepRange(bStepIn, &range, 1));
     } else {
@@ -242,7 +241,7 @@ HRESULT Debugger::GetStackTrace(int threadId, int lowFrame, int highFrame, std::
         return E_FAIL;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_pProcess->GetThread(threadId, &pThread));
-    return ::GetStackTrace(pThread, lowFrame, highFrame, stackFrames);
+    return GetStackTrace(pThread, lowFrame, highFrame, stackFrames);
 }
 
 HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,

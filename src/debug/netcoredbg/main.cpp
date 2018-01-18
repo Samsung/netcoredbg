@@ -18,7 +18,6 @@
 #include "platform.h"
 #include "typeprinter.h"
 #include "debugger.h"
-#include "modules.h"
 #include "frames.h"
 
 #define __in
@@ -333,7 +332,7 @@ public:
 
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                GetFrameLocation(pFrame, threadId, 0, event.frame);
+                m_debugger->GetFrameLocation(pFrame, threadId, 0, event.frame);
 
             m_debugger->SetLastStoppedThread(pThread);
             m_debugger->m_protocol->EmitStoppedEvent(event);
@@ -354,7 +353,7 @@ public:
             ToRelease<ICorDebugFrame> pFrame;
             HRESULT Status = S_FALSE;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                Status = GetFrameLocation(pFrame, threadId, 0, stackFrame);
+                Status = m_debugger->GetFrameLocation(pFrame, threadId, 0, stackFrame);
 
             const bool no_source = Status == S_FALSE;
 
@@ -395,7 +394,7 @@ public:
                 StackFrame stackFrame;
                 ToRelease<ICorDebugFrame> pFrame;
                 if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                    GetFrameLocation(pFrame, threadId, 0, stackFrame);
+                    m_debugger->GetFrameLocation(pFrame, threadId, 0, stackFrame);
 
                 m_debugger->SetLastStoppedThread(pThread);
 
@@ -498,7 +497,7 @@ public:
             CORDB_ADDRESS baseAddress = 0;
             ULONG32 size = 0;
 
-            Modules::TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
+            m_debugger->m_modules.TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
 
             std::stringstream ss;
             ss << "id=\"{" << id << "}\","
@@ -667,6 +666,7 @@ public:
 
 Debugger::Debugger() :
     m_processAttachedState(ProcessUnattached),
+    m_evaluator(m_modules),
     m_managedCallback(new ManagedCallback()),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
@@ -939,7 +939,7 @@ HRESULT Debugger::TerminateProcess()
 
 void Debugger::Cleanup()
 {
-    Modules::CleanupAllModules();
+    m_modules.CleanupAllModules();
     m_evaluator.Cleanup();
     m_protocol->Cleanup();
     // TODO: Cleanup libcoreclr.so instance
