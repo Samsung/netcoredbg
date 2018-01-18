@@ -4,9 +4,9 @@
 
 #pragma once
 
-#include "platform.h"
 #include <string>
 #include <vector>
+#include "platform.h"
 
 // From https://github.com/Microsoft/vscode-debugadapter-node/blob/master/protocol/src/debugProtocol.ts
 

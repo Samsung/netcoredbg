@@ -1,5 +1,6 @@
 set(netcoredbg_SRC
     main.cpp
+    manageddebugger.cpp
     symbolreader.cpp
     platform.cpp
     breakpoints.cpp
