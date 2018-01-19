@@ -494,6 +494,27 @@ void MIProtocol::EmitThreadEvent(ThreadEvent event)
     MIProtocol::Printf("=%s,id=\"%i\"\n", reasonText, event.threadId);
 }
 
+void MIProtocol::EmitModuleEvent(ModuleEvent event)
+{
+    switch(event.reason)
+    {
+        case ModuleNew:
+        {
+            std::stringstream ss;
+            ss << "id=\"{" << event.module.id << "}\","
+               << "target-name=\"" << MIProtocol::EscapeMIValue(event.module.path) << "\","
+               << "host-name=\"" << MIProtocol::EscapeMIValue(event.module.path) << "\","
+               << "symbols-loaded=\"" << (event.module.symbolStatus == SymbolsLoaded) << "\","
+               << "base-address=\"0x" << std::hex << event.module.baseAddress << "\","
+               << "size=\"" << std::dec << event.module.size << "\"";
+            Printf("=library-loaded,%s\n", ss.str().c_str());
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 void MIProtocol::EmitOutputEvent(OutputEvent event)
 {
     if (event.source.empty())

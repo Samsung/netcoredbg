@@ -431,6 +431,7 @@ public:
     virtual void EmitStoppedEvent(StoppedEvent event) = 0;
     virtual void EmitExitedEvent(ExitedEvent event) = 0;
     virtual void EmitThreadEvent(ThreadEvent event) = 0;
+    virtual void EmitModuleEvent(ModuleEvent event) = 0;
     virtual void EmitOutputEvent(OutputEvent event) = 0;
     virtual void EmitBreakpointEvent(BreakpointEvent event) = 0;
     virtual void Cleanup() = 0;
@@ -458,6 +459,7 @@ public:
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
     void EmitThreadEvent(ThreadEvent event) override;
+    void EmitModuleEvent(ModuleEvent event) override;
     void EmitOutputEvent(OutputEvent event) override;
     void EmitBreakpointEvent(BreakpointEvent event) override;
     void Cleanup() override;

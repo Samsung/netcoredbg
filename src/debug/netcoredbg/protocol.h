@@ -81,6 +81,27 @@ struct Breakpoint
     Breakpoint() : id(0), verified(false), line(0), hitCount(0) {}
 };
 
+enum SymbolStatus
+{
+    SymbolsSkipped, // "Skipped loading symbols."
+    SymbolsLoaded,  // "Symbols loaded." 
+    SymbolsNotFound
+};
+
+struct Module
+{
+    std::string id;
+    std::string name;
+    std::string path;
+    // bool isOptimized; // TODO: support both fields for VSCode protocol
+    // bool isUserCode;
+    SymbolStatus symbolStatus;
+    uint64_t baseAddress; // exposed for MI protocol
+    uint32_t size; // exposed for MI protocol
+
+    Module() : symbolStatus(SymbolsSkipped), baseAddress(0), size(0) {}
+};
+
 enum BreakpointReason
 {
     BreakpointChanged,
@@ -155,6 +176,20 @@ struct OutputEvent
     std::string source; // exposed for MI protocol
 
     OutputEvent(OutputCategory category, std::string output) : category(OutputConsole), output(output) {}
+};
+
+enum ModuleReason
+{
+    ModuleNew,
+    ModuleChanged,
+    ModuleRemoved
+};
+
+struct ModuleEvent
+{
+    ModuleReason reason;
+    Module module;
+    ModuleEvent(ModuleReason reason, const Module &module) : reason(reason), module(module) {}
 };
 
 struct Scope

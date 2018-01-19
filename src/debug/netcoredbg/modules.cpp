@@ -271,11 +271,8 @@ HRESULT Modules::GetModuleId(ICorDebugModule *pModule, std::string &id)
 
 HRESULT Modules::TryLoadModuleSymbols(
     ICorDebugModule *pModule,
-    std::string &id,
-    std::string &name,
-    bool &symbolsLoaded,
-    CORDB_ADDRESS &baseAddress,
-    ULONG32 &size)
+    Module &module
+)
 {
     HRESULT Status;
 
@@ -284,29 +281,38 @@ HRESULT Modules::TryLoadModuleSymbols(
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
 
-    name = GetModuleFileName(pModule);
+    module.path = GetModuleFileName(pModule);
+    module.name = GetFileName(module.path);
 
     std::unique_ptr<SymbolReader> symbolReader(new SymbolReader());
 
-    if (ShouldLoadSymbolsForModule(name))
+    if (ShouldLoadSymbolsForModule(module.path))
     {
         symbolReader->LoadSymbols(pMDImport, pModule);
-        symbolsLoaded = symbolReader->SymbolsLoaded();
+        module.symbolStatus = symbolReader->SymbolsLoaded() ? SymbolsLoaded : SymbolsNotFound;
+    }
+    else
+    {
+        module.symbolStatus = SymbolsSkipped;
     }
 
     // JMC stuff
     ToRelease<ICorDebugModule2> pModule2;
     if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
     {
-        pModule2->SetJMCStatus(symbolsLoaded, 0, nullptr);
-        if (symbolsLoaded)
+        pModule2->SetJMCStatus(module.symbolStatus == SymbolsLoaded, 0, nullptr);
+        if (module.symbolStatus == SymbolsLoaded)
             SetJMCFromAttributes(pModule, symbolReader.get());
     }
 
-    IfFailRet(GetModuleId(pModule, id));
+    IfFailRet(GetModuleId(pModule, module.id));
 
+    CORDB_ADDRESS baseAddress;
+    ULONG32 size;
     IfFailRet(pModule->GetBaseAddress(&baseAddress));
     IfFailRet(pModule->GetSize(&size));
+    module.baseAddress = baseAddress;
+    module.size = size;
 
     {
         std::lock_guard<std::mutex> lock(m_modulesInfoMutex);

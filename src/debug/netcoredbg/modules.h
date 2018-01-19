@@ -6,6 +6,9 @@
 #include <mutex>
 #include <memory>
 
+#include "protocol.h"
+
+
 class SymbolReader;
 
 class Modules
@@ -66,11 +69,7 @@ public:
 
     HRESULT TryLoadModuleSymbols(
         ICorDebugModule *pModule,
-        std::string &id,
-        std::string &name,
-        bool &symbolsLoaded,
-        CORDB_ADDRESS &baseAddress,
-        ULONG32 &size);
+        Module &module);
 
     void CleanupAllModules();
 

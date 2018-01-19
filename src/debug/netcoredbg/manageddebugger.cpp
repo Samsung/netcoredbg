@@ -449,24 +449,12 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugModule *pModule)
         {
-            std::string id;
-            std::string name;
-            bool symbolsLoaded = false;
-            CORDB_ADDRESS baseAddress = 0;
-            ULONG32 size = 0;
+            Module module;
 
-            m_debugger.m_modules.TryLoadModuleSymbols(pModule, id, name, symbolsLoaded, baseAddress, size);
+            m_debugger.m_modules.TryLoadModuleSymbols(pModule, module);
+            m_debugger.m_protocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
 
-            std::stringstream ss;
-            ss << "id=\"{" << id << "}\","
-                << "target-name=\"" << MIProtocol::EscapeMIValue(name) << "\","
-                << "host-name=\"" << MIProtocol::EscapeMIValue(name) << "\","
-                << "symbols-loaded=\"" << symbolsLoaded << "\","
-                << "base-address=\"0x" << std::hex << baseAddress << "\","
-                << "size=\"" << std::dec << size << "\"";
-            MIProtocol::Printf("=library-loaded,%s\n", ss.str().c_str());
-
-            if (symbolsLoaded)
+            if (module.symbolStatus == SymbolsLoaded)
             {
                 std::vector<BreakpointEvent> events;
                 m_debugger.m_breakpoints.TryResolveBreakpointsForModule(pModule, events);
