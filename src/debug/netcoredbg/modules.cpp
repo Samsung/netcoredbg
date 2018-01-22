@@ -16,9 +16,6 @@
 #include "platform.h"
 #include "modules.h"
 
-// JMC
-bool ShouldLoadSymbolsForModule(const std::string &moduleName);
-HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
 
 void Modules::CleanupAllModules()
 {

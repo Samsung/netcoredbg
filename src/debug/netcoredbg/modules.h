@@ -27,6 +27,9 @@ class Modules
 
     std::string GetModuleFileName(ICorDebugModule *pModule);
 
+    static bool ShouldLoadSymbolsForModule(const std::string &moduleName);
+    static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
+
 public:
 
     struct SequencePoint {

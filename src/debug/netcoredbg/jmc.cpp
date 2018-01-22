@@ -13,6 +13,7 @@
 #include "typeprinter.h"
 #include "platform.h"
 #include "symbolreader.h"
+#include "modules.h"
 
 static const char *g_nonUserCode = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";
 static const char *g_stepThrough = "System.Diagnostics.DebuggerStepThroughAttribute..ctor";
@@ -70,7 +71,7 @@ static const std::unordered_set<std::string> g_operatorMethodNames
     "op_DivisionAssignment"            // /=
 };
 
-bool ShouldLoadSymbolsForModule(const std::string &moduleName)
+bool Modules::ShouldLoadSymbolsForModule(const std::string &moduleName)
 {
     std::string name = GetFileName(moduleName);
     if (name.find("System.") == 0 || name.find("SOS.") == 0)
@@ -212,7 +213,7 @@ static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, SymbolReader
     return S_OK;
 }
 
-HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader)
+HRESULT Modules::SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader)
 {
     std::vector<mdToken> excludeTokens;
 
