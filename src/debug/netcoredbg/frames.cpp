@@ -59,7 +59,7 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, int threadId, 
 {
     HRESULT Status;
 
-    stackFrame.id = FrameAddr(pFrame);
+    stackFrame = StackFrame(threadId, level, "");
 
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
