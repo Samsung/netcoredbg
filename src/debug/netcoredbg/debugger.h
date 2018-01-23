@@ -315,16 +315,24 @@ public:
         STEP_OUT
     };
 
+    enum DisconnectAction
+    {
+        DisconnectDefault, // Attach -> Detach, Launch -> Terminate
+        DisconnectTerminate,
+        DisconnectDetach
+    };
+
     virtual ~Debugger() {}
 
     virtual bool IsJustMyCode() = 0;
     virtual void SetJustMyCode(bool enable) = 0;
 
-    virtual HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs) = 0;
+    virtual HRESULT Initialize() = 0;
+    virtual HRESULT Attach(int pid) = 0;
+    virtual HRESULT Launch(std::string fileExec, std::vector<std::string> execArgs, bool stopAtEntry = false) = 0;
+    virtual HRESULT ConfigurationDone() = 0;
 
-    virtual HRESULT AttachToProcess(int pid) = 0;
-    virtual HRESULT DetachFromProcess() = 0;
-    virtual HRESULT TerminateProcess() = 0;
+    virtual HRESULT Disconnect(DisconnectAction action = DisconnectDefault) = 0;
 
     virtual int GetLastStoppedThreadId() = 0;
 
@@ -364,6 +372,17 @@ private:
 
     void SetLastStoppedThread(ICorDebugThread *pThread);
 
+    enum StartMethod
+    {
+        StartNone,
+        StartLaunch,
+        StartAttach
+        //StartAttachForSuspendedLaunch
+    } m_startMethod;
+    std::string m_execPath;
+    std::vector<std::string> m_execArgs;
+    bool m_stopAtEntry;
+
     Modules m_modules;
     Evaluator m_evaluator;
     Breakpoints m_breakpoints;
@@ -395,6 +414,12 @@ private:
 
     HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame);
+
+    HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
+    HRESULT AttachToProcess(int pid);
+    HRESULT DetachFromProcess();
+    HRESULT TerminateProcess();
+
 public:
     ManagedDebugger();
     ~ManagedDebugger() override;
@@ -404,11 +429,12 @@ public:
     bool IsJustMyCode() override { return m_justMyCode; }
     void SetJustMyCode(bool enable) override { m_justMyCode = enable; }
 
-    HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs) override;
+    HRESULT Initialize() override;
+    HRESULT Attach(int pid) override;
+    HRESULT Launch(std::string fileExec, std::vector<std::string> execArgs, bool stopAtEntry = false) override;
+    HRESULT ConfigurationDone() override;
 
-    HRESULT AttachToProcess(int pid) override;
-    HRESULT DetachFromProcess() override;
-    HRESULT TerminateProcess() override;
+    HRESULT Disconnect(DisconnectAction action = DisconnectDefault) override;
 
     int GetLastStoppedThreadId() override;
 
@@ -428,8 +454,10 @@ public:
 class Protocol
 {
 public:
+    virtual void EmitInitializedEvent() = 0;
     virtual void EmitStoppedEvent(StoppedEvent event) = 0;
     virtual void EmitExitedEvent(ExitedEvent event) = 0;
+    virtual void EmitTerminatedEvent() = 0;
     virtual void EmitThreadEvent(ThreadEvent event) = 0;
     virtual void EmitModuleEvent(ModuleEvent event) = 0;
     virtual void EmitOutputEvent(OutputEvent event) = 0;
@@ -456,8 +484,10 @@ public:
     static std::string EscapeMIValue(const std::string &str);
 
     MIProtocol() : m_exit(false), m_varCounter(0) {}
+    void EmitInitializedEvent() override {};
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
+    void EmitTerminatedEvent() override {};
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitModuleEvent(ModuleEvent event) override;
     void EmitOutputEvent(OutputEvent event) override;

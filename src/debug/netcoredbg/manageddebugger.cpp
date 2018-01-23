@@ -617,6 +617,8 @@ public:
 
 ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
+    m_startMethod(StartNone),
+    m_stopAtEntry(false),
     m_evaluator(m_modules),
     m_breakpoints(m_modules),
     m_variables(m_evaluator),
@@ -633,6 +635,82 @@ ManagedDebugger::ManagedDebugger() :
 
 ManagedDebugger::~ManagedDebugger()
 {
+}
+
+HRESULT ManagedDebugger::Initialize()
+{
+    // TODO: Report capabilities and check client support
+    m_startMethod = StartNone;
+    m_protocol->EmitInitializedEvent();
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::Attach(int pid)
+{
+    m_startMethod = StartAttach;
+    m_processId = pid;
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::Launch(std::string fileExec, std::vector<std::string> execArgs, bool stopAtEntry)
+{
+    m_startMethod = StartLaunch;
+    m_execPath = fileExec;
+    m_execArgs = execArgs;
+    m_stopAtEntry = stopAtEntry;
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::ConfigurationDone()
+{
+    switch(m_startMethod)
+    {
+        case StartLaunch:
+            return RunProcess(m_execPath, m_execArgs);
+        case StartAttach:
+            return AttachToProcess(m_processId);
+        default:
+            return E_FAIL;
+    }
+    return E_FAIL;
+}
+
+HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
+{
+    bool terminate;
+    switch(action)
+    {
+        case DisconnectDefault:
+            switch(m_startMethod)
+            {
+                case StartLaunch:
+                    terminate = true;
+                    break;
+                case StartAttach:
+                    terminate = false;
+                    break;
+                default:
+                    return E_FAIL;
+            }
+            break;
+        case DisconnectTerminate:
+            terminate = true;
+            break;
+        case DisconnectDetach:
+            terminate = false;
+            break;
+        default:
+            return E_FAIL;
+    }
+
+    if (!terminate)
+        return DetachFromProcess();
+
+    HRESULT Status = TerminateProcess();
+    if (SUCCEEDED(Status))
+        m_protocol->EmitTerminatedEvent();
+
+    return Status;
 }
 
 HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepType)

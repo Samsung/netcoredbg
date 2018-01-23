@@ -603,7 +603,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         return StepCommand(args, output, Debugger::STEP_OUT);
     }},
     { "exec-abort", [this](const std::vector<std::string> &, std::string &output) -> HRESULT {
-        m_debugger->TerminateProcess();
+        m_debugger->Disconnect(Debugger::DisconnectTerminate);
         return S_OK;
     }},
     { "target-attach", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -616,12 +616,15 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         bool ok;
         int pid = ParseInt(args.at(0), ok);
         if (!ok) return E_INVALIDARG;
-        IfFailRet(m_debugger->AttachToProcess(pid));
+
+        m_debugger->Initialize();
+        IfFailRet(m_debugger->Attach(pid));
+        IfFailRet(m_debugger->ConfigurationDone());
         // TODO: print succeessful result
         return S_OK;
     }},
     { "target-detach", [this](const std::vector<std::string> &, std::string &output) -> HRESULT {
-        m_debugger->DetachFromProcess();
+        m_debugger->Disconnect(Debugger::DisconnectDetach);
         return S_OK;
     }},
     { "stack-list-frames", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
@@ -718,7 +721,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     { "gdb-exit", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         this->m_exit = true;
 
-        m_debugger->TerminateProcess();
+        m_debugger->Disconnect(Debugger::DisconnectTerminate);
 
         return S_OK;
     }},
@@ -733,7 +736,10 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         return S_OK;
     }},
     { "exec-run", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        HRESULT Status = m_debugger->RunProcess(m_fileExec, m_execArgs);
+        HRESULT Status;
+        m_debugger->Initialize();
+        IfFailRet(m_debugger->Launch(m_fileExec, m_execArgs));
+        Status = m_debugger->ConfigurationDone();
         if (SUCCEEDED(Status))
             output = "^running";
         return Status;
@@ -926,7 +932,7 @@ void MIProtocol::CommandLoop()
     }
 
     if (!m_exit)
-        m_debugger->TerminateProcess();
+        m_debugger->Disconnect(Debugger::DisconnectTerminate);
 
     Printf("%s^exit\n", token.c_str());
 }
