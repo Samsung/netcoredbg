@@ -14,7 +14,7 @@
 
 #include "typeprinter.h"
 #include "platform.h"
-#include "debugger.h"
+#include "manageddebugger.h"
 #include "frames.h"
 
 

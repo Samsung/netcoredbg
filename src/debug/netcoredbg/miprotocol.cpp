@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <unordered_set>
 #include <unordered_map>
 #include <functional>
 #include <algorithm>
@@ -17,7 +18,7 @@
 #include <iomanip>
 
 #include "platform.h"
-#include "debugger.h"
+#include "miprotocol.h"
 #include "frames.h"
 
 

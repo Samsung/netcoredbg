@@ -3,7 +3,10 @@
 // See the LICENSE file in the project root for more information.
 
 #include "common.h"
-#include "debugger.h"
+
+#include "manageddebugger.h"
+#include "miprotocol.h"
+
 
 static void print_help()
 {

@@ -18,7 +18,7 @@
 #include "cputil.h"
 #include "typeprinter.h"
 #include "valueprint.h"
-#include "debugger.h"
+#include "manageddebugger.h"
 
 
 void Evaluator::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)

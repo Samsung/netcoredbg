@@ -14,7 +14,7 @@
 #include <list>
 #include <iomanip>
 
-#include "debugger.h"
+#include "manageddebugger.h"
 #include "typeprinter.h"
 #include "valueprint.h"
 #include "frames.h"

@@ -17,7 +17,7 @@
 #include "cputil.h"
 #include "platform.h"
 #include "typeprinter.h"
-#include "debugger.h"
+#include "manageddebugger.h"
 #include "frames.h"
 
 #define __in
@@ -941,6 +941,25 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, int pid)
     return S_OK;
 }
 
+static std::string EscapeShellArg(const std::string &arg)
+{
+    std::string s(arg);
+
+    for (std::size_t i = 0; i < s.size(); ++i)
+    {
+        int count = 0;
+        char c = s.at(i);
+        switch (c)
+        {
+            case '\"': count = 1; s.insert(i, count, '\\'); s[i + count] = '\"'; break;
+            case '\\': count = 1; s.insert(i, count, '\\'); s[i + count] = '\\'; break;
+        }
+        i += count;
+    }
+
+    return s;
+}
+
 HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::string> execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
@@ -952,7 +971,7 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     ss << "\"" << fileExec << "\"";
     for (std::string &arg : execArgs)
     {
-        ss << " \"" << MIProtocol::EscapeMIValue(arg) << "\"";
+        ss << " \"" << EscapeShellArg(arg) << "\"";
     }
     std::string cmdString = ss.str();
     std::unique_ptr<WCHAR[]> cmd(new WCHAR[cmdString.size() + 1]);

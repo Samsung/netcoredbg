@@ -8,7 +8,7 @@
 #include <memory>
 #include <unordered_set>
 
-#include "debugger.h"
+#include "manageddebugger.h"
 
 
 Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
