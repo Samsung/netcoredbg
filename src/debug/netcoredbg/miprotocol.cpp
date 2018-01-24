@@ -479,6 +479,10 @@ void MIProtocol::EmitExitedEvent(ExitedEvent event)
     MIProtocol::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", event.exitCode);
 }
 
+void MIProtocol::EmitContinuedEvent()
+{
+}
+
 void MIProtocol::EmitThreadEvent(ThreadEvent event)
 {
     const char *reasonText = "";

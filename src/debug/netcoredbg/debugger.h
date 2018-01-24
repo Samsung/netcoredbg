@@ -304,6 +304,8 @@ public:
     HRESULT GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes);
 
     HRESULT Evaluate(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression, Variable &variable);
+
+    void Clear() { m_variables.clear(); m_nextVariableReference = 1; }
 };
 
 class Debugger
@@ -458,6 +460,7 @@ public:
     virtual void EmitStoppedEvent(StoppedEvent event) = 0;
     virtual void EmitExitedEvent(ExitedEvent event) = 0;
     virtual void EmitTerminatedEvent() = 0;
+    virtual void EmitContinuedEvent() = 0;
     virtual void EmitThreadEvent(ThreadEvent event) = 0;
     virtual void EmitModuleEvent(ModuleEvent event) = 0;
     virtual void EmitOutputEvent(OutputEvent event) = 0;
@@ -488,6 +491,7 @@ public:
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
     void EmitTerminatedEvent() override {};
+    void EmitContinuedEvent() override;
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitModuleEvent(ModuleEvent event) override;
     void EmitOutputEvent(OutputEvent event) override;

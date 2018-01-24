@@ -757,15 +757,24 @@ HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
     IfFailRet(m_pProcess->GetThread(threadId, &pThread));
     DisableAllSteppers(m_pProcess);
     IfFailRet(SetupStep(pThread, stepType));
-    IfFailRet(m_pProcess->Continue(0));
-    return S_OK;
+
+    m_variables.Clear();
+    Status = m_pProcess->Continue(0);
+    if (SUCCEEDED(Status))
+        m_protocol->EmitContinuedEvent();
+    return Status;
 }
 
 HRESULT ManagedDebugger::Continue()
 {
     if (!m_pProcess)
         return E_FAIL;
-    return m_pProcess->Continue(0);
+
+    m_variables.Clear();
+    HRESULT Status = m_pProcess->Continue(0);
+    if (SUCCEEDED(Status))
+        m_protocol->EmitContinuedEvent();
+    return Status;
 }
 
 HRESULT ManagedDebugger::Pause()
