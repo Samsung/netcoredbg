@@ -794,14 +794,14 @@ HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
     return GetThreadsState(m_pProcess, threads);
 }
 
-HRESULT ManagedDebugger::GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
+HRESULT ManagedDebugger::GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
     HRESULT Status;
     if (!m_pProcess)
         return E_FAIL;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_pProcess->GetThread(threadId, &pThread));
-    return GetStackTrace(pThread, lowFrame, highFrame, stackFrames);
+    return GetStackTrace(pThread, startFrame, levels, stackFrames, totalFrames);
 }
 
 VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)

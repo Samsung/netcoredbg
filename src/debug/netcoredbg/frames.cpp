@@ -387,7 +387,7 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
     }
 }
 
-HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames)
+HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
     HRESULT Status;
     std::stringstream ss;
@@ -405,10 +405,10 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int lowFrame, i
     {
         currentFrame++;
 
-        if (currentFrame < lowFrame)
+        if (currentFrame < startFrame)
             return S_OK;
-        if (currentFrame > highFrame)
-            return S_OK; // Todo implement fast break mechanism
+        if (levels != 0 && currentFrame >= (startFrame + levels))
+            return S_OK;
 
         switch(frameType)
         {
@@ -449,6 +449,8 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int lowFrame, i
         }
         return S_OK;
     }));
+
+    totalFrames = currentFrame + 1;
 
     return S_OK;
 }

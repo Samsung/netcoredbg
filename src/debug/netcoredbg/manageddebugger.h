@@ -371,7 +371,7 @@ private:
 
     HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
 
-    HRESULT GetStackTrace(ICorDebugThread *pThread, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames);
+    HRESULT GetStackTrace(ICorDebugThread *pThread, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame);
 
     HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
@@ -402,7 +402,7 @@ public:
     HRESULT GetThreads(std::vector<Thread> &threads) override;
     HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints) override;
     void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) override;
-    HRESULT GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames) override;
+    HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
     HRESULT StepCommand(int threadId, StepType stepType) override;
     HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) override;
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;

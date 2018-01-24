@@ -219,8 +219,9 @@ HRESULT MIProtocol::PrintFrames(int threadId, std::string &output, int lowFrame,
     HRESULT Status;
     std::stringstream ss;
 
+    int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
-    IfFailRet(m_debugger->GetStackTrace(threadId, lowFrame, highFrame, stackFrames));
+    IfFailRet(m_debugger->GetStackTrace(threadId, lowFrame, highFrame - lowFrame, stackFrames, totalFrames));
 
     int currentFrame = lowFrame;
 

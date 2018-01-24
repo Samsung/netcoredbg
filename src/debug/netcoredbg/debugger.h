@@ -41,7 +41,7 @@ public:
     virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
     virtual HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints) = 0;
     virtual void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) = 0;
-    virtual HRESULT GetStackTrace(int threadId, int lowFrame, int highFrame, std::vector<StackFrame> &stackFrames) = 0;
+    virtual HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) = 0;
     virtual HRESULT StepCommand(int threadId, StepType stepType) = 0;
     virtual HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) = 0;
     virtual HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) = 0;
