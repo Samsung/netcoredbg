@@ -10,6 +10,7 @@ set(netcoredbg_SRC
     valuewalk.cpp
     valueprint.cpp
     miprotocol.cpp
+    vscodeprotocol.cpp
     frames.cpp
     jmc.cpp
     expr.cpp)
