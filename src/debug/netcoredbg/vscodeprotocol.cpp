@@ -197,7 +197,7 @@ void VSCodeProtocol::EmitOutputEvent(OutputEvent event)
             break;
     }
 
-    body["message"] = event.output;
+    body["output"] = event.output;
 
     EmitEvent("output", body);
 }
