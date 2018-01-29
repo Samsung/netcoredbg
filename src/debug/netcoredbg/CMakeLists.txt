@@ -86,15 +86,15 @@ include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
 # SymbolReader
 
 if (BUILD_MANAGED)
+    set(SYMBOLREADER_PROJECT ${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.csproj)
     set(SYMBOLREADER_DLL_NAME SymbolReader.dll)
-    set(DOTNET_BUILD_RESULT ${CMAKE_CURRENT_SOURCE_DIR}/bin/Debug/netstandard1.6/${SYMBOLREADER_DLL_NAME})
+    set(DOTNET_BUILD_RESULT ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME})
 
     add_custom_command(OUTPUT ${DOTNET_BUILD_RESULT}
-      COMMAND dotnet build ${CMAKE_CURRENT_SOURCE_DIR}
-
+      COMMAND dotnet build ${SYMBOLREADER_PROJECT} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/
       WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs" "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.csproj"
-      COMMENT "Compiling SymbolReader.cs"
+      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs" "${SYMBOLREADER_PROJECT}"
+      COMMENT "Compiling ${SYMBOLREADER_DLL_NAME}"
       VERBATIM
     )
 
