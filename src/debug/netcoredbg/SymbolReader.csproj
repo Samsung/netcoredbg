@@ -1,8 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <EnableDefaultCompileItems>False</EnableDefaultCompileItems>
     <TargetFramework>netstandard1.6</TargetFramework>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SymbolReader.cs" />
+  </ItemGroup>
 
   <PropertyGroup>
     <AssemblyName>SymbolReader</AssemblyName>
