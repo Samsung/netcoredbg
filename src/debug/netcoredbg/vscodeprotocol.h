@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include <mutex>
+#include <fstream>
 
 #include "json.hpp"
 #include "debugger.h"
@@ -13,7 +14,17 @@ class VSCodeProtocol : public Protocol
     static const std::string TWO_CRLF;
     static const std::string CONTENT_LENGTH;
 
+    static const std::string LOG_COMMAND;
+    static const std::string LOG_RESPONSE;
+    static const std::string LOG_EVENT;
+
     std::mutex m_outMutex;
+    enum {
+        LogNone,
+        LogConsole,
+        LogFile
+    } m_engineLogOutput;
+    std::ofstream m_engineLog;
     bool m_exit;
     Debugger *m_debugger;
 
@@ -23,10 +34,15 @@ class VSCodeProtocol : public Protocol
 
     void EmitEvent(const std::string &name, const nlohmann::json &body);
     HRESULT HandleCommand(const std::string &command, const nlohmann::json &arguments, nlohmann::json &body);
+
+    void Log(const std::lock_guard<std::mutex> &lock, const std::string &prefix, const std::string &text);
+
 public:
 
-    VSCodeProtocol() : m_exit(false), m_seqCounter(1) {}
+    VSCodeProtocol() : m_engineLogOutput(LogNone), m_exit(false), m_seqCounter(1) {}
     void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
+    void EngineLogging(const std::string &path);
+
     void EmitInitializedEvent() override;
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;

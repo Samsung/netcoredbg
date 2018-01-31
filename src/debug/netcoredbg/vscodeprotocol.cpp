@@ -246,6 +246,7 @@ void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &bo
     std::string output = response.dump();
     std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
     std::cout.flush();
+    Log(lock, LOG_EVENT, output);
 }
 
 typedef std::function<HRESULT(
@@ -471,6 +472,8 @@ void VSCodeProtocol::CommandLoop()
         if (requestText.empty())
             break;
 
+        Log(std::lock_guard<std::mutex>(m_outMutex), LOG_COMMAND, requestText);
+
         json request = json::parse(requestText);
 
         std::string command = request.at("command");
@@ -509,10 +512,56 @@ void VSCodeProtocol::CommandLoop()
             std::string output = response.dump();
             std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
             std::cout.flush();
+            Log(lock, LOG_RESPONSE, output);
         }
     }
 
     if (!m_exit)
         m_debugger->Disconnect();
 
+}
+
+const std::string VSCodeProtocol::LOG_COMMAND("-> (C) ");
+const std::string VSCodeProtocol::LOG_RESPONSE("<- (R) ");
+const std::string VSCodeProtocol::LOG_EVENT("<- (E) ");
+
+void VSCodeProtocol::EngineLogging(const std::string &path)
+{
+    if (path.empty())
+    {
+        m_engineLogOutput = LogConsole;
+    }
+    else
+    {
+        m_engineLogOutput = LogFile;
+        m_engineLog.open(path);
+    }
+}
+
+void VSCodeProtocol::Log(const std::lock_guard<std::mutex> &lock, const std::string &prefix, const std::string &text)
+{
+    switch(m_engineLogOutput)
+    {
+        case LogNone:
+            return;
+        case LogFile:
+            m_engineLog << prefix << text << std::endl;
+            m_engineLog.flush();
+            return;
+        case LogConsole:
+        {
+            json response;
+            response["seq"] = m_seqCounter++;
+            response["type"] = "event";
+            response["event"] = "output";
+            response["body"] = json{
+                {"category", "console"},
+                {"output", prefix + text + "\n"}
+            };
+            std::string output = response.dump();
+            std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
+            std::cout.flush();
+            return;
+        }
+    }
 }
