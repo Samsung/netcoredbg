@@ -1,3 +1,31 @@
+# CoreCLR libraries
+
+set(CORECLR_PRODUCT ${CLR_DIR}/bin/Product/${CORECLR_PLATFORM})
+
+add_library(mscordaccore SHARED IMPORTED)
+set_target_properties(mscordaccore PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libmscordaccore.so)
+
+add_library(dbgshim SHARED IMPORTED)
+set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libdbgshim.so)
+
+add_library(corguids STATIC IMPORTED)
+set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libcorguids.a)
+
+add_library(palrt STATIC IMPORTED)
+set_target_properties(palrt PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libpalrt.a)
+
+include_directories(${CLR_DIR}/src/inc)
+include_directories(${CLR_DIR}/src/pal/inc)
+include_directories(${CLR_DIR}/src/pal/inc/rt)
+include_directories(${CLR_DIR}/src/pal/prebuilt/inc)
+include_directories(${CLR_DIR}/src/debug/inc)
+include_directories(${CLR_DIR}/src/debug/shim)
+include_directories(${CLR_DIR}/src/dlls/dbgshim)
+include_directories(${CLR_DIR}/src/coreclr/hosts/inc)
+include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
+
+# NetCoreDBG
+
 set(netcoredbg_SRC
     main.cpp
     manageddebugger.cpp
@@ -55,33 +83,9 @@ endif()
 
 add_executable(netcoredbg ${netcoredbg_SRC})
 
-# CoreCLR libraries
-
-set(CORECLR_PRODUCT ${CLR_DIR}/bin/Product/${CORECLR_PLATFORM})
-
-add_library(mscordaccore SHARED IMPORTED)
-set_target_properties(mscordaccore PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libmscordaccore.so)
-
-add_library(dbgshim SHARED IMPORTED)
-set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libdbgshim.so)
-
-add_library(corguids STATIC IMPORTED)
-set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libcorguids.a)
-
-add_library(palrt STATIC IMPORTED)
-set_target_properties(palrt PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libpalrt.a)
-
 target_link_libraries(netcoredbg corguids dbgshim mscordaccore palrt pthread)
 
-include_directories(${CLR_DIR}/src/inc)
-include_directories(${CLR_DIR}/src/pal/inc)
-include_directories(${CLR_DIR}/src/pal/inc/rt)
-include_directories(${CLR_DIR}/src/pal/prebuilt/inc)
-include_directories(${CLR_DIR}/src/debug/inc)
-include_directories(${CLR_DIR}/src/debug/shim)
-include_directories(${CLR_DIR}/src/dlls/dbgshim)
-include_directories(${CLR_DIR}/src/coreclr/hosts/inc)
-include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
+install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 # SymbolReader
 
@@ -101,5 +105,3 @@ if (BUILD_MANAGED)
     add_custom_target(symbolreader_dll ALL DEPENDS ${DOTNET_BUILD_RESULT})
     install(FILES ${DOTNET_BUILD_RESULT} DESTINATION ${CMAKE_INSTALL_PREFIX})
 endif()
-
-install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
