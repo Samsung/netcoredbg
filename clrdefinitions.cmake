@@ -1,3 +1,13 @@
+function(clr_unknown_arch)
+  if (WIN32)
+    message(FATAL_ERROR "Only AMD64, ARM64, ARM and I386 are supported")
+  elseif(CLR_CROSS_COMPONENTS_BUILD)
+    message(FATAL_ERROR "Only AMD64, I386 host are supported for linux cross-architecture component")
+  else()
+    message(FATAL_ERROR "Only AMD64, ARM64 and ARM are supported")
+  endif()
+endfunction()
+
 if (CLR_CMAKE_TARGET_ARCH_AMD64)
   if (CLR_CMAKE_PLATFORM_UNIX)
     add_definitions(-DDBG_TARGET_AMD64_UNIX)
