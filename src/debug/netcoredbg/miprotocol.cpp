@@ -471,6 +471,12 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
             MIProtocol::Printf("*stopped,reason=\"interrupted\",stopped-threads=\"all\"\n");
             return;
         }
+        case StopEntry:
+        {
+            MIProtocol::Printf("*stopped,reason=\"entry-point-hit\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                event.threadId, frameLocation.c_str());
+            return;
+        }
         default:
             break;
     }
