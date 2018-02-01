@@ -750,7 +750,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     { "exec-run", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
         m_debugger->Initialize();
-        IfFailRet(m_debugger->Launch(m_fileExec, m_execArgs));
+        IfFailRet(m_debugger->Launch(m_fileExec, m_execArgs, true));
         Status = m_debugger->ConfigurationDone();
         if (SUCCEEDED(Status))
             output = "^running";
