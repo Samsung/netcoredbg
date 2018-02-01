@@ -35,7 +35,7 @@ class VSCodeProtocol : public Protocol
     void EmitEvent(const std::string &name, const nlohmann::json &body);
     HRESULT HandleCommand(const std::string &command, const nlohmann::json &arguments, nlohmann::json &body);
 
-    void Log(const std::lock_guard<std::mutex> &lock, const std::string &prefix, const std::string &text);
+    void Log(const std::string &prefix, const std::string &text);
 
 public:
 

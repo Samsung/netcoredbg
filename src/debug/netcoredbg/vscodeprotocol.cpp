@@ -246,7 +246,7 @@ void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &bo
     std::string output = response.dump();
     std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
     std::cout.flush();
-    Log(lock, LOG_EVENT, output);
+    Log(LOG_EVENT, output);
 }
 
 typedef std::function<HRESULT(
@@ -472,7 +472,10 @@ void VSCodeProtocol::CommandLoop()
         if (requestText.empty())
             break;
 
-        Log(std::lock_guard<std::mutex>(m_outMutex), LOG_COMMAND, requestText);
+        {
+            std::lock_guard<std::mutex> lock(m_outMutex);
+            Log(LOG_COMMAND, requestText);
+        }
 
         json request = json::parse(requestText);
 
@@ -512,7 +515,7 @@ void VSCodeProtocol::CommandLoop()
             std::string output = response.dump();
             std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
             std::cout.flush();
-            Log(lock, LOG_RESPONSE, output);
+            Log(LOG_RESPONSE, output);
         }
     }
 
@@ -538,8 +541,9 @@ void VSCodeProtocol::EngineLogging(const std::string &path)
     }
 }
 
-void VSCodeProtocol::Log(const std::lock_guard<std::mutex> &lock, const std::string &prefix, const std::string &text)
+void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
 {
+    // Calling function must lock m_outMutex
     switch(m_engineLogOutput)
     {
         case LogNone:
