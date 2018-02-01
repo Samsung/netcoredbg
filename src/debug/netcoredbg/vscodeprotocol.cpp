@@ -289,7 +289,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         if (dirSepIndex != std::string::npos)
             exeDir = exe.substr(0, dirSepIndex + 1);
 
-        return m_debugger->Launch(exeDir + "corerun", args);
+        return m_debugger->Launch(exeDir + "corerun", args, arguments.value("stopAtEntry", false));
     } },
     { "threads", [this](const json &arguments, json &body){
         HRESULT Status;

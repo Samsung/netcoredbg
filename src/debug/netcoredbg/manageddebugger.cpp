@@ -285,8 +285,16 @@ public:
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
+            bool atEntry = false;
             StoppedEvent event(StopBreakpoint, threadId);
-            m_debugger.m_breakpoints.HitBreakpoint(pThread, event.breakpoint);
+            if (FAILED(m_debugger.m_breakpoints.HitBreakpoint(pThread, pBreakpoint, event.breakpoint, atEntry)))
+            {
+                pAppDomain->Continue(0);
+                return S_OK;
+            }
+
+            if (atEntry)
+                event.reason = StopEntry;
 
             ToRelease<ICorDebugFrame> pFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
@@ -658,6 +666,7 @@ HRESULT ManagedDebugger::Launch(std::string fileExec, std::vector<std::string> e
     m_execPath = fileExec;
     m_execArgs = execArgs;
     m_stopAtEntry = stopAtEntry;
+    m_breakpoints.SetStopAtEntry(m_stopAtEntry);
     return S_OK;
 }
 

@@ -187,10 +187,23 @@ class Breakpoints
     HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
     HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
 
-public:
-    Breakpoints(Modules &modules) : m_modules(modules), m_nextBreakpointId(1) {}
+    bool m_stopAtEntry;
+    mdMethodDef m_entryPoint;
+    ToRelease<ICorDebugFunctionBreakpoint> m_entryBreakpoint;
 
-    HRESULT HitBreakpoint(ICorDebugThread *pThread, Breakpoint &breakpoint);
+    HRESULT TrySetupEntryBreakpoint(ICorDebugModule *pModule);
+    bool HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
+
+public:
+    Breakpoints(Modules &modules) :
+        m_modules(modules), m_nextBreakpointId(1), m_stopAtEntry(false), m_entryPoint(mdMethodDefNil) {}
+
+    HRESULT HitBreakpoint(
+        ICorDebugThread *pThread,
+        ICorDebugBreakpoint *pBreakpoint,
+        Breakpoint &breakpoint,
+        bool &atEntry);
+
     void DeleteAllBreakpoints();
 
     void TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events);
@@ -202,6 +215,8 @@ public:
         std::string filename,
         const std::vector<int> &lines,
         std::vector<Breakpoint> &breakpoints);
+
+    void SetStopAtEntry(bool stopAtEntry);
 };
 
 class Variables

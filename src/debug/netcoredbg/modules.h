@@ -25,8 +25,6 @@ class Modules
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
 
-    std::string GetModuleFileName(ICorDebugModule *pModule);
-
     static bool ShouldLoadSymbolsForModule(const std::string &moduleName);
     static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
 
@@ -42,6 +40,7 @@ public:
     };
 
     static HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
+    static std::string GetModuleFileName(ICorDebugModule *pModule);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
 
