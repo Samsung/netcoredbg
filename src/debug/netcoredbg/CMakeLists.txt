@@ -1,3 +1,31 @@
+# CoreCLR libraries
+
+set(CORECLR_PRODUCT ${CLR_DIR}/bin/Product/${CORECLR_PLATFORM})
+
+add_library(mscordaccore SHARED IMPORTED)
+set_target_properties(mscordaccore PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libmscordaccore.so)
+
+add_library(dbgshim SHARED IMPORTED)
+set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libdbgshim.so)
+
+add_library(corguids STATIC IMPORTED)
+set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libcorguids.a)
+
+add_library(palrt STATIC IMPORTED)
+set_target_properties(palrt PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libpalrt.a)
+
+include_directories(${CLR_DIR}/src/inc)
+include_directories(${CLR_DIR}/src/pal/inc)
+include_directories(${CLR_DIR}/src/pal/inc/rt)
+include_directories(${CLR_DIR}/src/pal/prebuilt/inc)
+include_directories(${CLR_DIR}/src/debug/inc)
+include_directories(${CLR_DIR}/src/debug/shim)
+include_directories(${CLR_DIR}/src/dlls/dbgshim)
+include_directories(${CLR_DIR}/src/coreclr/hosts/inc)
+include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
+
+# NetCoreDBG
+
 set(netcoredbg_SRC
     main.cpp
     manageddebugger.cpp
@@ -31,57 +59,11 @@ endif()
 
 add_definitions(-DPAL_STDCPP_COMPAT)
 
-if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
-    add_definitions(-D_TARGET_AMD64_=1)
-    add_definitions(-DDBG_TARGET_64BIT=1)
-    add_definitions(-DDBG_TARGET_AMD64=1)
-    add_definitions(-DDBG_TARGET_WIN64=1)
-    add_definitions(-DBIT64)
-elseif(CLR_CMAKE_PLATFORM_ARCH_I386)
-    add_definitions(-D_TARGET_X86_=1)
-    add_definitions(-DDBG_TARGET_32BIT=1)
-    add_definitions(-DDBG_TARGET_X86=1)
-elseif(CLR_CMAKE_PLATFORM_ARCH_ARM)
-    add_definitions(-D_TARGET_ARM_=1)
-    add_definitions(-DDBG_TARGET_32BIT=1)
-    add_definitions(-DDBG_TARGET_ARM=1)
-elseif(CLR_CMAKE_PLATFORM_ARCH_ARM64)
-    add_definitions(-D_TARGET_ARM64_=1)
-    add_definitions(-DDBG_TARGET_64BIT=1)
-    add_definitions(-DDBG_TARGET_ARM64=1)
-    add_definitions(-DDBG_TARGET_WIN64=1)
-    add_definitions(-DBIT64)
-endif()
-
 add_executable(netcoredbg ${netcoredbg_SRC})
-
-# CoreCLR libraries
-
-set(CORECLR_PRODUCT ${CLR_DIR}/bin/Product/${CORECLR_PLATFORM})
-
-add_library(mscordaccore SHARED IMPORTED)
-set_target_properties(mscordaccore PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libmscordaccore.so)
-
-add_library(dbgshim SHARED IMPORTED)
-set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libdbgshim.so)
-
-add_library(corguids STATIC IMPORTED)
-set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libcorguids.a)
-
-add_library(palrt STATIC IMPORTED)
-set_target_properties(palrt PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libpalrt.a)
 
 target_link_libraries(netcoredbg corguids dbgshim mscordaccore palrt pthread)
 
-include_directories(${CLR_DIR}/src/inc)
-include_directories(${CLR_DIR}/src/pal/inc)
-include_directories(${CLR_DIR}/src/pal/inc/rt)
-include_directories(${CLR_DIR}/src/pal/prebuilt/inc)
-include_directories(${CLR_DIR}/src/debug/inc)
-include_directories(${CLR_DIR}/src/debug/shim)
-include_directories(${CLR_DIR}/src/dlls/dbgshim)
-include_directories(${CLR_DIR}/src/coreclr/hosts/inc)
-include_directories(${CLR_DIR}/src/ToolBox/SOS/Strike)
+install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
 
 # SymbolReader
 
@@ -101,5 +83,3 @@ if (BUILD_MANAGED)
     add_custom_target(symbolreader_dll ALL DEPENDS ${DOTNET_BUILD_RESULT})
     install(FILES ${DOTNET_BUILD_RESULT} DESTINATION ${CMAKE_INSTALL_PREFIX})
 endif()
-
-install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
