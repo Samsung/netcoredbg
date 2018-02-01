@@ -11,13 +11,16 @@
 
 static void print_help()
 {
-    fprintf(stderr,
+    fprintf(stdout,
         ".NET Core debugger for Linux/macOS.\n"
         "\n"
         "Options:\n"
         "--attach <process-id>                 Attach the debugger to the specified process id.\n"
         "--interpreter=mi                      Puts the debugger into MI mode.\n"
-        "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n");
+        "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
+        "--engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.\n"
+        "                                      Only supported by the VsCode interpreter.\n"
+    );
 }
 
 int main(int argc, char *argv[])
@@ -29,6 +32,9 @@ int main(int argc, char *argv[])
         InterpreterMI,
         InterpreterVSCode
     } interpreterType = InterpreterMI;
+
+    bool engineLogging = false;
+    std::string logFilePath;
 
     for (int i = 1; i < argc; i++)
     {
@@ -58,6 +64,17 @@ int main(int argc, char *argv[])
             interpreterType = InterpreterVSCode;
             continue;
         }
+        else if (strcmp(argv[i], "--engineLogging") == 0)
+        {
+            engineLogging = true;
+            continue;
+        }
+        else if (strstr(argv[i], "--engineLogging=") == argv[i])
+        {
+            engineLogging = true;
+            logFilePath = argv[i] + strlen("--engineLogging=");
+            continue;
+        }
         else if (strcmp(argv[i], "--help") == 0)
         {
             print_help();
@@ -76,13 +93,23 @@ int main(int argc, char *argv[])
     switch(interpreterType)
     {
         case InterpreterMI:
+            if (engineLogging)
+            {
+                fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
+                return EXIT_FAILURE;
+            }
             protocol.reset(new MIProtocol());
             static_cast<MIProtocol*>(protocol.get())->SetDebugger(&debugger);
             break;
         case InterpreterVSCode:
-            protocol.reset(new VSCodeProtocol());
-            static_cast<VSCodeProtocol*>(protocol.get())->SetDebugger(&debugger);
+        {
+            VSCodeProtocol *vsCodeProtocol = new VSCodeProtocol();
+            protocol.reset(vsCodeProtocol);
+            vsCodeProtocol->SetDebugger(&debugger);
+            if (engineLogging)
+                vsCodeProtocol->EngineLogging(logFilePath);
             break;
+        }
     }
 
     debugger.SetProtocol(protocol.get());
