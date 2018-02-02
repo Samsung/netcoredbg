@@ -119,8 +119,7 @@ void VSCodeProtocol::EmitExitedEvent(ExitedEvent event)
 
 void VSCodeProtocol::EmitTerminatedEvent()
 {
-    json body = json::object();
-    EmitEvent("terminated", body);
+    EmitEvent("terminated", json::object());
 }
 
 void VSCodeProtocol::EmitThreadEvent(ThreadEvent event)
@@ -226,8 +225,7 @@ void VSCodeProtocol::EmitBreakpointEvent(BreakpointEvent event)
 
 void VSCodeProtocol::EmitInitializedEvent()
 {
-    json body = json::object();
-    EmitEvent("initialized", body);
+    EmitEvent("initialized", json::object());
 }
 
 void VSCodeProtocol::Cleanup()
