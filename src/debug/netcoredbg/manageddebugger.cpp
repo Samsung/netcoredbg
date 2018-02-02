@@ -625,11 +625,13 @@ public:
 
 ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
+    m_lastStoppedThreadId(-1),
     m_startMethod(StartNone),
     m_stopAtEntry(false),
     m_evaluator(m_modules),
     m_breakpoints(m_modules),
     m_variables(m_evaluator),
+    m_protocol(nullptr),
     m_managedCallback(new ManagedCallback(*this)),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
