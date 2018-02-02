@@ -23,7 +23,7 @@ public:
     void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
     static std::string EscapeMIValue(const std::string &str);
 
-    MIProtocol() : m_exit(false), m_varCounter(0) {}
+    MIProtocol() : m_exit(false), m_debugger(nullptr), m_varCounter(0) {}
     void EmitInitializedEvent() override {}
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;

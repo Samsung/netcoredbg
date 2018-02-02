@@ -39,7 +39,7 @@ class VSCodeProtocol : public Protocol
 
 public:
 
-    VSCodeProtocol() : m_engineLogOutput(LogNone), m_exit(false), m_seqCounter(1) {}
+    VSCodeProtocol() : m_engineLogOutput(LogNone), m_exit(false), m_debugger(nullptr), m_seqCounter(1) {}
     void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
     void EngineLogging(const std::string &path);
 
