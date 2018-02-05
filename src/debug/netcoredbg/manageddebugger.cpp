@@ -625,11 +625,13 @@ public:
 
 ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
+    m_lastStoppedThreadId(-1),
     m_startMethod(StartNone),
     m_stopAtEntry(false),
     m_evaluator(m_modules),
     m_breakpoints(m_modules),
     m_variables(m_evaluator),
+    m_protocol(nullptr),
     m_managedCallback(new ManagedCallback(*this)),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
@@ -846,7 +848,7 @@ static bool AreAllHandlesValid(HANDLE *handleArray, DWORD arrayLength)
     return true;
 }
 
-static HRESULT InternalEnumerateCLRs(int pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength)
+static HRESULT InternalEnumerateCLRs(DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength)
 {
     int numTries = 0;
     HRESULT hr;
@@ -896,7 +898,7 @@ static HRESULT InternalEnumerateCLRs(int pid, HANDLE **ppHandleArray, LPWSTR **p
     return hr;
 }
 
-static std::string GetCLRPath(int pid)
+static std::string GetCLRPath(DWORD pid)
 {
     HANDLE* pHandleArray;
     LPWSTR* pStringArray;
@@ -911,7 +913,7 @@ static std::string GetCLRPath(int pid)
     return result;
 }
 
-HRESULT ManagedDebugger::Startup(IUnknown *punk, int pid)
+HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 {
     HRESULT Status;
 
@@ -1091,13 +1093,13 @@ void ManagedDebugger::Cleanup()
     // TODO: Cleanup libcoreclr.so instance
 }
 
-HRESULT ManagedDebugger::AttachToProcess(int pid)
+HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 {
     HRESULT Status;
 
     IfFailRet(CheckNoProcess());
 
-    std::string m_clrPath = GetCLRPath(pid);
+    m_clrPath = GetCLRPath(pid);
     if (m_clrPath.empty())
         return E_INVALIDARG; // Unable to find libcoreclr.so
 

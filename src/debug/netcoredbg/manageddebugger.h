@@ -378,7 +378,7 @@ private:
     std::string m_clrPath;
 
     static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
-    HRESULT Startup(IUnknown *punk, int pid);
+    HRESULT Startup(IUnknown *punk, DWORD pid);
 
     void Cleanup();
 
@@ -390,7 +390,7 @@ private:
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame);
 
     HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
-    HRESULT AttachToProcess(int pid);
+    HRESULT AttachToProcess(DWORD pid);
     HRESULT DetachFromProcess();
     HRESULT TerminateProcess();
 
@@ -400,7 +400,7 @@ public:
 
     void SetProtocol(Protocol *protocol) { m_protocol = protocol; }
 
-    bool IsJustMyCode() override { return m_justMyCode; }
+    bool IsJustMyCode() const override { return m_justMyCode; }
     void SetJustMyCode(bool enable) override { m_justMyCode = enable; }
 
     HRESULT Initialize() override;
