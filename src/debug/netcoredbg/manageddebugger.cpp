@@ -1099,7 +1099,7 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 
     IfFailRet(CheckNoProcess());
 
-    std::string m_clrPath = GetCLRPath(pid);
+    m_clrPath = GetCLRPath(pid);
     if (m_clrPath.empty())
         return E_INVALIDARG; // Unable to find libcoreclr.so
 
