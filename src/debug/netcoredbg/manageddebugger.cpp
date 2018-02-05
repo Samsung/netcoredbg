@@ -848,7 +848,7 @@ static bool AreAllHandlesValid(HANDLE *handleArray, DWORD arrayLength)
     return true;
 }
 
-static HRESULT InternalEnumerateCLRs(int pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength)
+static HRESULT InternalEnumerateCLRs(DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength)
 {
     int numTries = 0;
     HRESULT hr;
@@ -898,7 +898,7 @@ static HRESULT InternalEnumerateCLRs(int pid, HANDLE **ppHandleArray, LPWSTR **p
     return hr;
 }
 
-static std::string GetCLRPath(int pid)
+static std::string GetCLRPath(DWORD pid)
 {
     HANDLE* pHandleArray;
     LPWSTR* pStringArray;
