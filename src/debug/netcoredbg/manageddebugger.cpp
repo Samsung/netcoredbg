@@ -913,7 +913,7 @@ static std::string GetCLRPath(int pid)
     return result;
 }
 
-HRESULT ManagedDebugger::Startup(IUnknown *punk, int pid)
+HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 {
     HRESULT Status;
 
@@ -1093,7 +1093,7 @@ void ManagedDebugger::Cleanup()
     // TODO: Cleanup libcoreclr.so instance
 }
 
-HRESULT ManagedDebugger::AttachToProcess(int pid)
+HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 {
     HRESULT Status;
 
