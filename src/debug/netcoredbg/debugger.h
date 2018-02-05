@@ -24,7 +24,7 @@ public:
 
     virtual ~Debugger() {}
 
-    virtual bool IsJustMyCode() = 0;
+    virtual bool IsJustMyCode() const = 0;
     virtual void SetJustMyCode(bool enable) = 0;
 
     virtual HRESULT Initialize() = 0;

@@ -400,7 +400,7 @@ public:
 
     void SetProtocol(Protocol *protocol) { m_protocol = protocol; }
 
-    bool IsJustMyCode() override { return m_justMyCode; }
+    bool IsJustMyCode() const override { return m_justMyCode; }
     void SetJustMyCode(bool enable) override { m_justMyCode = enable; }
 
     HRESULT Initialize() override;
