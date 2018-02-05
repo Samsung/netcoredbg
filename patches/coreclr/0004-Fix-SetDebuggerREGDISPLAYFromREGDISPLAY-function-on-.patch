@@ -1,8 +1,10 @@
-From 765fdc841203909fcdbc13dfcc2ae91b0b1ebc85 Mon Sep 17 00:00:00 2001
+From 96fed12d0cc3b847be9f02e54f247288c539fc9d Mon Sep 17 00:00:00 2001
 From: Igor Kulaychuk <i.kulaychuk@samsung.com>
 Date: Thu, 14 Sep 2017 15:40:49 +0300
-Subject: [PATCH 5/5] Fix SetDebuggerREGDISPLAYFromREGDISPLAY() function on ARM
+Subject: [PATCH 4/4] Fix SetDebuggerREGDISPLAYFromREGDISPLAY() function on ARM
 
+Signed-off-by: Igor Kulaychuk <i.kulaychuk@samsung.com>
+Signed-off-by: Dmitry Kovalenko <d.kovalenko@samsung.com>
 ---
  packaging/coreclr.spec                             |  2 ++
  ...x-arm-set-debuggerregdisplay-from-context.patch | 31 ++++++++++++++++++++++
@@ -10,28 +12,28 @@ Subject: [PATCH 5/5] Fix SetDebuggerREGDISPLAYFromREGDISPLAY() function on ARM
  create mode 100644 packaging/fix-arm-set-debuggerregdisplay-from-context.patch
 
 diff --git a/packaging/coreclr.spec b/packaging/coreclr.spec
-index 917fbc2..a0d03ff 100644
+index 20eda688..fb33455c 100644
 --- a/packaging/coreclr.spec
 +++ b/packaging/coreclr.spec
-@@ -45,6 +45,7 @@ Patch17:    profiling.patch
- Patch18:    clear_cache.patch
- Patch19:    fix-arm-breakpoints.patch
- Patch20:    fix-undefined-references-in-sos.patch
-+Patch21:    fix-arm-set-debuggerregdisplay-from-context.patch
+@@ -64,6 +64,7 @@ Patch36:     0001-Fix-typo-in-SetDebuggerREGDISPLAYFromREGDISPLAY-1422.patch
+ Patch37:     0001-Use-addresses-without-sign-extension-in-lldb-plugin-.patch
+ Patch38:     fix-arm-breakpoints.patch
+ Patch39:     fix-undefined-references-in-sos.patch
++Patch40:     fix-arm-set-debuggerregdisplay-from-context.patch
+ 
  
  ExcludeArch: aarch64
- 
-@@ -164,6 +165,7 @@ cp %{SOURCE1001} .
- %patch18 -p1
- %patch19 -p1
- %patch20 -p1
-+%patch21 -p1
+@@ -208,6 +209,7 @@ cp %{SOURCE1001} .
+ %patch37 -p1
+ %patch38 -p1
+ %patch39 -p1
++%patch40 -p1
  
  %if 0%{skipmscorlib}
  %else
 diff --git a/packaging/fix-arm-set-debuggerregdisplay-from-context.patch b/packaging/fix-arm-set-debuggerregdisplay-from-context.patch
 new file mode 100644
-index 0000000..7ddfc73
+index 00000000..7ddfc736
 --- /dev/null
 +++ b/packaging/fix-arm-set-debuggerregdisplay-from-context.patch
 @@ -0,0 +1,31 @@
@@ -67,5 +69,5 @@ index 0000000..7ddfc73
 +     pDRD->SP   = pRD->SP;
 +     pDRD->PC   = (SIZE_T)*(pRD->pPC);
 -- 
-2.7.4
+2.13.6
 
