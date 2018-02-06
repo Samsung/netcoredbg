@@ -14,6 +14,8 @@
 #include <list>
 #include <iomanip>
 
+#include "cputil.h"
+
 #include "manageddebugger.h"
 #include "typeprinter.h"
 #include "valueprint.h"
@@ -136,14 +138,8 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
 
 static mdTypeDef GetTypeTokenForName(IMetaDataImport *pMD, mdTypeDef tkEnclosingClass, const std::string &name)
 {
-    HRESULT Status;
-
-    std::unique_ptr<WCHAR[]> wname(new WCHAR[name.size() + 1]);
-
-    MultiByteToWideChar(CP_UTF8, 0, name.c_str(), name.size() + 1, &wname[0], name.size() + 1);
-
     mdTypeDef typeToken = mdTypeDefNil;
-    pMD->FindTypeDefByName(&wname[0], tkEnclosingClass, &typeToken);
+    pMD->FindTypeDefByName(convert.from_bytes(name).c_str(), tkEnclosingClass, &typeToken);
     return typeToken;
 }
 

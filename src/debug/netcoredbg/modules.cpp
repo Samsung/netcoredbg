@@ -44,10 +44,6 @@ HRESULT Modules::GetLocationInAny(
 {
     HRESULT Status;
 
-    WCHAR nameBuffer[MAX_LONGPATH];
-
-    Status = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), filename.size() + 1, nameBuffer, MAX_LONGPATH);
-
     std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
 
     for (auto &info_pair : m_modulesInfo)
@@ -56,7 +52,7 @@ HRESULT Modules::GetLocationInAny(
 
         CORDB_ADDRESS modAddress;
         IfFailRet(mdInfo.module->GetBaseAddress(&modAddress));
-        if (FAILED(mdInfo.symbols->ResolveSequencePoint(nameBuffer, linenum, modAddress, &methodToken, &ilOffset)))
+        if (FAILED(mdInfo.symbols->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset)))
             continue;
 
         WCHAR wFilename[MAX_LONGPATH];
@@ -83,10 +79,6 @@ HRESULT Modules::GetLocationInModule(
 {
     HRESULT Status;
 
-    WCHAR nameBuffer[MAX_LONGPATH];
-
-    Status = MultiByteToWideChar(CP_UTF8, 0, filename.c_str(), filename.size() + 1, nameBuffer, MAX_LONGPATH);
-
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
@@ -97,7 +89,7 @@ HRESULT Modules::GetLocationInModule(
         return E_FAIL;
     }
 
-    IfFailRet(info_pair->second.symbols->ResolveSequencePoint(nameBuffer, linenum, modAddress, &methodToken, &ilOffset));
+    IfFailRet(info_pair->second.symbols->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset));
 
     WCHAR wFilename[MAX_LONGPATH];
     ULONG resolvedLinenum;

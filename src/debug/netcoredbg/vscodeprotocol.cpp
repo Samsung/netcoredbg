@@ -504,11 +504,9 @@ void VSCodeProtocol::CommandLoop()
             }
             else
             {
-                WCHAR msgBuffer[1024] = {0};
-                HRESULT msgStatus = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, Status, 0, msgBuffer, 1024, nullptr);
                 std::stringstream ss;
                 ss << "Failed command '" << command << "' : "
-                   << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status << " " << to_utf8(msgBuffer);
+                   << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status;
                 response["success"] = false;
                 response["message"] = ss.str();
             }

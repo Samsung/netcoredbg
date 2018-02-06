@@ -841,19 +841,27 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
         {
             ULONG paramNameLen = 0;
             mdParamDef paramDef;
-            WCHAR wParamName[mdNameLen] = W("\0");
+            std::string paramName;
 
             bool thisParam = i == 0 && (methodAttr & mdStatic) == 0;
             if (thisParam)
-                swprintf_s(wParamName, mdNameLen, W("this\0"));
+                paramName = "this";
             else
             {
                 int idx = ((methodAttr & mdStatic) == 0)? i : (i + 1);
                 if(SUCCEEDED(pMD->GetParamForMethodIndex(methodDef, idx, &paramDef)))
+                {
+                    WCHAR wParamName[mdNameLen] = W("\0");
                     pMD->GetParamProps(paramDef, NULL, NULL, wParamName, mdNameLen, &paramNameLen, NULL, NULL, NULL, NULL);
+                    paramName = convert.to_bytes(wParamName);
+                }
             }
-            if(_wcslen(wParamName) == 0)
-                swprintf_s(wParamName, mdNameLen, W("param_%d\0"), i);
+            if(paramName.empty())
+            {
+                std::stringstream ss;
+                ss << "param_" << i;
+                paramName = ss.str();
+            }
 
             ToRelease<ICorDebugValue> pValue;
             ULONG cArgsFetched;
@@ -864,8 +872,6 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
 
             if (Status == S_FALSE)
                 break;
-
-            std::string paramName = to_utf8(wParamName/*, paramNameLen*/);
 
             if (thisParam)
             {

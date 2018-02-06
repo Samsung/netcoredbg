@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "cputil.h"
 #include "symbolreader.h"
 
 #include "platform.h"
@@ -81,14 +82,12 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
     }
 
     // The module name needs to be null for in-memory PE's.
-    ArrayHolder<char> szModuleName = nullptr;
+    const char *szModuleName = nullptr;
+    std::string moduleName;
     if (!isInMemory && pModuleName != nullptr)
     {
-        szModuleName = new char[MAX_LONGPATH];
-        if (WideCharToMultiByte(CP_ACP, 0, pModuleName, (int)(_wcslen(pModuleName) + 1), szModuleName, MAX_LONGPATH, NULL, NULL) == 0)
-        {
-            return E_FAIL;
-        }
+        moduleName = convert.to_bytes(pModuleName);
+        szModuleName = moduleName.c_str();
     }
 
     m_symbolReaderHandle = loadSymbolsForModuleDelegate(szModuleName, isFileLayout, peAddress,
@@ -113,14 +112,11 @@ HRESULT SymbolReader::PrepareSymbolReader()
 
     attemptedSymbolReaderPreparation = true;
 
-    WCHAR wszCoreClrPath[MAX_LONGPATH];
-    MultiByteToWideChar(CP_UTF8, 0, coreClrPath.c_str(), coreClrPath.size() + 1, wszCoreClrPath, MAX_LONGPATH);
-
     std::string clrDir = coreClrPath.substr(0, coreClrPath.rfind(DIRECTORY_SEPARATOR_STR_A));
 
     HRESULT Status;
 
-    HMODULE coreclrLib = LoadLibraryW(wszCoreClrPath);
+    HMODULE coreclrLib = LoadLibraryW(convert.from_bytes(coreClrPath).c_str());
     if (coreclrLib == nullptr)
     {
         fprintf(stderr, "Error: Failed to load coreclr\n");
@@ -198,7 +194,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     return Status;
 }
 
-HRESULT SymbolReader::ResolveSequencePoint(WCHAR* pFilename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset)
+HRESULT SymbolReader::ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset)
 {
     HRESULT Status = S_OK;
 
@@ -206,12 +202,7 @@ HRESULT SymbolReader::ResolveSequencePoint(WCHAR* pFilename, ULONG32 lineNumber,
     {
         _ASSERTE(resolveSequencePointDelegate != nullptr);
 
-        char szName[mdNameLen];
-        if (WideCharToMultiByte(CP_ACP, 0, pFilename, (int)(_wcslen(pFilename) + 1), szName, mdNameLen, NULL, NULL) == 0)
-        {
-            return E_FAIL;
-        }
-        if (resolveSequencePointDelegate(m_symbolReaderHandle, szName, lineNumber, pToken, pIlOffset) == FALSE)
+        if (resolveSequencePointDelegate(m_symbolReaderHandle, filename, lineNumber, pToken, pIlOffset) == FALSE)
         {
             return E_FAIL;
         }
