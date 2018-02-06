@@ -282,14 +282,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "launch", [this](const json &arguments, json &body){
         std::vector<std::string> args = arguments.value("args", std::vector<std::string>());
         args.insert(args.begin(), arguments.at("program").get<std::string>());
-
-        std::string exe = GetExeAbsPath();
-        std::size_t dirSepIndex = exe.rfind(DIRECTORY_SEPARATOR_STR_A);
-        std::string exeDir;
-        if (dirSepIndex != std::string::npos)
-            exeDir = exe.substr(0, dirSepIndex + 1);
-
-        return m_debugger->Launch(exeDir + "corerun", args, arguments.value("stopAtEntry", false));
+        return m_debugger->Launch("dotnet", args, arguments.value("stopAtEntry", false));
     } },
     { "threads", [this](const json &arguments, json &body){
         HRESULT Status;
