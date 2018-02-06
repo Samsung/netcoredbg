@@ -14,6 +14,16 @@
 
 #include "platform.h"
 
+// Suppress undefined reference
+// `_invalid_parameter(char16_t const*, char16_t const*, char16_t const*, unsigned int, unsigned long)':
+//      /coreclr/src/pal/inc/rt/safecrt.h:386: undefined reference to `RaiseException'
+static void RaiseException(DWORD dwExceptionCode,
+               DWORD dwExceptionFlags,
+               DWORD nNumberOfArguments,
+               CONST ULONG_PTR *lpArguments)
+{
+}
+
 std::string SymbolReader::coreClrPath;
 LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
 DisposeDelegate SymbolReader::disposeDelegate;
@@ -22,6 +32,11 @@ GetLocalVariableNameAndScope SymbolReader::getLocalVariableNameAndScopeDelegate;
 GetLineByILOffsetDelegate SymbolReader::getLineByILOffsetDelegate;
 GetStepRangesFromIPDelegate SymbolReader::getStepRangesFromIPDelegate;
 GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
+
+SysAllocStringLen_t SymbolReader::sysAllocStringLen;
+SysFreeString_t SymbolReader::sysFreeString;
+SysStringLen_t SymbolReader::sysStringLen;
+CoTaskMemFree_t SymbolReader::coTaskMemFree;
 
 const int SymbolReader::HiddenLine = 0xfeefee;
 
@@ -116,19 +131,49 @@ HRESULT SymbolReader::PrepareSymbolReader()
 
     HRESULT Status;
 
-    HMODULE coreclrLib = LoadLibraryW(convert.from_bytes(coreClrPath).c_str());
+    void *coreclrLib = DLOpen(coreClrPath);
     if (coreclrLib == nullptr)
     {
+        // TODO: Messages like this break VSCode debugger protocol. They should be reported through Protocol class.
         fprintf(stderr, "Error: Failed to load coreclr\n");
         return E_FAIL;
     }
 
     void *hostHandle;
     unsigned int domainId;
-    coreclr_initialize_ptr initializeCoreCLR = (coreclr_initialize_ptr)GetProcAddress(coreclrLib, "coreclr_initialize");
+    coreclr_initialize_ptr initializeCoreCLR = (coreclr_initialize_ptr)DLSym(coreclrLib, "coreclr_initialize");
     if (initializeCoreCLR == nullptr)
     {
         fprintf(stderr, "Error: coreclr_initialize not found\n");
+        return E_FAIL;
+    }
+
+    sysAllocStringLen = (SysAllocStringLen_t)DLSym(coreclrLib, "SysAllocStringLen");
+    sysFreeString = (SysFreeString_t)DLSym(coreclrLib, "SysFreeString");
+    sysStringLen = (SysStringLen_t)DLSym(coreclrLib, "SysStringLen");
+    coTaskMemFree = (CoTaskMemFree_t)DLSym(coreclrLib, "CoTaskMemFree");
+
+    if (sysAllocStringLen == nullptr)
+    {
+        fprintf(stderr, "Error: SysAllocStringLen not found\n");
+        return E_FAIL;
+    }
+
+    if (sysFreeString == nullptr)
+    {
+        fprintf(stderr, "Error: SysFreeString not found\n");
+        return E_FAIL;
+    }
+
+    if (sysStringLen == nullptr)
+    {
+        fprintf(stderr, "Error: SysStringLen not found\n");
+        return E_FAIL;
+    }
+
+    if (coTaskMemFree == nullptr)
+    {
+        fprintf(stderr, "Error: CoTaskMemFree not found\n");
         return E_FAIL;
     }
 
@@ -176,14 +221,20 @@ HRESULT SymbolReader::PrepareSymbolReader()
         return Status;
     }
 
-    coreclr_create_delegate_ptr createDelegate = (coreclr_create_delegate_ptr)GetProcAddress(coreclrLib, "coreclr_create_delegate");
+    coreclr_create_delegate_ptr createDelegate = (coreclr_create_delegate_ptr)DLSym(coreclrLib, "coreclr_create_delegate");
     if (createDelegate == nullptr)
     {
         fprintf(stderr, "Error: coreclr_create_delegate not found\n");
         return E_FAIL;
     }
 
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "LoadSymbolsForModule", (void **)&loadSymbolsForModuleDelegate));
+    // TODO: If SymbolReaderDllName could not be found, we are going to see the error message.
+    //       But the cleaner way is to provide error message for any failed createDelegate().
+    if (FAILED(Status = createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "LoadSymbolsForModule", (void **)&loadSymbolsForModuleDelegate)))
+    {
+        fprintf(stderr, "Error: createDelegate failed for LoadSymbolsForModule: 0x%x\n", Status);
+        return E_FAIL;
+    }
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ResolveSequencePoint", (void **)&resolveSequencePointDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate));
@@ -225,19 +276,19 @@ HRESULT SymbolReader::GetLineByILOffset(
     {
         _ASSERTE(getLineByILOffsetDelegate != nullptr);
 
-        BSTR bstrFileName = SysAllocStringLen(0, MAX_LONGPATH);
-        if (SysStringLen(bstrFileName) == 0)
+        BSTR bstrFileName = sysAllocStringLen(0, MAX_LONGPATH);
+        if (sysStringLen(bstrFileName) == 0)
         {
             return E_OUTOFMEMORY;
         }
         // Source lines with 0xFEEFEE markers are filtered out on the managed side.
         if ((getLineByILOffsetDelegate(m_symbolReaderHandle, methodToken, ilOffset, pLinenum, &bstrFileName) == FALSE) || (*pLinenum == 0))
         {
-            SysFreeString(bstrFileName);
+            sysFreeString(bstrFileName);
             return E_FAIL;
         }
         wcscpy_s(pwszFileName, cchFileName, bstrFileName);
-        SysFreeString(bstrFileName);
+        sysFreeString(bstrFileName);
         return S_OK;
     }
 
@@ -280,20 +331,20 @@ HRESULT SymbolReader::GetNamedLocalVariableAndScope(
 
     _ASSERTE(getLocalVariableNameAndScopeDelegate != nullptr);
 
-    BSTR wszParamName = SysAllocStringLen(0, mdNameLen);
-    if (SysStringLen(wszParamName) == 0)
+    BSTR wszParamName = sysAllocStringLen(0, mdNameLen);
+    if (sysStringLen(wszParamName) == 0)
     {
         return E_OUTOFMEMORY;
     }
 
     if (getLocalVariableNameAndScopeDelegate(m_symbolReaderHandle, methodToken, localIndex, &wszParamName, pIlStart, pIlEnd) == FALSE)
     {
-        SysFreeString(wszParamName);
+        sysFreeString(wszParamName);
         return E_FAIL;
     }
 
     wcscpy_s(paramName, paramNameLen, wszParamName);
-    SysFreeString(wszParamName);
+    sysFreeString(wszParamName);
 
     if (FAILED(pILFrame->GetLocalVariable(localIndex, ppValue)) || (*ppValue == NULL))
     {
@@ -321,7 +372,7 @@ HRESULT SymbolReader::GetSequencePoints(mdMethodDef methodToken, std::vector<Seq
 
         points.assign(allocatedPoints, allocatedPoints + pointsCount);
 
-        CoTaskMemFree(allocatedPoints);
+        coTaskMemFree(allocatedPoints);
 
         return S_OK;
     }

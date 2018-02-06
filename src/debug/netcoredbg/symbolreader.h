@@ -16,6 +16,11 @@ typedef  BOOL (*GetLineByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, ULONG *,
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
 typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
 
+typedef BSTR (*SysAllocStringLen_t)(const OLECHAR*, UINT);
+typedef void (*SysFreeString_t)(BSTR);
+typedef UINT (*SysStringLen_t)(BSTR);
+typedef void (*CoTaskMemFree_t)(LPVOID);
+
 BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
                      PULONG lpcbBytesRead);
 
@@ -32,6 +37,11 @@ private:
     static GetLineByILOffsetDelegate getLineByILOffsetDelegate;
     static GetStepRangesFromIPDelegate getStepRangesFromIPDelegate;
     static GetSequencePointsDelegate getSequencePointsDelegate;
+
+    static SysAllocStringLen_t sysAllocStringLen;
+    static SysFreeString_t sysFreeString;
+    static SysStringLen_t sysStringLen;
+    static CoTaskMemFree_t coTaskMemFree;
 
     static HRESULT PrepareSymbolReader();
 

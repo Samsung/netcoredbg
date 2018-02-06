@@ -2,17 +2,11 @@
 
 set(CORECLR_PRODUCT ${CLR_DIR}/bin/Product/${CORECLR_PLATFORM})
 
-add_library(mscordaccore SHARED IMPORTED)
-set_target_properties(mscordaccore PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libmscordaccore.so)
-
 add_library(dbgshim SHARED IMPORTED)
 set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libdbgshim.so)
 
 add_library(corguids STATIC IMPORTED)
 set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libcorguids.a)
-
-add_library(palrt STATIC IMPORTED)
-set_target_properties(palrt PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libpalrt.a)
 
 include_directories(${CLR_DIR}/src/inc)
 include_directories(${CLR_DIR}/src/pal/inc)
@@ -61,7 +55,7 @@ add_definitions(-DPAL_STDCPP_COMPAT)
 
 add_executable(netcoredbg ${netcoredbg_SRC})
 
-target_link_libraries(netcoredbg corguids dbgshim mscordaccore palrt pthread)
+target_link_libraries(netcoredbg corguids dbgshim dl pthread)
 
 install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
 
