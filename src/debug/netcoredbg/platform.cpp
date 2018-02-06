@@ -166,3 +166,8 @@ bool SetWorkDir(const std::string &path)
 {
     return chdir(path.c_str()) == 0;
 }
+
+void USleep(uint32_t duration)
+{
+    usleep(duration);
+}

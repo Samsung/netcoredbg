@@ -881,7 +881,7 @@ static HRESULT InternalEnumerateCLRs(int pid, HANDLE **ppHandleArray, LPWSTR **p
         }
 
         // Sleep and retry enumerating the runtimes
-        Sleep(100);
+        USleep(100*1000);
         numTries++;
 
         // if (m_canceled)
