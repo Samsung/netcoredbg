@@ -101,7 +101,7 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
     std::string moduleName;
     if (!isInMemory && pModuleName != nullptr)
     {
-        moduleName = convert.to_bytes(pModuleName);
+        moduleName = to_utf8(pModuleName);
         szModuleName = moduleName.c_str();
     }
 
