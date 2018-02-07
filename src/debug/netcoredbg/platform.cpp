@@ -2,7 +2,8 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include <string>
+#include "platform.h"
+
 #include <cstring>
 #include <set>
 #include <fstream>
