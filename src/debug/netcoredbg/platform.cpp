@@ -166,3 +166,18 @@ bool SetWorkDir(const std::string &path)
 {
     return chdir(path.c_str()) == 0;
 }
+
+void USleep(uint32_t duration)
+{
+    usleep(duration);
+}
+
+void *DLOpen(const std::string &path)
+{
+    return dlopen(path.c_str(), RTLD_GLOBAL | RTLD_NOW);
+}
+
+void *DLSym(void *handle, const std::string &name)
+{
+    return dlsym(handle, name.c_str());
+}

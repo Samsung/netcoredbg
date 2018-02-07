@@ -7,3 +7,6 @@ void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &t
 std::string GetExeAbsPath();
 std::string GetFileName(const std::string &path);
 bool SetWorkDir(const std::string &path);
+void USleep(uint32_t duration);
+void *DLOpen(const std::string &path);
+void *DLSym(void *handle, const std::string &name);

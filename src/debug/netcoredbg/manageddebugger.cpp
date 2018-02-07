@@ -883,7 +883,7 @@ static HRESULT InternalEnumerateCLRs(DWORD pid, HANDLE **ppHandleArray, LPWSTR *
         }
 
         // Sleep and retry enumerating the runtimes
-        Sleep(100);
+        USleep(100*1000);
         numTries++;
 
         // if (m_canceled)
@@ -985,9 +985,6 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
         ss << " \"" << EscapeShellArg(arg) << "\"";
     }
     std::string cmdString = ss.str();
-    std::unique_ptr<WCHAR[]> cmd(new WCHAR[cmdString.size() + 1]);
-
-    MultiByteToWideChar(CP_UTF8, 0, cmdString.c_str(), cmdString.size() + 1, &cmd[0], cmdString.size() + 1);
 
     m_startupReady = false;
     m_clrPath.clear();
@@ -996,7 +993,7 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     LPVOID lpEnvironment = nullptr; // as current
     LPCWSTR lpCurrentDirectory = nullptr; // as current
     HANDLE resumeHandle;
-    IfFailRet(CreateProcessForLaunch(&cmd[0], bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
+    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(cmdString).c_str()), bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
 
     IfFailRet(RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 
@@ -1103,14 +1100,11 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
     if (m_clrPath.empty())
         return E_INVALIDARG; // Unable to find libcoreclr.so
 
-    WCHAR szModuleName[MAX_LONGPATH];
-    MultiByteToWideChar(CP_UTF8, 0, m_clrPath.c_str(), m_clrPath.size() + 1, szModuleName, MAX_LONGPATH);
-
     WCHAR pBuffer[100];
     DWORD dwLength;
     IfFailRet(CreateVersionStringFromModule(
         pid,
-        szModuleName,
+        to_utf16(m_clrPath).c_str(),
         pBuffer,
         _countof(pBuffer),
         &dwLength));
