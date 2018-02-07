@@ -991,7 +991,7 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     LPVOID lpEnvironment = nullptr; // as current
     LPCWSTR lpCurrentDirectory = nullptr; // as current
     HANDLE resumeHandle;
-    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(convert.from_bytes(cmdString).c_str()), bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
+    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(cmdString).c_str()), bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
 
     IfFailRet(RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 
@@ -1102,7 +1102,7 @@ HRESULT ManagedDebugger::AttachToProcess(int pid)
     DWORD dwLength;
     IfFailRet(CreateVersionStringFromModule(
         pid,
-        convert.from_bytes(m_clrPath).c_str(),
+        to_utf16(m_clrPath).c_str(),
         pBuffer,
         _countof(pBuffer),
         &dwLength));

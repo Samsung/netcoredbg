@@ -853,7 +853,7 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
                 {
                     WCHAR wParamName[mdNameLen] = W("\0");
                     pMD->GetParamProps(paramDef, NULL, NULL, wParamName, mdNameLen, &paramNameLen, NULL, NULL, NULL, NULL);
-                    paramName = convert.to_bytes(wParamName);
+                    paramName = to_utf8(wParamName);
                 }
             }
             if(paramName.empty())
