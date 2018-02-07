@@ -18,3 +18,8 @@ static inline std::string to_utf8(char16_t wch)
 {
     return convert.to_bytes(wch);
 }
+
+static inline std::u16string to_utf16(const std::string &utf8)
+{
+    return convert.from_bytes(utf8);
+}

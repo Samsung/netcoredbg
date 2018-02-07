@@ -139,7 +139,7 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
 static mdTypeDef GetTypeTokenForName(IMetaDataImport *pMD, mdTypeDef tkEnclosingClass, const std::string &name)
 {
     mdTypeDef typeToken = mdTypeDefNil;
-    pMD->FindTypeDefByName(convert.from_bytes(name).c_str(), tkEnclosingClass, &typeToken);
+    pMD->FindTypeDefByName(to_utf16(name).c_str(), tkEnclosingClass, &typeToken);
     return typeToken;
 }
 
