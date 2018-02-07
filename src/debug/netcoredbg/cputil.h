@@ -8,11 +8,12 @@
 
 static std::wstring_convert<std::codecvt_utf8_utf16<char16_t>,char16_t> convert;
 
-static inline std::string to_utf8(const WCHAR *wstr, int len = -1)
+static inline std::string to_utf8(const char16_t *wstr)
 {
-    if (len == -1)
-        return convert.to_bytes(wstr);
-    if (len == 0)
-        return std::string();
-    return convert.to_bytes(wstr, wstr + len);
+    return convert.to_bytes(wstr);
+}
+
+static inline std::string to_utf8(char16_t wch)
+{
+    return convert.to_bytes(wch);
 }

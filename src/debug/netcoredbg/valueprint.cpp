@@ -620,7 +620,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
     case ELEMENT_TYPE_CHAR:
         {
             WCHAR wc = * (WCHAR *) &(rgbValue[0]);
-            std::string printableVal = to_utf8(&wc, 1);
+            std::string printableVal = to_utf8(wc);
             if (!escape)
             {
                 output = printableVal;
