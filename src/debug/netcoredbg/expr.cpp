@@ -401,7 +401,7 @@ static std::vector<std::string> ParseGenericParams(const std::string &part, std:
     return result;
 }
 
-std::vector<std::string> GatherParameters(const std::vector<std::string> &parts, int indexEnd)
+static std::vector<std::string> GatherParameters(const std::vector<std::string> &parts, int indexEnd)
 {
     std::vector<std::string> result;
     for (int i = 0; i < indexEnd; i++)
@@ -413,7 +413,7 @@ std::vector<std::string> GatherParameters(const std::vector<std::string> &parts,
     return result;
 }
 
-HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string> &parts, int &nextPart, mdTypeDef &typeToken)
+static HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string> &parts, int &nextPart, mdTypeDef &typeToken)
 {
     HRESULT Status;
 
