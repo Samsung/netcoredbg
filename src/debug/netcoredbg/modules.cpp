@@ -2,19 +2,15 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include "modules.h"
 
 #include <sstream>
-#include <mutex>
-#include <memory>
-#include <unordered_map>
 #include <vector>
 #include <iomanip>
 
 #include "symbolreader.h"
-#include "cputil.h"
 #include "platform.h"
-#include "modules.h"
+#include "cputil.h"
 
 
 void Modules::CleanupAllModules()
