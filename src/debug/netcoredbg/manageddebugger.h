@@ -1,6 +1,7 @@
 // Copyright (c) 2018 Samsung Electronics Co., LTD
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
+#pragma once
 
 #include <unordered_map>
 #include <unordered_set>
@@ -9,6 +10,7 @@
 #include <future>
 
 #include "debugger.h"
+#include "protocol.h"
 #include "modules.h"
 
 
