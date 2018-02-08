@@ -23,8 +23,8 @@
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull)
 {
     HRESULT Status = S_OK;
-    *ppOutputValue = NULL;
-    if (pIsNull != NULL) *pIsNull = FALSE;
+    *ppOutputValue = nullptr;
+    if (pIsNull != nullptr) *pIsNull = FALSE;
 
     ToRelease<ICorDebugReferenceValue> pReferenceValue;
     Status = pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue);
@@ -40,7 +40,7 @@ HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOut
         }
         else
         {
-            if(pIsNull != NULL) *pIsNull = TRUE;
+            if(pIsNull != nullptr) *pIsNull = TRUE;
             *ppOutputValue = pValue;
             (*ppOutputValue)->AddRef();
             return S_OK;
@@ -83,7 +83,7 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, std:
     HRESULT Status = S_OK;
 
     ToRelease<ICorDebugValue> pValue;
-    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, NULL));
+    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, nullptr));
 
     mdTypeDef currentTypeDef;
     ToRelease<ICorDebugClass> pClass;
@@ -531,7 +531,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
     ULONG32 cbSize;
     IfFailRet(pValue->GetSize(&cbSize));
     ArrayHolder<BYTE> rgbValue = new (std::nothrow) BYTE[cbSize];
-    if (rgbValue == NULL)
+    if (rgbValue == nullptr)
     {
         return E_OUTOFMEMORY;
     }

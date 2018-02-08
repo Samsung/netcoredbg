@@ -549,7 +549,7 @@ HRESULT Evaluator::WalkMembers(
     ToRelease<ICorDebugType> pType;
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
-    if(pTypeCast == NULL)
+    if(pTypeCast == nullptr)
         IfFailRet(pValue2->GetExactType(&pType));
     else
     {
