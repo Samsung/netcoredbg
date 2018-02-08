@@ -1,8 +1,13 @@
 // Copyright (c) 2018 Samsung Electronics Co., LTD
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
+#pragma once
 
 #include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include "debugger.h"
 

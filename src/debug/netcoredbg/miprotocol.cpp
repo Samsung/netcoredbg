@@ -3,23 +3,16 @@
 // See the LICENSE file in the project root for more information.
 
 #define UNICODE
-#include "common.h"
+#include "miprotocol.h"
 
-#include <cstring>
-#include <string>
-#include <vector>
 #include <sstream>
-#include <unordered_set>
-#include <unordered_map>
 #include <functional>
 #include <algorithm>
-#include <mutex>
-#include <condition_variable>
 #include <iomanip>
 
-#include "platform.h"
-#include "miprotocol.h"
 #include "frames.h"
+#include "platform.h"
+#include "torelease.h"
 
 
 using namespace std::placeholders;
