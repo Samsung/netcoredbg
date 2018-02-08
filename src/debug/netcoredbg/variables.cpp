@@ -2,19 +2,11 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include "manageddebugger.h"
 
-#include <sstream>
-#include <mutex>
-#include <condition_variable>
-#include <memory>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <list>
-#include <iomanip>
 
-#include "manageddebugger.h"
 #include "typeprinter.h"
 #include "valueprint.h"
 #include "frames.h"
