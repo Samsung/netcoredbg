@@ -2,20 +2,14 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include "frames.h"
 
 #include <sstream>
-#include <vector>
-#include <list>
-#include <functional>
-#include <mutex>
-#include <condition_variable>
 #include <algorithm>
 
 #include "typeprinter.h"
 #include "platform.h"
 #include "manageddebugger.h"
-#include "frames.h"
 
 
 HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads)
