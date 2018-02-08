@@ -1,5 +1,20 @@
+# Proposed build directory according to README
 /build/
-/obj/
+
+# Visual Studio Code
+/.vscode/
 /src/debug/netcoredbg/bin/
 /src/debug/netcoredbg/obj/
-/.vscode/
+
+# Qt Creator files
+CMakeLists.txt.user
+*.config
+*.creator
+*.files
+*.includes
+*.autosave
+
+# Build artifacts
+*.o
+*.so
+*.a

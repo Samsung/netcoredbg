@@ -18,7 +18,7 @@ class ToRelease
 {
 public:
     ToRelease()
-        : m_ptr(NULL)
+        : m_ptr(nullptr)
     {}
 
     ToRelease(T* ptr)
@@ -60,16 +60,15 @@ public:
     T* Detach()
     {
         T* pT = m_ptr;
-        m_ptr = NULL;
+        m_ptr = nullptr;
         return pT;
     }
 
     void Release()
     {
-        if (m_ptr != NULL)
-        {
+        if (m_ptr != nullptr) {
             m_ptr->Release();
-            m_ptr = NULL;
+            m_ptr = nullptr;
         }
     }
 

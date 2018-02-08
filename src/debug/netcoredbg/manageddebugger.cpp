@@ -984,7 +984,6 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     {
         ss << " \"" << EscapeShellArg(arg) << "\"";
     }
-    std::string cmdString = ss.str();
 
     m_startupReady = false;
     m_clrPath.clear();
@@ -993,7 +992,7 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     LPVOID lpEnvironment = nullptr; // as current
     LPCWSTR lpCurrentDirectory = nullptr; // as current
     HANDLE resumeHandle;
-    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(cmdString).c_str()), bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
+    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(ss.str()).c_str()), bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
 
     IfFailRet(RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 
@@ -1111,7 +1110,7 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 
     ToRelease<IUnknown> pCordb;
 
-    IfFailRet(CreateDebuggingInterfaceFromVersionEx(4, pBuffer, &pCordb));
+    IfFailRet(CreateDebuggingInterfaceFromVersionEx(CorDebugLatestVersion, pBuffer, &pCordb));
 
     m_unregisterToken = nullptr;
     return Startup(pCordb, pid);
