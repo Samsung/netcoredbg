@@ -24,7 +24,7 @@ The debugger provides GDB/MI interface and allows to debug .NET apps using ICorD
    mkdir build
    cd build
 
-   CC=clang CXX=clang++ cmake ../ -DCMAKE_INSTALL_PREFIX=$CORECLR_OVERLAY -DCLR_DIR=$CORECLR_PATH -DCLR_BIN_DIR=$CORECLR_BIN -DCLR_CMAKE_TARGET_ARCH_AMD64=1 -DCORECLR_SET_RPATH=\$ORIGIN
+   CC=clang CXX=clang++ cmake -DCMAKE_INSTALL_PREFIX=$CORECLR_OVERLAY -DCLR_DIR=$CORECLR_PATH -DCLR_BIN_DIR=$CORECLR_BIN -DCORECLR_SET_RPATH=\$ORIGIN ../
    make -j
    make install
    ```
