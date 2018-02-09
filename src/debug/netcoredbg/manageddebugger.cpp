@@ -951,9 +951,9 @@ static std::string EscapeShellArg(const std::string &arg)
 {
     std::string s(arg);
 
-    for (std::size_t i = 0; i < s.size(); ++i)
+    for (std::string::size_type i = 0; i < s.size(); ++i)
     {
-        int count = 0;
+        std::string::size_type count = 0;
         char c = s.at(i);
         switch (c)
         {
