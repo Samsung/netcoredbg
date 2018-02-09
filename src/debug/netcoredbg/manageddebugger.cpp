@@ -123,8 +123,6 @@ HRESULT ManagedDebugger::DisableAllSteppers(ICorDebugProcess *pProcess)
 
 static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
-    HRESULT Status;
-
     ToRelease<ICorDebugBreakpointEnum> breakpoints;
     if (SUCCEEDED(pAppDomain->EnumerateBreakpoints(&breakpoints)))
     {
