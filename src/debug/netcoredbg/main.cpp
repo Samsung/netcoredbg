@@ -2,7 +2,11 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include <string>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "manageddebugger.h"
 #include "miprotocol.h"
