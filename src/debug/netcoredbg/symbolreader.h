@@ -14,8 +14,6 @@
 /// FIXME: Definition of `TADDR`
 #include "torelease.h"
 
-static const char *SymbolReaderDllName = "SymbolReader";
-static const char *SymbolReaderClassName = "SOS.SymbolReader";
 
 typedef  int (*ReadMemoryDelegate)(ULONG64, char *, int);
 typedef  PVOID (*LoadSymbolsForModuleDelegate)(const char*, BOOL, ULONG64, int, ULONG64, int, ReadMemoryDelegate);
