@@ -4,6 +4,12 @@
 
 #pragma once
 
+#include <string>
+#include <vector>
+
+// For `HRESULT` definition
+#include <pal_mstypes.h>
+
 #include "protocol.h"
 
 class Debugger

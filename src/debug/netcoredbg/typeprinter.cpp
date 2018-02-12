@@ -2,22 +2,16 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include "typeprinter.h"
 
 #include <sstream>
-#include <mutex>
-#include <memory>
 #include <unordered_map>
-#include <vector>
-#include <list>
-#include <iomanip>
 
+#include "torelease.h"
 
-typedef char * LPCUTF8;
-typedef uintptr_t TADDR;
+/// NOTE: Taken from `src/ToolBox/SOS/Strike/util.h`
+typedef LPCSTR  LPCUTF8;
 #include "sos_md.h"
-
-#include "typeprinter.h"
 
 #include "cputil.h"
 

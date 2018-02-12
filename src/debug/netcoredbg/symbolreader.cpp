@@ -4,15 +4,14 @@
 
 // Copyright (c) 2017 Samsung Electronics Co., LTD
 
-#include "common.h"
-
-#include <string>
-#include <vector>
-
-#include "cputil.h"
 #include "symbolreader.h"
 
+#include <coreclrhost.h>
+
 #include "platform.h"
+#include "torelease.h"
+#include "cputil.h"
+
 
 // Suppress undefined reference
 // `_invalid_parameter(char16_t const*, char16_t const*, char16_t const*, unsigned int, unsigned long)':

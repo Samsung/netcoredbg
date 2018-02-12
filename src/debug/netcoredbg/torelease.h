@@ -4,6 +4,8 @@
 
 // Copyright (c) 2017 Samsung Electronics Co., LTD
 
+#pragma once
+
 // This class acts a smart pointer which calls the Release method on any object
 // you place in it when the ToRelease class falls out of scope.  You may use it
 // just like you would a standard pointer to a COM object (including if (foo),

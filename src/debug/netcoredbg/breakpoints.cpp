@@ -2,14 +2,11 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include "manageddebugger.h"
 
 #include <mutex>
-#include <memory>
 #include <unordered_set>
 #include <fstream>
-
-#include "manageddebugger.h"
 
 
 Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :

@@ -2,29 +2,26 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include "manageddebugger.h"
 
 #include <sstream>
 #include <mutex>
-#include <condition_variable>
 #include <memory>
-#include <unordered_map>
-#include <vector>
-#include <list>
 #include <chrono>
 
 #include "symbolreader.h"
 #include "cputil.h"
 #include "platform.h"
 #include "typeprinter.h"
-#include "manageddebugger.h"
 #include "frames.h"
 
+#ifndef __in
 #define __in
+#endif
+#ifndef __out
 #define __out
+#endif
 #include "dbgshim.h"
-#undef __in
-#undef __out
 
 
 void ManagedDebugger::NotifyProcessCreated()

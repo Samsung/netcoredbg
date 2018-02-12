@@ -3,6 +3,16 @@
 // See the LICENSE file in the project root for more information.
 
 // Copyright (c) 2017 Samsung Electronics Co., LTD
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include <cor.h>
+#include <cordebug.h>
+
+/// FIXME: Definition of `TADDR`
+#include "torelease.h"
 
 static const char *SymbolReaderDllName = "SymbolReader";
 static const char *SymbolReaderClassName = "SOS.SymbolReader";

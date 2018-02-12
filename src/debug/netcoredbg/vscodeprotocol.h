@@ -1,9 +1,11 @@
 // Copyright (c) 2018 Samsung Electronics Co., LTD
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
+#pragma once
 
-#include <mutex>
 #include <fstream>
+#include <mutex>
+#include <string>
 
 #include "json.hpp"
 #include "debugger.h"

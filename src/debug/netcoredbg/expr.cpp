@@ -2,21 +2,12 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "common.h"
+#include "manageddebugger.h"
 
-#include <sstream>
-#include <mutex>
-#include <condition_variable>
-#include <memory>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <list>
-#include <iomanip>
 
 #include "cputil.h"
-
-#include "manageddebugger.h"
 #include "typeprinter.h"
 #include "valueprint.h"
 
@@ -401,7 +392,7 @@ static std::vector<std::string> ParseGenericParams(const std::string &part, std:
     return result;
 }
 
-std::vector<std::string> GatherParameters(const std::vector<std::string> &parts, int indexEnd)
+static std::vector<std::string> GatherParameters(const std::vector<std::string> &parts, int indexEnd)
 {
     std::vector<std::string> result;
     for (int i = 0; i < indexEnd; i++)
@@ -413,7 +404,7 @@ std::vector<std::string> GatherParameters(const std::vector<std::string> &parts,
     return result;
 }
 
-HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string> &parts, int &nextPart, mdTypeDef &typeToken)
+static HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string> &parts, int &nextPart, mdTypeDef &typeToken)
 {
     HRESULT Status;
 

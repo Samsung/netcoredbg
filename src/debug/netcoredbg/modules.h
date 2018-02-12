@@ -2,11 +2,17 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
+#pragma once
+
 #include <unordered_map>
 #include <mutex>
 #include <memory>
 
+#include <cor.h>
+#include <cordebug.h>
+
 #include "protocol.h"
+#include "torelease.h"
 
 
 class SymbolReader;
