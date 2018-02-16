@@ -55,14 +55,12 @@ cp %{SOURCE1001} ..
 
 %build
 
+export CFLAGS=" --target=%{_host}"
+export CXXFLAGS=" --target=%{_host}"
+
 %ifarch %{ix86}
-export CFLAGS=" --target=i586-tizen-linux-gnu -Wno-deprecated-declarations"
-export CXXFLAGS=" --target=i586-tizen-linux-gnu -Wno-deprecated-declarations"
-export ASMFLAGS=" --target=i586-tizen-linux-gnu"
-%else
-export CFLAGS=" --target=%{_host} -Wno-deprecated-declarations"
-export CXXFLAGS=" --target=%{_host} -Wno-deprecated-declarations"
-export ASMFLAGS=" --target=%{_host}"
+export CFLAGS=$(echo $CFLAGS | sed -e 's/--target=i686/--target=i586/')
+export CXXFLAGS=$(echo $CXXFLAGS | sed -e 's/--target=i686/--target=i586/')
 %endif
 
 mkdir build
@@ -74,7 +72,7 @@ cmake ../netcoredbg \
     -DCLR_DIR=%{_datarootdir}/%{netcoreappdir} \
     -DCMAKE_INSTALL_PREFIX=%{install_prefix} \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCLR_CMAKE_TARGET_ARCH_%{ARCH}=1 \
+    -DCLR_CMAKE_LINUX_ID=tizen \
     -DCORECLR_SET_RPATH=%{_datarootdir}/%{netcoreappdir} \
     -DBUILD_MANAGED=OFF
 make %{?jobs:-j%jobs}

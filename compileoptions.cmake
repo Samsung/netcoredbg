@@ -42,7 +42,7 @@ add_compile_options(-Wno-incompatible-ms-struct)
 # as x64 does. It has been causing issues in ARM (https://github.com/dotnet/coreclr/issues/4746)
 add_compile_options(-fsigned-char)
 
-if(CLR_CMAKE_PLATFORM_UNIX_ARM)
+if(CLR_CMAKE_PLATFORM_UNIX_ARM AND NOT DEFINED CLR_CMAKE_TARGET_TIZEN_LINUX)
    # Because we don't use CMAKE_C_COMPILER/CMAKE_CXX_COMPILER to use clang
    # we have to set the triple by adding a compiler argument
    add_compile_options(-mthumb)
@@ -54,4 +54,4 @@ if(CLR_CMAKE_PLATFORM_UNIX_ARM)
    else()
      add_compile_options(-target armv7-linux-gnueabihf)
    endif(ARM_SOFTFP)
-endif(CLR_CMAKE_PLATFORM_UNIX_ARM)
+endif()
