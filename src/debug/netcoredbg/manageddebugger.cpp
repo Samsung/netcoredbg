@@ -1107,7 +1107,7 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 
     ToRelease<IUnknown> pCordb;
 
-    IfFailRet(CreateDebuggingInterfaceFromVersionEx(CorDebugLatestVersion, pBuffer, &pCordb));
+    IfFailRet(CreateDebuggingInterfaceFromVersionEx(CorDebugVersion_4_0, pBuffer, &pCordb));
 
     m_unregisterToken = nullptr;
     return Startup(pCordb, pid);
