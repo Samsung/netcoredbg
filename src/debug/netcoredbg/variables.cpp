@@ -23,6 +23,9 @@ HRESULT Variables::GetNumChild(
     ULONG numstatic = 0;
     ULONG numinstance = 0;
 
+    if (pValue == nullptr)
+        return 0;
+
     IfFailRet(m_evaluator.WalkMembers(pValue, nullptr, nullptr, [&numstatic, &numinstance](
         mdMethodDef,
         ICorDebugModule *,
@@ -360,8 +363,15 @@ HRESULT Variables::GetChildren(
         if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
             var.evaluateName = ref.evaluateName + (isIndex ? "" : ".") + var.name;
         bool escape = true;
-        PrintValue(it.value, var.value, escape);
-        TypePrinter::GetTypeOfValue(it.value, var.type);
+        if (it.value == nullptr)
+        {
+            var.value = "<error>";
+        }
+        else
+        {
+            PrintValue(it.value, var.value, escape);
+            TypePrinter::GetTypeOfValue(it.value, var.type);
+        }
         AddVariableReference(var, ref.frameId, it.value, ValueIsVariable);
         variables.push_back(var);
     }
