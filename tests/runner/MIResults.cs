@@ -14,8 +14,8 @@ namespace MICore
 {
     /// <summary>
     /// Prefix from the output indicating the class of result. According to the documentation, these are:
-    /// 
-    ///    result-class ==> "done" | "running" | "connected" | "error" | "exit" 
+    ///
+    ///    result-class ==> "done" | "running" | "connected" | "error" | "exit" | "stopped"
     /// </summary>
     public enum ResultClass
     {
@@ -28,7 +28,8 @@ namespace MICore
         running,
         connected,
         error,
-        exit
+        exit,
+        stopped
     }
 
     public class ResultValue
@@ -188,6 +189,16 @@ namespace MICore
             if (c is T)
             {
                 return c as T;
+            }
+            throw new MIResultFormatException(name, this);
+        }
+
+        public ResultListValue FindResultListValue(string name)
+        {
+            var c = Find(name);
+            if (c is ResultListValue)
+            {
+                return c as ResultListValue;
             }
             throw new MIResultFormatException(name, this);
         }
@@ -601,6 +612,14 @@ namespace MICore
             return Content.Count(c => c.Name == name);
         }
 
+        public ResultValue FindWith(string name, string value)
+        {
+            for (int i = 0; i < Length; i++)
+                if (Content[i].Value.Find(name).ToString() == value)
+                    return Content[i].Value;
+            throw new MIResultFormatException(name, this);
+        }
+
         public override string ToString()
         {
             StringBuilder outList = new StringBuilder();
@@ -757,11 +776,13 @@ namespace MICore
         private string _resultString;
 
         /// <summary>
-        /// result-record ==> result-class ( "," result )* 
+        /// result-record ==> result-class ( "," result )*
         /// </summary>
         /// <param name="output"></param>
         public Results ParseCommandOutput(string output)
         {
+            string token = ParseToken(ref output);
+            output = output.Remove(0, 1); // Remove first char (^, *, e.t.c)
             _resultString = output.Trim();
             int comma = _resultString.IndexOf(',');
             Results results;
@@ -778,6 +799,26 @@ namespace MICore
                 results = ParseResultList(wholeString.AdvanceTo(comma + 1), resultClass);
             }
             return results;
+        }
+
+        private string ParseToken(ref string output)
+        {
+            if (char.IsDigit(output, 0))
+            {
+                int i;
+                for (i = 1; i < output.Length; i++)
+                {
+                    if (!char.IsDigit(output, i))
+                        break;
+                }
+                if (i < output.Length)
+                {
+                    string token = output.Substring(0, i);
+                    output = output.Substring(i);
+                    return token;
+                }
+            }
+            return null;
         }
 
         public Results ParseResultList(string listStr, ResultClass resultClass = ResultClass.None)
@@ -873,7 +914,7 @@ namespace MICore
         }
 
         /// <summary>
-        /// GDB (on x86) sometimes returns a tuple list in a context requiring a tuple (&lt;MULTIPLE&gt; breakpoints). 
+        /// GDB (on x86) sometimes returns a tuple list in a context requiring a tuple (&lt;MULTIPLE&gt; breakpoints).
         /// The grammer does not allow this, but we recognize it and accept it only in the special case when it is contained
         /// in a result value.
         ///     tuplelist --  tuple ("," tuple)*
@@ -946,6 +987,7 @@ namespace MICore
                 case "connected": return ResultClass.connected;
                 case "error": return ResultClass.error;
                 case "exit": return ResultClass.exit;
+                case "stopped": return ResultClass.stopped;
                 default:
                     {
                         Debug.Fail("unexpected result class");
@@ -1077,7 +1119,7 @@ namespace MICore
         }
 
         /// <summary>
-        /// tuple ==> "{}" | "{" result ( "," result )* "}" 
+        /// tuple ==> "{}" | "{" result ( "," result )* "}"
         /// </summary>
         /// <returns>if one tuple found a TupleValue, otherwise a ValueListValue of TupleValues</returns>
         private ResultValue ParseResultTuple(Span input, out Span rest)
@@ -1106,7 +1148,7 @@ namespace MICore
         }
 
         /// <summary>
-        /// tuple ==> "{}" | "{" result ( "," result )* "}" 
+        /// tuple ==> "{}" | "{" result ( "," result )* "}"
         /// </summary>
         private TupleValue ParseTuple(Span input, out Span rest)
         {
@@ -1119,7 +1161,7 @@ namespace MICore
         }
 
         /// <summary>
-        /// list ==> "[]" | "[" value ( "," value )* "]" | "[" result ( "," result )* "]"  
+        /// list ==> "[]" | "[" value ( "," value )* "]" | "[" result ( "," result )* "]"
         /// </summary>
         private ResultValue ParseList(Span input, out Span rest)
         {
@@ -1145,7 +1187,7 @@ namespace MICore
         }
 
         /// <summary>
-        /// list ==>  "[" value ( "," value )* "]"   
+        /// list ==>  "[" value ( "," value )* "]"
         /// </summary>
         private ValueListValue ParseValueList(Span input, out Span rest)
         {
@@ -1188,7 +1230,7 @@ namespace MICore
         }
 
         /// <summary>
-        /// list ==>  "[" result ( "," result )* "]"  
+        /// list ==>  "[" result ( "," result )* "]"
         /// </summary>
         private ResultListValue ParseResultList(Span input, out Span rest)
         {
