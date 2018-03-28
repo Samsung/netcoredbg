@@ -238,7 +238,7 @@ HRESULT Modules::GetModuleId(ICorDebugModule *pModule, std::string &id)
 
     IfFailRet(pMDImport->GetScopeProps(nullptr, 0, nullptr, &mvid));
 
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << std::hex
     << std::setfill('0') << std::setw(8) << mvid.Data1 << "-"
     << std::setfill('0') << std::setw(4) << mvid.Data2 << "-"

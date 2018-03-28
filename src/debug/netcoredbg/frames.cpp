@@ -384,7 +384,6 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
 HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
     HRESULT Status;
-    std::stringstream ss;
 
     DWORD threadId = 0;
     pThread->GetID(&threadId);

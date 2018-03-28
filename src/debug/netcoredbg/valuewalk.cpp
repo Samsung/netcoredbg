@@ -315,7 +315,7 @@ static std::string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vec
     if (ind_size < 1 || base.size() != ind_size)
         return std::string();
 
-    std::stringstream ss;
+    std::ostringstream ss;
     const char *sep = "";
     for (size_t i = 0; i < ind_size; ++i)
     {
@@ -853,7 +853,7 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
             }
             if(paramName.empty())
             {
-                std::stringstream ss;
+                std::ostringstream ss;
                 ss << "param_" << i;
                 paramName = ss.str();
             }
