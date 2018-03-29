@@ -9,13 +9,11 @@ using Xunit;
 using Xunit.Abstractions;
 
 using System.Text.RegularExpressions;
-using System.Linq;
 using System.Reflection;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis.Scripting;
 
@@ -23,84 +21,16 @@ using System.Threading;
 
 namespace Runner
 {
-    public class Labeled<T>
+    public class TestRunner
     {
-        public Labeled(T data, string label)
-        {
-            Data = data;
-            Label = label;
-        }
+        [Fact]
+        public void SimpleSteppingTest() => ExecuteTest();
 
-        public T Data { get; }
-        public string Label { get; }
-
-        public override string ToString()
-        {
-            return Label;
-        }
-    }
-
-    public static class Labeledextensions
-    {
-        public static Labeled<T> Labeled<T>
-                (this T source, string label)=>new Labeled<T>( source, label );
-    }
-
-    public partial class TestRunner
-    {
-        public static IEnumerable<object[]> Data()
-        {
-            object[] make
-            (string binName,
-             string srcName,
-             string label)
-            {
-                return new object []
-                { ( binName:binName
-                , srcName:srcName
-                )
-                .Labeled(label)
-                };
-            }
-            var data = new List<object[]>();
-
-            // Sneaky way to get assembly path, which works even if call
-            // current constructor with reflection
-            string codeBase = Assembly.GetExecutingAssembly().CodeBase;
-            UriBuilder uri = new UriBuilder(codeBase);
-            string path = Uri.UnescapeDataString(uri.Path);
-            var d = new DirectoryInfo(Path.GetDirectoryName(path));
-
-            // Get path to runner binaries
-            path = Path.Combine(d.Parent.Parent.Parent.Parent.FullName, "runner");
-            var files = Directory.GetFiles(path, "*.dll", SearchOption.AllDirectories);
-            var depsJson = new FileInfo(files[0].Substring(0, files[0].Length - 4) + ".deps.json");
-            var runnerPath = depsJson.Directory.Parent.Parent.Parent.FullName;
-
-            // Find all dlls
-            var baseDir = d.Parent.Parent.Parent.Parent;
-            files = Directory.GetFiles(baseDir.FullName, "*.dll", SearchOption.AllDirectories);
-
-            foreach (var dll in files)
-            {
-                string testName = dll.Substring(0, dll.Length - 4);
-                depsJson = new FileInfo(testName + ".deps.json");
-                var dllDir = depsJson.Directory.Parent.Parent.Parent.FullName;
-                // Do not use as test cases runner and launcher files
-                if (depsJson.Exists &&
-                    !dllDir.Equals(runnerPath, StringComparison.CurrentCultureIgnoreCase))
-                {
-                    var csFiles = Directory.GetFiles(depsJson.Directory.Parent.Parent.Parent.FullName, "*.cs");
-                    data.Add(make(dll, csFiles[0], testName.Split('/').Last()));
-                }
-            }
-
-            return data;
-        }
-
+        [Fact]
+        public void ValuesTest() => ExecuteTest();
         public class ProcessInfo
         {
-            public ProcessInfo(string binName, ITestOutputHelper output)
+            public ProcessInfo(string command, ITestOutputHelper output)
             {
                 this.output = output;
                 process = new Process();
@@ -110,8 +40,8 @@ namespace Runner
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardInput = true;
                 process.StartInfo.UseShellExecute = false;
-                process.StartInfo.Arguments = "";
-                process.StartInfo.FileName = binName;
+                process.StartInfo.Arguments = String.Format("-c \"{0}\"", command);
+                process.StartInfo.FileName = "/bin/sh";
 
                 // enable raising events because Process does not raise events by default
                 process.EnableRaisingEvents = true;
@@ -143,7 +73,7 @@ namespace Runner
                 }
                 catch (System.ComponentModel.Win32Exception)
                 {
-                    throw new Exception("Unable to run process: " + binName);
+                    throw new Exception("Unable to run: " + command);
                 }
 
                 process.BeginOutputReadLine();
@@ -166,7 +96,7 @@ namespace Runner
                 return queue.ReceiveAsync().Result;
             }
 
-            public MICore.Results Expect(string text, int timeoutSec = 10)
+            public MICore.Results Expect(string text, int timeoutSec)
             {
                 TimeSpan timeSpan = TimeSpan.FromSeconds(timeoutSec);
 
@@ -236,7 +166,7 @@ namespace Runner
             public int GetCurrentLine([CallerLineNumber] int line = 0) { return line; }
 
             public void Send(string s) => processInfo.Send(s);
-            public MICore.Results Expect(string s) => processInfo.Expect(s);
+            public MICore.Results Expect(string s, int timeoutSec = 10) => processInfo.Expect(s, timeoutSec);
             public readonly string TestSource;
             public readonly string TestBin;
             public readonly ITestOutputHelper Output;
@@ -262,7 +192,7 @@ namespace Runner
 
                 string key = match.Groups[1].ToString().Trim();
                 if (Tags.ContainsKey(key))
-                    throw new Exception(String.Format("Tag '{0}' presented more than once in file '{1}'", key, srcName));
+                    throw new Exception(String.Format("Tag '{0}' is present more than once in file '{1}'", key, srcName));
                 Tags[key] = lineCounter;
             }
 
@@ -299,8 +229,21 @@ namespace Runner
             public string Text { get => allComments.ToString(); }
         }
 
+        class TestData
+        {
+            public TestData(string dllPath, string srcFilePath)
+            {
+                this.dllPath = dllPath;
+                this.srcFilePath = srcFilePath;
+            }
+            public string srcFilePath { get; }
+            public string dllPath { get; }
+
+        }
+
         private readonly ITestOutputHelper output;
-        private string debugger;
+        private string debuggerCommand;
+        private Dictionary<string, TestData> allTests;
         public TestRunner(ITestOutputHelper output)
         {
             this.output = output;
@@ -312,18 +255,47 @@ namespace Runner
             string path = Uri.UnescapeDataString(uri.Path);
             var d = new DirectoryInfo(Path.GetDirectoryName(path));
 
-            // Get path to runner binaries
-            this.debugger = Path.Combine(d.Parent.Parent.Parent.Parent.Parent.FullName, "bin", "netcoredbg");
+            var pipe = Environment.GetEnvironmentVariable("PIPE");
+            if (pipe != null)
+            {
+                this.debuggerCommand = pipe;
+            }
+            else
+            {
+                this.debuggerCommand = Path.Combine(d.Parent.Parent.Parent.Parent.Parent.FullName, "bin", "netcoredbg");
+            }
+
+            var testDir = Environment.GetEnvironmentVariable("TESTDIR");
+
+            // Find all dlls
+            var baseDir = d.Parent.Parent.Parent.Parent;
+            var files = Directory.GetFiles(baseDir.FullName, "*.dll", SearchOption.AllDirectories);
+
+            allTests = new Dictionary<string, TestData>();
+
+            foreach (var dll in files)
+            {
+                string testName = dll.Substring(0, dll.Length - 4);
+                var configName = new FileInfo(testName + ".runtimeconfig.json");
+                if (configName.Exists)
+                {
+                    var csFiles = Directory.GetFiles(configName.Directory.Parent.Parent.Parent.FullName, "*.cs");
+
+                    string testDll = testDir != null ? Path.Combine(testDir, Path.GetFileName(dll)) : dll;
+
+                    allTests[Path.GetFileName(testName)] = new TestData(testDll, csFiles[0]);
+                }
+            }
         }
 
-        [Theory]
-        [MemberData(nameof(Data))]
-        public void ExecuteTest(Labeled<(string binName, string srcName)> t)
+        private void ExecuteTest([CallerMemberName] string name = null)
         {
-            var lines = CollectTags(t.Data.srcName);
+            var data = allTests[name];
 
-            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(t.Data.srcName))
-                                       .WithFilePath(t.Data.srcName);
+            var lines = CollectTags(data.srcFilePath);
+
+            var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(data.srcFilePath))
+                                       .WithFilePath(data.srcFilePath);
 
             var cc = new CommentCollector();
             cc.Visit(tree.GetRoot());
@@ -342,14 +314,14 @@ namespace Runner
             );
             script.Compile();
 
-            ProcessInfo processInfo = new ProcessInfo(debugger, output);
+            ProcessInfo processInfo = new ProcessInfo(debuggerCommand, output);
 
             // Globals, to use inside test case
             TestCaseGlobals globals = new TestCaseGlobals(
                 processInfo,
                 lines,
-                t.Data.srcName,
-                t.Data.binName,
+                data.srcFilePath,
+                data.dllPath,
                 output
             );
 

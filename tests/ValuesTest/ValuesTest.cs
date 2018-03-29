@@ -10,7 +10,7 @@ Assert.Equal("entry-point-hit", r.FindString("reason"));
 Assert.Equal(Lines["START"], r.Find("frame").FindInt("line"));
 
 Send(String.Format("4-break-insert -f {0}:{1}", TestSource, Lines["BREAK"]));
-r = Expect("4^done");
+Expect("4^done");
 
 Send("5-exec-continue");
 */
