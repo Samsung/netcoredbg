@@ -121,7 +121,7 @@ static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
 {
     HRESULT Status;
 
-    std::stringstream ss;
+    std::ostringstream ss;
 
     if (b.verified)
     {
@@ -168,7 +168,7 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
 
 static std::string AddrToString(uint64_t addr)
 {
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << "0x" << std::setw(2 * sizeof(void*)) << std::setfill('0') << std::hex << addr;
     return ss.str();
 }
@@ -177,7 +177,7 @@ HRESULT MIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string
 {
     HRESULT Status;
 
-    std::stringstream ss;
+    std::ostringstream ss;
 
     if (!stackFrame.source.IsNull())
     {
@@ -210,7 +210,7 @@ HRESULT MIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string
 HRESULT MIProtocol::PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame)
 {
     HRESULT Status;
-    std::stringstream ss;
+    std::ostringstream ss;
 
     int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
@@ -250,7 +250,7 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
 
     HRESULT Status;
 
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << "variables=[";
     const char *sep = "";
 
@@ -271,7 +271,7 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
 
 static void PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output)
 {
-    std::stringstream ss;
+    std::ostringstream ss;
 
     std::string editable = "noneditable";
 
@@ -331,7 +331,7 @@ void MIProtocol::Cleanup()
 
 void MIProtocol::PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output)
 {
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << "numchild=\"" << children.size() << "\"";
 
     if (children.empty())
@@ -505,7 +505,7 @@ void MIProtocol::EmitModuleEvent(ModuleEvent event)
     {
         case ModuleNew:
         {
-            std::stringstream ss;
+            std::ostringstream ss;
             ss << "id=\"{" << event.module.id << "}\","
                << "target-name=\"" << MIProtocol::EscapeMIValue(event.module.path) << "\","
                << "host-name=\"" << MIProtocol::EscapeMIValue(event.module.path) << "\","
@@ -542,7 +542,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         std::vector<Thread> threads;
         IfFailRet(m_debugger->GetThreads(threads));
 
-        std::stringstream ss;
+        std::ostringstream ss;
 
         ss << "threads=[";
 
@@ -780,7 +780,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         if (args.at(0) == "--mda")
             i = 2;
 
-        std::stringstream ss;
+        std::ostringstream ss;
         const char *sep = "";
         ss << "bkpt=[";
         for (; i < args.size(); i++)

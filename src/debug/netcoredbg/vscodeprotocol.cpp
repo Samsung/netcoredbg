@@ -494,7 +494,7 @@ void VSCodeProtocol::CommandLoop()
             }
             else
             {
-                std::stringstream ss;
+                std::ostringstream ss;
                 ss << "Failed command '" << command << "' : "
                    << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status;
                 response["success"] = false;

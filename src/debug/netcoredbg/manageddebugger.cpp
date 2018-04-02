@@ -123,8 +123,6 @@ HRESULT ManagedDebugger::DisableAllSteppers(ICorDebugProcess *pProcess)
 
 static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
-    HRESULT Status;
-
     ToRelease<ICorDebugBreakpointEnum> breakpoints;
     if (SUCCEEDED(pAppDomain->EnumerateBreakpoints(&breakpoints)))
     {
@@ -953,9 +951,9 @@ static std::string EscapeShellArg(const std::string &arg)
 {
     std::string s(arg);
 
-    for (std::size_t i = 0; i < s.size(); ++i)
+    for (std::string::size_type i = 0; i < s.size(); ++i)
     {
-        int count = 0;
+        std::string::size_type count = 0;
         char c = s.at(i);
         switch (c)
         {
@@ -975,21 +973,20 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
 
     IfFailRet(CheckNoProcess());
 
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << "\"" << fileExec << "\"";
-    for (std::string &arg : execArgs)
-    {
+    for (const std::string &arg : execArgs)
         ss << " \"" << EscapeShellArg(arg) << "\"";
-    }
 
     m_startupReady = false;
     m_clrPath.clear();
 
-    BOOL bSuspendProcess = TRUE;
-    LPVOID lpEnvironment = nullptr; // as current
-    LPCWSTR lpCurrentDirectory = nullptr; // as current
-    HANDLE resumeHandle;
-    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(ss.str()).c_str()), bSuspendProcess, lpEnvironment, lpCurrentDirectory, &m_processId, &resumeHandle));
+    HANDLE resumeHandle; // Fake thread handle for the process resume
+    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(ss.str()).c_str()),
+                                     /* Suspend process */ TRUE,
+                                     /* Current environment */ NULL,
+                                     /* Current working directory */ NULL,
+                                     &m_processId, &resumeHandle));
 
     IfFailRet(RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 
@@ -999,10 +996,10 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
 
     // Wait for ManagedDebugger::StartupCallback to complete
 
-    // FIXME: if the process exits too soon the ManagedDebugger::StartupCallback()
-    // is never called (bug in dbgshim?).
-    // The workaround is to wait with timeout.
-    auto now = std::chrono::system_clock::now();
+    /// FIXME: if the process exits too soon the ManagedDebugger::StartupCallback()
+    /// is never called (bug in dbgshim?).
+    /// The workaround is to wait with timeout.
+    const auto now = std::chrono::system_clock::now();
 
     std::unique_lock<std::mutex> lock(m_startupMutex);
     if (!m_startupCV.wait_until(lock, now + startupCallbackWaitTimeout, [this](){return m_startupReady;}))

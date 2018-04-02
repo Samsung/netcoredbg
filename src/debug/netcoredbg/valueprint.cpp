@@ -121,7 +121,7 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, std:
     }
     pMD->CloseEnum(fEnum);
 
-    std::stringstream ss;
+    std::ostringstream ss;
     const char *sep = "";
 
     //Now that we know the underlying enum type, let's decode the enum variable into OR-ed, human readable enum contants
@@ -408,7 +408,7 @@ static HRESULT PrintArrayValue(ICorDebugValue *pValue,
     ULONG32 cElements;
     IfFailRet(pArrayValue->GetCount(&cElements));
 
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << "{";
 
     std::string elementType;
@@ -549,7 +549,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
 
         EscapeString(raw_str, '"');
 
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << "\"" << raw_str << "\"";
         output = ss.str();
         return S_OK;
@@ -569,7 +569,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
         return PrintEnumValue(pValue, rgbValue, output);
     }
 
-    std::stringstream ss;
+    std::ostringstream ss;
 
     switch (corElemType)
     {

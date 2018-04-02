@@ -48,7 +48,7 @@ static std::string ConsumeGenericArgs(const std::string &name, std::list<std::st
         return name;
     }
 
-    std::stringstream ss;
+    std::ostringstream ss;
     ss << name.substr(0, offset);
     ss << "<";
     const char *sep = "";
@@ -364,7 +364,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
     //ELEMENT_TYPE_R8_HFA         = 0x07 | ELEMENT_TYPE_MODIFIER, // used only internally for R8 HFA types
     default:
         {
-            std::stringstream ss;
+            std::ostringstream ss;
             ss << "(Unhandled CorElementType: 0x" << std::hex << corElemType << ")";
             elementType = ss.str();
         }
@@ -373,7 +373,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
     case ELEMENT_TYPE_VALUETYPE:
     case ELEMENT_TYPE_CLASS:
         {
-            std::stringstream ss;
+            std::ostringstream ss;
             //Defaults in case we fail...
             elementType = (corElemType == ELEMENT_TYPE_VALUETYPE) ? "struct" : "class";
 
@@ -476,7 +476,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
                 return S_OK;
             case ELEMENT_TYPE_ARRAY:
                 {
-                    std::stringstream ss;
+                    std::ostringstream ss;
                     ULONG32 rank = 0;
                     pType->GetRank(&rank);
                     ss << "[";
@@ -796,7 +796,7 @@ HRESULT TypePrinter::GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeN
 
     if (methodGenericsCount > 0)
     {
-        std::stringstream ss;
+        std::ostringstream ss;
         ss << funcName << '`' << methodGenericsCount;
         funcName = ss.str();
     }
@@ -822,7 +822,7 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     std::string typeName;
     std::string methodName;
 
-    std::stringstream ss;
+    std::ostringstream ss;
     IfFailRet(GetTypeAndMethod(pFrame, typeName, methodName));
     if (!typeName.empty())
         ss << typeName << ".";

@@ -13,6 +13,9 @@
 #include "cputil.h"
 
 
+static const char *SymbolReaderDllName = "SymbolReader";
+static const char *SymbolReaderClassName = "SOS.SymbolReader";
+
 // Suppress undefined reference
 // `_invalid_parameter(char16_t const*, char16_t const*, char16_t const*, unsigned int, unsigned long)':
 //      /coreclr/src/pal/inc/rt/safecrt.h:386: undefined reference to `RaiseException'
