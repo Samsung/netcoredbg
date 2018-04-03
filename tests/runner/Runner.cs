@@ -81,6 +81,7 @@ namespace Runner
 
             public void Close()
             {
+                process.StandardInput.WriteLine("-gdb-exit");
                 process.StandardInput.Close();
                 if (!process.WaitForExit(5))
                 {
@@ -316,19 +317,28 @@ namespace Runner
 
             ProcessInfo processInfo = new ProcessInfo(debuggerCommand, output);
 
-            // Globals, to use inside test case
-            TestCaseGlobals globals = new TestCaseGlobals(
-                processInfo,
-                lines,
-                data.srcFilePath,
-                data.dllPath,
-                output
-            );
+            try
+            {
+                // Globals, to use inside test case
+                TestCaseGlobals globals = new TestCaseGlobals(
+                    processInfo,
+                    lines,
+                    data.srcFilePath,
+                    data.dllPath,
+                    output
+                );
 
-            script.RunAsync(globals).Wait();
-
-            // Finish process
-            processInfo.Close();
+                script.RunAsync(globals).Wait();
+            }
+            catch (Exception e)
+            {
+                throw e;
+            }
+            finally
+            {
+                // Finish process
+                processInfo.Close();
+            }
         }
     }
 }
