@@ -28,6 +28,10 @@ namespace Runner
 
         [Fact]
         public void ValuesTest() => ExecuteTest();
+
+        [Fact]
+        public void ExceptionTest() => ExecuteTest();
+
         public class ProcessInfo
         {
             public ProcessInfo(string command, ITestOutputHelper output)
