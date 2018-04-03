@@ -2,15 +2,15 @@
 
 ## Running tests
 
-Before running tests the debugger should be built and installed inside `./bin` directory, `dotnet` CLI shoud be present in `PATH`.
+By default test runner looks for debugger binary in `./bin` directory and expects `dotnet` CLI to be present in `PATH`.
 
-From project root directory test are run through dotnet CLI:
+Test are run through dotnet CLI from the project root directory:
 ```
 cd tests
 dotnet test
 ```
 
-It is possible to override path to the debugger binary through `PIPE` environgment variable:
+It is possible to override path to the debugger binary through `PIPE` environment variable:
 ```
 cd tests
 PIPE=<path-to-debugger> dotnet test --logger "trx;LogFileName=$PWD/Results.trx"
@@ -20,7 +20,7 @@ PIPE=<path-to-debugger> dotnet test --logger "trx;LogFileName=$PWD/Results.trx"
 
 Test results can be exported to a file with `--logger` command line option.
 
-By default test binaries are descovered recursively under project `tests` directory. When tests should be executed on another machine, environment variable `TESTDIR` can override the location of test binaries. In that case recursive search is not performed and all test binaries should be located directly under `TESTDIR`. So for `TESTDIR=/tmp` the test binary files layout shoud be:
+By default test binaries are discovered recursively under project `tests` directory. When tests should be executed on another machine, environment variable `TESTDIR` can override the location of test binaries. In that case recursive search is not performed and all test binaries should be located directly under `TESTDIR`. So for `TESTDIR=/tmp` the test binary files layout shoud be:
 ```
 /tmp/Example1Test.dll
 /tmp/Example1Test.pdb
@@ -65,7 +65,6 @@ Test scenario should be present in comments inside TestExample/Program.cs
 
 The following example instructs the debugger to run test binary and verifies that the debugger stops at line with `@START@` tag with stop reason `entry-point-hit`:
 ```
-using System;
 /*
 Send("1-file-exec-and-symbols dotnet");
 Send("2-exec-arguments " + TestBin);
@@ -75,6 +74,8 @@ var r = Expect("*stopped");
 Assert.Equal(r.FindString("reason"), "entry-point-hit");
 Assert.Equal(r.Find("frame").FindInt("line"), Lines["START"]);
 */
+using System;
+
 namespace ExampleTest
 {
     class Program

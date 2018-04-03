@@ -308,8 +308,8 @@ namespace Runner
                 cc.Text,
                 ScriptOptions.Default.WithReferences(typeof(object).Assembly)
                                      .WithReferences(typeof(Xunit.Assert).Assembly)
-                                     .WithImports("System")
-                                     .WithImports("Xunit"),
+                                     .WithReferences(typeof(MICore.MIResults).Assembly)
+                                     .WithImports(new string[]{"System", "Xunit", "MICore"}),
                 globalsType: typeof(TestCaseGlobals)
             );
             script.Compile();

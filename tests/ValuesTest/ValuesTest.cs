@@ -1,6 +1,4 @@
 ﻿/*
-using System;
-
 Send("1-file-exec-and-symbols dotnet");
 Send("2-exec-arguments " + TestBin);
 Send("3-exec-run");
