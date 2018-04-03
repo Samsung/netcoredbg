@@ -74,7 +74,8 @@ cmake ../netcoredbg \
     -DCMAKE_BUILD_TYPE=Release \
     -DCLR_CMAKE_LINUX_ID=tizen \
     -DCORECLR_SET_RPATH=%{_datarootdir}/%{netcoreappdir} \
-    -DBUILD_MANAGED=OFF
+    -DBUILD_MANAGED=OFF \
+    -DDBGSHIM_INSTALL=OFF
 make %{?jobs:-j%jobs}
 
 %dotnet_build ../netcoredbg/src/debug/netcoredbg

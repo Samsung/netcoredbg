@@ -58,6 +58,9 @@ add_executable(netcoredbg ${netcoredbg_SRC})
 target_link_libraries(netcoredbg corguids dbgshim dl pthread)
 
 install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
+if (DBGSHIM_INSTALL)
+  install(FILES ${CLR_BIN_DIR}/libdbgshim.so DESTINATION ${CMAKE_INSTALL_PREFIX})
+endif()
 
 # SymbolReader
 
