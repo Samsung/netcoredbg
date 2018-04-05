@@ -159,16 +159,16 @@ HRESULT Modules::GetFrameILAndSequencePoint(
         if (p.offset == ilOffset)
             nearestPoint = p;
 
-        sequencePoint.startLine = nearestPoint.startLine;
-        sequencePoint.endLine = nearestPoint.endLine;
-        sequencePoint.startColumn = nearestPoint.startColumn;
-        sequencePoint.endColumn = nearestPoint.endColumn;
-        sequencePoint.offset = nearestPoint.offset;
-        sequencePoint.document = to_utf8(name);
-        return S_OK;
+        break;
     }
 
-    return E_FAIL;
+    sequencePoint.startLine = nearestPoint.startLine;
+    sequencePoint.endLine = nearestPoint.endLine;
+    sequencePoint.startColumn = nearestPoint.startColumn;
+    sequencePoint.endColumn = nearestPoint.endColumn;
+    sequencePoint.offset = nearestPoint.offset;
+    sequencePoint.document = to_utf8(name);
+    return S_OK;
 }
 
 HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)

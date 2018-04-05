@@ -334,11 +334,12 @@ namespace SOS
                         if (nearestPoint.StartLine == 0 || nearestPoint.StartLine == SequencePoint.HiddenLine)
                             return false;
 
-                        lineNumber = nearestPoint.StartLine;
-                        fileName = reader.GetString(reader.GetDocument(nearestPoint.Document).Name);
-                        return true;
+                        break;
                     }
                 }
+                lineNumber = nearestPoint.StartLine;
+                fileName = reader.GetString(reader.GetDocument(nearestPoint.Document).Name);
+                return true;
             }
             catch
             {
