@@ -549,9 +549,9 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         const char *sep = "";
         for (const Thread& thread : threads)
         {
-            ss << "{id=\"" << thread.id
-            << "\",name=\"" << MIProtocol::EscapeMIValue(thread.name) << "\",state=\""
-            << (thread.running ? "running" : "stopped") << "\"}" << sep;
+            ss << sep << "{id=\"" << thread.id
+               << "\",name=\"" << MIProtocol::EscapeMIValue(thread.name) << "\",state=\""
+               << (thread.running ? "running" : "stopped") << "\"}";
             sep = ",";
         }
 
