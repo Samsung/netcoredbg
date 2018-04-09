@@ -8,6 +8,7 @@
 
 #include <coreclrhost.h>
 
+#include "modules.h"
 #include "platform.h"
 #include "torelease.h"
 #include "cputil.h"
@@ -61,11 +62,15 @@ HRESULT SymbolReader::LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule
     IfFailRet(pModule->GetBaseAddress(&peAddress));
     IfFailRet(pModule->GetSize(&peSize));
 
-    ULONG32 len = 0;
-    WCHAR moduleName[MAX_LONGPATH];
-    IfFailRet(pModule->GetName(_countof(moduleName), &len, moduleName));
-
-    return LoadSymbolsForPortablePDB(moduleName, isInMemory, isInMemory, peAddress, peSize, 0, 0);
+    return LoadSymbolsForPortablePDB(
+        Modules::GetModuleFileName(pModule),
+        isInMemory,
+        isInMemory, // isFileLayout
+        peAddress,
+        peSize,
+        0,          // inMemoryPdbAddress
+        0           // inMemoryPdbSize
+    );
 }
 
 //
@@ -83,7 +88,7 @@ int ReadMemoryForSymbols(ULONG64 address, char *buffer, int cb)
 }
 
 HRESULT SymbolReader::LoadSymbolsForPortablePDB(
-    WCHAR* pModuleName,
+    const std::string &modulePath,
     BOOL isInMemory,
     BOOL isFileLayout,
     ULONG64 peAddress,
@@ -100,11 +105,9 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
 
     // The module name needs to be null for in-memory PE's.
     const char *szModuleName = nullptr;
-    std::string moduleName;
-    if (!isInMemory && pModuleName != nullptr)
+    if (!isInMemory && !modulePath.empty())
     {
-        moduleName = to_utf8(pModuleName);
-        szModuleName = moduleName.c_str();
+        szModuleName = modulePath.c_str();
     }
 
     m_symbolReaderHandle = loadSymbolsForModuleDelegate(szModuleName, isFileLayout, peAddress,

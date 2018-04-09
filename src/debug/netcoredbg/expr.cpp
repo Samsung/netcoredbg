@@ -185,6 +185,9 @@ HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue 
         IfFailRet(FindFunction(pModule, typeName, getTypeHandleMethodName, &m_pGetTypeHandle));
     }
 
+    if (!m_pRunClassConstructor || !m_pGetTypeHandle)
+        return E_FAIL;
+
     ToRelease<ICorDebugValue> pNewValue;
 
     ToRelease<ICorDebugValue> pUnboxedValue;

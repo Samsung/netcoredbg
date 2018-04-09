@@ -523,7 +523,7 @@ void MIProtocol::EmitModuleEvent(ModuleEvent event)
 void MIProtocol::EmitOutputEvent(OutputEvent event)
 {
     if (event.source.empty())
-        MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\"\"\n",
+        MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\"\n",
             MIProtocol::EscapeMIValue(event.output).c_str());
     else
         MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\",source=\"%s\"\n",

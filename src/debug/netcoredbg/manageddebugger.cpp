@@ -843,39 +843,48 @@ static bool AreAllHandlesValid(HANDLE *handleArray, DWORD arrayLength)
     return true;
 }
 
-static HRESULT InternalEnumerateCLRs(DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength)
+static HRESULT InternalEnumerateCLRs(
+    DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength, int tryCount)
 {
     int numTries = 0;
     HRESULT hr;
 
-    while (numTries < 25)
+    while (numTries < tryCount)
     {
         hr = EnumerateCLRs(pid, ppHandleArray, ppStringArray, pdwArrayLength);
 
+        // From dbgshim.cpp:
         // EnumerateCLRs uses the OS API CreateToolhelp32Snapshot which can return ERROR_BAD_LENGTH or
         // ERROR_PARTIAL_COPY. If we get either of those, we try wait 1/10th of a second try again (that
         // is the recommendation of the OS API owners).
-        if ((hr != HRESULT_FROM_WIN32(ERROR_PARTIAL_COPY)) && (hr != HRESULT_FROM_WIN32(ERROR_BAD_LENGTH)))
+        // In dbgshim the following condition is used:
+        //  if ((hr != HRESULT_FROM_WIN32(ERROR_PARTIAL_COPY)) && (hr != HRESULT_FROM_WIN32(ERROR_BAD_LENGTH)))
+        // Since we may be attaching to the process which has not loaded coreclr yes, let's give it some time to load.
+        if (SUCCEEDED(hr))
         {
             // Just return any other error or if no handles were found (which means the coreclr module wasn't found yet).
-            if (FAILED(hr) || *ppHandleArray == NULL || *pdwArrayLength <= 0)
+            if (*ppHandleArray != NULL && *pdwArrayLength > 0)
             {
-                return hr;
-            }
-            // If EnumerateCLRs succeeded but any of the handles are INVALID_HANDLE_VALUE, then sleep and retry
-            // also. This fixes a race condition where dbgshim catches the coreclr module just being loaded but
-            // before g_hContinueStartupEvent has been initialized.
-            if (AreAllHandlesValid(*ppHandleArray, *pdwArrayLength))
-            {
-                return hr;
-            }
-            // Clean up memory allocated in EnumerateCLRs since this path it succeeded
-            CloseCLREnumeration(*ppHandleArray, *ppStringArray, *pdwArrayLength);
 
-            *ppHandleArray = NULL;
-            *ppStringArray = NULL;
-            *pdwArrayLength = 0;
+                // If EnumerateCLRs succeeded but any of the handles are INVALID_HANDLE_VALUE, then sleep and retry
+                // also. This fixes a race condition where dbgshim catches the coreclr module just being loaded but
+                // before g_hContinueStartupEvent has been initialized.
+                if (AreAllHandlesValid(*ppHandleArray, *pdwArrayLength))
+                {
+                    return hr;
+                }
+                // Clean up memory allocated in EnumerateCLRs since this path it succeeded
+                CloseCLREnumeration(*ppHandleArray, *ppStringArray, *pdwArrayLength);
+
+                *ppHandleArray = NULL;
+                *ppStringArray = NULL;
+                *pdwArrayLength = 0;
+            }
         }
+
+        // No point in retrying in case of invalid arguments or no such process
+        if (hr == E_INVALIDARG || hr == E_FAIL)
+            return hr;
 
         // Sleep and retry enumerating the runtimes
         USleep(100*1000);
@@ -893,12 +902,13 @@ static HRESULT InternalEnumerateCLRs(DWORD pid, HANDLE **ppHandleArray, LPWSTR *
     return hr;
 }
 
-static std::string GetCLRPath(DWORD pid)
+static std::string GetCLRPath(DWORD pid, int timeoutSec = 3)
 {
     HANDLE* pHandleArray;
     LPWSTR* pStringArray;
     DWORD dwArrayLength;
-    if (FAILED(InternalEnumerateCLRs(pid, &pHandleArray, &pStringArray, &dwArrayLength)) || dwArrayLength == 0)
+    const int tryCount = timeoutSec * 10; // 100ms interval between attempts
+    if (FAILED(InternalEnumerateCLRs(pid, &pHandleArray, &pStringArray, &dwArrayLength, tryCount)) || dwArrayLength == 0)
         return std::string();
 
     std::string result = to_utf8(pStringArray[0]);

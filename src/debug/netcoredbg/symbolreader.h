@@ -54,7 +54,7 @@ private:
     static HRESULT PrepareSymbolReader();
 
     HRESULT LoadSymbolsForPortablePDB(
-        WCHAR* pModuleName,
+        const std::string &modulePath,
         BOOL isInMemory,
         BOOL isFileLayout,
         ULONG64 peAddress,
