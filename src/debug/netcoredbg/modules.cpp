@@ -23,11 +23,31 @@ std::string Modules::GetModuleFileName(ICorDebugModule *pModule)
 {
     WCHAR name[mdNameLen];
     ULONG32 name_len = 0;
-    if (SUCCEEDED(pModule->GetName(_countof(name), &name_len, name)))
-    {
-        return to_utf8(name/*, name_len*/);
-    }
-    return std::string();
+
+    if (FAILED(pModule->GetName(_countof(name), &name_len, name)))
+        return std::string();
+
+    std::string moduleName = to_utf8(name/*, name_len*/);
+
+    // On Tizen platform module path may look like /proc/self/fd/8/bin/Xamarin.Forms.Platform.dll
+    // This path is invalid in debugger process, we shoud change `self` to `<debugee process id>`
+    static const std::string selfPrefix("/proc/self/");
+
+    if (moduleName.compare(0, selfPrefix.size(), selfPrefix) != 0)
+        return moduleName;
+
+    ToRelease<ICorDebugProcess> pProcess;
+    if (FAILED(pModule->GetProcess(&pProcess)))
+        return std::string();
+
+    DWORD pid = 0;
+
+    if (FAILED(pProcess->GetID(&pid)))
+        return std::string();
+
+    std::ostringstream ss;
+    ss << "/proc/" << pid << "/" << moduleName.substr(selfPrefix.size());
+    return ss.str();
 }
 
 HRESULT Modules::GetLocationInAny(
