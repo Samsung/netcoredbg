@@ -56,7 +56,12 @@ HRESULT Breakpoints::HitBreakpoint(
 
     auto breakpoints = m_breakpoints.find(sp.document);
     if (breakpoints == m_breakpoints.end())
-        return E_FAIL;
+    {
+        // try to find a match with file name only
+        breakpoints = m_breakpoints.find(GetFileName(sp.document));
+        if (breakpoints == m_breakpoints.end())
+            return E_FAIL;
+    }
 
     auto &breakpointsInSource = breakpoints->second;
     auto it = breakpointsInSource.find(sp.startLine);
@@ -370,8 +375,6 @@ HRESULT Breakpoints::SetBreakpoints(
             m_breakpoints.erase(it);
         return S_OK;
     }
-
-    Source source(filename);
 
     auto &breakpointsInSource = m_breakpoints[filename];
 

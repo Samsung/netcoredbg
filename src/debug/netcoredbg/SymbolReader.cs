@@ -241,6 +241,14 @@ namespace SOS
 
             try
             {
+                // If incoming filePath is not a full path, then check file names only
+                Func<string, bool> FileNameMatches;
+                string fileName = GetFileName(filePath);
+                if (fileName == filePath)
+                    FileNameMatches = s => GetFileName(s) == fileName;
+                else
+                    FileNameMatches = s => s == filePath;
+
                 foreach (MethodDebugInformationHandle methodDebugInformationHandle in reader.MethodDebugInformation)
                 {
                     MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugInformationHandle);
@@ -248,7 +256,7 @@ namespace SOS
                     foreach (SequencePoint point in sequencePoints)
                     {
                         string sourceName = reader.GetString(reader.GetDocument(point.Document).Name);
-                        if (point.StartLine == lineNumber && sourceName == filePath)
+                        if (point.StartLine == lineNumber && FileNameMatches(sourceName))
                         {
                             methodToken = MetadataTokens.GetToken(methodDebugInformationHandle.ToDefinitionHandle());
                             ilOffset = point.Offset;
