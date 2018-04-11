@@ -126,14 +126,16 @@ HRESULT MIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
 
     if (b.verified)
     {
-        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "func=\"\",fullname=\"" << MIProtocol::EscapeMIValue(b.source.path) << "\",line=\"" << b.line << "\"}";
+        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",func=\"\","
+              "file=\"" << MIProtocol::EscapeMIValue(b.source.name) << "\","
+              "fullname=\"" << MIProtocol::EscapeMIValue(b.source.path) << "\","
+              "line=\"" << b.line << "\"}";
         Status = S_OK;
     }
     else
     {
         ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
+              "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
         Status = S_FALSE;
     }
     output = ss.str();
