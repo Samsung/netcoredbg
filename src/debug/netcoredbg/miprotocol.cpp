@@ -8,6 +8,7 @@
 #include <sstream>
 #include <functional>
 #include <algorithm>
+#include <iostream>
 #include <iomanip>
 
 #include "frames.h"
@@ -899,20 +900,21 @@ static bool ParseLine(const std::string &str,
 
 void MIProtocol::CommandLoop()
 {
-    static char inputBuffer[1024];
     std::string token;
 
     while (!m_exit)
     {
         token.clear();
+        std::string input;
 
         Printf("(gdb)\n");
-        if (!fgets(inputBuffer, _countof(inputBuffer), stdin))
+        std::getline(std::cin, input);
+        if (input.empty() && std::cin.eof())
             break;
 
         std::vector<std::string> args;
         std::string command;
-        if (!ParseLine(inputBuffer, token, command, args))
+        if (!ParseLine(input, token, command, args))
         {
             Printf("%s^error,msg=\"Failed to parse input\"\n", token.c_str());
             continue;
