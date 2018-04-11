@@ -12,6 +12,7 @@
 #include "miprotocol.h"
 #include "vscodeprotocol.h"
 
+static const uint16_t DEFAULT_SERVER_PORT = 4711;
 
 static void print_help()
 {
@@ -24,6 +25,10 @@ static void print_help()
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
         "--engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.\n"
         "                                      Only supported by the VsCode interpreter.\n"
+        "--server[=port_num]                   Start the debugger listening for requests on the\n"
+        "                                      specified TCP/IP port instead of stdin/out. If port is not specified\n"
+        "                                      TCP %i will be used.\n",
+        (int)DEFAULT_SERVER_PORT
     );
 }
 
@@ -39,6 +44,8 @@ int main(int argc, char *argv[])
 
     bool engineLogging = false;
     std::string logFilePath;
+
+    uint16_t serverPort = 0;
 
     for (int i = 1; i < argc; i++)
     {
@@ -84,6 +91,22 @@ int main(int argc, char *argv[])
             print_help();
             return EXIT_SUCCESS;
         }
+        else if (strcmp(argv[i], "--server") == 0)
+        {
+            serverPort = DEFAULT_SERVER_PORT;
+            continue;
+        }
+        else if (strstr(argv[i], "--server=") == argv[i])
+        {
+            char *err;
+            serverPort = strtoul(argv[i] + strlen("--server="), &err, 10);
+            if (*err != 0)
+            {
+                fprintf(stderr, "Error: Missing process id\n");
+                return EXIT_FAILURE;
+            }
+            continue;
+        }
         else
         {
             fprintf(stderr, "Error: Unknown option %s\n", argv[i]);
@@ -91,6 +114,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    IORedirectServer server(serverPort);
     ManagedDebugger debugger;
     std::unique_ptr<Protocol> protocol;
 
