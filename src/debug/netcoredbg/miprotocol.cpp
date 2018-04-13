@@ -957,14 +957,41 @@ std::mutex MIProtocol::m_outMutex;
 
 void MIProtocol::Printf(const char *fmt, ...)
 {
-    std::lock_guard<std::mutex> lock(m_outMutex);
+    std::string strbuffer;
+    char buffer[32];
+
+    const char *out = nullptr;
+
     va_list arg;
 
     va_start(arg, fmt);
-    vfprintf(stdout, fmt, arg);
+    int n = vsnprintf(buffer, sizeof(buffer), fmt, arg);
     va_end(arg);
 
-    fflush(stdout);
+    if (n < 0)
+        return;
+
+    if (n >= sizeof(buffer))
+    {
+        strbuffer.resize(n);
+
+        va_start(arg, fmt);
+        n = vsnprintf(&strbuffer[0], strbuffer.size() + 1, fmt, arg);
+        va_end(arg);
+
+        if (n < 0 || n > strbuffer.size())
+            return;
+        out = strbuffer.c_str();
+    }
+    else
+    {
+        buffer[n] = '\0';
+        out = buffer;
+    }
+
+    std::lock_guard<std::mutex> lock(m_outMutex);
+    std::cout << out;
+    std::cout.flush();
 }
 
 std::string MIProtocol::EscapeMIValue(const std::string &str)
