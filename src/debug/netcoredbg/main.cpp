@@ -47,6 +47,9 @@ int main(int argc, char *argv[])
 
     uint16_t serverPort = 0;
 
+    std::string execFile;
+    std::vector<std::string> execArgs;
+
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "--attach") == 0)
@@ -107,6 +110,24 @@ int main(int argc, char *argv[])
             }
             continue;
         }
+        else if (strcmp(argv[i], "--") == 0)
+        {
+            ++i;
+            if (i < argc)
+            {
+                execFile = argv[i];
+            }
+            else
+            {
+                fprintf(stderr, "Error: Missing program argument\n");
+                return EXIT_FAILURE;
+            }
+            for (++i; i < argc; ++i)
+            {
+                execArgs.push_back(argv[i]);
+            }
+            break;
+        }
         else
         {
             fprintf(stderr, "Error: Unknown option %s\n", argv[i]);
@@ -150,6 +171,17 @@ int main(int argc, char *argv[])
         if (FAILED(Status))
         {
             fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
+            return EXIT_FAILURE;
+        }
+    }
+    else if (!execFile.empty())
+    {
+        debugger.Initialize();
+        debugger.Launch(execFile, execArgs, true);
+        HRESULT Status = debugger.ConfigurationDone();
+        if (FAILED(Status))
+        {
+            fprintf(stderr, "Error: 0x%x Failed to launch %s\n", Status, execFile.c_str());
             return EXIT_FAILURE;
         }
     }
