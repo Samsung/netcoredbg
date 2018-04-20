@@ -336,7 +336,8 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE Break(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *thread) { HandleEvent(pAppDomain, "Break"); return S_OK; }
+            /* [in] */ ICorDebugThread *thread)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE Exception(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -410,7 +411,6 @@ public:
         virtual HRESULT STDMETHODCALLTYPE CreateProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
-            //HandleEvent(pProcess, "CreateProcess");
             m_debugger.NotifyProcessCreated();
             pProcess->Continue(0);
             return S_OK;
@@ -471,27 +471,32 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE UnloadModule(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugModule *pModule) { HandleEvent(pAppDomain, "UnloadModule"); return S_OK; }
+            /* [in] */ ICorDebugModule *pModule)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE LoadClass(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugClass *c) { HandleEvent(pAppDomain, "LoadClass"); return S_OK; }
+            /* [in] */ ICorDebugClass *c)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE UnloadClass(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugClass *c) { HandleEvent(pAppDomain, "UnloadClass"); return S_OK; }
+            /* [in] */ ICorDebugClass *c)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE DebuggerError(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ HRESULT errorHR,
-            /* [in] */ DWORD errorCode) { printf("DebuggerError\n"); return S_OK; }
+            /* [in] */ DWORD errorCode)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE LogMessage(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ LONG lLevel,
             /* [in] */ WCHAR *pLogSwitchName,
-            /* [in] */ WCHAR *pMessage) { pAppDomain->Continue(0); return S_OK; }
+            /* [in] */ WCHAR *pMessage)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE LogSwitch(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -499,61 +504,57 @@ public:
             /* [in] */ LONG lLevel,
             /* [in] */ ULONG ulReason,
             /* [in] */ WCHAR *pLogSwitchName,
-            /* [in] */ WCHAR *pParentName) { pAppDomain->Continue(0); return S_OK; }
+            /* [in] */ WCHAR *pParentName)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE CreateAppDomain(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ ICorDebugAppDomain *pAppDomain)
-        {
-            //HandleEvent(pProcess, "CreateAppDomain");
-            pProcess->Continue(0);
-            return S_OK;
-        }
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE ExitAppDomain(
             /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ ICorDebugAppDomain *pAppDomain) { HandleEvent(pAppDomain, "ExitAppDomain"); return S_OK; }
+            /* [in] */ ICorDebugAppDomain *pAppDomain)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE LoadAssembly(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugAssembly *pAssembly)
-        {
-            //HandleEvent(pAppDomain, "LoadAssembly");
-            pAppDomain->Continue(0);
-            return S_OK;
-        }
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE UnloadAssembly(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugAssembly *pAssembly) { return S_OK; }
+            /* [in] */ ICorDebugAssembly *pAssembly)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE ControlCTrap(
-            /* [in] */ ICorDebugProcess *pProcess) { HandleEvent(pProcess, "ControlCTrap"); return S_OK; }
+            /* [in] */ ICorDebugProcess *pProcess)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE NameChange(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread)
-        {
-            pAppDomain->Continue(0);
-            return S_OK;
-        }
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE UpdateModuleSymbols(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugModule *pModule,
-            /* [in] */ IStream *pSymbolStream) { HandleEvent(pAppDomain, "UpdateModuleSymbols"); return S_OK; }
+            /* [in] */ IStream *pSymbolStream)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE EditAndContinueRemap(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugFunction *pFunction,
-            /* [in] */ BOOL fAccurate) { return S_OK; }
+            /* [in] */ BOOL fAccurate)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE BreakpointSetError(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugBreakpoint *pBreakpoint,
-            /* [in] */ DWORD dwError) {return S_OK; }
+            /* [in] */ DWORD dwError)
+        { return E_NOTIMPL; }
 
 
         // ICorDebugManagedCallback2
@@ -563,20 +564,24 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugFunction *pOldFunction,
             /* [in] */ ICorDebugFunction *pNewFunction,
-            /* [in] */ ULONG32 oldILOffset) {return S_OK; }
+            /* [in] */ ULONG32 oldILOffset)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE CreateConnection(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ CONNID dwConnectionId,
-            /* [in] */ WCHAR *pConnName) { HandleEvent(pProcess, "CreateConnection"); return S_OK; }
+            /* [in] */ WCHAR *pConnName)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE ChangeConnection(
             /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ CONNID dwConnectionId) { HandleEvent(pProcess, "ChangeConnection"); return S_OK; }
+            /* [in] */ CONNID dwConnectionId)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE DestroyConnection(
             /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ CONNID dwConnectionId) {return S_OK; }
+            /* [in] */ CONNID dwConnectionId)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE Exception(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -586,6 +591,7 @@ public:
             /* [in] */ CorDebugExceptionCallbackType dwEventType,
             /* [in] */ DWORD dwFlags)
         {
+          // TODO:
           // const char *cbTypeName;
           // switch(dwEventType)
           // {
@@ -597,25 +603,27 @@ public:
           // }
           // ManagedDebugger::Printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
           //     cbTypeName);
-            pAppDomain->Continue(0);
-            return S_OK;
+            return E_NOTIMPL;
         }
 
         virtual HRESULT STDMETHODCALLTYPE ExceptionUnwind(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
-            /* [in] */ DWORD dwFlags) {return S_OK; }
+            /* [in] */ DWORD dwFlags)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE FunctionRemapComplete(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugFunction *pFunction) {return S_OK; }
+            /* [in] */ ICorDebugFunction *pFunction)
+        { return E_NOTIMPL; }
 
         virtual HRESULT STDMETHODCALLTYPE MDANotification(
             /* [in] */ ICorDebugController *pController,
             /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugMDA *pMDA) { HandleEvent(pController, "MDANotification"); return S_OK; }
+            /* [in] */ ICorDebugMDA *pMDA)
+        { return E_NOTIMPL; }
 };
 
 ManagedDebugger::ManagedDebugger() :
