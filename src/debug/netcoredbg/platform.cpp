@@ -313,6 +313,11 @@ IORedirectServer::IORedirectServer(uint16_t port) : m_in(nullptr), m_out(nullptr
     }
 
     ::listen(m_sockfd, 5);
+
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+    close(STDERR_FILENO);
+
     clilen = sizeof(cli_addr);
     newsockfd = ::accept(m_sockfd, (struct sockaddr *) &cli_addr, &clilen);
     if (newsockfd < 0)
