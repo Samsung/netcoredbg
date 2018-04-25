@@ -32,6 +32,9 @@ namespace Runner
         [Fact]
         public void ExceptionTest() => ExecuteTest();
 
+        [Fact]
+        public void BreakpointAddRemoveTest() => ExecuteTest();
+
         public class ProcessInfo
         {
             public ProcessInfo(string command, ITestOutputHelper output)
