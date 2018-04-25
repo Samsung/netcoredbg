@@ -399,10 +399,17 @@ HRESULT MIProtocol::SetBreakpoint(const std::string &filename, int linenum, Brea
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_debugger->SetBreakpoints(filename, lines, breakpoints));
 
-    breakpoint = breakpoints.back();
-    breakpointsInSource.insert(std::make_pair(breakpoint.id, linenum));
+    for (const Breakpoint& b : breakpoints)
+    {
+        if (b.line != linenum)
+            continue;
 
-    return S_OK;
+        breakpointsInSource.insert(std::make_pair(b.id, b.line));
+        breakpoint = b;
+        return S_OK;
+    }
+
+    return E_FAIL;
 }
 
 void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
