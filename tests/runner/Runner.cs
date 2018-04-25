@@ -171,7 +171,7 @@ namespace Runner
             public int GetCurrentLine([CallerLineNumber] int line = 0) { return line; }
 
             public void Send(string s) => processInfo.Send(s);
-            public MICore.Results Expect(string s, int timeoutSec = 10) => processInfo.Expect(s, timeoutSec);
+            public MICore.Results Expect(string s, int timeoutSec = 20) => processInfo.Expect(s, timeoutSec);
             public readonly string TestSource;
             public readonly string TestBin;
             public readonly ITestOutputHelper Output;
