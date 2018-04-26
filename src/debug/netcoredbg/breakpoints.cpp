@@ -148,7 +148,7 @@ void ManagedDebugger::InsertExceptionBreakpoint(const std::string &name, Breakpo
 void Breakpoints::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
-    m_nextBreakpointId++;
+    breakpoint.id = m_nextBreakpointId++;
 }
 
 void Breakpoints::DeleteAllBreakpoints()

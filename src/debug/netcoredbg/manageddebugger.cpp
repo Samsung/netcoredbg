@@ -922,8 +922,6 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 {
     HRESULT Status;
 
-    Cleanup();
-
     ToRelease<ICorDebug> pCorDebug;
     IfFailRet(punk->QueryInterface(IID_ICorDebug, (void **)&pCorDebug));
 
