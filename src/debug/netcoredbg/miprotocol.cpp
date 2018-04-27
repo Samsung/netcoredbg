@@ -117,7 +117,7 @@ bool ParseBreakpoint(const std::vector<std::string> &args_orig, std::string &fil
 }
 
 
-static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
+HRESULT MIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
 {
     HRESULT Status;
 
@@ -269,7 +269,7 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
     return S_OK;
 }
 
-static void PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output)
+void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output)
 {
     std::ostringstream ss;
 

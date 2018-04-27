@@ -22,8 +22,13 @@ class MIProtocol : public Protocol
     unsigned int m_varCounter;
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<int32_t, int> > m_breakpoints;
-public:
+
     static std::string EscapeMIValue(const std::string &str);
+    static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
+    static void PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output);
+    static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
+
+public:
 
     MIProtocol() : Protocol(), m_varCounter(0) {}
     void EmitInitializedEvent() override {}
@@ -37,8 +42,6 @@ public:
     void EmitBreakpointEvent(BreakpointEvent event) override;
     void Cleanup() override;
     void CommandLoop() override;
-
-    static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
 
 private:
     HRESULT HandleCommand(std::string command,
