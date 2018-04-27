@@ -27,8 +27,6 @@ class VSCodeProtocol : public Protocol
         LogFile
     } m_engineLogOutput;
     std::ofstream m_engineLog;
-    bool m_exit;
-    Debugger *m_debugger;
 
     uint64_t m_seqCounter;
 
@@ -41,8 +39,7 @@ class VSCodeProtocol : public Protocol
 
 public:
 
-    VSCodeProtocol() : m_engineLogOutput(LogNone), m_exit(false), m_debugger(nullptr), m_seqCounter(1) {}
-    void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
+    VSCodeProtocol() : Protocol(), m_engineLogOutput(LogNone), m_seqCounter(1) {}
     void EngineLogging(const std::string &path);
 
     void EmitInitializedEvent() override;
