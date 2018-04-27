@@ -15,8 +15,6 @@
 class MIProtocol : public Protocol
 {
     static std::mutex m_outMutex;
-    bool m_exit;
-    Debugger *m_debugger;
 
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
@@ -25,10 +23,9 @@ class MIProtocol : public Protocol
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<int32_t, int> > m_breakpoints;
 public:
-    void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
     static std::string EscapeMIValue(const std::string &str);
 
-    MIProtocol() : m_exit(false), m_debugger(nullptr), m_varCounter(0) {}
+    MIProtocol() : Protocol(), m_varCounter(0) {}
     void EmitInitializedEvent() override {}
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
