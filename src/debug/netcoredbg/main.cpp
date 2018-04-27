@@ -142,14 +142,19 @@ int main(int argc, char *argv[])
     switch(interpreterType)
     {
         case InterpreterMI:
+        {
             if (engineLogging)
             {
                 fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
                 return EXIT_FAILURE;
             }
-            protocol.reset(new MIProtocol());
-            static_cast<MIProtocol*>(protocol.get())->SetDebugger(&debugger);
+            MIProtocol *miProtocol = new MIProtocol();
+            protocol.reset(miProtocol);
+            miProtocol->SetDebugger(&debugger);
+            if (!execFile.empty())
+                miProtocol->SetLaunchCommand(execFile, execArgs);
             break;
+        }
         case InterpreterVSCode:
         {
             VSCodeProtocol *vsCodeProtocol = new VSCodeProtocol();
@@ -157,6 +162,8 @@ int main(int argc, char *argv[])
             vsCodeProtocol->SetDebugger(&debugger);
             if (engineLogging)
                 vsCodeProtocol->EngineLogging(logFilePath);
+            if (!execFile.empty())
+                vsCodeProtocol->OverrideLaunchCommand(execFile, execArgs);
             break;
         }
     }
@@ -171,17 +178,6 @@ int main(int argc, char *argv[])
         if (FAILED(Status))
         {
             fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
-            return EXIT_FAILURE;
-        }
-    }
-    else if (!execFile.empty())
-    {
-        debugger.Initialize();
-        debugger.Launch(execFile, execArgs, true);
-        HRESULT Status = debugger.ConfigurationDone();
-        if (FAILED(Status))
-        {
-            fprintf(stderr, "Error: 0x%x Failed to launch %s\n", Status, execFile.c_str());
             return EXIT_FAILURE;
         }
     }
