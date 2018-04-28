@@ -43,6 +43,12 @@ public:
     void Cleanup() override;
     void CommandLoop() override;
 
+    void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args)
+    {
+        m_fileExec = fileExec;
+        m_execArgs = args;
+    }
+
 private:
     HRESULT HandleCommand(std::string command,
                           const std::vector<std::string> &args,

@@ -30,6 +30,9 @@ class VSCodeProtocol : public Protocol
 
     uint64_t m_seqCounter;
 
+    std::string m_fileExec;
+    std::vector<std::string> m_execArgs;
+
     static std::string ReadData();
 
     void EmitEvent(const std::string &name, const nlohmann::json &body);
@@ -41,6 +44,11 @@ public:
 
     VSCodeProtocol() : Protocol(), m_engineLogOutput(LogNone), m_seqCounter(1) {}
     void EngineLogging(const std::string &path);
+    void OverrideLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args)
+    {
+        m_fileExec = fileExec;
+        m_execArgs = args;
+    }
 
     void EmitInitializedEvent() override;
     void EmitStoppedEvent(StoppedEvent event) override;

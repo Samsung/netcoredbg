@@ -8,6 +8,7 @@
 #include <sstream>
 #include <functional>
 #include <algorithm>
+#include <iostream>
 #include <iomanip>
 
 #include "frames.h"
@@ -125,14 +126,16 @@ HRESULT MIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
 
     if (b.verified)
     {
-        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "func=\"\",fullname=\"" << MIProtocol::EscapeMIValue(b.source.path) << "\",line=\"" << b.line << "\"}";
+        ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",func=\"\","
+              "file=\"" << MIProtocol::EscapeMIValue(b.source.name) << "\","
+              "fullname=\"" << MIProtocol::EscapeMIValue(b.source.path) << "\","
+              "line=\"" << b.line << "\"}";
         Status = S_OK;
     }
     else
     {
         ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\","
-            "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
+              "warning=\"No executable code of the debugger's target code type is associated with this line.\"}";
         Status = S_FALSE;
     }
     output = ss.str();
@@ -899,20 +902,21 @@ static bool ParseLine(const std::string &str,
 
 void MIProtocol::CommandLoop()
 {
-    static char inputBuffer[1024];
     std::string token;
 
     while (!m_exit)
     {
         token.clear();
+        std::string input;
 
         Printf("(gdb)\n");
-        if (!fgets(inputBuffer, _countof(inputBuffer), stdin))
+        std::getline(std::cin, input);
+        if (input.empty() && std::cin.eof())
             break;
 
         std::vector<std::string> args;
         std::string command;
-        if (!ParseLine(inputBuffer, token, command, args))
+        if (!ParseLine(input, token, command, args))
         {
             Printf("%s^error,msg=\"Failed to parse input\"\n", token.c_str());
             continue;
@@ -953,14 +957,41 @@ std::mutex MIProtocol::m_outMutex;
 
 void MIProtocol::Printf(const char *fmt, ...)
 {
-    std::lock_guard<std::mutex> lock(m_outMutex);
+    std::string strbuffer;
+    char buffer[32];
+
+    const char *out = nullptr;
+
     va_list arg;
 
     va_start(arg, fmt);
-    vfprintf(stdout, fmt, arg);
+    int n = vsnprintf(buffer, sizeof(buffer), fmt, arg);
     va_end(arg);
 
-    fflush(stdout);
+    if (n < 0)
+        return;
+
+    if (n >= sizeof(buffer))
+    {
+        strbuffer.resize(n);
+
+        va_start(arg, fmt);
+        n = vsnprintf(&strbuffer[0], strbuffer.size() + 1, fmt, arg);
+        va_end(arg);
+
+        if (n < 0 || n > strbuffer.size())
+            return;
+        out = strbuffer.c_str();
+    }
+    else
+    {
+        buffer[n] = '\0';
+        out = buffer;
+    }
+
+    std::lock_guard<std::mutex> lock(m_outMutex);
+    std::cout << out;
+    std::cout.flush();
 }
 
 std::string MIProtocol::EscapeMIValue(const std::string &str)

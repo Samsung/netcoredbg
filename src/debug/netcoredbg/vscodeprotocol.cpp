@@ -277,6 +277,10 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return S_OK;
     } },
     { "launch", [this](const json &arguments, json &body){
+        if (!m_fileExec.empty())
+        {
+            return m_debugger->Launch(m_fileExec, m_execArgs, arguments.value("stopAtEntry", false));
+        }
         std::vector<std::string> args = arguments.value("args", std::vector<std::string>());
         args.insert(args.begin(), arguments.at("program").get<std::string>());
         return m_debugger->Launch("dotnet", args, arguments.value("stopAtEntry", false));
