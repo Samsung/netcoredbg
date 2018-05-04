@@ -14,6 +14,7 @@ bool SetWorkDir(const std::string &path);
 void USleep(uint32_t duration);
 void *DLOpen(const std::string &path);
 void *DLSym(void *handle, const std::string &name);
+void UnsetCoreCLREnv();
 
 class IORedirectServer
 {
