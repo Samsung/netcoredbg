@@ -136,6 +136,8 @@ HRESULT SymbolReader::PrepareSymbolReader()
 
     HRESULT Status;
 
+    UnsetCoreCLREnv();
+
     void *coreclrLib = DLOpen(coreClrPath);
     if (coreclrLib == nullptr)
     {

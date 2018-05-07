@@ -186,6 +186,11 @@ void *DLSym(void *handle, const std::string &name)
     return dlsym(handle, name.c_str());
 }
 
+void UnsetCoreCLREnv()
+{
+    unsetenv("CORECLR_ENABLE_PROFILING");
+}
+
 // From https://stackoverflow.com/questions/13541313/handle-socket-descriptors-like-file-descriptor-fstream-c-linux
 class fdbuf : public std::streambuf
 {
