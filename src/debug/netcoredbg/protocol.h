@@ -53,9 +53,10 @@ struct StackFrame
     uint64_t addr; // exposed for MI protocol
 
     StackFrame() :
-        id(0), line(0), column(0), endLine(0), endColumn(0) {}
+        id(0), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
-    StackFrame(int threadId, uint32_t level, std::string name) : name(name)
+    StackFrame(int threadId, uint32_t level, std::string name) :
+        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0)
     {
         id = threadId;
         id <<= 32;

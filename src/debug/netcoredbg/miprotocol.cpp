@@ -471,7 +471,10 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
         }
         case StopPause:
         {
-            MIProtocol::Printf("*stopped,reason=\"interrupted\",stopped-threads=\"all\"\n");
+            // When async break happens, this should be reason="interrupted".
+            // But MIEngine in Visual Studio accepts only reason="signal-received",signal-name="SIGINT".
+            MIProtocol::Printf("*stopped,reason=\"signal-received\",signal-name=\"SIGINT\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                event.threadId, frameLocation.c_str());
             return;
         }
         case StopEntry:

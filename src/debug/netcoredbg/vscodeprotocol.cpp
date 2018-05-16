@@ -35,8 +35,9 @@ void to_json(json &j, const StackFrame &f) {
         {"column",    f.column},
         {"endLine",   f.endLine},
         {"endColumn", f.endColumn},
-        {"moduleId",  f.moduleId},
-        {"source",    f.source}};
+        {"moduleId",  f.moduleId}};
+    if (!f.source.IsNull())
+        j["source"] = f.source;
 }
 
 void to_json(json &j, const Thread &t) {

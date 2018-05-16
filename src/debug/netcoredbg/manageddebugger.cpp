@@ -796,8 +796,50 @@ HRESULT ManagedDebugger::Pause()
     if (!m_pProcess)
         return E_FAIL;
     HRESULT Status = m_pProcess->Stop(0);
-    if (Status == S_OK)
-        m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, 0));
+    if (Status != S_OK)
+        return Status;
+
+    // For Visual Studio, we have to report a thread ID in async stop event.
+    // We have to find a thread which has a stack frame with valid location in its stack trace.
+    std::vector<Thread> threads;
+    GetThreads(threads);
+
+    int lastStoppedId = GetLastStoppedThreadId();
+
+    // Reorder threads so that last stopped thread is checked first
+    for (size_t i = 0; i < threads.size(); ++i)
+    {
+        if (threads[i].id == lastStoppedId)
+        {
+            std::swap(threads[0], threads[i]);
+            break;
+        }
+    }
+
+    // Now get stack trace for each thread and find a frame with valid source location.
+    for (const Thread& thread : threads)
+    {
+        int totalFrames = 0;
+        std::vector<StackFrame> stackFrames;
+
+        if (FAILED(GetStackTrace(thread.id, 0, 0, stackFrames, totalFrames)))
+            continue;
+
+        for (const StackFrame& stackFrame : stackFrames)
+        {
+            if (stackFrame.source.IsNull())
+                continue;
+
+            StoppedEvent event(StopPause, thread.id);
+            event.frame = stackFrame;
+            m_protocol->EmitStoppedEvent(event);
+
+            return Status;
+        }
+    }
+
+    m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, 0));
+
     return Status;
 }
 
