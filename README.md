@@ -1,79 +1,47 @@
-# Managed code debugger for .NET Core runtime
+# Debugger for .NET Core runtime
 
-The debugger provides GDB/MI interface and allows to debug .NET apps using ICorDebug API of CoreCLR.
+The debugger provides GDB/MI or VSCode debug adapter interface and allows to debug .NET apps under .NET Core runtime.
 
 
 ## Build (Ubuntu x64)
 
-1. Install .NET Core SDK 2.x from https://dot.net/core
+1. Install .NET Core SDK 2.0+ from https://dot.net/core
 
-2. Build and install coreclr and corefx, see https://github.com/dotnet/coreclr for details
+2. Build coreclr, see https://github.com/dotnet/coreclr for instructions
 
-3. Use the following script as a reference to build the debugger (assuming current directory is project root):
+3. Build the debugger with `cmake` and `clang` (assuming current directory is project root, coreclr is cloned and built next to debugger directory):
    ```
-   #!/bin/sh
-
-   # Path to coreclr source root
-   CORECLR_PATH=$HOME/git/coreclr
-   # Path to coreclr build output (use .Relese for release build)
-   CORECLR_BIN=$CORECLR_PATH/bin/Product/Linux.x64.Debug
-   # Path to generated coreclr overlay (where coreclr and corefx binaries are installed)
-   CORECLR_OVERLAY=$HOME/git/overlay
-
-   rm -rf build
    mkdir build
    cd build
 
-   CC=clang CXX=clang++ cmake -DCMAKE_INSTALL_PREFIX=$CORECLR_OVERLAY -DCLR_DIR=$CORECLR_PATH -DCLR_BIN_DIR=$CORECLR_BIN -DCORECLR_SET_RPATH=\$ORIGIN ../
+   CC=clang CXX=clang++ cmake .. -DCMAKE_INSTALL_PREFIX=$PWD/../bin
+
    make -j
    make install
    ```
 
-   The script produces `netcoredbg` and `SymbolReader.dll` binaries inside the overlay directory.
+   CMake accepts additional options:
 
-## Build (GBS)
+   `-DCLR_DIR=$HOME/git/coreclr` path to coreclr source root directory
 
-1. Prepare
+   `-DCLR_BIN_DIR=$HOME/git/coreclr/bin/Product/Linux.x64.Debug` path to coreclr build result directory
 
-   Prepare GBS environment and add a path to local repository to your `.gbs.conf`.
+   `-DCORECLR_SET_RPATH=/usr/shared/dotnet/Microsoft.NETCore.App/2.0.0` path where `libdbgshim.so` is located
 
-   See the guide here http://suprem.sec.samsung.net/confluence/display/SPTDTLC/Profiler+architecture
+4. The above commands create `./bin` directory with `netcoredbg` binary and additional libraries.
 
-2. Build modified `coreclr` and `coreclr-devel` packages
-
-   Apply the patches from `patches/coreclr` and build CoreCLR from
-   https://review.tizen.org/gerrit/#/admin/projects/platform/upstream/coreclr
-
-   This step will produce updated `coreclr` and `mscorlib` RPMs for installing on the device/emulator.
-   Also it will generate the `coreclr-devel` package in the local repo which is necessary for building the debugger.
-
-3. Build the `netcoredbg` package
-
-   Clone the repo and build as usual:
+   Now running the debugger with `--help` option should look like this:
    ```
-   gbs build -A armv7l --include-all --spec netcoredbg.spec
+   $ ../bin/netcoredbg --help
+   .NET Core debugger for Linux/macOS.
+
+   Options:
+   --attach <process-id>                 Attach the debugger to the specified process id.
+   --interpreter=mi                      Puts the debugger into MI mode.
+   --interpreter=vscode                  Puts the debugger into VS Code Debugger mode.
+   --engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.
+                                         Only supported by the VsCode interpreter.
+   --server[=port_num]                   Start the debugger listening for requests on the
+                                         specified TCP/IP port instead of stdin/out. If port is not specified
+                                         TCP 4711 will be used.
    ```
-
-4. Build modified `dotnet-launcher` package
-
-   Apply the patches from `patches/dotnet-launcher` and build `dotnet-launcher` from
-   https://review.tizen.org/gerrit/#/admin/projects/platform/core/dotnet/launcher
-
-## Usage
-
-1. Install packages on the device/emulator
-
-   Install RPMs from local GBS repo: `coreclr`, `mscorlib`, `dotnet-launcher` and `netcoredbg`.
-
-   You may also need to remove AOT images:
-   ```
-   sdb shell "find / -name '*.ni.dll' -exec rm {} \;"
-   ```
-
-   Reboot the device/emulator.
-
-2. Use modified Visual Studio Tools for Tizen
-
-   Build `vs-tools-cps` project from
-   https://github.sec.samsung.net/i-kulaychuk/vs-tools-cps/tree/netcoredbg-attach
-   and launch the debug session with F5.
