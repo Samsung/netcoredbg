@@ -176,7 +176,7 @@ struct OutputEvent
 
     std::string source; // exposed for MI protocol
 
-    OutputEvent(OutputCategory category, std::string output) : category(OutputConsole), output(output) {}
+    OutputEvent(OutputCategory category, std::string output) : category(category), output(output) {}
 };
 
 enum ModuleReason
