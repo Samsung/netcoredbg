@@ -7,6 +7,7 @@
 #include <cstring>
 #include <set>
 #include <fstream>
+#include <thread>
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -280,8 +281,20 @@ int fdbuf::underflow()
         : traits_type::to_int_type(*this->gptr());
 }
 
-IORedirectServer::IORedirectServer(uint16_t port) : m_in(nullptr), m_out(nullptr), m_sockfd(-1)
+IORedirectServer::IORedirectServer(
+    uint16_t port,
+    std::function<void(std::string)> onStdOut,
+    std::function<void(std::string)> onStdErr) :
+    m_in(nullptr),
+    m_out(nullptr),
+    m_sockfd(-1),
+    m_realStdInFd(STDIN_FILENO),
+    m_realStdOutFd(STDOUT_FILENO),
+    m_realStdErrFd(STDERR_FILENO),
+    m_appStdIn(-1)
 {
+    RedirectOutput(onStdOut, onStdErr);
+
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
@@ -319,9 +332,12 @@ IORedirectServer::IORedirectServer(uint16_t port) : m_in(nullptr), m_out(nullptr
 
     ::listen(m_sockfd, 5);
 
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
+    close(m_realStdInFd);
+    close(m_realStdOutFd);
+    close(m_realStdErrFd);
+    m_realStdInFd = -1;
+    m_realStdOutFd = -1;
+    m_realStdErrFd = -1;
 
     clilen = sizeof(cli_addr);
     newsockfd = ::accept(m_sockfd, (struct sockaddr *) &cli_addr, &clilen);
@@ -346,4 +362,58 @@ IORedirectServer::~IORedirectServer()
     delete m_in;
     delete m_out;
     ::close(m_sockfd);
+}
+
+static std::function<void()> GetFdReadFunction(int fd, std::function<void(std::string)> cb)
+{
+    return [fd, cb]() {
+        char buffer[PIPE_BUF];
+
+        while (true)
+        {
+            //Read up to PIPE_BUF bytes of what's currently at the stdin
+            ssize_t read_size = read(fd, buffer, PIPE_BUF);
+            if (read_size <= 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+            cb(std::string(buffer, read_size));
+        }
+    };
+}
+
+void IORedirectServer::RedirectOutput(std::function<void(std::string)> onStdOut,
+                                      std::function<void(std::string)> onStdErr)
+{
+    // TODO: fcntl(fd, F_SETFD, FD_CLOEXEC);
+    m_realStdInFd = dup(STDIN_FILENO);
+    m_realStdOutFd = dup(STDOUT_FILENO);
+    m_realStdErrFd = dup(STDERR_FILENO);
+
+    std::cin.rdbuf(new fdbuf(m_realStdInFd));
+    std::cout.rdbuf(new fdbuf(m_realStdOutFd));
+    std::cerr.rdbuf(new fdbuf(m_realStdErrFd));
+
+    int inPipe[2];
+    int outPipe[2];
+    int errPipe[2];
+
+    if (pipe(inPipe) == -1) return;
+    if (pipe(outPipe) == -1) return;
+    if (pipe(errPipe) == -1) return;
+
+    if (dup2(inPipe[0], STDIN_FILENO) == -1) return;
+    if (dup2(outPipe[1], STDOUT_FILENO) == -1) return;
+    if (dup2(errPipe[1], STDERR_FILENO) == -1) return;
+
+    close(inPipe[0]);
+    close(outPipe[1]);
+    close(errPipe[1]);
+
+    m_appStdIn = inPipe[1];
+
+    std::thread(GetFdReadFunction(outPipe[0], onStdOut)).detach();
+    std::thread(GetFdReadFunction(errPipe[0], onStdErr)).detach();
 }
