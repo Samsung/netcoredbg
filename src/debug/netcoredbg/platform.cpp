@@ -294,28 +294,49 @@ IORedirectServer::IORedirectServer(
     m_appStdIn(-1)
 {
     RedirectOutput(onStdOut, onStdErr);
+    int fd = WaitForConnection(port);
 
+    if (fd != -1)
+    {
+        m_in = new fdbuf(fd);
+        m_out = new fdbuf(fd);
+    }
+    else
+    {
+        m_in = new fdbuf(m_realStdInFd);
+        m_out = new fdbuf(m_realStdOutFd);
+    }
+    m_err = new fdbuf(m_realStdErrFd);
+
+    m_prevIn = std::cin.rdbuf();
+    m_prevOut = std::cout.rdbuf();
+    m_prevErr = std::cerr.rdbuf();
+
+    std::cin.rdbuf(m_in);
+    std::cout.rdbuf(m_out);
+    std::cerr.rdbuf(m_err);
+}
+
+int IORedirectServer::WaitForConnection(uint16_t port)
+{
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
     int n;
 
-    m_prevIn = std::cin.rdbuf();
-    m_prevOut = std::cout.rdbuf();
-
     if (port == 0)
-        return;
+        return -1;
 
     m_sockfd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (m_sockfd < 0)
-        return;
+        return -1;
 
     int enable = 1;
     if (setsockopt(m_sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
     {
         ::close(m_sockfd);
         m_sockfd = -1;
-        return;
+        return -1;
     }
     memset(&serv_addr, 0, sizeof(serv_addr));
 
@@ -327,11 +348,14 @@ IORedirectServer::IORedirectServer(
     {
         ::close(m_sockfd);
         m_sockfd = -1;
-        return;
+        return -1;
     }
 
     ::listen(m_sockfd, 5);
 
+    // On Tizen, launch_app won't terminate until stdin, stdout and stderr are closed.
+    // But Visual Studio initiates the connection only after launch_app termination,
+    // therefore we need to close the descriptors before the call to accept().
     close(m_realStdInFd);
     close(m_realStdOutFd);
     close(m_realStdErrFd);
@@ -345,22 +369,20 @@ IORedirectServer::IORedirectServer(
     {
         ::close(m_sockfd);
         m_sockfd = -1;
-        return;
+        return -1;
     }
 
-    m_in = new fdbuf(newsockfd);
-    m_out = new fdbuf(newsockfd);
-
-    std::cin.rdbuf(m_in);
-    std::cout.rdbuf(m_out);
+    return newsockfd;
 }
 
 IORedirectServer::~IORedirectServer()
 {
     std::cin.rdbuf(m_prevIn);
     std::cout.rdbuf(m_prevOut);
+    std::cout.rdbuf(m_prevErr);
     delete m_in;
     delete m_out;
+    delete m_err;
     ::close(m_sockfd);
 }
 
@@ -391,10 +413,6 @@ void IORedirectServer::RedirectOutput(std::function<void(std::string)> onStdOut,
     m_realStdInFd = dup(STDIN_FILENO);
     m_realStdOutFd = dup(STDOUT_FILENO);
     m_realStdErrFd = dup(STDERR_FILENO);
-
-    std::cin.rdbuf(new fdbuf(m_realStdInFd));
-    std::cout.rdbuf(new fdbuf(m_realStdOutFd));
-    std::cerr.rdbuf(new fdbuf(m_realStdErrFd));
 
     int inPipe[2];
     int outPipe[2];
