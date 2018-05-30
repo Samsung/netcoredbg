@@ -93,6 +93,8 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, int threadId, 
     stackFrame.clrAddr.ilOffset = ilOffset;
     stackFrame.clrAddr.nativeOffset = nOffset;
 
+    stackFrame.addr = FrameAddr(pFrame);
+
     TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
     return stackFrame.source.IsNull() ? S_FALSE : S_OK;

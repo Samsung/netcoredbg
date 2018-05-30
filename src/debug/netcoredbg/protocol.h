@@ -63,7 +63,7 @@ struct StackFrame
         id |= level;
     }
 
-    StackFrame(uint64_t id) : id(id), line(0), column(0), endLine(0), endColumn(0) {}
+    StackFrame(uint64_t id) : id(id), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
     uint32_t GetLevel() const { return id & 0xFFFFFFFFul; }
     int GetThreadId() const { return id >> 32; }
