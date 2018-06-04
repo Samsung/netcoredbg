@@ -21,6 +21,8 @@ if (NOT IS_DIRECTORY "${CLR_DIR}")
     message(FATAL_ERROR "Unable to find CoreCLR directory")
 endif()
 
+set(CLR_CONFIGURATION_TYPES "Debug;Checked;Release;RelWithDebInfo" CACHE STRING "")
+
 if ("${CLR_BIN_DIR}" STREQUAL "")
     if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
         set(TARGET_OS_NAME "OSX")
@@ -28,17 +30,14 @@ if ("${CLR_BIN_DIR}" STREQUAL "")
         set(TARGET_OS_NAME "Linux")
     endif()
 
-    set(CMAKE_CONFIGURATION_TYPES "Debug;Checked;Release;RelWithDebInfo")
-
     # TODO: Search for CMAKE_BUILD_TYPE configuration first
     # TODO: CLR_CMAKE_TARGET_ARCH may be armel
-    set(CLR_BIN_DIR ${CLR_DIR}/bin/Product/${TARGET_OS_NAME}.${CLR_CMAKE_TARGET_ARCH}.Debug)
-    if (NOT IS_DIRECTORY "${CLR_BIN_DIR}")
-        set(CLR_BIN_DIR ${CLR_DIR}/bin/Product/${TARGET_OS_NAME}.${CLR_CMAKE_TARGET_ARCH}.Release)
-    endif()
-    if (NOT IS_DIRECTORY "${CLR_BIN_DIR}")
-        set(CLR_BIN_DIR ${CLR_DIR}/bin/Product/${TARGET_OS_NAME}.${CLR_CMAKE_TARGET_ARCH}.Checked)
-    endif()
+    foreach(CONFIG IN LISTS CLR_CONFIGURATION_TYPES)
+        set(CLR_BIN_DIR ${CLR_DIR}/bin/Product/${TARGET_OS_NAME}.${CLR_CMAKE_TARGET_ARCH}.${CONFIG})
+        if (IS_DIRECTORY "${CLR_BIN_DIR}")
+            break()
+        endif()
+    endforeach()
 
     if (IS_DIRECTORY "${CLR_BIN_DIR}")
         message(STATUS "CoreCLR bin directory: " ${CLR_BIN_DIR})
