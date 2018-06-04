@@ -3,10 +3,10 @@
 set(CORECLR_PRODUCT ${CLR_DIR}/bin/Product/${CORECLR_PLATFORM})
 
 add_library(dbgshim SHARED IMPORTED)
-set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/libdbgshim.so)
+set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}dbgshim${CMAKE_SHARED_LIBRARY_SUFFIX})
 
 add_library(corguids STATIC IMPORTED)
-set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/libcorguids.a)
+set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}corguids${CMAKE_STATIC_LIBRARY_SUFFIX})
 
 include_directories(${CLR_DIR}/src/inc)
 include_directories(${CLR_DIR}/src/pal/inc)
