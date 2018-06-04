@@ -5,11 +5,12 @@
 // Copyright (c) 2017 Samsung Electronics Co., LTD
 #pragma once
 
+#include <cor.h>
+#include <cordebug.h>
+
 #include <string>
 #include <vector>
 
-#include <cor.h>
-#include <cordebug.h>
 
 /// FIXME: Definition of `TADDR`
 #include "torelease.h"

@@ -3,15 +3,16 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
+#include "modules.h"
+#include "debugger.h"
+#include "protocol.h"
+
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <condition_variable>
 #include <future>
 
-#include "debugger.h"
-#include "protocol.h"
-#include "modules.h"
 
 
 enum ValueKind

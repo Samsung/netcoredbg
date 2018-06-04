@@ -3,12 +3,13 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
+#include <cor.h>
+#include <cordebug.h>
+
 #include <list>
 #include <string>
 #include <vector>
 
-#include <cor.h>
-#include <cordebug.h>
 
 class TypePrinter
 {
