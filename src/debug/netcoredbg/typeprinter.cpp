@@ -173,100 +173,93 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
 
     HRESULT hr = E_FAIL;
 
-    PAL_CPP_TRY
+    WCHAR name[MAX_CLASSNAME_LENGTH];
+    if (TypeFromToken(mb) == mdtTypeDef)
     {
-        WCHAR name[MAX_CLASSNAME_LENGTH];
-        if (TypeFromToken(mb) == mdtTypeDef)
+        hr = NameForTypeDef(mb, pImport, mdName, args);
+    }
+    else if (TypeFromToken(mb) ==  mdtFieldDef)
+    {
+        mdTypeDef mdClass;
+        ULONG size;
+        hr = pImport->GetMemberProps(mb, &mdClass,
+                                        name, _countof(name), &size,
+                                        NULL, NULL, NULL, NULL,
+                                        NULL, NULL, NULL, NULL);
+        if (SUCCEEDED(hr))
         {
-            hr = NameForTypeDef(mb, pImport, mdName, args);
-        }
-        else if (TypeFromToken(mb) ==  mdtFieldDef)
-        {
-            mdTypeDef mdClass;
-            ULONG size;
-            hr = pImport->GetMemberProps(mb, &mdClass,
-                                         name, _countof(name), &size,
-                                         NULL, NULL, NULL, NULL,
-                                         NULL, NULL, NULL, NULL);
-            if (SUCCEEDED(hr))
+            if (mdClass != mdTypeDefNil && bClassName)
             {
-                if (mdClass != mdTypeDefNil && bClassName)
-                {
-                    hr = NameForTypeDef(mdClass, pImport, mdName, args);
-                    mdName += ".";
-                }
-                mdName += to_utf8(name/*, size*/);
+                hr = NameForTypeDef(mdClass, pImport, mdName, args);
+                mdName += ".";
             }
-        }
-        else if (TypeFromToken(mb) == mdtMethodDef)
-        {
-            mdTypeDef mdClass;
-            ULONG size;
-            hr = pImport->GetMethodProps(mb, &mdClass,
-                                         name, _countof(name), &size,
-                                         NULL, NULL, NULL, NULL, NULL);
-            if (SUCCEEDED (hr))
-            {
-                if (mdClass != mdTypeDefNil && bClassName)
-                {
-                    hr = NameForTypeDef(mdClass, pImport, mdName, args);
-                    mdName += ".";
-                }
-                mdName += to_utf8(name/*, size*/);
-            }
-        }
-        else if (TypeFromToken(mb) == mdtMemberRef)
-        {
-            mdTypeDef mdClass;
-            ULONG size;
-            hr = pImport->GetMemberRefProps(mb, &mdClass,
-                                            name, _countof(name), &size,
-                                            NULL, NULL);
-            if (SUCCEEDED (hr))
-            {
-                if (TypeFromToken(mdClass) == mdtTypeRef && bClassName)
-                {
-                    ToRelease<IMDInternalImport> pMDI;
-                    hr = GetMDInternalFromImport(pImport, &pMDI);
-                    if (SUCCEEDED(hr))
-                    {
-                        LPCSTR sznamespace = 0;
-                        LPCSTR szname = 0;
-                        if (SUCCEEDED(pMDI->GetNameOfTypeRef(mdClass, &sznamespace, &szname)))
-                            mdName = std::string(sznamespace) + "." + std::string(szname) + ".";
-                    }
-                }
-                else if (TypeFromToken(mdClass) == mdtTypeDef && bClassName)
-                {
-                    hr = NameForTypeDef(mdClass, pImport, mdName, args);
-                    mdName += ".";
-                }
-                mdName += to_utf8(name/*, size*/);
-            }
-        }
-        else if (TypeFromToken(mb) == mdtTypeRef)
-        {
-            ToRelease<IMDInternalImport> pMDI;
-            hr = GetMDInternalFromImport(pImport, &pMDI);
-            if (SUCCEEDED(hr))
-            {
-                LPCSTR sznamespace = 0;
-                LPCSTR szname = 0;
-                if (SUCCEEDED(pMDI->GetNameOfTypeRef(mdtTypeRef, &sznamespace, &szname)))
-                    mdName = std::string(sznamespace) + "." + std::string(szname);
-            }
-        }
-        else
-        {
-            //ExtOut ("Unsupported token type\n");
-            hr = E_FAIL;
+            mdName += to_utf8(name/*, size*/);
         }
     }
-    PAL_CPP_CATCH_ALL
+    else if (TypeFromToken(mb) == mdtMethodDef)
     {
-            hr = E_FAIL;
+        mdTypeDef mdClass;
+        ULONG size;
+        hr = pImport->GetMethodProps(mb, &mdClass,
+                                        name, _countof(name), &size,
+                                        NULL, NULL, NULL, NULL, NULL);
+        if (SUCCEEDED (hr))
+        {
+            if (mdClass != mdTypeDefNil && bClassName)
+            {
+                hr = NameForTypeDef(mdClass, pImport, mdName, args);
+                mdName += ".";
+            }
+            mdName += to_utf8(name/*, size*/);
+        }
     }
-    PAL_CPP_ENDTRY
+    else if (TypeFromToken(mb) == mdtMemberRef)
+    {
+        mdTypeDef mdClass;
+        ULONG size;
+        hr = pImport->GetMemberRefProps(mb, &mdClass,
+                                        name, _countof(name), &size,
+                                        NULL, NULL);
+        if (SUCCEEDED (hr))
+        {
+            if (TypeFromToken(mdClass) == mdtTypeRef && bClassName)
+            {
+                ToRelease<IMDInternalImport> pMDI;
+                hr = GetMDInternalFromImport(pImport, &pMDI);
+                if (SUCCEEDED(hr))
+                {
+                    LPCSTR sznamespace = 0;
+                    LPCSTR szname = 0;
+                    if (SUCCEEDED(pMDI->GetNameOfTypeRef(mdClass, &sznamespace, &szname)))
+                        mdName = std::string(sznamespace) + "." + std::string(szname) + ".";
+                }
+            }
+            else if (TypeFromToken(mdClass) == mdtTypeDef && bClassName)
+            {
+                hr = NameForTypeDef(mdClass, pImport, mdName, args);
+                mdName += ".";
+            }
+            mdName += to_utf8(name/*, size*/);
+        }
+    }
+    else if (TypeFromToken(mb) == mdtTypeRef)
+    {
+        ToRelease<IMDInternalImport> pMDI;
+        hr = GetMDInternalFromImport(pImport, &pMDI);
+        if (SUCCEEDED(hr))
+        {
+            LPCSTR sznamespace = 0;
+            LPCSTR szname = 0;
+            if (SUCCEEDED(pMDI->GetNameOfTypeRef(mdtTypeRef, &sznamespace, &szname)))
+                mdName = std::string(sznamespace) + "." + std::string(szname);
+        }
+    }
+    else
+    {
+        //ExtOut ("Unsupported token type\n");
+        hr = E_FAIL;
+    }
+
     if (SUCCEEDED(hr))
     {
         mdName = RenameToCSharp(mdName);
