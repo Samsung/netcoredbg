@@ -3,10 +3,10 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
-#include <vector>
-
 #include <cor.h>
 #include <cordebug.h>
+
+#include <vector>
 
 struct Thread;
 

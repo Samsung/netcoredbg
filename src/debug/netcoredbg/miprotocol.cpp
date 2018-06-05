@@ -2,7 +2,9 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#define UNICODE
+#include "frames.h"
+#include "platform.h"
+#include "torelease.h"
 #include "miprotocol.h"
 
 #include <sstream>
@@ -11,9 +13,6 @@
 #include <iostream>
 #include <iomanip>
 
-#include "frames.h"
-#include "platform.h"
-#include "torelease.h"
 
 
 using namespace std::placeholders;
@@ -762,7 +761,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             output = "^running";
         return Status;
     }},
-    { "environment-cd", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "environment-cd", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.empty())
             return E_INVALIDARG;
         return SetWorkDir(args.at(0)) ? S_OK : E_FAIL;
@@ -783,7 +782,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         }
         return S_OK;
     }},
-    { "interpreter-exec", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+    { "interpreter-exec", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return S_OK;
     }},
     { "break-exception-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {

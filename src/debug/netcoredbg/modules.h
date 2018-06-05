@@ -4,13 +4,13 @@
 
 #pragma once
 
+#include <cor.h>
+#include <cordebug.h>
+
 #include <functional>
 #include <unordered_map>
 #include <mutex>
 #include <memory>
-
-#include <cor.h>
-#include <cordebug.h>
 
 #include "protocol.h"
 #include "torelease.h"
