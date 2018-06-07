@@ -7,6 +7,7 @@
 #include <cstring>
 #include <set>
 #include <fstream>
+#include <thread>
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -280,29 +281,62 @@ int fdbuf::underflow()
         : traits_type::to_int_type(*this->gptr());
 }
 
-IORedirectServer::IORedirectServer(uint16_t port) : m_in(nullptr), m_out(nullptr), m_sockfd(-1)
+IORedirectServer::IORedirectServer(
+    uint16_t port,
+    std::function<void(std::string)> onStdOut,
+    std::function<void(std::string)> onStdErr) :
+    m_in(nullptr),
+    m_out(nullptr),
+    m_sockfd(-1),
+    m_realStdInFd(STDIN_FILENO),
+    m_realStdOutFd(STDOUT_FILENO),
+    m_realStdErrFd(STDERR_FILENO),
+    m_appStdIn(-1)
+{
+    RedirectOutput(onStdOut, onStdErr);
+    int fd = WaitForConnection(port);
+
+    if (fd != -1)
+    {
+        m_in = new fdbuf(fd);
+        m_out = new fdbuf(fd);
+    }
+    else
+    {
+        m_in = new fdbuf(m_realStdInFd);
+        m_out = new fdbuf(m_realStdOutFd);
+    }
+    m_err = new fdbuf(m_realStdErrFd);
+
+    m_prevIn = std::cin.rdbuf();
+    m_prevOut = std::cout.rdbuf();
+    m_prevErr = std::cerr.rdbuf();
+
+    std::cin.rdbuf(m_in);
+    std::cout.rdbuf(m_out);
+    std::cerr.rdbuf(m_err);
+}
+
+int IORedirectServer::WaitForConnection(uint16_t port)
 {
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
     int n;
 
-    m_prevIn = std::cin.rdbuf();
-    m_prevOut = std::cout.rdbuf();
-
     if (port == 0)
-        return;
+        return -1;
 
     m_sockfd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (m_sockfd < 0)
-        return;
+        return -1;
 
     int enable = 1;
     if (setsockopt(m_sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
     {
         ::close(m_sockfd);
         m_sockfd = -1;
-        return;
+        return -1;
     }
     memset(&serv_addr, 0, sizeof(serv_addr));
 
@@ -314,14 +348,20 @@ IORedirectServer::IORedirectServer(uint16_t port) : m_in(nullptr), m_out(nullptr
     {
         ::close(m_sockfd);
         m_sockfd = -1;
-        return;
+        return -1;
     }
 
     ::listen(m_sockfd, 5);
 
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
+    // On Tizen, launch_app won't terminate until stdin, stdout and stderr are closed.
+    // But Visual Studio initiates the connection only after launch_app termination,
+    // therefore we need to close the descriptors before the call to accept().
+    close(m_realStdInFd);
+    close(m_realStdOutFd);
+    close(m_realStdErrFd);
+    m_realStdInFd = -1;
+    m_realStdOutFd = -1;
+    m_realStdErrFd = -1;
 
     clilen = sizeof(cli_addr);
     newsockfd = ::accept(m_sockfd, (struct sockaddr *) &cli_addr, &clilen);
@@ -329,21 +369,69 @@ IORedirectServer::IORedirectServer(uint16_t port) : m_in(nullptr), m_out(nullptr
     {
         ::close(m_sockfd);
         m_sockfd = -1;
-        return;
+        return -1;
     }
 
-    m_in = new fdbuf(newsockfd);
-    m_out = new fdbuf(newsockfd);
-
-    std::cin.rdbuf(m_in);
-    std::cout.rdbuf(m_out);
+    return newsockfd;
 }
 
 IORedirectServer::~IORedirectServer()
 {
     std::cin.rdbuf(m_prevIn);
     std::cout.rdbuf(m_prevOut);
+    std::cout.rdbuf(m_prevErr);
     delete m_in;
     delete m_out;
+    delete m_err;
     ::close(m_sockfd);
+}
+
+static std::function<void()> GetFdReadFunction(int fd, std::function<void(std::string)> cb)
+{
+    return [fd, cb]() {
+        char buffer[PIPE_BUF];
+
+        while (true)
+        {
+            //Read up to PIPE_BUF bytes of what's currently at the stdin
+            ssize_t read_size = read(fd, buffer, PIPE_BUF);
+            if (read_size <= 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+            cb(std::string(buffer, read_size));
+        }
+    };
+}
+
+void IORedirectServer::RedirectOutput(std::function<void(std::string)> onStdOut,
+                                      std::function<void(std::string)> onStdErr)
+{
+    // TODO: fcntl(fd, F_SETFD, FD_CLOEXEC);
+    m_realStdInFd = dup(STDIN_FILENO);
+    m_realStdOutFd = dup(STDOUT_FILENO);
+    m_realStdErrFd = dup(STDERR_FILENO);
+
+    int inPipe[2];
+    int outPipe[2];
+    int errPipe[2];
+
+    if (pipe(inPipe) == -1) return;
+    if (pipe(outPipe) == -1) return;
+    if (pipe(errPipe) == -1) return;
+
+    if (dup2(inPipe[0], STDIN_FILENO) == -1) return;
+    if (dup2(outPipe[1], STDOUT_FILENO) == -1) return;
+    if (dup2(errPipe[1], STDERR_FILENO) == -1) return;
+
+    close(inPipe[0]);
+    close(outPipe[1]);
+    close(errPipe[1]);
+
+    m_appStdIn = inPipe[1];
+
+    std::thread(GetFdReadFunction(outPipe[0], onStdOut)).detach();
+    std::thread(GetFdReadFunction(errPipe[0], onStdErr)).detach();
 }

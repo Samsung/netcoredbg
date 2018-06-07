@@ -5,6 +5,7 @@
 
 #include <string>
 #include <iostream>
+#include <functional>
 
 unsigned long OSPageSize();
 void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &tpaList);
@@ -20,11 +21,25 @@ class IORedirectServer
 {
     std::streambuf *m_in;
     std::streambuf *m_out;
+    std::streambuf *m_err;
     std::streambuf *m_prevIn;
     std::streambuf *m_prevOut;
+    std::streambuf *m_prevErr;
     int m_sockfd;
+    int m_realStdInFd;
+    int m_realStdOutFd;
+    int m_realStdErrFd;
+    int m_appStdIn;
+
+    void RedirectOutput(
+        std::function<void(std::string)> onStdOut,
+        std::function<void(std::string)> onStdErr);
+    int WaitForConnection(uint16_t port);
 public:
-    IORedirectServer(uint16_t port);
+    IORedirectServer(
+        uint16_t port,
+        std::function<void(std::string)> onStdOut,
+        std::function<void(std::string)> onStdErr);
     ~IORedirectServer();
     operator bool() const { return m_sockfd != -1; }
 };

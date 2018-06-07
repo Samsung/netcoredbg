@@ -135,7 +135,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    IORedirectServer server(serverPort);
     ManagedDebugger debugger;
     std::unique_ptr<Protocol> protocol;
 
@@ -169,6 +168,12 @@ int main(int argc, char *argv[])
     }
 
     debugger.SetProtocol(protocol.get());
+
+    IORedirectServer server(
+        serverPort,
+        [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
+        [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdErr, text)); }
+    );
 
     if (pidDebuggee != 0)
     {
