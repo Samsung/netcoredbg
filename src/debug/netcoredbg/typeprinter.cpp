@@ -771,9 +771,9 @@ HRESULT TypePrinter::GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeN
     ToRelease<IMetaDataImport2> pMD2;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport2, (LPVOID*) &pMD2));
 
-    hr = pMD->GetMethodProps(methodDef, &memTypeDef,
-                             szFunctionName, _countof(szFunctionName), &nameLen,
-                             &flags, &pbSigBlob, &ulSigBlob, &ulCodeRVA, &ulImplFlags);
+    IfFailRet(pMD->GetMethodProps(methodDef, &memTypeDef,
+                                  szFunctionName, _countof(szFunctionName), &nameLen,
+                                  &flags, &pbSigBlob, &ulSigBlob, &ulCodeRVA, &ulImplFlags));
 
     std::string funcName = to_utf8(szFunctionName/*, nameLen*/);
 

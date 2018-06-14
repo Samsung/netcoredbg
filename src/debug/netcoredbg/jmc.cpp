@@ -144,6 +144,9 @@ static HRESULT GetNonJMCMethodsForTypeDef(
                                      szFunctionName, _countof(szFunctionName), &nameLen,
                                      nullptr, nullptr, nullptr, nullptr, nullptr);
 
+        if (FAILED(Status))
+            continue;
+
         if ((g_operatorMethodNames.find(to_utf8(szFunctionName)) != g_operatorMethodNames.end())
             || HasAttribute(pMD, methodDef, g_nonUserCode)
             || HasAttribute(pMD, methodDef, g_stepThrough)

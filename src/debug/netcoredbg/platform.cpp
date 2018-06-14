@@ -204,14 +204,17 @@ public:
     typedef std::streambuf::traits_type traits_type;
 
     fdbuf(int fd);
-    ~fdbuf();
+    virtual ~fdbuf();
     void open(int fd);
     void close();
 
 protected:
-    int overflow(int c);
-    int underflow();
-    int sync();
+    int overflow(int c) override;
+    int underflow() override;
+    int sync() override;
+
+private:
+    int fdsync();
 };
 
 fdbuf::fdbuf(int fd)
@@ -220,7 +223,10 @@ fdbuf::fdbuf(int fd)
 }
 
 fdbuf::~fdbuf() {
-    this->close();
+    if (!(this->fd_ < 0)) {
+        this->fdsync();
+        ::close(this->fd_);
+    }
 }
 
 void fdbuf::open(int fd) {
@@ -248,6 +254,10 @@ int fdbuf::overflow(int c) {
 }
 
 int fdbuf::sync() {
+    return fdsync();
+}
+
+int fdbuf::fdsync() {
     if (this->pbase() != this->pptr()) {
         std::streamsize size(this->pptr() - this->pbase());
         std::streamsize done(::write(this->fd_, this->outbuf_, size));

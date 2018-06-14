@@ -322,9 +322,10 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
         IfFailRet(UnwindNativeFrames(pThread, GetSP(&ctxUnmanagedChain), pEndVal, nFrames));
     IfFailRet(StitchInternalFrames(pThread, iFrameCache, nFrames, cb));
 
-    nFrames.clear();
-    memset(&ctxUnmanagedChain, 0, sizeof(CONTEXT));
-    ctxUnmanagedChainValid = false;
+    // After stitching frames they should be cleared like this:
+    // nFrames.clear();
+    // memset(&ctxUnmanagedChain, 0, sizeof(CONTEXT));
+    // ctxUnmanagedChainValid = false;
 
     return S_OK;
 }
