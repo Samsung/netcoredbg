@@ -18,3 +18,5 @@ CMakeLists.txt.user
 *.o
 *.so
 *.a
+*.dll
+*.pdb
