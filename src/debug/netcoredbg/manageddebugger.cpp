@@ -422,6 +422,7 @@ public:
             m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
             m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(0));
             m_debugger.NotifyProcessExited();
+            m_debugger.m_protocol->EmitTerminatedEvent();
             return S_OK;
         }
 
@@ -718,13 +719,14 @@ HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
     }
 
     if (!terminate)
-        return DetachFromProcess();
+    {
+        HRESULT Status = DetachFromProcess();
+        if (SUCCEEDED(Status))
+            m_protocol->EmitTerminatedEvent();
+        return Status;
+    }
 
-    HRESULT Status = TerminateProcess();
-    if (SUCCEEDED(Status))
-        m_protocol->EmitTerminatedEvent();
-
-    return Status;
+    return TerminateProcess();
 }
 
 HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType stepType)
