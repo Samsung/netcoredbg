@@ -7,7 +7,7 @@ By default test runner looks for debugger binary in `./bin` directory and expect
 Test are run through dotnet CLI from the project root directory:
 ```
 cd tests
-dotnet test
+dotnet build && dotnet test runner
 ```
 
 It is possible to override path to the debugger binary through `PIPE` environment variable:
@@ -30,6 +30,8 @@ By default test binaries are discovered recursively under project `tests` direct
 ```
 
 Refer to `run_tests_sdb.sh` as an example of running tests on Tizen device.
+
+`TIMEOUT` environment variable overrides a default timeout (in seconds) for test's `Expect` command.
 
 ## Writing new tests
 
@@ -96,6 +98,8 @@ namespace ExampleTest
 
 * `string TestBin` is a full path to test dll file.
 
+* `int DefaultExpectTimeout` is a timeout for `Expect` operation, default value is 20 (seconds).
+
 * `ITestOutputHelper Output` is a log interface from Xunit, it contains methods like `WriteLine` etc.
 
 #### Methods
@@ -104,7 +108,7 @@ namespace ExampleTest
 
 * `void Send(string s)` sends command to the debugger process through stdin. New line is automatically appended to `s`.
 
-* `MICore.Results Expect(string s, int timeoutSec = 10)` reads debugger output line by line and checks if some line starts with `s`. If the expected line is found then it is parsed into MI responce object `MICore.Results`. In case of timeout or invalid MI responce an exception is thrown.
+* `MICore.Results Expect(string s, int timeoutSec = DefaultExpectTimeout)` reads debugger output line by line and checks if some line starts with `s`. If the expected line is found then it is parsed into MI responce object `MICore.Results`. In case of timeout or invalid MI responce an exception is thrown.
 For more info about MI responce object see https://github.com/Microsoft/MIEngine/blob/master/src/MICore/MIResults.cs
 
 * `int GetCurrentLine()` provides current line number.
