@@ -8,6 +8,8 @@ Source0:   netcoredbg.tar.gz
 Source1001: netcoredbg.manifest
 AutoReqProv: no
 
+ExcludeArch: aarch64
+
 BuildRequires: cmake
 BuildRequires: clang >= 3.8
 BuildRequires: clang-devel >= 3.8
