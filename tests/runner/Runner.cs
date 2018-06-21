@@ -35,11 +35,15 @@ namespace Runner
         [Fact]
         public void BreakpointAddRemoveTest() => ExecuteTest();
 
+        private const int DefaultTimeoutSec = 20;
+        private int expectTimeoutSec;
+
         public class ProcessInfo
         {
-            public ProcessInfo(string command, ITestOutputHelper output)
+            public ProcessInfo(string command, int defaultTimeoutSec, ITestOutputHelper output)
             {
                 this.output = output;
+                this.defaultTimeoutSec = defaultTimeoutSec;
                 process = new Process();
                 queue = new BufferBlock<string>();
 
@@ -106,6 +110,9 @@ namespace Runner
 
             public MICore.Results Expect(string text, int timeoutSec)
             {
+                if (timeoutSec < 0)
+                    timeoutSec = defaultTimeoutSec;
+
                 TimeSpan timeSpan = TimeSpan.FromSeconds(timeoutSec);
 
                 CancellationTokenSource ts = new CancellationTokenSource();
@@ -151,6 +158,7 @@ namespace Runner
 
             public Process process;
             private readonly ITestOutputHelper output;
+            private int defaultTimeoutSec { get; }
             public BufferBlock<string> queue;
         }
 
@@ -163,20 +171,23 @@ namespace Runner
                 Dictionary<string, int> lines,
                 string testSource,
                 string testBin,
+                int defaultExpectTimeout,
                 ITestOutputHelper output)
             {
                 this.processInfo = processInfo;
                 this.Lines = lines;
                 this.TestSource = testSource;
                 this.TestBin = testBin;
+                this.DefaultExpectTimeout = defaultExpectTimeout;
                 this.Output = output;
             }
             public int GetCurrentLine([CallerLineNumber] int line = 0) { return line; }
 
             public void Send(string s) => processInfo.Send(s);
-            public MICore.Results Expect(string s, int timeoutSec = 20) => processInfo.Expect(s, timeoutSec);
+            public MICore.Results Expect(string s, int timeoutSec = -1) => processInfo.Expect(s, timeoutSec);
             public readonly string TestSource;
             public readonly string TestBin;
+            public readonly int DefaultExpectTimeout;
             public readonly ITestOutputHelper Output;
         }
 
@@ -273,6 +284,10 @@ namespace Runner
                 this.debuggerCommand = Path.Combine(d.Parent.Parent.Parent.Parent.Parent.FullName, "bin", "netcoredbg");
             }
 
+            var timeout = Environment.GetEnvironmentVariable("TIMEOUT");
+            if (timeout == null || !Int32.TryParse(timeout, out expectTimeoutSec) || expectTimeoutSec < 0)
+                expectTimeoutSec = DefaultTimeoutSec;
+
             var testDir = Environment.GetEnvironmentVariable("TESTDIR");
 
             // Find all dlls
@@ -322,7 +337,7 @@ namespace Runner
             );
             script.Compile();
 
-            ProcessInfo processInfo = new ProcessInfo(debuggerCommand, output);
+            ProcessInfo processInfo = new ProcessInfo(debuggerCommand, expectTimeoutSec, output);
 
             try
             {
@@ -332,6 +347,7 @@ namespace Runner
                     lines,
                     data.srcFilePath,
                     data.dllPath,
+                    expectTimeoutSec,
                     output
                 );
 
