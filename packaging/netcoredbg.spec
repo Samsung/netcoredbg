@@ -23,10 +23,9 @@ BuildRequires: dotnet-build-tools
 Requires: coreclr
 
 # .NET Core Runtime
-%define dotnet_version  2.0.0
 %define dotnetdir       dotnet
 %define netshareddir    %{dotnetdir}/shared
-%define netcoreappdir   %{netshareddir}/Microsoft.NETCore.App/%{dotnet_version}
+%define netcoreapp      %{netshareddir}/Microsoft.NETCore.App/
 %define sdktoolsdir     /home/owner/share/tmp/sdk_tools
 %define install_prefix /usr/
 %define sdk_install_prefix /home/owner/share/tmp/sdk_tools/netcoredbg
@@ -65,17 +64,19 @@ export CFLAGS=$(echo $CFLAGS | sed -e 's/--target=i686/--target=i586/')
 export CXXFLAGS=$(echo $CXXFLAGS | sed -e 's/--target=i686/--target=i586/')
 %endif
 
+export NETCOREAPPDIR=$(find %{_datarootdir}/%{netcoreapp} -maxdepth 1 -type d -name '[0-9]*' -print | sort -n | tail -1)
+
 mkdir build
 cd build
 cmake ../netcoredbg \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
-    -DCLR_BIN_DIR=%{_datarootdir}/%{netcoreappdir} \
-    -DCLR_DIR=%{_datarootdir}/%{netcoreappdir} \
+    -DCLR_BIN_DIR=$NETCOREAPPDIR \
+    -DCLR_DIR=$NETCOREAPPDIR \
     -DCMAKE_INSTALL_PREFIX=%{install_prefix} \
     -DCMAKE_BUILD_TYPE=Release \
     -DCLR_CMAKE_LINUX_ID=tizen \
-    -DCORECLR_SET_RPATH=%{_datarootdir}/%{netcoreappdir} \
+    -DCORECLR_SET_RPATH=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF \
     -DDBGSHIM_INSTALL=OFF
 make %{?jobs:-j%jobs}
