@@ -26,6 +26,7 @@ Requires: coreclr
 %define dotnetdir       dotnet
 %define netshareddir    %{dotnetdir}/shared
 %define netcoreapp      %{netshareddir}/Microsoft.NETCore.App/
+%define netcoreappalias dotnet.tizen/netcoreapp
 %define sdktoolsdir     /home/owner/share/tmp/sdk_tools
 %define install_prefix /usr/
 %define sdk_install_prefix /home/owner/share/tmp/sdk_tools/netcoredbg
@@ -64,7 +65,7 @@ export CFLAGS=$(echo $CFLAGS | sed -e 's/--target=i686/--target=i586/')
 export CXXFLAGS=$(echo $CXXFLAGS | sed -e 's/--target=i686/--target=i586/')
 %endif
 
-export NETCOREAPPDIR=$(find %{_datarootdir}/%{netcoreapp} -maxdepth 1 -type d -name '[0-9]*' -print | sort -n | tail -1)
+export NETCOREAPPDIR=$(if [ -d %{_datarootdir}/%{netcoreappalias} ]; then echo %{_datarootdir}/%{netcoreappalias}; else find %{_datarootdir}/%{netcoreapp} -maxdepth 1 -type d -name '[0-9]*' -print | sort -n | tail -1; fi)
 
 mkdir build
 cd build
