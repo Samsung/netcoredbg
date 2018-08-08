@@ -6,9 +6,13 @@
 
 #include <unordered_set>
 #include <vector>
+#include <cstring>
+
+#include <sstream>
 
 #include "typeprinter.h"
 #include "valueprint.h"
+#include "valuewrite.h"
 #include "frames.h"
 
 
@@ -426,4 +430,151 @@ HRESULT Variables::Evaluate(
     AddVariableReference(variable, frameId, pResultValue, ValueIsVariable);
 
     return S_OK;
+}
+
+HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref)
+{
+    return m_variables.SetVariable(m_pProcess, name, value, ref);
+}
+
+HRESULT Variables::SetVariable(
+    ICorDebugProcess *pProcess,
+    const std::string &name,
+    const std::string &value,
+    uint32_t ref)
+{
+    if (pProcess == nullptr)
+        return E_FAIL;
+
+    auto it = m_variables.find(ref);
+    if (it == m_variables.end())
+        return E_FAIL;
+
+    VariableReference &varRef = it->second;
+    HRESULT Status;
+
+    StackFrame stackFrame(varRef.frameId);
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
+
+    if (varRef.IsScope())
+    {
+        IfFailRet(SetStackVariable(varRef.frameId, pThread, pFrame, name, value));
+    }
+    else
+    {
+        IfFailRet(SetChild(varRef, pThread, pFrame, name, value));
+    }
+
+    return S_OK;
+}
+
+HRESULT Variables::SetStackVariable(
+    uint64_t frameId,
+    ICorDebugThread *pThread,
+    ICorDebugFrame *pFrame,
+    const std::string &name,
+    const std::string &value)
+{
+    HRESULT Status;
+
+    // TODO Exception?
+
+    IfFailRet(m_evaluator.WalkStackVars(pFrame, [&](
+        ICorDebugILFrame *pILFrame,
+        ICorDebugValue *pValue,
+        const std::string &varName) -> HRESULT
+    {
+        if (varName == name)
+            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator));
+
+        return S_OK;
+    }));
+
+    return S_OK;
+}
+
+HRESULT Variables::SetChild(
+    VariableReference &ref,
+    ICorDebugThread *pThread,
+    ICorDebugFrame *pFrame,
+    const std::string &name,
+    const std::string &value)
+{
+    if (ref.IsScope())
+        return E_INVALIDARG;
+
+    if (!ref.value)
+        return S_OK;
+
+    HRESULT Status;
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    if (pFrame)
+        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    IfFailRet(m_evaluator.WalkMembers(ref.value, pThread, pILFrame, [&](
+        mdMethodDef mdGetter,
+        ICorDebugModule *pModule,
+        ICorDebugType *pType,
+        ICorDebugValue *pValue,
+        bool is_static,
+        const std::string &varName) -> HRESULT
+    {
+        if (varName == name)
+            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator));
+
+        return S_OK;
+    }));
+
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::SetVariableByExpression(
+    uint64_t frameId,
+    const std::string &expression,
+    const std::string &value)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue> pResultValue;
+
+    IfFailRet(m_variables.GetValueByExpression(m_pProcess, frameId, expression, &pResultValue));
+    return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId);
+}
+
+HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression,
+                                        ICorDebugValue **ppResult)
+{
+    if (pProcess == nullptr)
+        return E_FAIL;
+
+    HRESULT Status;
+
+    StackFrame stackFrame(frameId);
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
+
+    return m_evaluator.EvalExpr(pThread, pFrame, expression, ppResult);
+}
+
+HRESULT Variables::SetVariable(
+    ICorDebugProcess *pProcess,
+    ICorDebugValue *pVariable,
+    const std::string &value,
+    uint64_t frameId)
+{
+    HRESULT Status;
+
+    if (pProcess == nullptr)
+        return E_FAIL;
+
+    StackFrame stackFrame(frameId);
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+
+    return WriteValue(pVariable, value, pThread, m_evaluator);
 }

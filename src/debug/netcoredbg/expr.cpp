@@ -710,3 +710,16 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
 
     return S_OK;
 }
+
+HRESULT Evaluator::CreateString(ICorDebugThread *pThread, const std::string &value, ICorDebugValue **ppNewString)
+{
+    HRESULT Status;
+    auto value16t = to_utf16(value);
+
+    ToRelease<ICorDebugEval> pEval;
+    IfFailRet(pThread->CreateEval(&pEval));
+
+    IfFailRet(pEval->NewString(value16t.c_str()));
+
+    return WaitEvalResult(pThread, pEval, ppNewString);
+}

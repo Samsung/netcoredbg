@@ -36,6 +36,9 @@ namespace Runner
         [Fact]
         public void BreakpointAddRemoveTest() => ExecuteTest();
 
+        [Fact]
+        public void SetValuesTest() => ExecuteTest();
+
         private const int DefaultTimeoutSec = 20;
         private int expectTimeoutSec;
 

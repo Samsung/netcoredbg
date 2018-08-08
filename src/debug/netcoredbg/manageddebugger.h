@@ -164,6 +164,11 @@ public:
 
     HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb);
 
+    HRESULT CreateString(
+        ICorDebugThread *pThread,
+        const std::string &value,
+        ICorDebugValue **ppNewString);
+
     void Cleanup();
 };
 
@@ -312,6 +317,20 @@ class Variables
         unsigned int &numchild,
         bool static_members = false);
 
+    HRESULT SetStackVariable(
+        uint64_t frameId,
+        ICorDebugThread *pThread,
+        ICorDebugFrame *pFrame,
+        const std::string &name,
+        const std::string &value);
+
+    HRESULT SetChild(
+        VariableReference &ref,
+        ICorDebugThread *pThread,
+        ICorDebugFrame *pFrame,
+        const std::string &name,
+        const std::string &value);
+
 public:
 
     Variables(Evaluator &evaluator) : m_evaluator(evaluator), m_nextVariableReference(1) {}
@@ -326,9 +345,27 @@ public:
         int count,
         std::vector<Variable> &variables);
 
+    HRESULT SetVariable(
+        ICorDebugProcess *pProcess,
+        const std::string &name,
+        const std::string &value,
+        uint32_t ref);
+
+    HRESULT SetVariable(
+        ICorDebugProcess *pProcess,
+        ICorDebugValue *pVariable,
+        const std::string &value,
+        uint64_t frameId);
+
     HRESULT GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes);
 
     HRESULT Evaluate(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression, Variable &variable);
+
+    HRESULT GetValueByExpression(
+        ICorDebugProcess *pProcess,
+        uint64_t frameId,
+        const std::string &expression,
+        ICorDebugValue **ppResult);
 
     void Clear() { m_variables.clear(); m_nextVariableReference = 1; }
 };
@@ -435,4 +472,6 @@ public:
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;
     int GetNamedVariables(uint32_t variablesReference) override;
     HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable) override;
+    HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref) override;
+    HRESULT SetVariableByExpression(uint64_t frameId, const std::string &expression, const std::string &value) override;
 };

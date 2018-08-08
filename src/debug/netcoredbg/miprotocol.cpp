@@ -266,11 +266,34 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
     return S_OK;
 }
 
+bool MIProtocol::IsEditable(const std::string &type)
+{
+    if (type == "int"
+        || type == "bool"
+        || type == "char"
+        || type == "byte"
+        || type == "sbyte"
+        || type == "short"
+        || type == "ushort"
+        || type == "uint"
+        || type == "long"
+        || type == "ulong"
+        || type == "decimal"
+        || type == "string")
+        return true;
+
+    return false;
+}
+
 void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output)
 {
     std::ostringstream ss;
 
-    std::string editable = "noneditable";
+    std::string editable;
+    if (IsEditable(v.type))
+        editable = "editable";
+    else
+        editable = "noneditable";
 
     ss << "name=\"" << varobjName << "\",";
     if (print_values)
@@ -317,6 +340,17 @@ HRESULT MIProtocol::CreateVar(int threadId, int level, const std::string &varobj
 HRESULT MIProtocol::DeleteVar(const std::string &varobjName)
 {
     return m_vars.erase(varobjName) == 0 ? E_FAIL : S_OK;
+}
+
+HRESULT MIProtocol::FindVar(const std::string &varobjName, Variable &variable)
+{
+    auto it = m_vars.find(varobjName);
+    if (it == m_vars.end())
+        return E_FAIL;
+
+    variable = it->second;
+
+    return S_OK;
 }
 
 void MIProtocol::Cleanup()
@@ -796,8 +830,47 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         return S_OK;
     }},
-    { "var-show-attributes", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        output = "status=\"noneditable\"";
+    { "var-show-attributes", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        HRESULT Status;
+        Variable variable;
+        std::string varName = args.at(0);
+        std::string editable;
+
+        IfFailRet(FindVar(varName, variable));
+        if (IsEditable(variable.type))
+            editable = "editable";
+        else
+            editable = "noneditable";
+
+        output = "status=\"" + editable + "\"";
+        return S_OK;
+    }},
+    { "var-assign", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        HRESULT Status;
+
+        if (args.size() < 2)
+        {
+            output = "Command requires at least 2 arguments";
+            return E_FAIL;
+        }
+
+        std::string varName = args.at(0);
+        std::string varExpr = args.at(1);
+
+        if (varExpr.size() >= 2 && varExpr.front() == '"' && varExpr.back() == '"')
+            varExpr = varExpr.substr(1, varExpr.size() - 2);
+
+        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
+        int level = GetIntArg(args, "--frame", 0);
+        uint64_t frameId = StackFrame(threadId, level, "").id;
+
+        Variable variable;
+        IfFailRet(FindVar(varName, variable));
+
+        m_debugger->SetVariableByExpression(frameId, variable.evaluateName, varExpr);
+
+        output = "value=\"" + MIProtocol::EscapeMIValue(varExpr) + "\"";
+
         return S_OK;
     }},
     };
@@ -813,51 +886,75 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     return command_it->second(args, output);
 }
 
-static std::vector<std::string> TokenizeString(const std::string &str, const char *delimiters = " \t\n\r")
+class Tokenizer
 {
-    enum {
-        StateSpace,
-        StateToken,
-        StateQuotedToken,
-        StateEscape
-    } state = StateSpace;
+    std::string m_str;
+    std::string m_delimiters;
+    size_t m_next;
+public:
 
-    std::vector<std::string> result;
-
-    for (char c : str)
+    Tokenizer(const std::string &str, const std::string &delimiters = " \t\n\r")
+        : m_str(str), m_delimiters(delimiters), m_next(0)
     {
-        switch(state)
-        {
-            case StateSpace:
-                if (strchr(delimiters, c))
-                    continue;
-                result.emplace_back();
-                state = c == '"' ? StateQuotedToken : StateToken;
-                if (state != StateQuotedToken)
-                    result.back() +=c;
-                break;
-            case StateToken:
-                if (strchr(delimiters, c))
-                    state = StateSpace;
-                else
-                    result.back() += c;
-                break;
-            case StateQuotedToken:
-                if (c == '\\')
-                    state = StateEscape;
-                else if (c == '"')
-                    state = StateSpace;
-                else
-                    result.back() += c;
-                break;
-            case StateEscape:
-                result.back() += c;
-                state = StateQuotedToken;
-                break;
-        }
+        m_str.erase(m_str.find_last_not_of(m_delimiters) + 1);
     }
-    return result;
-}
+
+    bool Next(std::string &token)
+    {
+        token = "";
+
+        if (m_next >= m_str.size())
+            return false;
+
+        enum {
+            StateSpace,
+            StateToken,
+            StateQuotedToken,
+            StateEscape
+        } state = StateSpace;
+
+        for (; m_next < m_str.size(); m_next++)
+        {
+            char c = m_str.at(m_next);
+            switch(state)
+            {
+                case StateSpace:
+                    if (m_delimiters.find(c) != std::string::npos)
+                        continue;
+                    if (!token.empty())
+                        return true;
+                    state = c == '"' ? StateQuotedToken : StateToken;
+                    if (state != StateQuotedToken)
+                        token +=c;
+                    break;
+                case StateToken:
+                    if (m_delimiters.find(c) != std::string::npos)
+                        state = StateSpace;
+                    else
+                        token += c;
+                    break;
+                case StateQuotedToken:
+                    if (c == '\\')
+                        state = StateEscape;
+                    else if (c == '"')
+                        state = StateSpace;
+                    else
+                        token += c;
+                    break;
+                case StateEscape:
+                    token += c;
+                    state = StateQuotedToken;
+                    break;
+            }
+        }
+        return state != StateEscape || token.empty();
+    }
+
+    std::string Remain() const
+    {
+        return m_str.substr(m_next);
+    }
+};
 
 static bool ParseLine(const std::string &str,
                       std::string &token,
@@ -868,24 +965,32 @@ static bool ParseLine(const std::string &str,
     cmd.clear();
     args.clear();
 
-    std::vector<std::string> result = TokenizeString(str);
+    Tokenizer tokenizer(str);
+    std::string result;
 
-    if (result.empty())
+    if (!tokenizer.Next(result) || result.empty())
         return false;
 
-    auto cmd_it = result.begin();
-
-    std::size_t i = cmd_it->find_first_not_of("0123456789");
+    std::size_t i = result.find_first_not_of("0123456789");
     if (i == std::string::npos)
         return false;
 
-    if (cmd_it->at(i) != '-')
+    if (result.at(i) != '-')
         return false;
 
-    token = cmd_it->substr(0, i);
-    cmd = cmd_it->substr(i + 1);
-    result.erase(result.begin());
-    args = result;
+    token = result.substr(0, i);
+    cmd = result.substr(i + 1);
+
+    if (cmd == "var-assign")
+    {
+        tokenizer.Next(result);
+        args.push_back(result);
+        args.push_back(tokenizer.Remain());
+        return true;
+    }
+
+    while (tokenizer.Next(result))
+        args.push_back(result);
 
     return true;
 }

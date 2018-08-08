@@ -118,3 +118,11 @@ typedef ULONG64 CLRDATA_ADDRESS;
 #define TO_CDADDR(taddr) ((CLRDATA_ADDRESS)(LONG_PTR)(taddr))
 
 const int mdNameLen = 2048;
+
+#ifdef _MSC_VER
+#define PACK_BEGIN __pragma( pack(push, 1) )
+#define PACK_END __pragma( pack(pop) )
+#else
+#define PACK_BEGIN
+#define PACK_END __attribute__((packed))
+#endif

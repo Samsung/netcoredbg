@@ -41,7 +41,8 @@ set(netcoredbg_SRC
     frames.cpp
     jmc.cpp
     cputil.cpp
-    expr.cpp)
+    expr.cpp
+    valuewrite.cpp)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 

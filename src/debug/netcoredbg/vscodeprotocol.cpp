@@ -409,6 +409,18 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             return E_INVALIDARG;
 
         return m_debugger->Attach(processId);
+    } },
+    { "setVariable", [this](const json &arguments, json &body) {
+        HRESULT Status;
+
+        std::string name = arguments.at("name");
+        std::string value = arguments.at("value");
+        int ref = arguments.at("variablesReference");
+
+        IfFailRet(m_debugger->SetVariable(name, value, ref));
+        body["value"] = value;
+
+        return S_OK;
     } }
     };
 

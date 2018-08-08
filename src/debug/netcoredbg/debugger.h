@@ -57,6 +57,8 @@ public:
     virtual HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) = 0;
     virtual int GetNamedVariables(uint32_t variablesReference) = 0;
     virtual HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable) = 0;
+    virtual HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref) = 0;
+    virtual HRESULT SetVariableByExpression(uint64_t frameId, const std::string &name, const std::string &value) = 0;
 };
 
 class Protocol

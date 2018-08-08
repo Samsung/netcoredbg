@@ -32,6 +32,8 @@ class MIProtocol : public Protocol
     static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
 #endif
 
+    static bool IsEditable(const std::string &type);
+
 public:
 
     MIProtocol() : Protocol(), m_varCounter(0) {}
@@ -65,6 +67,7 @@ private:
     HRESULT PrintVariables(const std::vector<Variable> &variables, std::string &output);
     HRESULT CreateVar(int threadId, int level, const std::string &varobjName, const std::string &expression, std::string &output);
     HRESULT DeleteVar(const std::string &varobjName);
+    HRESULT FindVar(const std::string &varobjName, Variable &variable);
     void PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output);
     void PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output);
     HRESULT ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);

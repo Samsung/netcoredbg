@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExceptionTest", "ExceptionT
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BreakpointAddRemoveTest", "BreakpointAddRemoveTest\BreakpointAddRemoveTest.csproj", "{48403D8A-08D8-48FC-BF1B-F0239154AD85}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SetValuesTest", "SetValuesTest\SetValuesTest.csproj", "{9E6CD7E6-0B84-4088-9097-1839A14B49DB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -86,5 +88,17 @@ Global
 		{48403D8A-08D8-48FC-BF1B-F0239154AD85}.Release|x64.Build.0 = Release|x64
 		{48403D8A-08D8-48FC-BF1B-F0239154AD85}.Release|x86.ActiveCfg = Release|x86
 		{48403D8A-08D8-48FC-BF1B-F0239154AD85}.Release|x86.Build.0 = Release|x86
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Debug|x64.ActiveCfg = Debug|x64
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Debug|x64.Build.0 = Debug|x64
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Debug|x86.ActiveCfg = Debug|x86
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Debug|x86.Build.0 = Debug|x86
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Release|x64.ActiveCfg = Release|x64
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Release|x64.Build.0 = Release|x64
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Release|x86.ActiveCfg = Release|x86
+		{9E6CD7E6-0B84-4088-9097-1839A14B49DB}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 EndGlobal
