@@ -82,6 +82,9 @@ HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
     try
     {
         auto evalResult = RunEval(pThread, pEval).get();
+        if (!ppEvalResult)
+            return S_OK;
+
         if (!evalResult->GetPtr())
             return E_FAIL;
         *ppEvalResult = evalResult->Detach();
@@ -139,7 +142,8 @@ HRESULT Evaluator::EvalFunction(
 HRESULT Evaluator::EvalObjectNoConstructor(
     ICorDebugThread *pThread,
     ICorDebugType *pType,
-    ICorDebugValue **ppEvalResult)
+    ICorDebugValue **ppEvalResult,
+    bool suppressFinalize)
 {
     HRESULT Status = S_OK;
 
@@ -172,7 +176,27 @@ HRESULT Evaluator::EvalObjectNoConstructor(
         (ICorDebugType **)typeParams.data()
     ));
 
-    return WaitEvalResult(pThread, pEval, ppEvalResult);
+    IfFailRet(WaitEvalResult(pThread, pEval, ppEvalResult));
+
+    if (suppressFinalize)
+    {
+        if (!m_pSuppressFinalize)
+        {
+            ToRelease<ICorDebugModule> pModule;
+            IfFailRet(m_modules.GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+
+            static const WCHAR gcName[] = W("System.GC");
+            static const WCHAR suppressFinalizeMethodName[] = W("SuppressFinalize");
+            IfFailRet(FindFunction(pModule, gcName, suppressFinalizeMethodName, &m_pSuppressFinalize));
+        }
+
+        if (!m_pSuppressFinalize)
+            return E_FAIL;
+
+        IfFailRet(EvalFunction(pThread, m_pSuppressFinalize, nullptr, *ppEvalResult, nullptr /* void method */));
+    }
+
+    return S_OK;
 }
 
 static HRESULT FindMethod(ICorDebugType *pType, WCHAR *methodName, ICorDebugFunction **ppFunc)

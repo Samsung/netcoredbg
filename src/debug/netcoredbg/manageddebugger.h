@@ -34,6 +34,7 @@ private:
 
     ToRelease<ICorDebugFunction> m_pRunClassConstructor;
     ToRelease<ICorDebugFunction> m_pGetTypeHandle;
+    ToRelease<ICorDebugFunction> m_pSuppressFinalize;
 
     std::mutex m_evalMutex;
     std::unordered_map< DWORD, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > > m_evalResults;
@@ -64,7 +65,8 @@ private:
     HRESULT EvalObjectNoConstructor(
         ICorDebugThread *pThread,
         ICorDebugType *pType,
-        ICorDebugValue **ppEvalResult);
+        ICorDebugValue **ppEvalResult,
+        bool suppressFinalize = true);
 
     std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
         ICorDebugThread *pThread,
@@ -112,6 +114,13 @@ private:
         const std::vector<std::string> &params,
         ICorDebugThread *pThread,
         std::vector< ToRelease<ICorDebugType> > &types);
+
+
+    static HRESULT FindFunction(
+        ICorDebugModule *pModule,
+        const WCHAR *typeName,
+        const WCHAR *methodName,
+        ICorDebugFunction **ppFunction);
 
 public:
 

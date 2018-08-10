@@ -144,7 +144,7 @@ static HRESULT GetMethodToken(IMetaDataImport *pMD, mdTypeDef cl, const WCHAR *m
     return methodDef;
 }
 
-static HRESULT FindFunction(ICorDebugModule *pModule,
+HRESULT Evaluator::FindFunction(ICorDebugModule *pModule,
                             const WCHAR *typeName,
                             const WCHAR *methodName,
                             ICorDebugFunction **ppFunction)
