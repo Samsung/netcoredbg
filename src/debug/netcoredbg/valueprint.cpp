@@ -376,12 +376,13 @@ static HRESULT PrintDecimalValue(ICorDebugValue *pValue,
 
     if (len > scale)
     {
-        if (scale != 0) output.insert(len - scale, 1, '.');
+        if (scale != 0)
+            output.insert(len - scale, 1, '.');
     }
     else
     {
         output.insert(0, "0.");
-        output.insert(2, scale, '0');
+        output.insert(2, scale - len, '0');
     }
 
     if (is_negative)
