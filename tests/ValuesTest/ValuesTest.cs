@@ -22,6 +22,8 @@ namespace values
         static void Main(string[] args)
         {              // //@START@
             decimal d = 12345678901234567890123456m;
+            decimal long_zero_dec = 0.00000000000000000017M;
+            decimal short_zero_dec = 0.17M;
             int x = 1; // //@BREAK@
             /*
 r = Expect("*stopped");
@@ -34,12 +36,20 @@ Assert.Equal("12345678901234567890123456", r.FindString("value"));
 Assert.Equal("d", r.FindString("exp"));
 Assert.Equal("0", r.FindString("numchild"));
 Assert.Equal("decimal", r.FindString("type"));
+
+Send(String.Format("7-var-create 8 * \"{0}\"", "long_zero_dec"));
+r = Expect("7^done");
+Assert.Equal("0.00000000000000000017", r.FindString("value"));
+
+Send(String.Format("8-var-create 8 * \"{0}\"", "short_zero_dec"));
+r = Expect("8^done");
+Assert.Equal("0.17", r.FindString("value"));
              */
         }
     }
 }
 /*
-Send("7-exec-continue");
+Send("9-exec-continue");
 r = Expect("*stopped");
 Assert.Equal("exited", r.FindString("reason"));
 */
