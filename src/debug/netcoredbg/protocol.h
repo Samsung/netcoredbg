@@ -207,6 +207,7 @@ struct Scope
         name(name),
         variablesReference(variablesReference),
         namedVariables(namedVariables),
+        indexedVariables(0),
         expensive(false)
     {}
 };
