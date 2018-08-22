@@ -64,7 +64,7 @@ endif()
 add_executable(netcoredbg ${netcoredbg_SRC})
 
 if (WIN32)
-    target_link_libraries(netcoredbg corguids)
+    target_link_libraries(netcoredbg corguids wsock32 ws2_32)
 else()
     target_link_libraries(netcoredbg corguids dl pthread)
 endif()
