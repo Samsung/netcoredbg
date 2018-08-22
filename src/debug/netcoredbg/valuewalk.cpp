@@ -749,7 +749,7 @@ HRESULT Evaluator::HandleSpecialLocalVar(
 
     HRESULT Status;
 
-    if (!std::equal(captureName.begin(), captureName.end(), localName.begin()))
+    if (captureName != localName)
         return S_FALSE;
 
     // Substitute local value with its fields
@@ -761,10 +761,9 @@ HRESULT Evaluator::HandleSpecialLocalVar(
         bool is_static,
         const std::string &name)
     {
-        HRESULT Status;
         if (is_static)
             return S_OK;
-        if (std::equal(captureName.begin(), captureName.end(), name.begin()))
+        if (captureName == name)
             return S_OK;
         if (!locals.insert(name).second)
             return S_OK; // already in the list
@@ -794,10 +793,10 @@ HRESULT Evaluator::HandleSpecialThisParam(
 
     typeName = typeName.substr(start + 1);
 
-    if (!std::equal(hideClass.begin(), hideClass.end(), typeName.begin()))
+    if (hideClass != typeName)
         return S_FALSE;
 
-    if (!std::equal(displayClass.begin(), displayClass.end(), typeName.begin()))
+    if (displayClass != typeName)
         return S_OK; // just do not show this value
 
     // Substitute this with its fields
