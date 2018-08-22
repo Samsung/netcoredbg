@@ -65,13 +65,20 @@ private:
 
 public:
     static const int HiddenLine;
-    struct __attribute__((packed)) SequencePoint {
+
+#ifdef _MSC_VER
+#define PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop) )
+#else
+#define PACK( __Declaration__ ) __Declaration__ __attribute__((packed))
+#endif
+
+    PACK(struct SequencePoint {
         int32_t startLine;
         int32_t startColumn;
         int32_t endLine;
         int32_t endColumn;
         int32_t offset;
-    };
+    });
 
     SymbolReader()
     {

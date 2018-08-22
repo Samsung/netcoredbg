@@ -48,14 +48,12 @@ struct dbgshim_t
             return;
         std::string libName = exe.substr(0, dirSepIndex + 1);
 
-#ifdef FEATURE_PAL
-#if defined(__APPLE__)
+#ifdef WIN32
+        libName += "dbgshim.dll";
+#elif defined(__APPLE__)
         libName += "libdbgshim.dylib";
 #else
         libName += "libdbgshim.so";
-#endif
-#else
-        libName += "dbgshim.dll";
 #endif
 
         m_module = DLOpen(libName);

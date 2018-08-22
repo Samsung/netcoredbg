@@ -17,6 +17,7 @@
 static const char *SymbolReaderDllName = "SymbolReader";
 static const char *SymbolReaderClassName = "SOS.SymbolReader";
 
+#ifdef FEATURE_PAL
 // Suppress undefined reference
 // `_invalid_parameter(char16_t const*, char16_t const*, char16_t const*, unsigned int, unsigned long)':
 //      /coreclr/src/pal/inc/rt/safecrt.h:386: undefined reference to `RaiseException'
@@ -26,6 +27,7 @@ static void RaiseException(DWORD dwExceptionCode,
                CONST ULONG_PTR *lpArguments)
 {
 }
+#endif
 
 std::string SymbolReader::coreClrPath;
 LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
@@ -155,10 +157,17 @@ HRESULT SymbolReader::PrepareSymbolReader()
         return E_FAIL;
     }
 
+#ifdef FEATURE_PAL
     sysAllocStringLen = (SysAllocStringLen_t)DLSym(coreclrLib, "SysAllocStringLen");
     sysFreeString = (SysFreeString_t)DLSym(coreclrLib, "SysFreeString");
     sysStringLen = (SysStringLen_t)DLSym(coreclrLib, "SysStringLen");
     coTaskMemFree = (CoTaskMemFree_t)DLSym(coreclrLib, "CoTaskMemFree");
+#else
+    sysAllocStringLen = SysAllocStringLen;
+    sysFreeString = SysFreeString;
+    sysStringLen = SysStringLen;
+    coTaskMemFree = CoTaskMemFree;
+#endif
 
     if (sysAllocStringLen == nullptr)
     {
