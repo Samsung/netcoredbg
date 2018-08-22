@@ -91,9 +91,9 @@ void ManagedDebugger::NotifyProcessCreated()
 
 void ManagedDebugger::NotifyProcessExited()
 {
-    std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+    std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessUnattached;
-    m_processAttachedMutex.unlock();
+    lock.unlock();
     m_processAttachedCV.notify_one();
 }
 
@@ -1136,10 +1136,10 @@ HRESULT ManagedDebugger::CheckNoProcess()
 {
     if (m_pProcess || m_pDebug)
     {
-        std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+        std::unique_lock<std::mutex> lock(m_processAttachedMutex);
         if (m_processAttachedState == ProcessAttached)
             return E_FAIL; // Already attached
-        m_processAttachedMutex.unlock();
+        lock.unlock();
 
         TerminateProcess();
     }
