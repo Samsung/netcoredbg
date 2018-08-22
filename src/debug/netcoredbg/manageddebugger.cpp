@@ -1101,7 +1101,8 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     m_clrPath.clear();
 
     HANDLE resumeHandle; // Fake thread handle for the process resume
-    IfFailRet(g_dbgshim.CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(ss.str()).c_str()),
+
+    IfFailRet(g_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
                                      /* Suspend process */ TRUE,
                                      /* Current environment */ NULL,
                                      /* Current working directory */ NULL,
@@ -1216,7 +1217,7 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
     DWORD dwLength;
     IfFailRet(g_dbgshim.CreateVersionStringFromModule(
         pid,
-        to_utf16(m_clrPath).c_str(),
+        reinterpret_cast<LPCWSTR>(to_utf16(m_clrPath).c_str()),
         pBuffer,
         _countof(pBuffer),
         &dwLength));

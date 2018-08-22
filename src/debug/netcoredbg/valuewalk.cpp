@@ -130,7 +130,7 @@ HRESULT Evaluator::EvalFunction(
 
     IfFailRet(pEval2->CallParameterizedFunction(
         pFunc,
-        typeParams.size(),
+        static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data(),
         pArgValue ? 1 : 0,
         pArgValue ? &pArgValue : nullptr
@@ -172,7 +172,7 @@ HRESULT Evaluator::EvalObjectNoConstructor(
 
     IfFailRet(pEval2->NewParameterizedObjectNoConstructor(
         pClass,
-        typeParams.size(),
+        static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data()
     ));
 
@@ -290,7 +290,7 @@ HRESULT Evaluator::ObjectToString(
 
     IfFailRet(pEval2->CallParameterizedFunction(
         pFunc,
-        typeParams.size(),
+        static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data(),
         1,
         &pValue
@@ -320,7 +320,7 @@ HRESULT Evaluator::ObjectToString(
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)
 {
-    int i = ind.size() - 1;
+    int i = static_cast<int32_t>(ind.size()) - 1;
 
     while (i >= 0)
     {

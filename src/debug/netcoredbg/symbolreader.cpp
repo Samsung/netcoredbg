@@ -302,7 +302,7 @@ HRESULT SymbolReader::GetLineByILOffset(
     return E_FAIL;
 }
 
-HRESULT SymbolReader::GetStepRangesFromIP(ULONG64 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset)
+HRESULT SymbolReader::GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset)
 {
     HRESULT Status = S_OK;
 

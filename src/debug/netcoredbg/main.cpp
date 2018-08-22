@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
         else if (strstr(argv[i], "--server=") == argv[i])
         {
             char *err;
-            serverPort = strtoul(argv[i] + strlen("--server="), &err, 10);
+            serverPort = static_cast<uint16_t>(strtoul(argv[i] + strlen("--server="), &err, 10));
             if (*err != 0)
             {
                 fprintf(stderr, "Error: Missing process id\n");

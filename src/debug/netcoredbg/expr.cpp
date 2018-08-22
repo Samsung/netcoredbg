@@ -82,7 +82,7 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
             return E_FAIL;
 
         ToRelease<ICorDebugValue> pArrayElement;
-        return pArrayVal->GetElement(indices.size(), indices.data(), ppResultValue);
+        return pArrayVal->GetElement(static_cast<uint32_t>(indices.size()), indices.data(), ppResultValue);
     }
 
     IfFailRet(WalkMembers(pInputValue, pThread, pILFrame, [&](
@@ -130,7 +130,7 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
 static mdTypeDef GetTypeTokenForName(IMetaDataImport *pMD, mdTypeDef tkEnclosingClass, const std::string &name)
 {
     mdTypeDef typeToken = mdTypeDefNil;
-    pMD->FindTypeDefByName(to_utf16(name).c_str(), tkEnclosingClass, &typeToken);
+    pMD->FindTypeDefByName(reinterpret_cast<LPCWSTR>(to_utf16(name).c_str()), tkEnclosingClass, &typeToken);
     return typeToken;
 }
 
@@ -569,7 +569,7 @@ HRESULT Evaluator::FindType(
     CorElementType et = isValueType ? ELEMENT_TYPE_VALUETYPE : ELEMENT_TYPE_CLASS;
 
     ToRelease<ICorDebugType> pType;
-    IfFailRet(pClass2->GetParameterizedType(et, types.size(), (ICorDebugType **)types.data(), &pType));
+    IfFailRet(pClass2->GetParameterizedType(et, static_cast<uint32_t>(types.size()), (ICorDebugType **)types.data(), &pType));
 
     *ppType = pType.Detach();
     if (ppModule)
