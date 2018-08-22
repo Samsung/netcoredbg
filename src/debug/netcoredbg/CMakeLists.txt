@@ -39,6 +39,7 @@ set(netcoredbg_SRC
     vscodeprotocol.cpp
     frames.cpp
     jmc.cpp
+    cputil.cpp
     expr.cpp)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
