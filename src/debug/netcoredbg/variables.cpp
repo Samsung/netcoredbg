@@ -196,7 +196,6 @@ HRESULT Variables::GetVariables(
 
 void Variables::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind)
 {
-    HRESULT Status;
     unsigned int numChild = 0;
     GetNumChild(value, numChild, valueKind == ValueIsClass);
     if (numChild == 0)

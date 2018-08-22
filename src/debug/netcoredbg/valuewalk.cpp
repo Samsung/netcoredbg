@@ -89,7 +89,7 @@ HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
             return E_FAIL;
         *ppEvalResult = evalResult->Detach();
     }
-    catch (const std::future_error& e)
+    catch (const std::future_error&)
     {
        return E_FAIL;
     }
@@ -253,7 +253,6 @@ HRESULT Evaluator::ObjectToString(
 
     // Get ToString method token
 
-    mdTypeDef currentTypeDef;
     ToRelease<ICorDebugClass> pClass;
     ToRelease<ICorDebugValue2> pValue2;
     ToRelease<ICorDebugType> pType;
@@ -310,7 +309,7 @@ HRESULT Evaluator::ObjectToString(
             if (result->GetPtr())
                 PrintValue(result->GetPtr(), output, escape);
         }
-        catch (const std::future_error& e)
+        catch (const std::future_error&)
         {
         }
         cb(output);

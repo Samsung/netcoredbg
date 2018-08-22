@@ -757,7 +757,6 @@ HRESULT TypePrinter::GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeN
     mdTypeDef typeDef;
     IfFailRet(pClass->GetToken(&typeDef));
 
-    HRESULT hr;
     mdTypeDef memTypeDef;
     ULONG nameLen;
     DWORD flags;

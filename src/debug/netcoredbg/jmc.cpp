@@ -109,7 +109,6 @@ static bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const std::string &a
 
 static bool HasSourceLocation(SymbolReader *symbolReader, mdMethodDef methodDef)
 {
-    HRESULT Status;
     std::vector<SymbolReader::SequencePoint> points;
     if (FAILED(symbolReader->GetSequencePoints(methodDef, points)))
         return false;
@@ -135,7 +134,6 @@ static HRESULT GetNonJMCMethodsForTypeDef(
     mdMethodDef methodDef;
     while(SUCCEEDED(pMD->EnumMethods(&fEnum, typeDef, &methodDef, 1, &numMethods)) && numMethods != 0)
     {
-        HRESULT hr;
         mdTypeDef memTypeDef;
         ULONG nameLen;
         WCHAR szFunctionName[mdNameLen] = {0};
