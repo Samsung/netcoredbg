@@ -392,7 +392,10 @@ SOCKET IORedirectServerHandles::WaitForConnection(uint16_t port)
         return INVALID_SOCKET;
     }
 
-    m_sockFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    // Use WSASocket with 0 flags to create a socket without FILE_FLAG_OVERLAPPED.
+    // This enables the ReadFile function to block on reading from accepted socket.
+    DWORD dwFlags = 0;
+    m_sockFd = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, dwFlags);
     if (m_sockFd == INVALID_SOCKET)
     {
         WSACleanup();
