@@ -207,16 +207,19 @@ int fdbuf::underflow()
 }
 
 #ifdef FEATURE_PAL
-struct IORedirectServerHandles
+class IORedirectServerHandles
 {
     int m_sockFd;
+    int m_clientFd;
     int m_realStdInFd;
     int m_realStdOutFd;
     int m_realStdErrFd;
     int m_appStdIn;
 
+public:
     IORedirectServerHandles() :
         m_sockFd(-1),
+        m_clientFd(-1),
         m_realStdInFd(STDIN_FILENO),
         m_realStdOutFd(STDOUT_FILENO),
         m_realStdErrFd(STDERR_FILENO),
@@ -226,29 +229,39 @@ struct IORedirectServerHandles
 
     ~IORedirectServerHandles()
     {
-        if (m_sockFd != -1)
-            ::close(m_sockFd);
+        if (m_sockFd == -1)
+            return;
+        ::close(m_clientFd);
+        ::close(m_sockFd);
     }
 
-    bool IsConnected() const { return m_sockFd != -1; }
+    bool IsConnected() const { return m_clientFd != -1; }
 
     void RedirectOutput(
         std::function<void(std::string)> onStdOut,
         std::function<void(std::string)> onStdErr);
 
-    int WaitForConnection(uint16_t port);
+    bool WaitForConnection(uint16_t port);
+
+    int GetConnectionHandle() const { return m_clientFd; }
+    int GetStdIn() const { return m_realStdInFd; }
+    int GetStdOut() const { return m_realStdOutFd; }
+    int GetStdErr() const { return m_realStdErrFd; }
 };
 #else
-struct IORedirectServerHandles
+class IORedirectServerHandles
 {
     SOCKET m_sockFd;
+    SOCKET m_clientFd;
     HANDLE m_realStdInFd;
     HANDLE m_realStdOutFd;
     HANDLE m_realStdErrFd;
     HANDLE m_appStdIn;
 
+public:
     IORedirectServerHandles() :
         m_sockFd(INVALID_SOCKET),
+        m_clientFd(INVALID_SOCKET),
         m_realStdInFd(GetStdHandle(STD_INPUT_HANDLE)),
         m_realStdOutFd(GetStdHandle(STD_OUTPUT_HANDLE)),
         m_realStdErrFd(GetStdHandle(STD_ERROR_HANDLE)),
@@ -258,20 +271,26 @@ struct IORedirectServerHandles
 
     ~IORedirectServerHandles()
     {
-        if (m_sockFd != INVALID_SOCKET)
-        {
-            ::closesocket(m_sockFd);
-        }
+        if (m_sockFd == INVALID_SOCKET)
+            return;
+
+        ::closesocket(m_clientFd);
+        ::closesocket(m_sockFd);
         WSACleanup();
     }
 
-    bool IsConnected() const { return m_sockFd != INVALID_SOCKET; }
+    bool IsConnected() const { return m_clientFd != INVALID_SOCKET; }
 
     void RedirectOutput(
         std::function<void(std::string)> onStdOut,
         std::function<void(std::string)> onStdErr);
 
-    SOCKET WaitForConnection(uint16_t port);
+    bool WaitForConnection(uint16_t port);
+
+    HANDLE GetConnectionHandle() const { return (HANDLE)m_clientFd; }
+    HANDLE GetStdIn() const { return m_realStdInFd; }
+    HANDLE GetStdOut() const { return m_realStdOutFd; }
+    HANDLE GetStdErr() const { return m_realStdErrFd; }
 };
 #endif
 
@@ -377,7 +396,7 @@ void UnsetCoreCLREnv()
     _putenv("CORECLR_ENABLE_PROFILING=");
 }
 
-SOCKET IORedirectServerHandles::WaitForConnection(uint16_t port)
+bool IORedirectServerHandles::WaitForConnection(uint16_t port)
 {
     WSADATA wsa;
     SOCKET newsockfd;
@@ -385,30 +404,27 @@ SOCKET IORedirectServerHandles::WaitForConnection(uint16_t port)
     struct sockaddr_in serv_addr, cli_addr;
 
     if (port == 0)
-        return INVALID_SOCKET;
+        return false;
 
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-    {
-        return INVALID_SOCKET;
-    }
+        return false;
 
     // Use WSASocket with 0 flags to create a socket without FILE_FLAG_OVERLAPPED.
     // This enables the ReadFile function to block on reading from accepted socket.
     DWORD dwFlags = 0;
-    m_sockFd = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, dwFlags);
-    if (m_sockFd == INVALID_SOCKET)
+    SOCKET sockFd = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, dwFlags);
+    if (sockFd == INVALID_SOCKET)
     {
         WSACleanup();
-        return INVALID_SOCKET;
+        return false;
     }
 
     BOOL enable = 1;
-    if (setsockopt(m_sockFd, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof(BOOL)) == SOCKET_ERROR)
+    if (setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, (const char *)&enable, sizeof(BOOL)) == SOCKET_ERROR)
     {
-        ::closesocket(m_sockFd);
+        ::closesocket(sockFd);
         WSACleanup();
-        m_sockFd = INVALID_SOCKET;
-        return INVALID_SOCKET;
+        return false;
     }
     memset(&serv_addr, 0, sizeof(serv_addr));
 
@@ -416,15 +432,14 @@ SOCKET IORedirectServerHandles::WaitForConnection(uint16_t port)
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(port);
 
-    if (::bind(m_sockFd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == SOCKET_ERROR)
+    if (::bind(sockFd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) == SOCKET_ERROR)
     {
-        ::closesocket(m_sockFd);
+        ::closesocket(sockFd);
         WSACleanup();
-        m_sockFd = INVALID_SOCKET;
-        return INVALID_SOCKET;
+        return false;
     }
 
-    ::listen(m_sockFd, 5);
+    ::listen(sockFd, 5);
 
     CloseHandle(m_realStdInFd);
     CloseHandle(m_realStdOutFd);
@@ -434,16 +449,17 @@ SOCKET IORedirectServerHandles::WaitForConnection(uint16_t port)
     m_realStdErrFd = INVALID_HANDLE_VALUE;
 
     clilen = sizeof(cli_addr);
-    newsockfd = ::accept(m_sockFd, (struct sockaddr *) &cli_addr, &clilen);
+    newsockfd = ::accept(sockFd, (struct sockaddr *) &cli_addr, &clilen);
     if (newsockfd == INVALID_SOCKET)
     {
-        ::closesocket(m_sockFd);
+        ::closesocket(sockFd);
         WSACleanup();
-        m_sockFd = INVALID_SOCKET;
-        return INVALID_SOCKET;
+        return false;
     }
 
-    return newsockfd;
+    m_sockFd = sockFd;
+    m_clientFd = newsockfd;
+    return true;
 }
 
 #define BUFSIZE 4096
@@ -668,25 +684,24 @@ void UnsetCoreCLREnv()
     unsetenv("CORECLR_ENABLE_PROFILING");
 }
 
-int IORedirectServerHandles::WaitForConnection(uint16_t port)
+bool IORedirectServerHandles::WaitForConnection(uint16_t port)
 {
     int newsockfd;
     socklen_t clilen;
     struct sockaddr_in serv_addr, cli_addr;
 
     if (port == 0)
-        return -1;
+        return false;
 
-    m_sockFd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (m_sockFd < 0)
-        return -1;
+    int sockFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (sockFd < 0)
+        return false;
 
     int enable = 1;
-    if (setsockopt(m_sockFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+    if (setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
     {
-        ::close(m_sockFd);
-        m_sockFd = -1;
-        return -1;
+        ::close(sockFd);
+        return false;
     }
     memset(&serv_addr, 0, sizeof(serv_addr));
 
@@ -694,14 +709,13 @@ int IORedirectServerHandles::WaitForConnection(uint16_t port)
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(port);
 
-    if (::bind(m_sockFd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    if (::bind(sockFd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
-        ::close(m_sockFd);
-        m_sockFd = -1;
-        return -1;
+        ::close(sockFd);
+        return false;
     }
 
-    ::listen(m_sockFd, 5);
+    ::listen(sockFd, 5);
 
     // On Tizen, launch_app won't terminate until stdin, stdout and stderr are closed.
     // But Visual Studio initiates the connection only after launch_app termination,
@@ -714,15 +728,16 @@ int IORedirectServerHandles::WaitForConnection(uint16_t port)
     m_realStdErrFd = -1;
 
     clilen = sizeof(cli_addr);
-    newsockfd = ::accept(m_sockFd, (struct sockaddr *) &cli_addr, &clilen);
+    newsockfd = ::accept(sockFd, (struct sockaddr *) &cli_addr, &clilen);
     if (newsockfd < 0)
     {
-        ::close(m_sockFd);
-        m_sockFd = -1;
-        return -1;
+        ::close(sockFd);
+        return false;
     }
 
-    return newsockfd;
+    m_sockFd = sockFd;
+    m_clientFd = newsockfd;
+    return true;
 }
 
 static std::function<void()> GetFdReadFunction(int fd, std::function<void(std::string)> cb)
@@ -793,27 +808,17 @@ IORedirectServer::IORedirectServer(
 {
     m_handles->RedirectOutput(onStdOut, onStdErr);
 
-#ifdef WIN32
-    SOCKET s = m_handles->WaitForConnection(port);
-    if (s != INVALID_SOCKET)
+    if (m_handles->WaitForConnection(port))
     {
-        m_in = new fdbuf((HANDLE)s);
-        m_out = new fdbuf((HANDLE)s);
+        m_in = new fdbuf(m_handles->GetConnectionHandle());
+        m_out = new fdbuf(m_handles->GetConnectionHandle());
     }
-#else
-    int fd = m_handles->WaitForConnection(port);
-    if (fd != -1)
-    {
-        m_in = new fdbuf(fd);
-        m_out = new fdbuf(fd);
-    }
-#endif
     else
     {
-        m_in = new fdbuf(m_handles->m_realStdInFd);
-        m_out = new fdbuf(m_handles->m_realStdOutFd);
+        m_in = new fdbuf(m_handles->GetStdIn());
+        m_out = new fdbuf(m_handles->GetStdOut());
     }
-    m_err = new fdbuf(m_handles->m_realStdErrFd);
+    m_err = new fdbuf(m_handles->GetStdErr());
 
     m_prevIn = std::cin.rdbuf();
     m_prevOut = std::cout.rdbuf();

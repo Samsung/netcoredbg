@@ -19,7 +19,7 @@ void *DLOpen(const std::string &path);
 void *DLSym(void *handle, const std::string &name);
 void UnsetCoreCLREnv();
 
-struct IORedirectServerHandles;
+class IORedirectServerHandles;
 
 class IORedirectServer
 {
