@@ -302,7 +302,7 @@ HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::
         m_variables.emplace(std::make_pair(variablesReference, std::move(scopeReference)));
     }
 
-    scopes.emplace_back(variablesReference, "Locals", frameId);
+    scopes.emplace_back(variablesReference, "Locals", namedVariables);
 
     return S_OK;
 }
