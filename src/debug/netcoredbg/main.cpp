@@ -17,7 +17,7 @@ static const uint16_t DEFAULT_SERVER_PORT = 4711;
 static void print_help()
 {
     fprintf(stdout,
-        ".NET Core debugger for Linux/macOS.\n"
+        ".NET Core debugger\n"
         "\n"
         "Options:\n"
         "--attach <process-id>                 Attach the debugger to the specified process id.\n"
