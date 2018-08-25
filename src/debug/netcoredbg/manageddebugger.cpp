@@ -42,11 +42,16 @@ struct dbgshim_t
         CreateDebuggingInterfaceFromVersionEx(nullptr),
         m_module(nullptr)
     {
+#ifdef DBGSHIM_DIR
+        std::string libName(DBGSHIM_DIR);
+        libName += DIRECTORY_SEPARATOR_STR_A;
+#else
         std::string exe = GetExeAbsPath();
         std::size_t dirSepIndex = exe.rfind(DIRECTORY_SEPARATOR_STR_A);
         if (dirSepIndex == std::string::npos)
             return;
         std::string libName = exe.substr(0, dirSepIndex + 1);
+#endif
 
 #ifdef WIN32
         libName += "dbgshim.dll";

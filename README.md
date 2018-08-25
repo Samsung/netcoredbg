@@ -26,8 +26,6 @@ The debugger provides GDB/MI or VSCode debug adapter interface and allows to deb
 
    `-DCLR_BIN_DIR=$HOME/git/coreclr/bin/Product/Linux.x64.Debug` path to coreclr build result directory
 
-   `-DCORECLR_SET_RPATH=/usr/shared/dotnet/Microsoft.NETCore.App/2.0.0` path where `libdbgshim.so` is located
-
 4. The above commands create `./bin` directory with `netcoredbg` binary and additional libraries.
 
    Now running the debugger with `--help` option should look like this:

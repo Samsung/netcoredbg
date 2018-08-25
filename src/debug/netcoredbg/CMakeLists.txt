@@ -2,10 +2,11 @@
 
 set(CORECLR_PRODUCT ${CLR_DIR}/bin/Product/${CORECLR_PLATFORM})
 
-set(DBGSHIM_LOCATION ${CLR_BIN_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}dbgshim${CMAKE_SHARED_LIBRARY_SUFFIX})
-
-add_library(dbgshim SHARED IMPORTED)
-set_target_properties(dbgshim PROPERTIES IMPORTED_LOCATION ${DBGSHIM_LOCATION})
+if (NOT DBGSHIM_DIR STREQUAL "")
+    add_definitions(-DDBGSHIM_DIR="${DBGSHIM_DIR}")
+else()
+    set(DBGSHIM_LOCATION ${CLR_BIN_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}dbgshim${CMAKE_SHARED_LIBRARY_SUFFIX})
+endif()
 
 add_library(corguids STATIC IMPORTED)
 set_target_properties(corguids PROPERTIES IMPORTED_LOCATION ${CLR_BIN_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}corguids${CMAKE_STATIC_LIBRARY_SUFFIX})
@@ -44,19 +45,6 @@ set(netcoredbg_SRC
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-# Set the RPATH of debugger so that it can find dependencies without needing to set LD_LIBRARY_PATH
-# For more information: http://www.cmake.org/Wiki/CMake_RPATH_handling.
-if (CORECLR_SET_RPATH)
-  set(CMAKE_INSTALL_RPATH "${CORECLR_SET_RPATH}")
-else()
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-  if(CLR_CMAKE_PLATFORM_DARWIN)
-    set(CMAKE_INSTALL_RPATH "@loader_path")
-  else()
-    set(CMAKE_INSTALL_RPATH "\$ORIGIN")
-  endif()
-endif()
-
 if (NOT WIN32)
     add_definitions(-DPAL_STDCPP_COMPAT)
 endif()
@@ -70,8 +58,8 @@ else()
 endif()
 
 install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
-if (DBGSHIM_INSTALL)
-  install(FILES ${DBGSHIM_LOCATION} DESTINATION ${CMAKE_INSTALL_PREFIX})
+if (DBGSHIM_LOCATION)
+    install(FILES ${DBGSHIM_LOCATION} DESTINATION ${CMAKE_INSTALL_PREFIX})
 endif()
 
 # SymbolReader
