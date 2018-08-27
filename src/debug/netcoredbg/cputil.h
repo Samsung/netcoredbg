@@ -4,22 +4,13 @@
 #pragma once
 
 #include <string>
-#include <locale>
-#include <codecvt>
 
-static std::wstring_convert<std::codecvt_utf8_utf16<char16_t>,char16_t> convert;
+#ifdef _MSC_VER
+std::string to_utf8(const wchar_t *wstr);
+std::wstring to_utf16(const std::string &utf8);
+#else
+std::string to_utf8(const char16_t *wstr);
+std::u16string to_utf16(const std::string &utf8);
+#endif
 
-static inline std::string to_utf8(const char16_t *wstr)
-{
-    return convert.to_bytes(wstr);
-}
-
-static inline std::string to_utf8(char16_t wch)
-{
-    return convert.to_bytes(wch);
-}
-
-static inline std::u16string to_utf16(const std::string &utf8)
-{
-    return convert.from_bytes(utf8);
-}
+std::string to_utf8(char16_t wch);

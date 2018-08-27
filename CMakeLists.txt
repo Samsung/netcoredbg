@@ -4,12 +4,30 @@ project(netcoredbg)
 set(CLR_DIR "${CMAKE_SOURCE_DIR}/../coreclr" CACHE FILEPATH "Path to coreclr directory")
 set(CLR_BIN_DIR "" CACHE FILEPATH "Path to coreclr bin directory")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
-set(DBGSHIM_INSTALL ON CACHE BOOL "Install libdbgshim")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-null-conversion")
+set(DBGSHIM_DIR "" CACHE FILEPATH "Path to dbgshim library directory")
+
+if (WIN32)
+    set(CMAKE_CXX_STANDARD 11)
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-null-conversion")
+endif()
 
 function(clr_unknown_arch)
     message(FATAL_ERROR "Only AMD64, ARM64, ARM, ARMEL, I386 and WASM are supported")
 endfunction()
+
+if (WIN32)
+    # For windows it is expected that CLR_CMAKE_HOST_ARCH parameter is passed
+    # to CMAKE to determine build arch.
+    # If it is not passed, detect arch here.
+    if ("${CLR_CMAKE_HOST_ARCH}" STREQUAL "")
+        if ("${CMAKE_SIZEOF_VOID_P}" STREQUAL "4")
+            set(CLR_CMAKE_HOST_ARCH x86)
+        else()
+            set(CLR_CMAKE_HOST_ARCH x64)
+        endif()
+    endif()
+endif()
 
 # Follow order as in root CoreCLR CMakeLists.txt
 include(detectplatform.cmake) # from root
@@ -24,7 +42,9 @@ endif()
 set(CLR_CONFIGURATION_TYPES "Debug;Checked;Release;RelWithDebInfo" CACHE STRING "")
 
 if ("${CLR_BIN_DIR}" STREQUAL "")
-    if (CMAKE_SYSTEM_NAME STREQUAL Darwin)
+    if (WIN32)
+        set(TARGET_OS_NAME "Windows_NT")
+    elseif (CMAKE_SYSTEM_NAME STREQUAL Darwin)
         set(TARGET_OS_NAME "OSX")
     elseif (CMAKE_SYSTEM_NAME STREQUAL Linux)
         set(TARGET_OS_NAME "Linux")

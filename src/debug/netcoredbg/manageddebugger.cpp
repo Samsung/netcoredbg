@@ -8,6 +8,7 @@
 #include <mutex>
 #include <memory>
 #include <chrono>
+#include <stdexcept>
 
 #include "symbolreader.h"
 #include "cputil.h"
@@ -15,14 +16,75 @@
 #include "typeprinter.h"
 #include "frames.h"
 
-#ifndef __in
-#define __in
-#endif
-#ifndef __out
-#define __out
-#endif
-#include "dbgshim.h"
+// From dbgshim.h
+struct dbgshim_t
+{
+    typedef VOID (*PSTARTUP_CALLBACK)(IUnknown *pCordb, PVOID parameter, HRESULT hr);
+    HRESULT (*CreateProcessForLaunch)(LPWSTR lpCommandLine, BOOL bSuspendProcess, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory, PDWORD pProcessId, HANDLE *pResumeHandle);
+    HRESULT (*ResumeProcess)(HANDLE hResumeHandle);
+    HRESULT (*CloseResumeHandle)(HANDLE hResumeHandle);
+    HRESULT (*RegisterForRuntimeStartup)(DWORD dwProcessId, PSTARTUP_CALLBACK pfnCallback, PVOID parameter, PVOID *ppUnregisterToken);
+    HRESULT (*UnregisterForRuntimeStartup)(PVOID pUnregisterToken);
+    HRESULT (*EnumerateCLRs)(DWORD debuggeePID, HANDLE** ppHandleArrayOut, LPWSTR** ppStringArrayOut, DWORD* pdwArrayLengthOut);
+    HRESULT (*CloseCLREnumeration)(HANDLE* pHandleArray, LPWSTR* pStringArray, DWORD dwArrayLength);
+    HRESULT (*CreateVersionStringFromModule)(DWORD pidDebuggee, LPCWSTR szModuleName, LPWSTR pBuffer, DWORD cchBuffer, DWORD* pdwLength);
+    HRESULT (*CreateDebuggingInterfaceFromVersionEx)(int iDebuggerVersion, LPCWSTR szDebuggeeVersion, IUnknown ** ppCordb);
 
+    dbgshim_t() :
+        CreateProcessForLaunch(nullptr),
+        ResumeProcess(nullptr),
+        CloseResumeHandle(nullptr),
+        RegisterForRuntimeStartup(nullptr),
+        UnregisterForRuntimeStartup(nullptr),
+        EnumerateCLRs(nullptr),
+        CloseCLREnumeration(nullptr),
+        CreateVersionStringFromModule(nullptr),
+        CreateDebuggingInterfaceFromVersionEx(nullptr),
+        m_module(nullptr)
+    {
+#ifdef DBGSHIM_DIR
+        std::string libName(DBGSHIM_DIR);
+        libName += DIRECTORY_SEPARATOR_STR_A;
+#else
+        std::string exe = GetExeAbsPath();
+        std::size_t dirSepIndex = exe.rfind(DIRECTORY_SEPARATOR_STR_A);
+        if (dirSepIndex == std::string::npos)
+            return;
+        std::string libName = exe.substr(0, dirSepIndex + 1);
+#endif
+
+#ifdef WIN32
+        libName += "dbgshim.dll";
+#elif defined(__APPLE__)
+        libName += "libdbgshim.dylib";
+#else
+        libName += "libdbgshim.so";
+#endif
+
+        m_module = DLOpen(libName);
+        if (!m_module)
+            throw std::invalid_argument("Unable to load " + libName);
+
+        *((void**)&CreateProcessForLaunch) = DLSym(m_module, "CreateProcessForLaunch");
+        *((void**)&ResumeProcess) = DLSym(m_module, "ResumeProcess");
+        *((void**)&CloseResumeHandle) = DLSym(m_module, "CloseResumeHandle");
+        *((void**)&RegisterForRuntimeStartup) = DLSym(m_module, "RegisterForRuntimeStartup");
+        *((void**)&UnregisterForRuntimeStartup) = DLSym(m_module, "UnregisterForRuntimeStartup");
+        *((void**)&EnumerateCLRs) = DLSym(m_module, "EnumerateCLRs");
+        *((void**)&CloseCLREnumeration) = DLSym(m_module, "CloseCLREnumeration");
+        *((void**)&CreateVersionStringFromModule) = DLSym(m_module, "CreateVersionStringFromModule");
+        *((void**)&CreateDebuggingInterfaceFromVersionEx) = DLSym(m_module, "CreateDebuggingInterfaceFromVersionEx");
+    }
+    ~dbgshim_t()
+    {
+        // if (m_module)
+        //     DLClose(m_module);
+    }
+private:
+    void *m_module;
+};
+
+static dbgshim_t g_dbgshim;
 
 void ManagedDebugger::NotifyProcessCreated()
 {
@@ -32,9 +94,9 @@ void ManagedDebugger::NotifyProcessCreated()
 
 void ManagedDebugger::NotifyProcessExited()
 {
-    std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+    std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessUnattached;
-    m_processAttachedMutex.unlock();
+    lock.unlock();
     m_processAttachedCV.notify_one();
 }
 
@@ -873,7 +935,7 @@ VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT
 
     if (self->m_unregisterToken)
     {
-        UnregisterForRuntimeStartup(self->m_unregisterToken);
+        g_dbgshim.UnregisterForRuntimeStartup(self->m_unregisterToken);
         self->m_unregisterToken = nullptr;
     }
 
@@ -903,7 +965,7 @@ static HRESULT InternalEnumerateCLRs(
 
     while (numTries < tryCount)
     {
-        hr = EnumerateCLRs(pid, ppHandleArray, ppStringArray, pdwArrayLength);
+        hr = g_dbgshim.EnumerateCLRs(pid, ppHandleArray, ppStringArray, pdwArrayLength);
 
         // From dbgshim.cpp:
         // EnumerateCLRs uses the OS API CreateToolhelp32Snapshot which can return ERROR_BAD_LENGTH or
@@ -926,7 +988,7 @@ static HRESULT InternalEnumerateCLRs(
                     return hr;
                 }
                 // Clean up memory allocated in EnumerateCLRs since this path it succeeded
-                CloseCLREnumeration(*ppHandleArray, *ppStringArray, *pdwArrayLength);
+                g_dbgshim.CloseCLREnumeration(*ppHandleArray, *ppStringArray, *pdwArrayLength);
 
                 *ppHandleArray = NULL;
                 *ppStringArray = NULL;
@@ -965,7 +1027,7 @@ static std::string GetCLRPath(DWORD pid, int timeoutSec = 3)
 
     std::string result = to_utf8(pStringArray[0]);
 
-    CloseCLREnumeration(pHandleArray, pStringArray, dwArrayLength);
+    g_dbgshim.CloseCLREnumeration(pHandleArray, pStringArray, dwArrayLength);
 
     return result;
 }
@@ -1042,17 +1104,18 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     m_clrPath.clear();
 
     HANDLE resumeHandle; // Fake thread handle for the process resume
-    IfFailRet(CreateProcessForLaunch(const_cast<LPWSTR>(to_utf16(ss.str()).c_str()),
+
+    IfFailRet(g_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
                                      /* Suspend process */ TRUE,
                                      /* Current environment */ NULL,
                                      /* Current working directory */ NULL,
                                      &m_processId, &resumeHandle));
 
-    IfFailRet(RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
+    IfFailRet(g_dbgshim.RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 
     // Resume the process so that StartupCallback can run
-    IfFailRet(ResumeProcess(resumeHandle));
-    CloseResumeHandle(resumeHandle);
+    IfFailRet(g_dbgshim.ResumeProcess(resumeHandle));
+    g_dbgshim.CloseResumeHandle(resumeHandle);
 
     // Wait for ManagedDebugger::StartupCallback to complete
 
@@ -1065,7 +1128,7 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
     if (!m_startupCV.wait_until(lock, now + startupCallbackWaitTimeout, [this](){return m_startupReady;}))
     {
         // Timed out
-        UnregisterForRuntimeStartup(m_unregisterToken);
+        g_dbgshim.UnregisterForRuntimeStartup(m_unregisterToken);
         m_unregisterToken = nullptr;
         return E_FAIL;
     }
@@ -1077,10 +1140,10 @@ HRESULT ManagedDebugger::CheckNoProcess()
 {
     if (m_pProcess || m_pDebug)
     {
-        std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+        std::unique_lock<std::mutex> lock(m_processAttachedMutex);
         if (m_processAttachedState == ProcessAttached)
             return E_FAIL; // Already attached
-        m_processAttachedMutex.unlock();
+        lock.unlock();
 
         TerminateProcess();
     }
@@ -1155,16 +1218,16 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 
     WCHAR pBuffer[100];
     DWORD dwLength;
-    IfFailRet(CreateVersionStringFromModule(
+    IfFailRet(g_dbgshim.CreateVersionStringFromModule(
         pid,
-        to_utf16(m_clrPath).c_str(),
+        reinterpret_cast<LPCWSTR>(to_utf16(m_clrPath).c_str()),
         pBuffer,
         _countof(pBuffer),
         &dwLength));
 
     ToRelease<IUnknown> pCordb;
 
-    IfFailRet(CreateDebuggingInterfaceFromVersionEx(CorDebugVersion_4_0, pBuffer, &pCordb));
+    IfFailRet(g_dbgshim.CreateDebuggingInterfaceFromVersionEx(CorDebugVersion_4_0, pBuffer, &pCordb));
 
     m_unregisterToken = nullptr;
     return Startup(pCordb, pid);

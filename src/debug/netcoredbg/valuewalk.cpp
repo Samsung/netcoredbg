@@ -89,7 +89,7 @@ HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
             return E_FAIL;
         *ppEvalResult = evalResult->Detach();
     }
-    catch (const std::future_error& e)
+    catch (const std::future_error&)
     {
        return E_FAIL;
     }
@@ -130,7 +130,7 @@ HRESULT Evaluator::EvalFunction(
 
     IfFailRet(pEval2->CallParameterizedFunction(
         pFunc,
-        typeParams.size(),
+        static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data(),
         pArgValue ? 1 : 0,
         pArgValue ? &pArgValue : nullptr
@@ -172,7 +172,7 @@ HRESULT Evaluator::EvalObjectNoConstructor(
 
     IfFailRet(pEval2->NewParameterizedObjectNoConstructor(
         pClass,
-        typeParams.size(),
+        static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data()
     ));
 
@@ -253,7 +253,6 @@ HRESULT Evaluator::ObjectToString(
 
     // Get ToString method token
 
-    mdTypeDef currentTypeDef;
     ToRelease<ICorDebugClass> pClass;
     ToRelease<ICorDebugValue2> pValue2;
     ToRelease<ICorDebugType> pType;
@@ -291,7 +290,7 @@ HRESULT Evaluator::ObjectToString(
 
     IfFailRet(pEval2->CallParameterizedFunction(
         pFunc,
-        typeParams.size(),
+        static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data(),
         1,
         &pValue
@@ -310,7 +309,7 @@ HRESULT Evaluator::ObjectToString(
             if (result->GetPtr())
                 PrintValue(result->GetPtr(), output, escape);
         }
-        catch (const std::future_error& e)
+        catch (const std::future_error&)
         {
         }
         cb(output);
@@ -321,7 +320,7 @@ HRESULT Evaluator::ObjectToString(
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)
 {
-    int i = ind.size() - 1;
+    int i = static_cast<int32_t>(ind.size()) - 1;
 
     while (i >= 0)
     {
@@ -750,7 +749,7 @@ HRESULT Evaluator::HandleSpecialLocalVar(
 
     HRESULT Status;
 
-    if (!std::equal(captureName.begin(), captureName.end(), localName.begin()))
+    if (captureName != localName)
         return S_FALSE;
 
     // Substitute local value with its fields
@@ -762,10 +761,9 @@ HRESULT Evaluator::HandleSpecialLocalVar(
         bool is_static,
         const std::string &name)
     {
-        HRESULT Status;
         if (is_static)
             return S_OK;
-        if (std::equal(captureName.begin(), captureName.end(), name.begin()))
+        if (captureName == name)
             return S_OK;
         if (!locals.insert(name).second)
             return S_OK; // already in the list
@@ -795,10 +793,10 @@ HRESULT Evaluator::HandleSpecialThisParam(
 
     typeName = typeName.substr(start + 1);
 
-    if (!std::equal(hideClass.begin(), hideClass.end(), typeName.begin()))
+    if (hideClass != typeName)
         return S_FALSE;
 
-    if (!std::equal(displayClass.begin(), displayClass.end(), typeName.begin()))
+    if (displayClass != typeName)
         return S_OK; // just do not show this value
 
     // Substitute this with its fields

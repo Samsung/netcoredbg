@@ -8,7 +8,11 @@
 #include <vector>
 
 // For `HRESULT` definition
+#ifdef FEATURE_PAL
 #include <pal_mstypes.h>
+#else
+#include <windows.h>
+#endif
 
 #include "protocol.h"
 

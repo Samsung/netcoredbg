@@ -26,7 +26,11 @@ class MIProtocol : public Protocol
     static std::string EscapeMIValue(const std::string &str);
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
     static void PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output);
+#ifdef _MSC_VER
+    static void Printf(_Printf_format_string_ const char *fmt, ...);
+#else
     static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
+#endif
 
 public:
 

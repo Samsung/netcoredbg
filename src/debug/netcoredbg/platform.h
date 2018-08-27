@@ -7,6 +7,8 @@
 #include <iostream>
 #include <functional>
 
+#include <palclr.h>
+
 unsigned long OSPageSize();
 void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &tpaList);
 std::string GetExeAbsPath();
@@ -17,6 +19,8 @@ void *DLOpen(const std::string &path);
 void *DLSym(void *handle, const std::string &name);
 void UnsetCoreCLREnv();
 
+class IORedirectServerHandles;
+
 class IORedirectServer
 {
     std::streambuf *m_in;
@@ -25,21 +29,13 @@ class IORedirectServer
     std::streambuf *m_prevIn;
     std::streambuf *m_prevOut;
     std::streambuf *m_prevErr;
-    int m_sockfd;
-    int m_realStdInFd;
-    int m_realStdOutFd;
-    int m_realStdErrFd;
-    int m_appStdIn;
+    IORedirectServerHandles *m_handles;
 
-    void RedirectOutput(
-        std::function<void(std::string)> onStdOut,
-        std::function<void(std::string)> onStdErr);
-    int WaitForConnection(uint16_t port);
 public:
     IORedirectServer(
         uint16_t port,
         std::function<void(std::string)> onStdOut,
         std::function<void(std::string)> onStdErr);
     ~IORedirectServer();
-    operator bool() const { return m_sockfd != -1; }
+    operator bool() const;
 };

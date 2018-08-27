@@ -171,7 +171,7 @@ HRESULT Modules::GetFrameILAndSequencePoint(
 
     for (auto &p : points)
     {
-        if (p.offset < ilOffset)
+        if (p.offset < static_cast<int32_t>(ilOffset))
         {
             nearestPoint = p;
             continue;

@@ -5,6 +5,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
+using System.Runtime.InteropServices;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -51,9 +52,19 @@ namespace Runner
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardInput = true;
                 process.StartInfo.UseShellExecute = false;
-                process.StartInfo.Arguments = String.Format("-c \"{0}\"", command);
-                process.StartInfo.FileName = "/bin/sh";
-
+                if (TestRunner.IsWindows)
+                {
+                    // For older Windows versions:
+                    //   process.StartInfo.Arguments = String.Format("/C \"{0}\"", command);
+                    //   process.StartInfo.FileName = "cmd";
+                    process.StartInfo.Arguments = String.Format("-NoLogo -Command \"{0}\"", command);
+                    process.StartInfo.FileName = "powershell";
+                }
+                else
+                {
+                    process.StartInfo.Arguments = String.Format("-c \"{0}\"", command);
+                    process.StartInfo.FileName = "/bin/sh";
+                }
                 // enable raising events because Process does not raise events by default
                 process.EnableRaisingEvents = true;
                 // attach the event handler for OutputDataReceived before starting the process
@@ -263,6 +274,14 @@ namespace Runner
         private readonly ITestOutputHelper output;
         private string debuggerCommand;
         private Dictionary<string, TestData> allTests;
+
+        public static bool IsWindows {
+            get
+            {
+                return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+            }
+        }
+
         public TestRunner(ITestOutputHelper output)
         {
             this.output = output;
@@ -281,7 +300,7 @@ namespace Runner
             }
             else
             {
-                this.debuggerCommand = Path.Combine(d.Parent.Parent.Parent.Parent.Parent.FullName, "bin", "netcoredbg");
+                this.debuggerCommand = Path.Combine(d.Parent.Parent.Parent.Parent.Parent.FullName, "bin", "netcoredbg" + (IsWindows ? ".exe" : ""));
             }
 
             var timeout = Environment.GetEnvironmentVariable("TIMEOUT");

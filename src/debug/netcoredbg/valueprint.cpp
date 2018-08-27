@@ -133,7 +133,6 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, std:
         ULONG             nameLen = 0;
         DWORD             fieldAttr = 0;
         WCHAR             mdName[mdNameLen];
-        WCHAR             typeName[mdNameLen];
         UVCP_CONSTANT     pRawValue = NULL;
         ULONG             rawValueLength = 0;
         if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, mdNameLen, &nameLen, &fieldAttr, NULL, NULL, NULL, &pRawValue, &rawValueLength)))
@@ -415,7 +414,6 @@ static HRESULT PrintArrayValue(ICorDebugValue *pValue,
     std::string elementType;
     std::string arrayType;
 
-    CorElementType corElemType;
     ToRelease<ICorDebugType> pFirstParameter;
     ToRelease<ICorDebugValue2> pValue2;
     ToRelease<ICorDebugType> pType;

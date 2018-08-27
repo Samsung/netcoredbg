@@ -161,7 +161,6 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
                                 std::string &output,
                                 Debugger::StepType stepType)
 {
-    HRESULT Status;
     DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
     m_debugger->StepCommand(threadId, stepType);
     output = "^running";
@@ -177,8 +176,6 @@ static std::string AddrToString(uint64_t addr)
 
 HRESULT MIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 {
-    HRESULT Status;
-
     std::ostringstream ss;
 
     if (!stackFrame.source.IsNull())
@@ -249,8 +246,6 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
 {
     const bool printValues = true;
     const bool printTypes = false;
-
-    HRESULT Status;
 
     std::ostringstream ss;
     ss << "variables=[";
@@ -436,8 +431,6 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
 {
-    HRESULT Status;
-
     std::string frameLocation;
     PrintFrameLocation(event.frame, frameLocation);
 
@@ -586,7 +579,6 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     { "break-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         std::string filename;
         unsigned int linenum;
-        ULONG32 id;
         Breakpoint breakpoint;
         if (ParseBreakpoint(args, filename, linenum)
             && SUCCEEDED(SetBreakpoint(filename, linenum, breakpoint)))
@@ -671,8 +663,6 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         return S_OK;
     }},
     { "var-create", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        HRESULT Status;
-
         if (args.size() < 2)
         {
             output = "Command requires at least 2 arguments";
@@ -690,8 +680,6 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         return CreateVar(threadId, level, varName, varExpr, output);
     }},
     { "var-list-children", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
-        HRESULT Status;
-
         std::vector<std::string> args = args_orig;
 
         int print_values = 0;
