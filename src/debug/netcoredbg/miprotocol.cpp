@@ -867,9 +867,10 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         Variable variable;
         IfFailRet(FindVar(varName, variable));
 
-        m_debugger->SetVariableByExpression(frameId, variable.evaluateName, varExpr);
 
-        output = "value=\"" + MIProtocol::EscapeMIValue(varExpr) + "\"";
+        IfFailRet(m_debugger->SetVariableByExpression(frameId, variable.evaluateName, varExpr, output));
+
+        output = "value=\"" + MIProtocol::EscapeMIValue(output) + "\"";
 
         return S_OK;
     }},
@@ -1037,8 +1038,14 @@ void MIProtocol::CommandLoop()
         }
         else
         {
-            const char *sep = output.empty() ? "" : " ";
-            Printf("%s^error,msg=\"Error: 0x%08x%s%s\"\n", token.c_str(), hr, sep, output.c_str());
+            if (output.empty())
+            {
+                Printf("%s^error,msg=\"Error: 0x%08x\"\n", token.c_str(), hr);
+            }
+            else
+            {
+                Printf("%s^error,msg=\"%s\"\n", token.c_str(), MIProtocol::EscapeMIValue(output).c_str());
+            }
         }
     }
 

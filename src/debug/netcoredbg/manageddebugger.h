@@ -322,14 +322,16 @@ class Variables
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         const std::string &name,
-        const std::string &value);
+        const std::string &value,
+        std::string &output);
 
     HRESULT SetChild(
         VariableReference &ref,
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         const std::string &name,
-        const std::string &value);
+        const std::string &value,
+        std::string &output);
 
 public:
 
@@ -349,13 +351,15 @@ public:
         ICorDebugProcess *pProcess,
         const std::string &name,
         const std::string &value,
-        uint32_t ref);
+        uint32_t ref,
+        std::string &output);
 
     HRESULT SetVariable(
         ICorDebugProcess *pProcess,
         ICorDebugValue *pVariable,
         const std::string &value,
-        uint64_t frameId);
+        uint64_t frameId,
+        std::string &output);
 
     HRESULT GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes);
 
@@ -472,6 +476,6 @@ public:
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;
     int GetNamedVariables(uint32_t variablesReference) override;
     HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable) override;
-    HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref) override;
-    HRESULT SetVariableByExpression(uint64_t frameId, const std::string &expression, const std::string &value) override;
+    HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
+    HRESULT SetVariableByExpression(uint64_t frameId, const std::string &expression, const std::string &value, std::string &output) override;
 };

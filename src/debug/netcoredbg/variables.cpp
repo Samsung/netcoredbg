@@ -432,16 +432,17 @@ HRESULT Variables::Evaluate(
     return S_OK;
 }
 
-HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref)
+HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output)
 {
-    return m_variables.SetVariable(m_pProcess, name, value, ref);
+    return m_variables.SetVariable(m_pProcess, name, value, ref, output);
 }
 
 HRESULT Variables::SetVariable(
     ICorDebugProcess *pProcess,
     const std::string &name,
     const std::string &value,
-    uint32_t ref)
+    uint32_t ref,
+    std::string &output)
 {
     if (pProcess == nullptr)
         return E_FAIL;
@@ -461,11 +462,11 @@ HRESULT Variables::SetVariable(
 
     if (varRef.IsScope())
     {
-        IfFailRet(SetStackVariable(varRef.frameId, pThread, pFrame, name, value));
+        IfFailRet(SetStackVariable(varRef.frameId, pThread, pFrame, name, value, output));
     }
     else
     {
-        IfFailRet(SetChild(varRef, pThread, pFrame, name, value));
+        IfFailRet(SetChild(varRef, pThread, pFrame, name, value, output));
     }
 
     return S_OK;
@@ -476,7 +477,8 @@ HRESULT Variables::SetStackVariable(
     ICorDebugThread *pThread,
     ICorDebugFrame *pFrame,
     const std::string &name,
-    const std::string &value)
+    const std::string &value,
+    std::string &output)
 {
     HRESULT Status;
 
@@ -488,7 +490,11 @@ HRESULT Variables::SetStackVariable(
         const std::string &varName) -> HRESULT
     {
         if (varName == name)
-            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator));
+        {
+            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator, output));
+            bool escape = true;
+            PrintValue(pValue, output, escape);
+        }
 
         return S_OK;
     }));
@@ -501,7 +507,8 @@ HRESULT Variables::SetChild(
     ICorDebugThread *pThread,
     ICorDebugFrame *pFrame,
     const std::string &name,
-    const std::string &value)
+    const std::string &value,
+    std::string &output)
 {
     if (ref.IsScope())
         return E_INVALIDARG;
@@ -524,8 +531,11 @@ HRESULT Variables::SetChild(
         const std::string &varName) -> HRESULT
     {
         if (varName == name)
-            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator));
-
+        {
+            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator, output));
+            bool escape = true;
+            PrintValue(pValue, output, escape);
+        }
         return S_OK;
     }));
 
@@ -535,13 +545,14 @@ HRESULT Variables::SetChild(
 HRESULT ManagedDebugger::SetVariableByExpression(
     uint64_t frameId,
     const std::string &expression,
-    const std::string &value)
+    const std::string &value,
+    std::string &output)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pResultValue;
 
     IfFailRet(m_variables.GetValueByExpression(m_pProcess, frameId, expression, &pResultValue));
-    return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId);
+    return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
 }
 
 HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression,
@@ -565,7 +576,8 @@ HRESULT Variables::SetVariable(
     ICorDebugProcess *pProcess,
     ICorDebugValue *pVariable,
     const std::string &value,
-    uint64_t frameId)
+    uint64_t frameId,
+    std::string &output)
 {
     HRESULT Status;
 
@@ -576,5 +588,8 @@ HRESULT Variables::SetVariable(
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
 
-    return WriteValue(pVariable, value, pThread, m_evaluator);
+    IfFailRet(WriteValue(pVariable, value, pThread, m_evaluator, output));
+    bool escape = true;
+    PrintValue(pVariable, output, escape);
+    return S_OK;
 }

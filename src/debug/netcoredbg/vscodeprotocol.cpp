@@ -417,8 +417,15 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         std::string value = arguments.at("value");
         int ref = arguments.at("variablesReference");
 
-        IfFailRet(m_debugger->SetVariable(name, value, ref));
-        body["value"] = value;
+        std::string output;
+        Status = m_debugger->SetVariable(name, value, ref, output);
+        if (FAILED(Status))
+        {
+            body["message"] = output;
+            return Status;
+        }
+
+        body["value"] = output;
 
         return S_OK;
     } }
@@ -511,11 +518,17 @@ void VSCodeProtocol::CommandLoop()
             }
             else
             {
-                std::ostringstream ss;
-                ss << "Failed command '" << command << "' : "
-                   << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status;
+                if (body.find("message") == body.end())
+                {
+                    std::ostringstream ss;
+                    ss << "Failed command '" << command << "' : "
+                    << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status;
+                    response["message"] = ss.str();
+                }
+                else
+                    response["message"] = body["message"];
+
                 response["success"] = false;
-                response["message"] = ss.str();
             }
             std::string output = response.dump();
             std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;

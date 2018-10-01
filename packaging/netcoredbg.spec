@@ -20,6 +20,8 @@ BuildRequires: lldb-devel >= 3.8
 BuildRequires: libstdc++-devel
 BuildRequires: coreclr-devel
 BuildRequires: dotnet-build-tools
+BuildRequires: unzip
+BuildRequires: corefx-managed
 Requires: coreclr
 
 # .NET Core Runtime
@@ -54,6 +56,8 @@ This is a CoreCLR debugger for Tizen.
 gzip -dc %{SOURCE0} | tar -xvf -
 cd netcoredbg
 cp %{SOURCE1001} ..
+cp -v packaging/*.nupkg /nuget
+ls -la /nuget
 
 %build
 
@@ -89,6 +93,22 @@ cd build
 mkdir -p %{buildroot}%{sdk_install_prefix}
 mv %{buildroot}%{install_prefix}/netcoredbg %{buildroot}%{sdk_install_prefix}
 install -p -m 644 ../netcoredbg/src/debug/netcoredbg/bin/*/*/SymbolReader.dll %{buildroot}%{sdk_install_prefix}
+
+unzip /nuget/microsoft.codeanalysis.common.2.8.0.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.dll
+unzip /nuget/microsoft.codeanalysis.csharp.2.8.0.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.dll
+unzip /nuget/microsoft.codeanalysis.scripting.common.2.8.0.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.Scripting.dll
+unzip /nuget/microsoft.codeanalysis.csharp.scripting.2.8.0.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.Scripting.dll
+unzip /nuget/system.text.encoding.codepages.4.5.0.nupkg lib/netstandard1.3/System.Text.Encoding.CodePages.dll
+
+find lib/netstandard1.3/ -name '*.dll' -exec %{_datarootdir}/%{netcoreappalias}/crossgen -ReadyToRun /Platform_Assemblies_Paths %{_datarootdir}/%{netcoreappalias}:$PWD/lib/netstandard1.3 {} \;
+
+install -p -m 644 lib/netstandard1.3/*.dll %{buildroot}%{sdk_install_prefix}
+
+# install -p -m 644 lib/netstandard1.3/Microsoft.CodeAnalysis.dll %{buildroot}%{sdk_install_prefix}
+# install -p -m 644 lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.dll %{buildroot}%{sdk_install_prefix}
+# install -p -m 644 lib/netstandard1.3/Microsoft.CodeAnalysis.Scripting.dll %{buildroot}%{sdk_install_prefix}
+# install -p -m 644 lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.Scripting.dll %{buildroot}%{sdk_install_prefix}
+# install -p -m 644 lib/netstandard1.3/System.Text.Encoding.CodePages.dll %{buildroot}%{sdk_install_prefix}
 
 %files
 %manifest netcoredbg.manifest

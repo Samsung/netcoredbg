@@ -10,6 +10,10 @@ using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
+using Microsoft.CodeAnalysis.CSharp.Scripting;
+using Microsoft.CodeAnalysis.Scripting;
+using Microsoft.CodeAnalysis;
+using System.Reflection;
 
 namespace SOS
 {
@@ -986,6 +990,116 @@ namespace SOS
             {
                 return null;
             }
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct BlittableChar
+        {
+            public char Value;
+
+            public static explicit operator BlittableChar(char value)
+            {
+                return new BlittableChar { Value = value };
+            }
+
+            public static implicit operator char (BlittableChar value)
+            {
+                return value.Value;
+            }
+        }
+
+        public struct BlittableBoolean
+        {
+            private byte byteValue;
+
+            public bool Value
+            {
+                get { return Convert.ToBoolean(byteValue); }
+                set { byteValue = Convert.ToByte(value); }
+            }
+
+            public static explicit operator BlittableBoolean(bool value)
+            {
+                return new BlittableBoolean { Value = value };
+            }
+
+            public static implicit operator bool (BlittableBoolean value)
+            {
+                return value.Value;
+            }
+        }
+
+        internal static bool ParseExpression(string expr, string resultTypeName, out IntPtr data, out int size, out IntPtr errorText)
+        {
+            object value = null;
+            data = IntPtr.Zero;
+            size = 0;
+            errorText = IntPtr.Zero;
+            Type resultType = Type.GetType(resultTypeName);
+            if (resultType == null)
+            {
+                errorText = Marshal.StringToBSTR("Unknown type: " + resultTypeName);
+                return false;
+            }
+            try
+            {
+                MethodInfo genericMethod = null;
+
+                foreach (System.Reflection.MethodInfo m in typeof(CSharpScript).GetTypeInfo().GetMethods())
+                {
+                    if (m.Name == "EvaluateAsync" && m.ContainsGenericParameters)
+                    {
+                        genericMethod = m.MakeGenericMethod(resultType);
+                        break;
+                    }
+                }
+
+                dynamic v = genericMethod.Invoke(null, new object[]{expr, null, null, null, default(System.Threading.CancellationToken)});
+                value = v.Result;
+
+            }
+            catch (TargetInvocationException e)
+            {
+                if (e.InnerException is CompilationErrorException)
+                {
+                    errorText = Marshal.StringToBSTR(string.Join(Environment.NewLine, (e.InnerException as CompilationErrorException).Diagnostics));
+                }
+                else
+                {
+                    errorText = Marshal.StringToBSTR(e.InnerException.ToString());
+                }
+                return false;
+            }
+            if (value == null)
+            {
+                errorText = Marshal.StringToBSTR("Value can not be null");
+                return false;
+            }
+            if (value is string)
+            {
+                data = Marshal.StringToBSTR(value as string);
+            }
+            else if (value is char)
+            {
+                BlittableChar c = (BlittableChar)((char)value);
+                size = Marshal.SizeOf(c);
+                data = Marshal.AllocCoTaskMem(size);
+                Marshal.StructureToPtr(c, data, false);
+            }
+            else if (value is bool)
+            {
+                BlittableBoolean b = (BlittableBoolean)((bool)value);
+                size = Marshal.SizeOf(b);
+                data = Marshal.AllocCoTaskMem(size);
+                Marshal.StructureToPtr(b, data, false);
+            }
+            else
+            {
+                size = Marshal.SizeOf(value);
+                data = Marshal.AllocCoTaskMem(size);
+                Marshal.StructureToPtr(value, data, false);
+            }
+            return true;
         }
     }
 }

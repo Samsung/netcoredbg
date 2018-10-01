@@ -10,4 +10,9 @@
 #include <cordebug.h>
 #include "manageddebugger.h"
 
-HRESULT WriteValue(ICorDebugValue *pValue, const std::string &value, ICorDebugThread *pThread, Evaluator &evaluator);
+HRESULT WriteValue(
+    ICorDebugValue *pValue,
+    const std::string &value,
+    ICorDebugThread *pThread,
+    Evaluator &evaluator,
+    std::string &errorText);

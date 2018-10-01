@@ -7,6 +7,7 @@
 #include "symbolreader.h"
 
 #include <coreclrhost.h>
+#include <thread>
 
 #include "modules.h"
 #include "platform.h"
@@ -37,6 +38,7 @@ GetLocalVariableNameAndScope SymbolReader::getLocalVariableNameAndScopeDelegate;
 GetLineByILOffsetDelegate SymbolReader::getLineByILOffsetDelegate;
 GetStepRangesFromIPDelegate SymbolReader::getStepRangesFromIPDelegate;
 GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
+ParseExpressionDelegate SymbolReader::parseExpressionDelegate = nullptr;
 
 SysAllocStringLen_t SymbolReader::sysAllocStringLen;
 SysFreeString_t SymbolReader::sysFreeString;
@@ -257,8 +259,12 @@ HRESULT SymbolReader::PrepareSymbolReader()
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLineByILOffset", (void **)&getLineByILOffsetDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ParseExpression", (void **)&parseExpressionDelegate));
 
-    return Status;
+    // Warm up Roslyn
+    std::thread([](){ std::string data; std::string err; SymbolReader::ParseExpression("1", "System.Int32", data, err); }).detach();
+
+    return S_OK;
 }
 
 HRESULT SymbolReader::ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset)
@@ -394,4 +400,42 @@ HRESULT SymbolReader::GetSequencePoints(mdMethodDef methodToken, std::vector<Seq
     }
 
     return E_FAIL;
+}
+
+HRESULT SymbolReader::ParseExpression(
+    const std::string &expr,
+    const std::string &typeName,
+    std::string &data,
+    std::string &errorText)
+{
+    HRESULT Status;
+
+    PrepareSymbolReader();
+
+    if (parseExpressionDelegate == nullptr)
+        return E_FAIL;
+
+    BSTR werrorText;
+    PVOID dataPtr;
+    int dataSize = 0;
+    if (parseExpressionDelegate(expr.c_str(), typeName.c_str(), &dataPtr, &dataSize, &werrorText) == FALSE)
+    {
+        errorText = to_utf8(werrorText);
+        sysFreeString(werrorText);
+        return E_FAIL;
+    }
+
+    if (typeName == "System.String")
+    {
+        data = to_utf8((BSTR)dataPtr);
+        sysFreeString((BSTR)dataPtr);
+    }
+    else
+    {
+        data.resize(dataSize);
+        memmove(&data[0], dataPtr, dataSize);
+        coTaskMemFree(dataPtr);
+    }
+
+    return S_OK;
 }

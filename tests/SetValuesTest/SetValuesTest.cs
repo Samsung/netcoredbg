@@ -86,7 +86,7 @@ r = Expect("11^done");
 Send(String.Format("12-var-create - * \"{0}\"", "testChar"));
 r = Expect("12^done");
 string testChar = r.FindString("name");
-Send(String.Format("13-var-assign {0} \"a\"", testChar));
+Send(String.Format("13-var-assign {0} \"'a'\"", testChar));
 r = Expect("13^done");
 
 Send(String.Format("14-var-create - * \"{0}\"", "testByte"));
@@ -140,13 +140,13 @@ r = Expect("29^done");
 Send(String.Format("30-var-create - * \"{0}\"", "b"));
 r = Expect("30^done");
 string b = r.FindString("name");
-Send(String.Format("31-var-assign {0} \"-1.000000000000000000000017\"", b));
+Send(String.Format("31-var-assign {0} \"-1.000000000000000000000017M\"", b));
 r = Expect("31^done");
 
 Send(String.Format("32-var-create - * \"{0}\"", "testString"));
 r = Expect("32^done");
 string testString = r.FindString("name");
-Send(String.Format("33-var-assign {0} \"edited string\"", testString));
+Send(String.Format("33-var-assign {0} \"\"edited string\"\"", testString));
 r = Expect("33^done");
 Send("34-exec-continue");
 */

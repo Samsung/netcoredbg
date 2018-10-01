@@ -24,6 +24,7 @@ typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned i
 typedef  BOOL (*GetLineByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, ULONG *, BSTR*);
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
 typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
+typedef  BOOL (*ParseExpressionDelegate)(const char*, const char*, PVOID*, int *, BSTR*);
 
 typedef BSTR (*SysAllocStringLen_t)(const OLECHAR*, UINT);
 typedef void (*SysFreeString_t)(BSTR);
@@ -46,6 +47,7 @@ private:
     static GetLineByILOffsetDelegate getLineByILOffsetDelegate;
     static GetStepRangesFromIPDelegate getStepRangesFromIPDelegate;
     static GetSequencePointsDelegate getSequencePointsDelegate;
+    static ParseExpressionDelegate parseExpressionDelegate;
 
     static SysAllocStringLen_t sysAllocStringLen;
     static SysFreeString_t sysFreeString;
@@ -98,4 +100,5 @@ public:
     HRESULT ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset);
     HRESULT GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
     HRESULT GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points);
+    static HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
 };
