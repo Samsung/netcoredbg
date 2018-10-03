@@ -13,6 +13,7 @@
 #include "typeprinter.h"
 #include "torelease.h"
 #include "cputil.h"
+#include "symbolreader.h"
 
 
 // From strike.cpp
@@ -349,17 +350,13 @@ static std::string uint96_to_string(uint32_t *v)
     return result;
 }
 
-static HRESULT PrintDecimalValue(ICorDebugValue *pValue,
-                                 std::string &output)
+static void PrintDecimal(
+    unsigned int hi,
+    unsigned int mid,
+    unsigned int lo,
+    unsigned int flags,
+    std::string &output)
 {
-    HRESULT Status = S_OK;
-
-    unsigned int hi;
-    unsigned int mid;
-    unsigned int lo;
-    unsigned int flags;
-    IfFailRet(GetDecimalFields(pValue, hi, mid, lo, flags));
-
     uint32_t v[3] = { lo, mid, hi };
 
     output = uint96_to_string(v);
@@ -386,8 +383,37 @@ static HRESULT PrintDecimalValue(ICorDebugValue *pValue,
 
     if (is_negative)
         output.insert(0, 1, '-');
+}
+
+static HRESULT PrintDecimalValue(ICorDebugValue *pValue,
+                                 std::string &output)
+{
+    HRESULT Status = S_OK;
+
+    unsigned int hi;
+    unsigned int mid;
+    unsigned int lo;
+    unsigned int flags;
+
+    IfFailRet(GetDecimalFields(pValue, hi, mid, lo, flags));
+
+    PrintDecimal(hi, mid, lo, flags, output);
 
     return S_OK;
+}
+
+PACK_BEGIN struct Decimal {
+    uint32_t flags;
+    uint32_t hi;
+    uint32_t lo;
+    uint32_t mid;
+} PACK_END;
+
+static void PrintDecimalValue(const std::string &rawValue,
+                              std::string &output)
+{
+    const Decimal *d = reinterpret_cast<const Decimal*>(&rawValue[0]);
+    PrintDecimal(d->hi, d->mid, d->lo, d->flags, output);
 }
 
 static HRESULT PrintArrayValue(ICorDebugValue *pValue,
@@ -685,5 +711,268 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
     }
 
     output = ss.str();
+    return S_OK;
+}
+
+HRESULT PrintBasicValue(int typeId, const std::string &rawData, std::string &typeName, std::string &value)
+{
+    std::ostringstream ss;
+    switch(typeId)
+    {
+        case SymbolReader::TypeCorValue:
+            ss << "null";
+            typeName = "object";
+            break;
+        case SymbolReader::TypeObject:
+            ss << "null";
+            typeName = "object";
+            break;
+        case SymbolReader::TypeBoolean:
+            ss << (rawData[0] == 0 ? "false" : "true");
+            typeName = "bool";
+            break;
+        case SymbolReader::TypeByte:
+            ss << (unsigned int) *(unsigned char*) &(rawData[0]);
+            typeName = "byte";
+            break;
+        case SymbolReader::TypeSByte:
+            ss << (int) *(char*) &(rawData[0]);
+            typeName = "sbyte";
+            break;
+        case SymbolReader::TypeChar:
+            {
+                WCHAR wc = * (WCHAR *) &(rawData[0]);
+                std::string printableVal = to_utf8(wc);
+                EscapeString(printableVal, '\'');
+                ss << (unsigned int)wc << " '" << printableVal << "'";
+                typeName = "char";
+            }
+            break;
+        case SymbolReader::TypeDouble:
+            ss << std::setprecision(16) << *(double*) &(rawData[0]);
+            typeName = "double";
+            break;
+        case SymbolReader::TypeSingle:
+            ss << std::setprecision(8) << *(float*) &(rawData[0]);
+            typeName = "float";
+            break;
+        case SymbolReader::TypeInt32:
+            ss << *(int*) &(rawData[0]);
+            typeName = "int";
+            break;
+        case SymbolReader::TypeUInt32:
+            ss << *(unsigned int*) &(rawData[0]);
+            typeName = "uint";
+            break;
+        case SymbolReader::TypeInt64:
+            ss << *(__int64*) &(rawData[0]);
+            typeName = "long";
+            break;
+        case SymbolReader::TypeUInt64:
+            typeName = "ulong";
+            ss << *(unsigned __int64*) &(rawData[0]);
+            break;
+        case SymbolReader::TypeInt16:
+            ss << *(short*) &(rawData[0]);
+            typeName = "short";
+            break;
+        case SymbolReader::TypeUInt16:
+            ss << *(unsigned short*) &(rawData[0]);
+            typeName = "ushort";
+            break;
+        case SymbolReader::TypeIntPtr:
+            ss << "0x" << std::hex << *(intptr_t*) &(rawData[0]);
+            typeName = "IntPtr";
+            break;
+        case SymbolReader::TypeUIntPtr:
+            ss << "0x" << std::hex << *(intptr_t*) &(rawData[0]);
+            typeName = "UIntPtr";
+            break;
+        case SymbolReader::TypeDecimal:
+            PrintDecimalValue(rawData, value);
+            typeName = "decimal";
+            return S_OK;
+        case SymbolReader::TypeString:
+            {
+                std::string rawStr = rawData;
+                EscapeString(rawStr, '"');
+                ss << "\"" << rawStr << "\"";
+            }
+            break;
+    }
+    value = ss.str();
+    return S_OK;
+}
+
+HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
+{
+    HRESULT Status;
+
+    BOOL isNull = TRUE;
+    ToRelease<ICorDebugValue> pValue;
+    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+
+    if (isNull)
+    {
+        *data = nullptr;
+        *typeId = SymbolReader::TypeObject;
+        return S_OK;
+    }
+
+    ULONG32 cbSize;
+    IfFailRet(Status = pValue->GetSize(&cbSize));
+
+    ArrayHolder<BYTE> rgbValue = new (std::nothrow) BYTE[cbSize];
+    if (rgbValue == nullptr)
+    {
+        return E_OUTOFMEMORY;
+    }
+
+    memset(rgbValue.GetPtr(), 0, cbSize * sizeof(BYTE));
+
+    CorElementType corElemType;
+    IfFailRet(pValue->GetType(&corElemType));
+
+    if (corElemType == ELEMENT_TYPE_STRING)
+    {
+        std::string raw_str;
+        IfFailRet(PrintStringValue(pValue, raw_str));
+
+        if (!raw_str.empty())
+        {
+            *data = SymbolReader::AllocString(raw_str);
+            if (*data == nullptr)
+                return E_FAIL;
+        }
+        else
+        {
+            *data = nullptr;
+        }
+
+        *typeId = SymbolReader::TypeString;
+        return S_OK;
+    }
+
+    if (corElemType == ELEMENT_TYPE_SZARRAY || corElemType == ELEMENT_TYPE_ARRAY)
+    {
+        pInputValue->AddRef();
+        *data = pInputValue;
+        *typeId = SymbolReader::TypeCorValue;
+        return S_OK;
+    }
+
+    ToRelease<ICorDebugGenericValue> pGenericValue;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+    IfFailRet(pGenericValue->GetValue((LPVOID) &(rgbValue[0])));
+
+    if (IsEnum(pValue))
+    {
+        return E_FAIL;
+        // TODO: Support enums, return PrintEnumValue(pValue, rgbValue, output);
+    }
+
+    switch (corElemType)
+    {
+    default:
+        return E_FAIL;
+
+    case ELEMENT_TYPE_PTR:
+        *typeId = SymbolReader::TypeIntPtr;
+        break;
+
+    case ELEMENT_TYPE_FNPTR:
+        {
+            CORDB_ADDRESS addr = 0;
+            ToRelease<ICorDebugReferenceValue> pReferenceValue;
+            if(SUCCEEDED(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue)))
+                pReferenceValue->GetValue(&addr);
+            *(CORDB_ADDRESS*) &(rgbValue[0]) = addr;
+            *typeId = SymbolReader::TypeIntPtr;
+        }
+        break;
+
+    case ELEMENT_TYPE_VALUETYPE:
+    case ELEMENT_TYPE_CLASS:
+        {
+            std::string typeName;
+            TypePrinter::GetTypeOfValue(pValue, typeName);
+            if (typeName != "decimal")
+            {
+                pInputValue->AddRef();
+                *data = pInputValue;
+                *typeId = SymbolReader::TypeCorValue;
+                return S_OK;
+            }
+            *typeId = SymbolReader::TypeDecimal;
+        }
+        break;
+
+    case ELEMENT_TYPE_BOOLEAN:
+        *typeId = SymbolReader::TypeBoolean;
+        break;
+
+    case ELEMENT_TYPE_CHAR:
+        *typeId = SymbolReader::TypeChar;
+        break;
+
+    case ELEMENT_TYPE_I1:
+        *typeId = SymbolReader::TypeSByte;
+        break;
+
+    case ELEMENT_TYPE_U1:
+        *typeId = SymbolReader::TypeByte;
+        break;
+
+    case ELEMENT_TYPE_I2:
+        *typeId = SymbolReader::TypeInt16;
+        break;
+
+    case ELEMENT_TYPE_U2:
+        *typeId = SymbolReader::TypeUInt16;
+        break;
+
+    case ELEMENT_TYPE_I:
+        *typeId = SymbolReader::TypeIntPtr;
+        break;
+
+    case ELEMENT_TYPE_U:
+        *typeId = SymbolReader::TypeUIntPtr;
+        break;
+
+    case ELEMENT_TYPE_I4:
+        *typeId = SymbolReader::TypeInt32;
+        break;
+
+    case ELEMENT_TYPE_U4:
+        *typeId = SymbolReader::TypeUInt32;
+        break;
+
+    case ELEMENT_TYPE_I8:
+        *typeId = SymbolReader::TypeInt64;
+        break;
+
+    case ELEMENT_TYPE_U8:
+        *typeId = SymbolReader::TypeUInt64;
+        break;
+
+    case ELEMENT_TYPE_R4:
+        *typeId = SymbolReader::TypeSingle;
+        break;
+
+    case ELEMENT_TYPE_R8:
+        *typeId = SymbolReader::TypeDouble;
+        break;
+
+    case ELEMENT_TYPE_OBJECT:
+        return E_FAIL;
+
+    }
+
+    *data = SymbolReader::AllocBytes(cbSize);
+    if (*data == nullptr)
+    {
+        return E_FAIL;
+    }
+    memmove(*data, &(rgbValue[0]), cbSize);
     return S_OK;
 }

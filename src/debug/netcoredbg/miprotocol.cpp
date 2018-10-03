@@ -329,7 +329,7 @@ HRESULT MIProtocol::CreateVar(int threadId, int level, const std::string &varobj
     uint64_t frameId = StackFrame(threadId, level, "").id;
 
     Variable variable;
-    IfFailRet(m_debugger->Evaluate(frameId, expression, variable));
+    IfFailRet(m_debugger->Evaluate(frameId, expression, variable, output));
 
     int print_values = 1;
     PrintNewVar(varobjName, variable, threadId, print_values, output);

@@ -39,6 +39,9 @@ namespace Runner
         [Fact]
         public void SetValuesTest() => ExecuteTest();
 
+        [Fact]
+        public void ExpressionsTest() => ExecuteTest();
+
         private const int DefaultTimeoutSec = 20;
         private int expectTimeoutSec;
 

@@ -7,13 +7,14 @@
 #include <unordered_set>
 #include <vector>
 #include <cstring>
-
+#include <algorithm>
 #include <sstream>
 
 #include "typeprinter.h"
 #include "valueprint.h"
 #include "valuewrite.h"
 #include "frames.h"
+#include "symbolreader.h"
 
 
 HRESULT Variables::GetNumChild(
@@ -397,16 +398,17 @@ HRESULT Variables::GetChildren(
     return S_OK;
 }
 
-HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable)
+HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output)
 {
-    return m_variables.Evaluate(m_pProcess, frameId, expression, variable);
+    return m_variables.Evaluate(m_pProcess, frameId, expression, variable, output);
 }
 
 HRESULT Variables::Evaluate(
     ICorDebugProcess *pProcess,
     uint64_t frameId,
     const std::string &expression,
-    Variable &variable)
+    Variable &variable,
+    std::string &output)
 {
     if (pProcess == nullptr)
         return E_FAIL;
@@ -418,15 +420,104 @@ HRESULT Variables::Evaluate(
     IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
+    ToRelease<ICorDebugILFrame> pILFrame;
+    if (pFrame)
+        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
     ToRelease<ICorDebugValue> pResultValue;
-    IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue));
+    int typeId;
+    std::vector< ToRelease<ICorDebugValue> > marshalledValues;
+
+    IfFailRet(SymbolReader::EvalExpression(
+        expression, output, &typeId, &pResultValue,
+        [&](void *corValue, const std::string &name, int *typeId, void **data) -> bool
+    {
+        ToRelease<ICorDebugValue> pThisValue;
+
+        if (!corValue) // Scope
+        {
+            bool found = false;
+            if (FAILED(m_evaluator.WalkStackVars(pFrame, [&](
+                ICorDebugILFrame *pILFrame,
+                ICorDebugValue *pValue,
+                const std::string &varName) -> HRESULT
+            {
+                if (!found && varName == "this")
+                {
+                    pThisValue = pValue;
+                    pValue->AddRef();
+                }
+                if (!found && varName == name)
+                {
+                    found = true;
+                    IfFailRet(MarshalValue(pValue, typeId, data));
+                    if (*typeId < 0)
+                    {
+                        marshalledValues.emplace_back(static_cast<ICorDebugValue*>(*data)); // FIXME: no exception safety
+                    }
+                }
+
+                return S_OK;
+            })))
+            {
+                return false;
+            }
+            if (found)
+                return true;
+            if (!pThisValue)
+                return false;
+
+            corValue = pThisValue;
+        }
+
+        std::vector<Member> members;
+
+        const bool fetchOnlyStatic = false;
+        bool hasStaticMembers = false;
+
+        ICorDebugValue *pValue = static_cast<ICorDebugValue*>(corValue);
+
+        if (FAILED(FetchFieldsAndProperties(pValue,
+                                        pThread,
+                                        pILFrame,
+                                        members,
+                                        fetchOnlyStatic,
+                                        hasStaticMembers,
+                                        0,
+                                        INT_MAX)))
+            return false;
+
+        FixupInheritedFieldNames(members);
+
+        auto memberIt = std::find_if(members.begin(), members.end(), [&name](const Member &m){ return m.name == name; });
+        if (memberIt == members.end())
+            return false;
+
+        if (!memberIt->value)
+            return false;
+
+        if (FAILED(MarshalValue(memberIt->value, typeId, data)))
+        {
+            return false;
+        }
+        if (*typeId < 0)
+            marshalledValues.emplace_back(static_cast<ICorDebugValue*>(*data));
+
+        return true;
+    }));
 
     variable.evaluateName = expression;
 
-    bool escape = true;
-    PrintValue(pResultValue, variable.value, escape);
-    TypePrinter::GetTypeOfValue(pResultValue, variable.type);
+    if (pResultValue)
+    {
+        const bool escape = true;
+        PrintValue(pResultValue, variable.value, escape);
+        TypePrinter::GetTypeOfValue(pResultValue, variable.type);
+    }
+    else
+    {
+        PrintBasicValue(typeId, output, variable.type, variable.value);
+    }
     AddVariableReference(variable, frameId, pResultValue, ValueIsVariable);
 
     return S_OK;

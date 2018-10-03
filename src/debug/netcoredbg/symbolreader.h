@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 
 
 /// FIXME: Definition of `TADDR`
@@ -25,10 +26,14 @@ typedef  BOOL (*GetLineByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, ULONG *,
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
 typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
 typedef  BOOL (*ParseExpressionDelegate)(const char*, const char*, PVOID*, int *, BSTR*);
+typedef  BOOL (*EvalExpressionDelegate)(const char*, PVOID, BSTR*, int*, int*, PVOID*);
+typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const char*, int *, PVOID*);
+typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
 
 typedef BSTR (*SysAllocStringLen_t)(const OLECHAR*, UINT);
 typedef void (*SysFreeString_t)(BSTR);
 typedef UINT (*SysStringLen_t)(BSTR);
+typedef LPVOID (*CoTaskMemAlloc_t)(size_t);
 typedef void (*CoTaskMemFree_t)(LPVOID);
 
 BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
@@ -48,10 +53,13 @@ private:
     static GetStepRangesFromIPDelegate getStepRangesFromIPDelegate;
     static GetSequencePointsDelegate getSequencePointsDelegate;
     static ParseExpressionDelegate parseExpressionDelegate;
+    static EvalExpressionDelegate evalExpressionDelegate;
+    static RegisterGetChildDelegate registerGetChildDelegate;
 
     static SysAllocStringLen_t sysAllocStringLen;
     static SysFreeString_t sysFreeString;
     static SysStringLen_t sysStringLen;
+    static CoTaskMemAlloc_t coTaskMemAlloc;
     static CoTaskMemFree_t coTaskMemFree;
 
     static HRESULT PrepareSymbolReader();
@@ -76,6 +84,28 @@ public:
         int32_t offset;
     } PACK_END;
 
+    // Keep in sync with string[] basicTypes in SymbolReader.cs
+    enum BasicTypes {
+        TypeCorValue = -1,
+        TypeObject = 0, //     "System.Object",
+        TypeBoolean, //        "System.Boolean",
+        TypeByte,    //        "System.Byte",
+        TypeSByte,   //        "System.SByte",
+        TypeChar,    //        "System.Char",
+        TypeDouble,  //        "System.Double",
+        TypeSingle,  //        "System.Single",
+        TypeInt32,   //        "System.Int32",
+        TypeUInt32,  //        "System.UInt32",
+        TypeInt64,   //        "System.Int64",
+        TypeUInt64,  //        "System.UInt64",
+        TypeInt16,   //        "System.Int16",
+        TypeUInt16,  //        "System.UInt16",
+        TypeIntPtr,  //        "System.IntPtr",
+        TypeUIntPtr, //        "System.UIntPtr",
+        TypeDecimal, //        "System.Decimal",
+        TypeString,  //        "System.String"
+    };
+
     SymbolReader()
     {
         m_symbolReaderHandle = 0;
@@ -94,6 +124,8 @@ public:
 
     static void SetCoreCLRPath(const std::string &path) { coreClrPath = path; }
 
+    typedef std::function<bool(PVOID, const std::string&, int *, PVOID*)> GetChildCallback;
+
     HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule);
     HRESULT GetLineByILOffset(mdMethodDef MethodToken, ULONG64 IlOffset, ULONG *pLinenum, WCHAR* pwszFileName, ULONG cchFileName);
     HRESULT GetNamedLocalVariableAndScope(ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex, WCHAR* paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32* pIlStart, ULONG32* pIlEnd);
@@ -101,4 +133,7 @@ public:
     HRESULT GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
     HRESULT GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points);
     static HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
+    static HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
+    static PVOID AllocBytes(size_t size);
+    static PVOID AllocString(const std::string &str);
 };

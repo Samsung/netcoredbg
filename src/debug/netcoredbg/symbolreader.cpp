@@ -39,10 +39,13 @@ GetLineByILOffsetDelegate SymbolReader::getLineByILOffsetDelegate;
 GetStepRangesFromIPDelegate SymbolReader::getStepRangesFromIPDelegate;
 GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
 ParseExpressionDelegate SymbolReader::parseExpressionDelegate = nullptr;
+EvalExpressionDelegate SymbolReader::evalExpressionDelegate = nullptr;
+RegisterGetChildDelegate SymbolReader::registerGetChildDelegate = nullptr;
 
 SysAllocStringLen_t SymbolReader::sysAllocStringLen;
 SysFreeString_t SymbolReader::sysFreeString;
 SysStringLen_t SymbolReader::sysStringLen;
+CoTaskMemAlloc_t SymbolReader::coTaskMemAlloc;
 CoTaskMemFree_t SymbolReader::coTaskMemFree;
 
 const int SymbolReader::HiddenLine = 0xfeefee;
@@ -125,6 +128,15 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
     return Status;
 }
 
+struct GetChildProxy
+{
+    SymbolReader::GetChildCallback &m_cb;
+    static BOOL GetChild(PVOID opaque, PVOID corValue, const char* name, int *typeId, PVOID *data)
+    {
+        return static_cast<GetChildProxy*>(opaque)->m_cb(corValue, name, typeId, data);
+    }
+};
+
 HRESULT SymbolReader::PrepareSymbolReader()
 {
     static bool attemptedSymbolReaderPreparation = false;
@@ -163,11 +175,13 @@ HRESULT SymbolReader::PrepareSymbolReader()
     sysAllocStringLen = (SysAllocStringLen_t)DLSym(coreclrLib, "SysAllocStringLen");
     sysFreeString = (SysFreeString_t)DLSym(coreclrLib, "SysFreeString");
     sysStringLen = (SysStringLen_t)DLSym(coreclrLib, "SysStringLen");
+    coTaskMemAlloc = (CoTaskMemAlloc_t)DLSym(coreclrLib, "CoTaskMemAlloc");
     coTaskMemFree = (CoTaskMemFree_t)DLSym(coreclrLib, "CoTaskMemFree");
 #else
     sysAllocStringLen = SysAllocStringLen;
     sysFreeString = SysFreeString;
     sysStringLen = SysStringLen;
+    coTaskMemAlloc = CoTaskMemAlloc;
     coTaskMemFree = CoTaskMemFree;
 #endif
 
@@ -186,6 +200,12 @@ HRESULT SymbolReader::PrepareSymbolReader()
     if (sysStringLen == nullptr)
     {
         fprintf(stderr, "Error: SysStringLen not found\n");
+        return E_FAIL;
+    }
+
+    if (coTaskMemAlloc == nullptr)
+    {
+        fprintf(stderr, "Error: CoTaskMemAlloc not found\n");
         return E_FAIL;
     }
 
@@ -260,6 +280,10 @@ HRESULT SymbolReader::PrepareSymbolReader()
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ParseExpression", (void **)&parseExpressionDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "EvalExpression", (void **)&evalExpressionDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "RegisterGetChild", (void **)&registerGetChildDelegate));
+    if (!registerGetChildDelegate(GetChildProxy::GetChild))
+        return E_FAIL;
 
     // Warm up Roslyn
     std::thread([](){ std::string data; std::string err; SymbolReader::ParseExpression("1", "System.Int32", data, err); }).detach();
@@ -438,4 +462,74 @@ HRESULT SymbolReader::ParseExpression(
     }
 
     return S_OK;
+}
+
+HRESULT SymbolReader::EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb)
+{
+    HRESULT Status;
+
+    PrepareSymbolReader();
+
+    if (evalExpressionDelegate == nullptr)
+        return E_FAIL;
+
+    GetChildProxy proxy { cb };
+
+    PVOID valuePtr = nullptr;
+    int size = 0;
+    BSTR resultText;
+    BOOL ok = evalExpressionDelegate(expr.c_str(), &proxy, &resultText, typeId, &size, &valuePtr);
+    if (!ok)
+    {
+        if (resultText)
+        {
+            result = to_utf8(resultText);
+            sysFreeString(resultText);
+        }
+        return E_FAIL;
+    }
+
+    switch(*typeId)
+    {
+        case TypeCorValue:
+            *ppValue = static_cast<ICorDebugValue*>(valuePtr);
+            if (*ppValue)
+                (*ppValue)->AddRef();
+            break;
+        case TypeObject:
+            result = std::string();
+            break;
+        case TypeString:
+            result = to_utf8((BSTR)valuePtr);
+            sysFreeString((BSTR)valuePtr);
+            break;
+        default:
+            result.resize(size);
+            memmove(&result[0], valuePtr, size);
+            coTaskMemFree(valuePtr);
+            break;
+    }
+
+    return S_OK;
+}
+
+PVOID SymbolReader::AllocBytes(size_t size)
+{
+    PrepareSymbolReader();
+    if (coTaskMemAlloc == nullptr)
+        return nullptr;
+    return coTaskMemAlloc(size);
+}
+
+PVOID SymbolReader::AllocString(const std::string &str)
+{
+    PrepareSymbolReader();
+    if (sysAllocStringLen == nullptr)
+        return nullptr;
+    auto wstr = to_utf16(str);
+    BSTR bstr = sysAllocStringLen(0, wstr.size());
+    if (sysStringLen(bstr) == 0)
+        return nullptr;
+    memmove(bstr, wstr.data(), wstr.size() * sizeof(decltype(wstr[0])));
+    return bstr;
 }

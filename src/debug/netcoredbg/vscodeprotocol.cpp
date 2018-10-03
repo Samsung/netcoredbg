@@ -385,7 +385,13 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         uint64_t frameId = frameIdIter.value();
 
         Variable variable;
-        IfFailRet(m_debugger->Evaluate(frameId, expression, variable));
+        std::string output;
+        Status = m_debugger->Evaluate(frameId, expression, variable, output);
+        if (FAILED(Status))
+        {
+            body["message"] = output;
+            return Status;
+        }
 
         body["result"] = variable.value;
         body["type"] = variable.type;

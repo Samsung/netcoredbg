@@ -15,12 +15,12 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OutputType>Library</OutputType>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <NoStdLib>true</NoStdLib>
+    <!--NoStdLib>true</NoStdLib>
     <NoCompilerStandardLib>true</NoCompilerStandardLib>
     <IsDotNetFrameworkProductAssembly>true</IsDotNetFrameworkProductAssembly>
     <AssemblyKey>Open</AssemblyKey>
     <ExcludeMscorlibFacade>true</ExcludeMscorlibFacade>
-    <ContainsPackageReferences>true</ContainsPackageReferences>
+    <ContainsPackageReferences>true</ContainsPackageReferences-->
   </PropertyGroup>
 
   <ItemGroup>

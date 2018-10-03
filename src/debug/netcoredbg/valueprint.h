@@ -9,4 +9,6 @@
 #include <string>
 
 HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true);
+HRESULT PrintBasicValue(int typeId, const std::string &rawData, std::string &typeName, std::string &value);
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = nullptr);
+HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data);
