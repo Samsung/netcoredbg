@@ -3,8 +3,6 @@
 
 # Visual Studio Code
 /.vscode/
-/src/debug/netcoredbg/bin/
-/src/debug/netcoredbg/obj/
 
 # Qt Creator files
 CMakeLists.txt.user
@@ -20,3 +18,5 @@ CMakeLists.txt.user
 *.a
 *.dll
 *.pdb
+bin/
+obj/
