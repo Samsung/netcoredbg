@@ -23,12 +23,14 @@ void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
 {
     breakpoint.id = this->id;
     breakpoint.verified = this->IsResolved();
+    breakpoint.condition = this->condition;
     breakpoint.source = Source(this->fullname);
     breakpoint.line = this->linenum;
     breakpoint.hitCount = this->times;
 }
 
 HRESULT Breakpoints::HitBreakpoint(
+    Debugger *debugger,
     ICorDebugThread *pThread,
     ICorDebugBreakpoint *pBreakpoint,
     Breakpoint &breakpoint,
@@ -74,6 +76,19 @@ HRESULT Breakpoints::HitBreakpoint(
         b.methodToken == methodToken &&
         b.enabled)
     {
+        if (!b.condition.empty())
+        {
+            DWORD threadId = 0;
+            IfFailRet(pThread->GetID(&threadId));
+            uint64_t frameId = StackFrame(threadId, 0, "").id;
+
+            Variable variable;
+            std::string output;
+            IfFailRet(debugger->Evaluate(frameId, b.condition, variable, output));
+
+            if (variable.type != "bool" || variable.value != "true")
+                return E_FAIL;
+        }
         ++b.times;
         b.ToBreakpoint(breakpoint);
         return S_OK;
@@ -354,21 +369,21 @@ HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
 
 HRESULT ManagedDebugger::SetBreakpoints(
     std::string filename,
-    const std::vector<int> &lines,
+    const std::vector<SourceBreakpoint> &srcBreakpoints,
     std::vector<Breakpoint> &breakpoints)
 {
-    return m_breakpoints.SetBreakpoints(m_pProcess, filename, lines, breakpoints);
+    return m_breakpoints.SetBreakpoints(m_pProcess, filename, srcBreakpoints, breakpoints);
 }
 
 HRESULT Breakpoints::SetBreakpoints(
     ICorDebugProcess *pProcess,
     std::string filename,
-    const std::vector<int> &lines,
+    const std::vector<SourceBreakpoint> &srcBreakpoints,
     std::vector<Breakpoint> &breakpoints)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
-    if (lines.empty())
+    if (srcBreakpoints.empty())
     {
         auto it = m_breakpoints.find(filename);
         if (it != m_breakpoints.end())
@@ -380,8 +395,9 @@ HRESULT Breakpoints::SetBreakpoints(
 
     // Remove old breakpoints
     std::unordered_set<int> unchangedLines;
-    for (int line : lines)
+    for (const auto &sb : srcBreakpoints)
     {
+        int line = sb.line;
         if (breakpointsInSource.find(line) != breakpointsInSource.end())
             unchangedLines.insert(line);
     }
@@ -396,8 +412,9 @@ HRESULT Breakpoints::SetBreakpoints(
 
     // Export breakpoints
 
-    for (int line : lines)
+    for (const auto &sb : srcBreakpoints)
     {
+        int line = sb.line;
         Breakpoint breakpoint;
 
         auto b = breakpointsInSource.find(line);
@@ -408,6 +425,7 @@ HRESULT Breakpoints::SetBreakpoints(
             bp.id = m_nextBreakpointId++;
             bp.fullname = filename;
             bp.linenum = line;
+            bp.condition = sb.condition;
 
             if (pProcess)
                 ResolveBreakpoint(bp);
@@ -418,7 +436,9 @@ HRESULT Breakpoints::SetBreakpoints(
         else
         {
             // Existing breakpoint
-            b->second.ToBreakpoint(breakpoint);
+            ManagedBreakpoint &bp = b->second;
+            bp.condition = sb.condition;
+            bp.ToBreakpoint(breakpoint);
         }
 
         breakpoints.push_back(breakpoint);

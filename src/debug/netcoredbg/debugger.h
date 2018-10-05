@@ -49,7 +49,7 @@ public:
     virtual HRESULT Continue() = 0;
     virtual HRESULT Pause() = 0;
     virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
-    virtual HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints) = 0;
+    virtual HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
     virtual void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) = 0;
     virtual HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) = 0;
     virtual HRESULT StepCommand(int threadId, StepType stepType) = 0;

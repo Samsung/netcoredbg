@@ -88,7 +88,11 @@ static bool GetIndices(const std::vector<std::string> &args, int &index1, int &i
     return true;
 }
 
-bool ParseBreakpoint(const std::vector<std::string> &args_orig, std::string &filename, unsigned int &linenum)
+bool ParseBreakpoint(
+    const std::vector<std::string> &args_orig,
+    std::string &filename,
+    unsigned int &linenum,
+    std::string &condition)
 {
     std::vector<std::string> args = args_orig;
     StripArgs(args);
@@ -101,6 +105,14 @@ bool ParseBreakpoint(const std::vector<std::string> &args_orig, std::string &fil
         args.erase(args.begin());
         if (args.empty())
             return false;
+    }
+
+    if (args.at(0) == "-c")
+    {
+        if (args.size() < 3)
+            return false;
+        condition = args.at(1);
+        args.erase(args.begin(), args.begin() + 2);
     }
 
     std::size_t i = args.at(0).rfind(':');
@@ -415,29 +427,64 @@ HRESULT MIProtocol::ListChildren(int threadId, int level, int childStart, int ch
     return S_OK;
 }
 
-HRESULT MIProtocol::SetBreakpoint(const std::string &filename, int linenum, Breakpoint &breakpoint)
+HRESULT MIProtocol::SetBreakpoint(
+    const std::string &filename,
+    int linenum,
+    const std::string &condition,
+    Breakpoint &breakpoint)
 {
     HRESULT Status;
 
     auto &breakpointsInSource = m_breakpoints[filename];
-    std::vector<int> lines;
+    std::vector<SourceBreakpoint> srcBreakpoints;
     for (auto it : breakpointsInSource)
     {
-        lines.push_back(it.second);
+        srcBreakpoints.push_back(it.second);
     }
-    lines.push_back(linenum);
+    srcBreakpoints.emplace_back(linenum, condition);
 
     std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_debugger->SetBreakpoints(filename, lines, breakpoints));
+    IfFailRet(m_debugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
 
     for (const Breakpoint& b : breakpoints)
     {
         if (b.line != linenum)
             continue;
 
-        breakpointsInSource.insert(std::make_pair(b.id, b.line));
+        breakpointsInSource.insert(std::make_pair(b.id, SourceBreakpoint{ b.line, b.condition }));
         breakpoint = b;
         return S_OK;
+    }
+
+    return E_FAIL;
+}
+
+HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condition)
+{
+    HRESULT Status;
+
+    // For each file
+    for (auto &breakpointsIter : m_breakpoints)
+    {
+        std::unordered_map<uint32_t, SourceBreakpoint> &fileBreakpoints = breakpointsIter.second;
+
+        // Find breakpoint with specified id in this file
+        const auto &sbIter = fileBreakpoints.find(id);
+        if (sbIter == fileBreakpoints.end())
+            continue;
+
+        // Modify breakpoint condition
+        sbIter->second.condition = condition;
+
+        // Gather all breakpoints in this file
+        std::vector<SourceBreakpoint> existingBreakpoints;
+        for (const auto &it : fileBreakpoints)
+            existingBreakpoints.emplace_back(it.second);
+
+        // Update breakpoints data for this file
+        const std::string &filename = breakpointsIter.first;
+        std::vector<Breakpoint> tmpBreakpoints;
+        return m_debugger->SetBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
     }
 
     return E_FAIL;
@@ -447,19 +494,19 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
     for (auto &breakpointsIter : m_breakpoints)
     {
-        std::vector<int> remainingLines;
+        std::vector<SourceBreakpoint> remainingBreakpoints;
         for (auto it : breakpointsIter.second)
         {
             if (ids.find(it.first) == ids.end())
-                remainingLines.push_back(it.second);
+                remainingBreakpoints.push_back(it.second);
         }
-        if (remainingLines.size() == breakpointsIter.second.size())
+        if (remainingBreakpoints.size() == breakpointsIter.second.size())
             continue;
 
         std::string filename = breakpointsIter.first;
 
         std::vector<Breakpoint> tmpBreakpoints;
-        m_debugger->SetBreakpoints(filename, remainingLines, tmpBreakpoints);
+        m_debugger->SetBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
     }
 }
 
@@ -613,9 +660,10 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     { "break-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         std::string filename;
         unsigned int linenum;
+        std::string condition;
         Breakpoint breakpoint;
-        if (ParseBreakpoint(args, filename, linenum)
-            && SUCCEEDED(SetBreakpoint(filename, linenum, breakpoint)))
+        if (ParseBreakpoint(args, filename, linenum, condition)
+            && SUCCEEDED(SetBreakpoint(filename, linenum, condition, breakpoint)))
         {
             PrintBreakpoint(breakpoint, output);
             return S_OK;
@@ -635,6 +683,25 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         }
         DeleteBreakpoints(ids);
         return S_OK;
+    } },
+    { "break-condition", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        HRESULT Status;
+
+        if (args.size() < 2)
+        {
+            output = "Command requires at least 2 arguments";
+            return E_FAIL;
+        }
+
+        bool ok;
+        int id = ParseInt(args.at(0), ok);
+        if (!ok)
+        {
+            output = "Unknown breakpoint id";
+            return E_FAIL;
+        }
+
+        return SetBreakpointCondition(id, args.at(1));
     } },
     { "exec-step", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return StepCommand(args, output, Debugger::STEP_IN);
@@ -985,8 +1052,15 @@ static bool ParseLine(const std::string &str,
     if (cmd == "var-assign")
     {
         tokenizer.Next(result);
-        args.push_back(result);
-        args.push_back(tokenizer.Remain());
+        args.push_back(result); // name
+        args.push_back(tokenizer.Remain()); // expression
+        return true;
+    }
+    else if (cmd == "break-condition")
+    {
+        tokenizer.Next(result);
+        args.push_back(result); // id
+        args.push_back(tokenizer.Remain()); // expression
         return true;
     }
 

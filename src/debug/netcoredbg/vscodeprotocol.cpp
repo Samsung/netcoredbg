@@ -258,6 +258,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         m_debugger->Initialize();
         body["supportsConfigurationDoneRequest"] = true;
         body["supportTerminateDebuggee"] = true;
+        body["supportsConditionalBreakpoints"] = true;
         return S_OK;
     } },
     { "configurationDone", [this](const json &arguments, json &body){
@@ -266,12 +267,12 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "setBreakpoints", [this](const json &arguments, json &body){
         HRESULT Status;
 
-        std::vector<int> lines;
+        std::vector<SourceBreakpoint> srcBreakpoints;
         for (auto &b : arguments.at("breakpoints"))
-            lines.push_back(b.at("line"));
+            srcBreakpoints.emplace_back(b.at("line"), b.value("condition", std::string()));
 
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_debugger->SetBreakpoints(arguments.at("source").at("path"), lines, breakpoints));
+        IfFailRet(m_debugger->SetBreakpoints(arguments.at("source").at("path"), srcBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;
 

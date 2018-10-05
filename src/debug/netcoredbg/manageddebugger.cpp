@@ -339,26 +339,44 @@ public:
                 return S_OK;
             }
 
-            DWORD threadId = 0;
-            pThread->GetID(&threadId);
+            ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);
+            pAppDomain->AddRef();
+            ToRelease<ICorDebugThread> callbackThread(pThread);
+            pThread->AddRef();
+            ToRelease<ICorDebugBreakpoint> callbackBreakpoint(pBreakpoint);
+            pBreakpoint->AddRef();
 
-            bool atEntry = false;
-            StoppedEvent event(StopBreakpoint, threadId);
-            if (FAILED(m_debugger.m_breakpoints.HitBreakpoint(pThread, pBreakpoint, event.breakpoint, atEntry)))
+            std::thread([this](
+                ICorDebugAppDomain *pAppDomain,
+                ICorDebugThread *pThread,
+                ICorDebugBreakpoint *pBreakpoint)
             {
-                pAppDomain->Continue(0);
-                return S_OK;
-            }
+                DWORD threadId = 0;
+                pThread->GetID(&threadId);
 
-            if (atEntry)
-                event.reason = StopEntry;
+                bool atEntry = false;
+                StoppedEvent event(StopBreakpoint, threadId);
+                if (FAILED(m_debugger.m_breakpoints.HitBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)))
+                {
+                    pAppDomain->Continue(0);
+                    return;
+                }
 
-            ToRelease<ICorDebugFrame> pFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                m_debugger.GetFrameLocation(pFrame, threadId, 0, event.frame);
+                if (atEntry)
+                    event.reason = StopEntry;
 
-            m_debugger.SetLastStoppedThread(pThread);
-            m_debugger.m_protocol->EmitStoppedEvent(event);
+                ToRelease<ICorDebugFrame> pFrame;
+                if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+                    m_debugger.GetFrameLocation(pFrame, threadId, 0, event.frame);
+
+                m_debugger.SetLastStoppedThread(pThread);
+                m_debugger.m_protocol->EmitStoppedEvent(event);
+
+            },
+                std::move(callbackAppDomain),
+                std::move(callbackThread),
+                std::move(callbackBreakpoint)
+            ).detach();
 
             return S_OK;
         }

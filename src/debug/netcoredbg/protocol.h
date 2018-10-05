@@ -74,6 +74,7 @@ struct Breakpoint
     uint32_t id;
     bool verified;
     std::string message;
+    std::string condition;
     Source source;
     int line;
 
@@ -240,4 +241,12 @@ enum VariablesFilter
     VariablesNamed,
     VariablesIndexed,
     VariablesBoth
+};
+
+struct SourceBreakpoint
+{
+    int line;
+    std::string condition;
+
+    SourceBreakpoint(int linenum, const std::string &cond = std::string()) : line(linenum), condition(cond) {}
 };

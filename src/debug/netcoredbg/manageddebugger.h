@@ -184,6 +184,7 @@ class Breakpoints
         ToRelease<ICorDebugBreakpoint> breakpoint;
         bool enabled;
         ULONG32 times;
+        std::string condition;
 
         bool IsResolved() const { return modAddress != 0; }
 
@@ -216,6 +217,7 @@ public:
         m_modules(modules), m_nextBreakpointId(1), m_stopAtEntry(false), m_entryPoint(mdMethodDefNil) {}
 
     HRESULT HitBreakpoint(
+        Debugger *debugger,
         ICorDebugThread *pThread,
         ICorDebugBreakpoint *pBreakpoint,
         Breakpoint &breakpoint,
@@ -230,7 +232,7 @@ public:
     HRESULT SetBreakpoints(
         ICorDebugProcess *pProcess,
         std::string filename,
-        const std::vector<int> &lines,
+        const std::vector<SourceBreakpoint> &srcBreakpoints,
         std::vector<Breakpoint> &breakpoints);
 
     void SetStopAtEntry(bool stopAtEntry);
@@ -471,7 +473,7 @@ public:
     HRESULT Continue() override;
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
-    HRESULT SetBreakpoints(std::string filename, const std::vector<int> &lines, std::vector<Breakpoint> &breakpoints) override;
+    HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) override;
     HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
     HRESULT StepCommand(int threadId, StepType stepType) override;
