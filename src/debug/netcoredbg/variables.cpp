@@ -2,6 +2,7 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
+#include <regex>
 #include "manageddebugger.h"
 
 #include <unordered_set>
@@ -425,9 +426,21 @@ HRESULT Variables::Evaluate(
         IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
     ToRelease<ICorDebugValue> pResultValue;
+
+    static std::regex re("[[:alpha:]\\$_][[:alnum:]_]*");
+
+    if (std::regex_match(expression, re))
+    {
+        // Use simple name parser
+        IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue));
+    }
+
     int typeId;
     std::vector< ToRelease<ICorDebugValue> > marshalledValues;
 
+    // Use Roslyn for expression evaluation
+    if (!pResultValue)
+    {
     IfFailRet(SymbolReader::EvalExpression(
         expression, output, &typeId, &pResultValue,
         [&](void *corValue, const std::string &name, int *typeId, void **data) -> bool
@@ -505,6 +518,7 @@ HRESULT Variables::Evaluate(
 
         return true;
     }));
+    }
 
     variable.evaluateName = expression;
 
