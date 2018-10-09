@@ -99,6 +99,7 @@ unzip ../netcoredbg/packaging/microsoft.codeanalysis.scripting.common.2.8.0.nupk
 unzip ../netcoredbg/packaging/microsoft.codeanalysis.csharp.scripting.2.8.0.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.Scripting.dll
 unzip /nuget/system.text.encoding.codepages.4.5.0.nupkg lib/netstandard1.3/System.Text.Encoding.CodePages.dll
 
+find lib/netstandard1.3/ -name '*.dll' -exec chmod 644 {} \;
 find lib/netstandard1.3/ -name '*.dll' -exec %{_datarootdir}/%{netcoreappalias}/crossgen -ReadyToRun /Platform_Assemblies_Paths %{_datarootdir}/%{netcoreappalias}:$PWD/lib/netstandard1.3 {} \;
 
 install -p -m 644 lib/netstandard1.3/*.dll %{buildroot}%{sdk_install_prefix}
