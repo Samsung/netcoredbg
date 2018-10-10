@@ -432,8 +432,6 @@ HRESULT SymbolReader::ParseExpression(
     std::string &data,
     std::string &errorText)
 {
-    HRESULT Status;
-
     PrepareSymbolReader();
 
     if (parseExpressionDelegate == nullptr)
@@ -466,8 +464,6 @@ HRESULT SymbolReader::ParseExpression(
 
 HRESULT SymbolReader::EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb)
 {
-    HRESULT Status;
-
     PrepareSymbolReader();
 
     if (evalExpressionDelegate == nullptr)
@@ -527,7 +523,9 @@ PVOID SymbolReader::AllocString(const std::string &str)
     if (sysAllocStringLen == nullptr)
         return nullptr;
     auto wstr = to_utf16(str);
-    BSTR bstr = sysAllocStringLen(0, wstr.size());
+    if (wstr.size() > UINT_MAX)
+        return nullptr;
+    BSTR bstr = sysAllocStringLen(0, (UINT)wstr.size());
     if (sysStringLen(bstr) == 0)
         return nullptr;
     memmove(bstr, wstr.data(), wstr.size() * sizeof(decltype(wstr[0])));

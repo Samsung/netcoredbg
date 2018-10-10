@@ -461,8 +461,6 @@ HRESULT MIProtocol::SetBreakpoint(
 
 HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condition)
 {
-    HRESULT Status;
-
     // For each file
     for (auto &breakpointsIter : m_breakpoints)
     {
@@ -685,8 +683,6 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         return S_OK;
     } },
     { "break-condition", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        HRESULT Status;
-
         if (args.size() < 2)
         {
             output = "Command requires at least 2 arguments";
