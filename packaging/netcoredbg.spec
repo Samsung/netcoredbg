@@ -57,13 +57,13 @@ This is a CoreCLR debugger for Tizen.
 gzip -dc %{SOURCE0} | tar -xvf -
 cd netcoredbg
 cp %{SOURCE1001} ..
-mkdir -p packaging/pkgs/nuget
-cp -r /nuget/* packaging/pkgs/nuget/
+mkdir packaging/pkgs
+ln -s /nuget packaging/pkgs/nuget
 
 export CSVER=$(ls /nuget/microsoft.codeanalysis.common.*.nupkg | sort -n | tail -1 | cut -d "." -f4-6)
 
-cp packaging/microsoft.codeanalysis.scripting.common.$CSVER.nupkg packaging/pkgs/nuget/
-cp packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nupkg packaging/pkgs/nuget/
+cp packaging/microsoft.codeanalysis.scripting.common.$CSVER.nupkg packaging/pkgs/
+cp packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nupkg packaging/pkgs/
 
 %build
 export CFLAGS=" --target=%{_host}"
@@ -90,7 +90,7 @@ cmake ../netcoredbg \
     -DBUILD_MANAGED=OFF
 make %{?jobs:-j%jobs}
 
-%dotnet_build -s / -s ../netcoredbg/packaging/pkgs ../netcoredbg/src/debug/netcoredbg
+%dotnet_build -s ../netcoredbg/packaging/pkgs ../netcoredbg/src/debug/netcoredbg
 
 %install
 cd build
