@@ -6,6 +6,33 @@
 #include <chrono>
 #include "logger.h"
 
+#ifdef DEBUGGER_FOR_TIZEN
+#include "dlog/dlog.h"
+
+
+class DlogLogger : public LoggerImpl
+{
+    const std::string tag = "NETCOREDBG";
+
+    public:
+        DlogLogger() {}
+        ~DlogLogger() override {}
+        void log(LogLevel level, const std::string& msg) override;
+};
+
+void DlogLogger::log(LogLevel level, const std::string& msg)
+{
+    // Use LOG_DEBUG wisely!
+    if (level == LOG_DEBUG)
+        dlog_print(DLOG_DEBUG, tag.c_str(), "%s", msg.c_str());
+    else if (level == LOG_INFO)
+        dlog_print(DLOG_INFO, tag.c_str(), "%s", msg.c_str());
+    else if (level == LOG_WARN)
+        dlog_print(DLOG_WARN, tag.c_str(), "%s", msg.c_str());
+    else if (level == LOG_ERROR)
+        dlog_print(DLOG_ERROR, tag.c_str(), "%s", msg.c_str());
+}
+#endif
 
 
 
@@ -76,6 +103,11 @@ void Logger::setLogging(LogType type, LogLevel level)
     case FILE_LOG:
         logger = std::make_shared<FileLogger>(level);
         break;
+    case DLOG_LOG:
+#ifdef DEBUGGER_FOR_TIZEN
+        logger = std::make_shared<DlogLogger>();
+        break;
+#endif
     case NO_LOG:
     default:
         logger = std::make_shared<NoLogger>();

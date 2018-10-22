@@ -7,11 +7,14 @@
 enum LogType {
     NO_LOG = 0,
     FILE_LOG,
+    DLOG_LOG,
 };
 
 enum LogLevel {
     LOG_DEBUG = 0,
     LOG_INFO,
+    LOG_WARN,
+    LOG_ERROR,
 };
 
 
