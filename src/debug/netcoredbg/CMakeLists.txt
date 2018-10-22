@@ -42,7 +42,8 @@ set(netcoredbg_SRC
     jmc.cpp
     cputil.cpp
     expr.cpp
-    valuewrite.cpp)
+    valuewrite.cpp
+    logger.cpp)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
