@@ -9,6 +9,7 @@
 
 #include "torelease.h"
 #include "cputil.h"
+#include "logger.h"
 
 // for convenience
 using json = nlohmann::json;
@@ -75,6 +76,8 @@ void to_json(json &j, const Variable &v) {
 
 void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
 {
+    LogFuncEntry();
+
     json body;
 
     switch(event.reason)
@@ -112,6 +115,7 @@ void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
 
 void VSCodeProtocol::EmitExitedEvent(ExitedEvent event)
 {
+    LogFuncEntry();
     json body;
     body["exitCode"] = event.exitCode;
     EmitEvent("exited", body);
@@ -119,11 +123,13 @@ void VSCodeProtocol::EmitExitedEvent(ExitedEvent event)
 
 void VSCodeProtocol::EmitTerminatedEvent()
 {
+    LogFuncEntry();
     EmitEvent("terminated", json::object());
 }
 
 void VSCodeProtocol::EmitThreadEvent(ThreadEvent event)
 {
+    LogFuncEntry();
     json body;
 
     switch(event.reason)
@@ -143,6 +149,7 @@ void VSCodeProtocol::EmitThreadEvent(ThreadEvent event)
 
 void VSCodeProtocol::EmitModuleEvent(ModuleEvent event)
 {
+    LogFuncEntry();
     json body;
 
     switch(event.reason)
@@ -181,6 +188,7 @@ void VSCodeProtocol::EmitModuleEvent(ModuleEvent event)
 
 void VSCodeProtocol::EmitOutputEvent(OutputEvent event)
 {
+    LogFuncEntry();
     json body;
 
     switch(event.category)
@@ -203,6 +211,7 @@ void VSCodeProtocol::EmitOutputEvent(OutputEvent event)
 
 void VSCodeProtocol::EmitBreakpointEvent(BreakpointEvent event)
 {
+    LogFuncEntry();
     json body;
 
     switch(event.reason)
@@ -225,6 +234,7 @@ void VSCodeProtocol::EmitBreakpointEvent(BreakpointEvent event)
 
 void VSCodeProtocol::EmitInitializedEvent()
 {
+    LogFuncEntry();
     EmitEvent("initialized", json::object());
 }
 

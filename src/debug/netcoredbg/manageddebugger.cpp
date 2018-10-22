@@ -15,6 +15,7 @@
 #include "platform.h"
 #include "typeprinter.h"
 #include "frames.h"
+#include "logger.h"
 
 // From dbgshim.h
 struct dbgshim_t
@@ -230,6 +231,8 @@ void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
 
 int ManagedDebugger::GetLastStoppedThreadId()
 {
+    LogFuncEntry();
+
     std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
     return m_lastStoppedThreadId;
 }
@@ -275,6 +278,8 @@ public:
 
         void HandleEvent(ICorDebugController *controller, const std::string &eventName)
         {
+            LogFuncEntry();
+
             std::string text = "Event received: '" + eventName + "'\n";
             m_debugger.m_protocol->EmitOutputEvent(OutputEvent(OutputConsole, text));
             controller->Continue(0);
@@ -287,6 +292,8 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, VOID** ppInterface)
         {
+            LogFuncEntry();
+
             if(riid == __uuidof(ICorDebugManagedCallback))
             {
                 *ppInterface = static_cast<ICorDebugManagedCallback*>(this);
@@ -313,11 +320,15 @@ public:
 
         virtual ULONG STDMETHODCALLTYPE AddRef()
         {
+            LogFuncEntry();
+
             return InterlockedIncrement((volatile LONG *) &m_refCount);
         }
 
         virtual ULONG STDMETHODCALLTYPE Release()
         {
+            LogFuncEntry();
+
             ULONG count = InterlockedDecrement((volatile LONG *) &m_refCount);
             if(count == 0)
             {
@@ -333,6 +344,8 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugBreakpoint *pBreakpoint)
         {
+            LogFuncEntry();
+
             if (m_debugger.m_evaluator.IsEvalRunning())
             {
                 pAppDomain->Continue(0);
@@ -387,6 +400,8 @@ public:
             /* [in] */ ICorDebugStepper *pStepper,
             /* [in] */ CorDebugStepReason reason)
         {
+            LogFuncEntry();
+
             DWORD threadId = 0;
             pThread->GetID(&threadId);
 
@@ -417,13 +432,18 @@ public:
         virtual HRESULT STDMETHODCALLTYPE Break(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *thread)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE Exception(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ BOOL unhandled)
         {
+            LogFuncEntry();
+
             std::string excType;
             std::string excModule;
             GetExceptionInfo(pThread, excType, excModule);
@@ -475,6 +495,8 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
+            LogFuncEntry();
+
             m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
@@ -484,6 +506,8 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugEval *pEval)
         {
+            LogFuncEntry();
+
             m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
         }
@@ -491,6 +515,7 @@ public:
         virtual HRESULT STDMETHODCALLTYPE CreateProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
+            LogFuncEntry();
             m_debugger.NotifyProcessCreated();
             pProcess->Continue(0);
             return S_OK;
@@ -499,6 +524,8 @@ public:
         virtual HRESULT STDMETHODCALLTYPE ExitProcess(
             /* [in] */ ICorDebugProcess *pProcess)
         {
+            LogFuncEntry();
+
             m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
             m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(0));
             m_debugger.NotifyProcessExited();
@@ -510,6 +537,8 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *thread)
         {
+            LogFuncEntry();
+
             DWORD threadId = 0;
             thread->GetID(&threadId);
             m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
@@ -521,6 +550,8 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *thread)
         {
+            LogFuncEntry();
+
             m_debugger.m_evaluator.NotifyEvalComplete(thread, nullptr);
             DWORD threadId = 0;
             thread->GetID(&threadId);
@@ -533,6 +564,8 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugModule *pModule)
         {
+            LogFuncEntry();
+
             Module module;
 
             m_debugger.m_modules.TryLoadModuleSymbols(pModule, module);
@@ -553,23 +586,35 @@ public:
         virtual HRESULT STDMETHODCALLTYPE UnloadModule(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugModule *pModule)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE LoadClass(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugClass *c)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE UnloadClass(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugClass *c)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE DebuggerError(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ HRESULT errorHR,
             /* [in] */ DWORD errorCode)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE LogMessage(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -577,7 +622,10 @@ public:
             /* [in] */ LONG lLevel,
             /* [in] */ WCHAR *pLogSwitchName,
             /* [in] */ WCHAR *pMessage)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE LogSwitch(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -586,56 +634,86 @@ public:
             /* [in] */ ULONG ulReason,
             /* [in] */ WCHAR *pLogSwitchName,
             /* [in] */ WCHAR *pParentName)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE CreateAppDomain(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ ICorDebugAppDomain *pAppDomain)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE ExitAppDomain(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ ICorDebugAppDomain *pAppDomain)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE LoadAssembly(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugAssembly *pAssembly)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE UnloadAssembly(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugAssembly *pAssembly)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE ControlCTrap(
             /* [in] */ ICorDebugProcess *pProcess)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE NameChange(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE UpdateModuleSymbols(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugModule *pModule,
             /* [in] */ IStream *pSymbolStream)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE EditAndContinueRemap(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugFunction *pFunction,
             /* [in] */ BOOL fAccurate)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE BreakpointSetError(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugBreakpoint *pBreakpoint,
             /* [in] */ DWORD dwError)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
 
         // ICorDebugManagedCallback2
@@ -646,23 +724,35 @@ public:
             /* [in] */ ICorDebugFunction *pOldFunction,
             /* [in] */ ICorDebugFunction *pNewFunction,
             /* [in] */ ULONG32 oldILOffset)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE CreateConnection(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ CONNID dwConnectionId,
             /* [in] */ WCHAR *pConnName)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE ChangeConnection(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ CONNID dwConnectionId)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE DestroyConnection(
             /* [in] */ ICorDebugProcess *pProcess,
             /* [in] */ CONNID dwConnectionId)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE Exception(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
@@ -672,6 +762,7 @@ public:
             /* [in] */ CorDebugExceptionCallbackType dwEventType,
             /* [in] */ DWORD dwFlags)
         {
+            LogFuncEntry();
           // TODO:
           // const char *cbTypeName;
           // switch(dwEventType)
@@ -692,19 +783,28 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
             /* [in] */ DWORD dwFlags)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE FunctionRemapComplete(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugFunction *pFunction)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 
         virtual HRESULT STDMETHODCALLTYPE MDANotification(
             /* [in] */ ICorDebugController *pController,
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugMDA *pMDA)
-        { return E_NOTIMPL; }
+        {
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
 };
 
 ManagedDebugger::ManagedDebugger() :
@@ -733,6 +833,8 @@ ManagedDebugger::~ManagedDebugger()
 
 HRESULT ManagedDebugger::Initialize()
 {
+    LogFuncEntry();
+
     // TODO: Report capabilities and check client support
     m_startMethod = StartNone;
     m_protocol->EmitInitializedEvent();
@@ -741,6 +843,8 @@ HRESULT ManagedDebugger::Initialize()
 
 HRESULT ManagedDebugger::Attach(int pid)
 {
+    LogFuncEntry();
+
     m_startMethod = StartAttach;
     m_processId = pid;
     return S_OK;
@@ -748,6 +852,8 @@ HRESULT ManagedDebugger::Attach(int pid)
 
 HRESULT ManagedDebugger::Launch(std::string fileExec, std::vector<std::string> execArgs, bool stopAtEntry)
 {
+    LogFuncEntry();
+
     m_startMethod = StartLaunch;
     m_execPath = fileExec;
     m_execArgs = execArgs;
@@ -758,6 +864,8 @@ HRESULT ManagedDebugger::Launch(std::string fileExec, std::vector<std::string> e
 
 HRESULT ManagedDebugger::ConfigurationDone()
 {
+    LogFuncEntry();
+
     switch(m_startMethod)
     {
         case StartLaunch:
@@ -772,6 +880,8 @@ HRESULT ManagedDebugger::ConfigurationDone()
 
 HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
 {
+    LogFuncEntry();
+
     bool terminate;
     switch(action)
     {
@@ -848,6 +958,8 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType 
 
 HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
 {
+    LogFuncEntry();
+
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_pProcess->GetThread(threadId, &pThread));
@@ -863,6 +975,8 @@ HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
 
 HRESULT ManagedDebugger::Continue()
 {
+    LogFuncEntry();
+
     if (!m_pProcess)
         return E_FAIL;
 
@@ -875,6 +989,8 @@ HRESULT ManagedDebugger::Continue()
 
 HRESULT ManagedDebugger::Pause()
 {
+    LogFuncEntry();
+
     if (!m_pProcess)
         return E_FAIL;
     HRESULT Status = m_pProcess->Stop(0);
@@ -927,6 +1043,8 @@ HRESULT ManagedDebugger::Pause()
 
 HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
 {
+    LogFuncEntry();
+
     if (!m_pProcess)
         return E_FAIL;
     return GetThreadsState(m_pProcess, threads);
@@ -1052,6 +1170,8 @@ static std::string GetCLRPath(DWORD pid, int timeoutSec = 3)
 
 HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 {
+    LogFuncEntry();
+
     HRESULT Status;
 
     ToRelease<ICorDebug> pCorDebug;
