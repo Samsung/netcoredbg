@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <cstdarg>
 
 
 enum LogType {
@@ -22,6 +23,7 @@ class LoggerImpl
 {
     public:
         virtual ~LoggerImpl() {};
+        virtual void vlog(LogLevel level, const std::string fmt, va_list args) = 0;
         virtual void log(LogLevel level, const std::string& msg) = 0;
 };
 
@@ -51,7 +53,7 @@ class Logger
     public:
         Logger() {}
         static void setLogging(LogType type, LogLevel level = LOG_INFO);
-        static void log(const std::string& msg);
+        static void log(const std::string fmt, ...);
         static FuncLogger getFuncLogger(const std::string &func);
 };
 

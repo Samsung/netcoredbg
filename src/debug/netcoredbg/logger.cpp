@@ -1,9 +1,9 @@
 #include <string>
-#include <fstream>
 #include <sstream>
 #include <ctime>
 #include <iomanip>
 #include <chrono>
+#include <stdio.h>
 #include "logger.h"
 
 #ifdef DEBUGGER_FOR_TIZEN
@@ -12,26 +12,39 @@
 
 class DlogLogger : public LoggerImpl
 {
-    const std::string tag = "NETCOREDBG";
+    private:
+        static log_priority MapLogLevel(LogLevel level);
 
     public:
         DlogLogger() {}
         ~DlogLogger() override {}
         void log(LogLevel level, const std::string& msg) override;
+        void vlog(LogLevel level, const std::string fmt, va_list args) override;
 };
 
-void DlogLogger::log(LogLevel level, const std::string& msg)
+log_priority DlogLogger::MapLogLevel(LogLevel level)
 {
-    // Use LOG_DEBUG wisely!
-    if (level == LOG_DEBUG)
-        dlog_print(DLOG_DEBUG, tag.c_str(), "%s", msg.c_str());
-    else if (level == LOG_INFO)
-        dlog_print(DLOG_INFO, tag.c_str(), "%s", msg.c_str());
+    if (level == LOG_INFO)
+        return DLOG_INFO;
     else if (level == LOG_WARN)
-        dlog_print(DLOG_WARN, tag.c_str(), "%s", msg.c_str());
+        return DLOG_WARN;
     else if (level == LOG_ERROR)
-        dlog_print(DLOG_ERROR, tag.c_str(), "%s", msg.c_str());
+        return DLOG_ERROR;
+
+    return DLOG_DEBUG;
 }
+
+void DlogLogger::log(LogLevel level, const std::string &msg)
+{
+    dlog_print(MapLogLevel(level), "NETCOREDBG", "%s", msg.c_str());
+}
+
+void DlogLogger::vlog(LogLevel level, const std::string fmt, va_list args)
+{
+    dlog_vprint(MapLogLevel(level), "NETCOREDBG", fmt.c_str(), args);
+}
+
+
 #endif
 
 
@@ -41,7 +54,8 @@ class NoLogger : public LoggerImpl
     public:
         NoLogger() {}
         ~NoLogger() override {}
-        void log(LogLevel level, const std::string& msg) override {}
+        void log(LogLevel level, const std::string &msg) override {}
+        void vlog(LogLevel level, const std::string fmt, va_list args) override {}
 };
 
 class FileLogger : public LoggerImpl
@@ -50,14 +64,16 @@ class FileLogger : public LoggerImpl
 
     private:
         const std::string filenameBase = "netcoredbg_";
-        std::ofstream logFile;
+        FILE *logFile;
         std::time_t timeNow;
+
+        static std::string FormatMessageString(const std::string &str);
 
     public:
         FileLogger(LogLevel level);
         ~FileLogger() override;
         void log(LogLevel level, const std::string& msg) override;
-
+        void vlog(LogLevel level, const std::string fmt, va_list args) override;
 };
 
 
@@ -69,13 +85,22 @@ FileLogger::FileLogger(LogLevel level)
 
     oss << std::put_time(std::localtime(&time), "%Y_%m_%d__%H_%M_%S");
 
-    logFile.open(filenameBase + oss.str() + ".log", std::ios::out | std::ios::trunc);
+    logFile = fopen(std::string(filenameBase + oss.str() + ".log").c_str(), "w+");
     l = level;
 }
 
 FileLogger::~FileLogger()
 {
-    logFile.close();
+    fclose(logFile);
+}
+
+std::string FileLogger::FormatMessageString(const std::string &str)
+{
+    auto time = std::time(nullptr);
+    std::ostringstream oss;
+    oss << std::put_time(std::localtime(&time), "%y-%m-%d %OH:%OM:%OS") << " " << str << std::endl;
+
+    return oss.str();
 }
 
 void FileLogger::log(LogLevel level, const std::string& msg)
@@ -83,11 +108,20 @@ void FileLogger::log(LogLevel level, const std::string& msg)
     if (level < l)
         return;
 
-    auto time = std::time(nullptr);
+    if (logFile != NULL) {
+        fprintf(logFile, "%s", FormatMessageString(msg).c_str());
+        fflush(logFile);
+    }
+}
 
-    if (logFile.is_open()) {
-        logFile << std::put_time(std::localtime(&time), "%y-%m-%d %OH:%OM:%OS") << " " << msg + "\n";
-        logFile.flush();
+void FileLogger::vlog(LogLevel level, const std::string fmt, va_list args)
+{
+    if (level < l)
+        return;
+
+    if (logFile != NULL) {
+        vfprintf(logFile, FormatMessageString(fmt).c_str(), args);
+        fflush(logFile);
     }
 }
 
@@ -115,9 +149,12 @@ void Logger::setLogging(LogType type, LogLevel level)
     }
 }
 
-void Logger::log(const std::string& msg)
+void Logger::log(const std::string fmt, ...)
 {
-    logger->log(LOG_INFO, msg);
+    va_list args;
+    va_start(args, fmt);
+    logger->vlog(LOG_INFO, fmt, args);
+    va_end(args);
 }
 
 FuncLogger Logger::getFuncLogger(const std::string &func)
