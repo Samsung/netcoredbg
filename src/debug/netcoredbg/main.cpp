@@ -29,16 +29,8 @@ static void print_help()
         "--server[=port_num]                   Start the debugger listening for requests on the\n"
         "                                      specified TCP/IP port instead of stdin/out. If port is not specified\n"
         "                                      TCP %i will be used.\n"
-        #ifdef DEBUGGER_FOR_TIZEN
-        "--log[=<debug>]                       Enable logging to dlog. Supported\n"
-        "                                      two log levels: info and debug. Info contains info, warn and error\n"
-        "                                      messages, debug the same and debug messages in addition. Info level\n"
-        "                                      is the default one. Overwrites other log types\n"
-        #endif
-        "--log-file[=<debug>]                  Enable logging to file which is created in 'current'. Supported\n"
-        "                                      two log levels: info and debug. Info contains info, warn and error\n"
-        "                                      messages, debug the same and debug messages in addition. Info level\n"
-        "                                      is the default one. Overwrites other log types\n",
+        "--log[=<type>]                        Enable logging. Supported logging to file and to dlog (only for Tizen)\n"
+        "                                      File log by default. File is created in 'current' folder.\n",
         (int)DEFAULT_SERVER_PORT
     );
 }
@@ -54,9 +46,8 @@ int main(int argc, char *argv[])
     } interpreterType = InterpreterMI;
 
     bool engineLogging = false;
-    LogType logType = NO_LOG;
-    LogLevel logLevel = LOG_INFO;
     std::string logFilePath;
+    std::string logType = "off";
 
     uint16_t serverPort = 0;
 
@@ -107,36 +98,13 @@ int main(int argc, char *argv[])
             print_help();
             return EXIT_SUCCESS;
         }
-#ifdef DEBUGGER_FOR_TIZEN
         else if (strcmp(argv[i], "--log") == 0)
         {
-            logType = DLOG_LOG;
+            logType = "file";
         }
         else if (strstr(argv[i], "--log=") == argv[i])
         {
-            const std::string &debug = "debug";
-
-            logType = DLOG_LOG;
-            if (std::string(argv[i] + strlen("--log=")) == debug)
-                logLevel = LOG_DEBUG;
-            else
-                logLevel = LOG_INFO;
-        }
-#endif
-        else if (strcmp(argv[i], "--log-file") == 0)
-        {
-            logType = FILE_LOG;
-            continue;
-        }
-        else if (strstr(argv[i], "--log-file=") == argv[i])
-        {
-            const std::string &debug = "debug";
-
-            logType = FILE_LOG;
-            if (std::string(argv[i] + strlen("--log-file=")) == debug)
-                logLevel = LOG_DEBUG;
-            else
-                logLevel = LOG_INFO;
+            logType = argv[i] + strlen("--log=");
         }
         else if (strcmp(argv[i], "--server") == 0)
         {
@@ -179,8 +147,12 @@ int main(int argc, char *argv[])
         }
     }
 
-    Logger::setLogging(logType, logLevel);
-    Logger::log("Start logging. Level %d", logLevel);
+    if (Logger::setLogging(logType))
+    {
+        fprintf(stderr, "Error: Invalid log type\n");
+        return EXIT_FAILURE;
+    }
+    Logger::log("Start logging");
 
     ManagedDebugger debugger;
     std::unique_ptr<Protocol> protocol;

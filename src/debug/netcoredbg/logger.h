@@ -23,7 +23,7 @@ class LoggerImpl
 {
     public:
         virtual ~LoggerImpl() {};
-        virtual void vlog(LogLevel level, const std::string fmt, va_list args) = 0;
+        virtual void vlog(LogLevel level, const std::string& fmt, va_list args) = 0;
         virtual void log(LogLevel level, const std::string& msg) = 0;
 };
 
@@ -48,11 +48,18 @@ class FuncLogger
 class Logger
 {
     private:
+        static const std::string fileStr;
+        static const std::string nologStr;
+#ifdef DEBUGGER_FOR_TIZEN
+        static const std::string dlogStr;
+#endif
+
         static std::shared_ptr<LoggerImpl> logger;
 
     public:
         Logger() {}
-        static void setLogging(LogType type, LogLevel level = LOG_INFO);
+        static int setLogging(const std::string &type);
+        static void levelLog(LogLevel level, const std::string fmt, ...);
         static void log(const std::string fmt, ...);
         static FuncLogger getFuncLogger(const std::string &func);
 };
@@ -65,3 +72,12 @@ class Logger
 
 #define LogFuncEntry()  \
     FuncLogger __funcLogger__ = Logger::getFuncLogger(std::string(__CROSS_FUNCTION__));
+
+
+#define __FILENAME__ (strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A) ? strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A) + 1 : __FILE__)
+
+#define LogWithLine(fmt, ...) \
+    Logger::log("[" + std::string(__FILENAME__) + ":" + std::to_string(__LINE__) + "] " + fmt, ##__VA_ARGS__);
+
+#define LogLevelWithLine(level, fmt, ...)           \
+    Logger::levelLog(level, "[" + std::string(__FILENAME__) + ":" + std::to_string(__LINE__) + "] " + fmt, ##__VA_ARGS__);
