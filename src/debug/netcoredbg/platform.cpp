@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <stdlib.h>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
@@ -792,6 +793,25 @@ void IORedirectServerHandles::RedirectOutput(
 }
 
 #endif
+
+std::string GetTempFolder()
+{
+#ifdef WIN32
+    CHAR path[MAX_PATH];
+    DWORD len = GetTempPathA(MAX_PATH - 1, path);
+    return std::string(path, len);
+#elif __APPLE__
+    char *pPath = getenv("TMPDIR");
+
+    if (pPath != nullptr)
+        return std::string(pPath);
+    else
+        return "";
+#else //WIN32
+    return "/tmp/";
+#endif // WIN32
+}
+
 
 IORedirectServer::operator bool() const
 {

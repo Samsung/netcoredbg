@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <chrono>
 #include <stdio.h>
+#include "platform.h"
 #include "logger.h"
 
 #ifdef DEBUGGER_FOR_TIZEN
@@ -90,11 +91,12 @@ const std::string FileLogger::errorStr = "ERROR";
 FileLogger::FileLogger()
 {
     auto time = std::time(nullptr);
+    std::string tmpPath = GetTempFolder();
     std::ostringstream oss;
 
     oss << std::put_time(std::localtime(&time), "%Y_%m_%d__%H_%M_%S");
 
-    logFile = fopen(std::string(filenameBase + oss.str() + ".log").c_str(), "w+");
+    logFile = fopen(std::string(tmpPath + filenameBase + oss.str() + ".log").c_str(), "w+");
 }
 
 FileLogger::~FileLogger()
