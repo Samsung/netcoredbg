@@ -594,7 +594,7 @@ HRESULT Evaluator::WalkMembers(
     if (className == "decimal") // TODO: implement mechanism for walking over custom type fields
         return S_OK;
 
-    std::unordered_set<std::string> backedProperies;
+    std::unordered_set<std::string> backedProperties;
 
     ULONG numFields = 0;
     HCORENUM fEnum = NULL;
@@ -649,7 +649,7 @@ HRESULT Evaluator::WalkMembers(
                 {
                     size_t endOffset = name.rfind('>');
                     name = name.substr(1, endOffset - 1);
-                    backedProperies.insert(name);
+                    backedProperties.insert(name);
                 }
             }
             else
@@ -701,7 +701,7 @@ HRESULT Evaluator::WalkMembers(
 
             std::string name = to_utf8(propertyName/*, propertyNameLen*/);
 
-            if (backedProperies.find(name) != backedProperies.end())
+            if (backedProperties.find(name) != backedProperties.end())
                 continue;
 
             bool is_static = (getterAttr & mdStatic);
