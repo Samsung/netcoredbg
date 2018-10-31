@@ -124,7 +124,7 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, std:
     std::ostringstream ss;
     const char *sep = "";
 
-    //Now that we know the underlying enum type, let's decode the enum variable into OR-ed, human readable enum contants
+    //Now that we know the underlying enum type, let's decode the enum variable into OR-ed, human readable enum constants
     fEnum = NULL;
     bool isFirst = true;
     ULONG64 remainingValue = *((ULONG64*)enumValue);
