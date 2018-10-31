@@ -344,7 +344,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
     //ELEMENT_TYPE_END            = 0x0,
     //ELEMENT_TYPE_VAR            = 0x13,     // a class type variable VAR <U1>
     //ELEMENT_TYPE_GENERICINST    = 0x15,     // GENERICINST <generic type> <argCnt> <arg1> ... <argn>
-    //ELEMENT_TYPE_TYPEDBYREF     = 0x16,     // TYPEDREF  (it takes no args) a typed referece to some other type
+    //ELEMENT_TYPE_TYPEDBYREF     = 0x16,     // TYPEDREF  (it takes no args) a typed reference to some other type
     //ELEMENT_TYPE_MVAR           = 0x1e,     // a method type variable MVAR <U1>
     //ELEMENT_TYPE_CMOD_REQD      = 0x1F,     // required C modifier : E_T_CMOD_REQD <mdTypeRef/mdTypeDef>
     //ELEMENT_TYPE_CMOD_OPT       = 0x20,     // optional C modifier : E_T_CMOD_OPT <mdTypeRef/mdTypeDef>
