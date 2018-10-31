@@ -11,6 +11,7 @@
 #include "manageddebugger.h"
 #include "miprotocol.h"
 #include "vscodeprotocol.h"
+#include "logger.h"
 
 static const uint16_t DEFAULT_SERVER_PORT = 4711;
 
@@ -27,7 +28,9 @@ static void print_help()
         "                                      Only supported by the VsCode interpreter.\n"
         "--server[=port_num]                   Start the debugger listening for requests on the\n"
         "                                      specified TCP/IP port instead of stdin/out. If port is not specified\n"
-        "                                      TCP %i will be used.\n",
+        "                                      TCP %i will be used.\n"
+        "--log[=<type>]                        Enable logging. Supported logging to file and to dlog (only for Tizen)\n"
+        "                                      File log by default. File is created in 'current' folder.\n",
         (int)DEFAULT_SERVER_PORT
     );
 }
@@ -44,6 +47,7 @@ int main(int argc, char *argv[])
 
     bool engineLogging = false;
     std::string logFilePath;
+    std::string logType = "off";
 
     uint16_t serverPort = 0;
 
@@ -94,6 +98,14 @@ int main(int argc, char *argv[])
             print_help();
             return EXIT_SUCCESS;
         }
+        else if (strcmp(argv[i], "--log") == 0)
+        {
+            logType = "file";
+        }
+        else if (strstr(argv[i], "--log=") == argv[i])
+        {
+            logType = argv[i] + strlen("--log=");
+        }
         else if (strcmp(argv[i], "--server") == 0)
         {
             serverPort = DEFAULT_SERVER_PORT;
@@ -135,6 +147,13 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (Logger::setLogging(logType))
+    {
+        fprintf(stderr, "Error: Invalid log type\n");
+        return EXIT_FAILURE;
+    }
+    Logger::log("Start logging");
+
     ManagedDebugger debugger;
     std::unique_ptr<Protocol> protocol;
 
@@ -142,23 +161,28 @@ int main(int argc, char *argv[])
     {
         case InterpreterMI:
         {
+            Logger::log("InterpreterMI selected");
             if (engineLogging)
             {
                 fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
+                Logger::log("Error: Engine logging is only supported in VsCode interpreter mode.");
                 return EXIT_FAILURE;
             }
             MIProtocol *miProtocol = new MIProtocol();
             protocol.reset(miProtocol);
             miProtocol->SetDebugger(&debugger);
+            Logger::log("SetDebugger for InterpreterMI");
             if (!execFile.empty())
                 miProtocol->SetLaunchCommand(execFile, execArgs);
             break;
         }
         case InterpreterVSCode:
         {
+            Logger::log("InterpreterVSCode selected");
             VSCodeProtocol *vsCodeProtocol = new VSCodeProtocol();
             protocol.reset(vsCodeProtocol);
             vsCodeProtocol->SetDebugger(&debugger);
+            Logger::log("SetDebugger for InterpreterVSCode");
             if (engineLogging)
                 vsCodeProtocol->EngineLogging(logFilePath);
             if (!execFile.empty())
@@ -175,6 +199,7 @@ int main(int argc, char *argv[])
         [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdErr, text)); }
     );
 
+    Logger::log("pidDebugee = " + std::to_string(pidDebuggee));
     if (pidDebuggee != 0)
     {
         debugger.Initialize();

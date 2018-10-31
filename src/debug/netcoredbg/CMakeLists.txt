@@ -42,7 +42,8 @@ set(netcoredbg_SRC
     jmc.cpp
     cputil.cpp
     expr.cpp
-    valuewrite.cpp)
+    valuewrite.cpp
+    logger.cpp)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -57,6 +58,11 @@ if (WIN32)
 else()
     target_link_libraries(netcoredbg corguids dl pthread)
 endif()
+
+if (CLR_CMAKE_TARGET_TIZEN_LINUX)
+    add_definitions(-DDEBUGGER_FOR_TIZEN)
+    target_link_libraries(netcoredbg dlog)
+endif (CLR_CMAKE_TARGET_TIZEN_LINUX)
 
 install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
 if (DBGSHIM_LOCATION)

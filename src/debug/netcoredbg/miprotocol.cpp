@@ -13,6 +13,7 @@
 #include <iostream>
 #include <iomanip>
 
+#include "logger.h"
 
 
 using namespace std::placeholders;
@@ -155,6 +156,8 @@ HRESULT MIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
 
 void MIProtocol::EmitBreakpointEvent(BreakpointEvent event)
 {
+    LogFuncEntry();
+
     switch(event.reason)
     {
         case BreakpointChanged:
@@ -510,6 +513,8 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
 {
+    LogFuncEntry();
+
     std::string frameLocation;
     PrintFrameLocation(event.frame, frameLocation);
 
@@ -561,15 +566,20 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
 
 void MIProtocol::EmitExitedEvent(ExitedEvent event)
 {
+    LogFuncEntry();
+
     MIProtocol::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", event.exitCode);
 }
 
 void MIProtocol::EmitContinuedEvent()
 {
+    LogFuncEntry();
 }
 
 void MIProtocol::EmitThreadEvent(ThreadEvent event)
 {
+    LogFuncEntry();
+
     const char *reasonText = "";
     switch(event.reason)
     {
@@ -585,6 +595,8 @@ void MIProtocol::EmitThreadEvent(ThreadEvent event)
 
 void MIProtocol::EmitModuleEvent(ModuleEvent event)
 {
+    LogFuncEntry();
+
     switch(event.reason)
     {
         case ModuleNew:
@@ -606,6 +618,8 @@ void MIProtocol::EmitModuleEvent(ModuleEvent event)
 
 void MIProtocol::EmitOutputEvent(OutputEvent event)
 {
+    LogFuncEntry();
+
     if (event.source.empty())
         MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\"\n",
             MIProtocol::EscapeMIValue(event.output).c_str());

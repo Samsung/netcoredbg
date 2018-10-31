@@ -16,6 +16,7 @@
 #include "typeprinter.h"
 #include "platform.h"
 #include "manageddebugger.h"
+#include "logger.h"
 
 
 HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads)
@@ -392,6 +393,8 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
 
 HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
+    LogFuncEntry();
+
     HRESULT Status;
 
     DWORD threadId = 0;

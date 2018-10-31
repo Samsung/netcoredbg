@@ -23,6 +23,7 @@ BuildRequires: coreclr-devel
 BuildRequires: dotnet-build-tools
 BuildRequires: unzip
 BuildRequires: corefx-managed
+BuildRequires: libdlog-devel
 Requires: coreclr
 
 # .NET Core Runtime

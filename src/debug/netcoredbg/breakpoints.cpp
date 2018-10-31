@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <fstream>
+#include "logger.h"
 
 
 Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
@@ -157,6 +158,8 @@ bool Breakpoints::HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreak
 
 void ManagedDebugger::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
 {
+    LogFuncEntry();
+
     m_breakpoints.InsertExceptionBreakpoint(name, breakpoint);
 }
 
@@ -372,6 +375,8 @@ HRESULT ManagedDebugger::SetBreakpoints(
     const std::vector<SourceBreakpoint> &srcBreakpoints,
     std::vector<Breakpoint> &breakpoints)
 {
+    LogFuncEntry();
+
     return m_breakpoints.SetBreakpoints(m_pProcess, filename, srcBreakpoints, breakpoints);
 }
 

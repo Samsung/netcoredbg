@@ -16,6 +16,7 @@
 #include "valuewrite.h"
 #include "frames.h"
 #include "symbolreader.h"
+#include "logger.h"
 
 
 HRESULT Variables::GetNumChild(
@@ -139,6 +140,8 @@ HRESULT Variables::FetchFieldsAndProperties(
 
 int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)
 {
+    LogFuncEntry();
+
     return m_variables.GetNamedVariables(variablesReference);
 }
 
@@ -157,6 +160,8 @@ HRESULT ManagedDebugger::GetVariables(
     int count,
     std::vector<Variable> &variables)
 {
+    LogFuncEntry();
+
     return m_variables.GetVariables(m_pProcess, variablesReference, filter, start, count, variables);
 }
 
@@ -268,6 +273,8 @@ HRESULT Variables::GetStackVariables(
 
 HRESULT ManagedDebugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
 {
+    LogFuncEntry();
+
     return m_variables.GetScopes(m_pProcess, frameId, scopes);
 }
 
@@ -401,6 +408,8 @@ HRESULT Variables::GetChildren(
 
 HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output)
 {
+    LogFuncEntry();
+
     return m_variables.Evaluate(m_pProcess, frameId, expression, variable, output);
 }
 
