@@ -408,7 +408,7 @@ HRESULT Evaluator::GetLiteralValue(
             IfFailRet(pThread->GetAppDomain(&pAppDomain));
             IfFailRet(pAppDomain->QueryInterface(IID_ICorDebugAppDomain2, (LPVOID*) &pAppDomain2));
 
-            // We can not direcly create null value of specific array type.
+            // We can not directly create null value of specific array type.
             // Instead, we create one element array with element type set to our specific array type.
             // Since array elements are initialized to null, we get our null value from the first array item.
 
