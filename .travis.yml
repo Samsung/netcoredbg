@@ -36,9 +36,6 @@ matrix:
         apt:
           sources:
           - sourceline: 'deb http://download.tizen.org/tools/latest-release/Ubuntu_14.04/ /'
-          packages:
-          - gbs
-          - rpm2cpio
     - os: osx
       osx_image: xcode9.4
 
@@ -86,6 +83,8 @@ before_install:
         ln -s /usr/local/opt/openssl/lib/pkgconfig/libcrypto.pc /usr/local/lib/pkgconfig/
         ln -s /usr/local/opt/openssl/lib/pkgconfig/libssl.pc /usr/local/lib/pkgconfig/
         ln -s /usr/local/opt/openssl/lib/pkgconfig/openssl.pc /usr/local/lib/pkgconfig/
+      elif [ ! -z "$TIZEN" ]; then
+        sudo apt-get update && sudo apt-get install -y --allow-unauthenticated gbs rpm2cpio
       fi
 
 install:
