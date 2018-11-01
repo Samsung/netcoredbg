@@ -740,7 +740,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         m_debugger->Initialize();
         IfFailRet(m_debugger->Attach(pid));
         IfFailRet(m_debugger->ConfigurationDone());
-        // TODO: print succeessful result
+        // TODO: print successful result
         return S_OK;
     }},
     { "target-detach", [this](const std::vector<std::string> &, std::string &output) -> HRESULT {

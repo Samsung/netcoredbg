@@ -408,7 +408,7 @@ HRESULT Evaluator::GetLiteralValue(
             IfFailRet(pThread->GetAppDomain(&pAppDomain));
             IfFailRet(pAppDomain->QueryInterface(IID_ICorDebugAppDomain2, (LPVOID*) &pAppDomain2));
 
-            // We can not direcly create null value of specific array type.
+            // We can not directly create null value of specific array type.
             // Instead, we create one element array with element type set to our specific array type.
             // Since array elements are initialized to null, we get our null value from the first array item.
 
@@ -594,7 +594,7 @@ HRESULT Evaluator::WalkMembers(
     if (className == "decimal") // TODO: implement mechanism for walking over custom type fields
         return S_OK;
 
-    std::unordered_set<std::string> backedProperies;
+    std::unordered_set<std::string> backedProperties;
 
     ULONG numFields = 0;
     HCORENUM fEnum = NULL;
@@ -649,7 +649,7 @@ HRESULT Evaluator::WalkMembers(
                 {
                     size_t endOffset = name.rfind('>');
                     name = name.substr(1, endOffset - 1);
-                    backedProperies.insert(name);
+                    backedProperties.insert(name);
                 }
             }
             else
@@ -701,7 +701,7 @@ HRESULT Evaluator::WalkMembers(
 
             std::string name = to_utf8(propertyName/*, propertyNameLen*/);
 
-            if (backedProperies.find(name) != backedProperies.end())
+            if (backedProperties.find(name) != backedProperties.end())
                 continue;
 
             bool is_static = (getterAttr & mdStatic);

@@ -312,7 +312,7 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
             IfFailRet(cb(FrameUnknown, pFrame, nullptr, nullptr));
             continue;
         }
-        // If the first frame is either internal or native then we might be in a call to unmanged code
+        // If the first frame is either internal or native then we might be in a call to unmanaged code
         if (level == 0)
         {
             std::vector<NativeFrame> nFrames;
