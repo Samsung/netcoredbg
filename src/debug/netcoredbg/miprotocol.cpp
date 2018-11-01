@@ -524,13 +524,13 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
         {
             MIProtocol::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
                 event.threadId, (unsigned int)event.breakpoint.id, (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
-            return;
+            break;
         }
         case StopStep:
         {
             MIProtocol::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 event.threadId, frameLocation.c_str());
-            return;
+            break;
         }
         case StopException:
         {
@@ -543,7 +543,7 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
                 category.c_str(),
                 event.threadId,
                 frameLocation.c_str());
-            return;
+            break;
         }
         case StopPause:
         {
@@ -551,17 +551,19 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
             // But MIEngine in Visual Studio accepts only reason="signal-received",signal-name="SIGINT".
             MIProtocol::Printf("*stopped,reason=\"signal-received\",signal-name=\"SIGINT\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 event.threadId, frameLocation.c_str());
-            return;
+            break;
         }
         case StopEntry:
         {
             MIProtocol::Printf("*stopped,reason=\"entry-point-hit\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
                 event.threadId, frameLocation.c_str());
-            return;
+            break;
         }
         default:
-            break;
+            return;
     }
+
+    MIProtocol::Printf("(gdb)\n");
 }
 
 void MIProtocol::EmitExitedEvent(ExitedEvent event)
@@ -569,6 +571,7 @@ void MIProtocol::EmitExitedEvent(ExitedEvent event)
     LogFuncEntry();
 
     MIProtocol::Printf("*stopped,reason=\"exited\",exit-code=\"%i\"\n", event.exitCode);
+    MIProtocol::Printf("(gdb)\n");
 }
 
 void MIProtocol::EmitContinuedEvent()
@@ -1084,12 +1087,13 @@ void MIProtocol::CommandLoop()
 {
     std::string token;
 
+    Printf("(gdb)\n");
+
     while (!m_exit)
     {
         token.clear();
         std::string input;
 
-        Printf("(gdb)\n");
         std::getline(std::cin, input);
         if (input.empty() && std::cin.eof())
             break;
@@ -1131,12 +1135,14 @@ void MIProtocol::CommandLoop()
                 Printf("%s^error,msg=\"%s\"\n", token.c_str(), MIProtocol::EscapeMIValue(output).c_str());
             }
         }
+        Printf("(gdb)\n");
     }
 
     if (!m_exit)
         m_debugger->Disconnect(Debugger::DisconnectTerminate);
 
     Printf("%s^exit\n", token.c_str());
+    Printf("(gdb)\n");
 }
 
 std::mutex MIProtocol::m_outMutex;
