@@ -915,7 +915,7 @@ namespace MICore
 
         /// <summary>
         /// GDB (on x86) sometimes returns a tuple list in a context requiring a tuple (&lt;MULTIPLE&gt; breakpoints).
-        /// The grammer does not allow this, but we recognize it and accept it only in the special case when it is contained
+        /// The grammar does not allow this, but we recognize it and accept it only in the special case when it is contained
         /// in a result value.
         ///     tuplelist --  tuple ("," tuple)*
         ///     value -- const | tuple | tuplelist | list
