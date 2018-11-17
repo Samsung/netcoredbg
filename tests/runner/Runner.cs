@@ -142,9 +142,9 @@ namespace Runner
                 {
                     while (true)
                     {
-                        Task<string> intputTask = queue.ReceiveAsync();
-                        intputTask.Wait(token);
-                        string result = intputTask.Result;
+                        Task<string> inputTask = queue.ReceiveAsync();
+                        inputTask.Wait(token);
+                        string result = inputTask.Result;
                         if (result.StartsWith(text))
                         {
                             var parser = new MICore.MIResults();
