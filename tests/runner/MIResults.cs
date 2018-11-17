@@ -424,7 +424,7 @@ namespace MICore
                     return string.Format(CultureInfo.InvariantCulture, "[...] count = {0}", ((ListValue)this.Value).Length);
                 }
 
-                return "<Unkonwn ResultValue Type>";
+                return "<Unknown ResultValue Type>";
             }
         }
 
