@@ -66,15 +66,21 @@ class Logger
 
 #ifdef WIN32
 #define __CROSS_FUNCTION__ __FUNCSIG__
+#ifndef DIRECTORY_SEPARATOR_STR_A
+#define DIRECTORY_SEPARATOR_STR_A "\\"
+#endif
 #else // WIN32
 #define __CROSS_FUNCTION__ __PRETTY_FUNCTION__
+#ifndef DIRECTORY_SEPARATOR_STR_A
+#define DIRECTORY_SEPARATOR_STR_A "/"
+#endif
 #endif // WIN32
 
 #define LogFuncEntry()  \
     FuncLogger __funcLogger__ = Logger::getFuncLogger(std::string(__CROSS_FUNCTION__));
 
 
-#define __FILENAME__ (strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A[0]) ? strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A[0]) + 1 : __FILE__)
+#define __FILENAME__ (strrchr(DIRECTORY_SEPARATOR_STR_A __FILE__, DIRECTORY_SEPARATOR_STR_A[0]) + 1)
 
 #define LogWithLine(fmt, ...) \
     Logger::log("[" + std::string(__FILENAME__) + ":" + std::to_string(__LINE__) + "] " + fmt, ##__VA_ARGS__);
