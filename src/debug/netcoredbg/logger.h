@@ -74,7 +74,7 @@ class Logger
     FuncLogger __funcLogger__ = Logger::getFuncLogger(std::string(__CROSS_FUNCTION__));
 
 
-#define __FILENAME__ (strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A) ? strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A) + 1 : __FILE__)
+#define __FILENAME__ (strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A[0]) ? strrchr(__FILE__, DIRECTORY_SEPARATOR_STR_A[0]) + 1 : __FILE__)
 
 #define LogWithLine(fmt, ...) \
     Logger::log("[" + std::string(__FILENAME__) + ":" + std::to_string(__LINE__) + "] " + fmt, ##__VA_ARGS__);

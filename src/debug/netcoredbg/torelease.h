@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include "logger.h"
+
 // This class acts a smart pointer which calls the Release method on any object
 // you place in it when the ToRelease class falls out of scope.  You may use it
 // just like you would a standard pointer to a COM object (including if (foo),
@@ -81,7 +83,7 @@ private:
 };
 
 #ifndef IfFailRet
-#define IfFailRet(EXPR) do { Status = (EXPR); if(FAILED(Status)) { return (Status); } } while (0)
+#define IfFailRet(EXPR) do { Status = (EXPR); if(FAILED(Status)) { LogLevelWithLine(LOG_ERROR, "%s : 0x%08x", #EXPR, Status); return (Status); } } while (0)
 #endif
 
 #ifndef _countof
