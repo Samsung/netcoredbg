@@ -445,6 +445,21 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         body["value"] = output;
 
         return S_OK;
+    } },
+    { "setFunctionBreakpoints", [this](const json &arguments, json &body) {
+        HRESULT Status = S_OK;
+
+        std::vector<FunctionBreakpoint> funcBreakpoints;
+        for (auto &b : arguments.at("breakpoints"))
+            funcBreakpoints.emplace_back(b.at("name"), b.value("condition", std::string()));
+
+        std::vector<Breakpoint> breakpoints;
+        Logger::log("SetFuncBreak");
+        IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+
+        body["breakpoints"] = breakpoints;
+
+        return Status;
     } }
     };
 

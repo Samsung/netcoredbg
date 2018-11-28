@@ -34,6 +34,10 @@ class Modules
 
     static bool ShouldLoadSymbolsForModule(const std::string &moduleName);
     static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
+    static HRESULT GetMethodFromModule(
+        ICorDebugModule *pModule,
+        const std::string &funcName,
+        mdMethodDef &methodToken);
 
 public:
 
@@ -71,6 +75,16 @@ public:
         mdMethodDef &methodToken,
         std::string &fullname,
         ICorDebugModule **ppModule);
+
+    HRESULT GetFunctionInAny(
+        std::string &funcname,
+        mdMethodDef &methodToken,
+        ICorDebugModule **ppModule);
+
+    HRESULT GetFunctionInModule(
+        ICorDebugModule *pModule,
+        std::string &funcname,
+        mdMethodDef &methodToken);
 
     HRESULT GetStepRangeFromCurrentIP(
         ICorDebugThread *pThread,

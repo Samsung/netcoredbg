@@ -10,93 +10,7 @@
 #include "logger.h"
 
 
-Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
-    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr), enabled(true), times(0)
-{}
 
-Breakpoints::ManagedBreakpoint::~ManagedBreakpoint()
-{
-    if (breakpoint)
-        breakpoint->Activate(0);
-}
-
-void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
-{
-    breakpoint.id = this->id;
-    breakpoint.verified = this->IsResolved();
-    breakpoint.condition = this->condition;
-    breakpoint.source = Source(this->fullname);
-    breakpoint.line = this->linenum;
-    breakpoint.hitCount = this->times;
-}
-
-HRESULT Breakpoints::HitBreakpoint(
-    Debugger *debugger,
-    ICorDebugThread *pThread,
-    ICorDebugBreakpoint *pBreakpoint,
-    Breakpoint &breakpoint,
-    bool &atEntry)
-{
-    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
-
-    HRESULT Status;
-
-    atEntry = HitEntry(pThread, pBreakpoint);
-    if (atEntry)
-        return S_OK;
-
-    ULONG32 ilOffset;
-    Modules::SequencePoint sp;
-    mdMethodDef methodToken;
-
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-    if (pFrame == nullptr)
-        return E_FAIL;
-    IfFailRet(pFrame->GetFunctionToken(&methodToken));
-
-    IfFailRet(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
-
-    auto breakpoints = m_breakpoints.find(sp.document);
-    if (breakpoints == m_breakpoints.end())
-    {
-        // try to find a match with file name only
-        breakpoints = m_breakpoints.find(GetFileName(sp.document));
-        if (breakpoints == m_breakpoints.end())
-            return E_FAIL;
-    }
-
-    auto &breakpointsInSource = breakpoints->second;
-    auto it = breakpointsInSource.find(sp.startLine);
-    if (it == breakpointsInSource.end())
-        return E_FAIL;
-
-    ManagedBreakpoint &b = it->second;
-
-    if (b.ilOffset == ilOffset &&
-        b.methodToken == methodToken &&
-        b.enabled)
-    {
-        if (!b.condition.empty())
-        {
-            DWORD threadId = 0;
-            IfFailRet(pThread->GetID(&threadId));
-            uint64_t frameId = StackFrame(threadId, 0, "").id;
-
-            Variable variable;
-            std::string output;
-            IfFailRet(debugger->Evaluate(frameId, b.condition, variable, output));
-
-            if (variable.type != "bool" || variable.value != "true")
-                return E_FAIL;
-        }
-        ++b.times;
-        b.ToBreakpoint(breakpoint);
-        return S_OK;
-    }
-
-    return E_FAIL;
-}
 
 static HRESULT IsSameFunctionBreakpoint(
     ICorDebugFunctionBreakpoint *pBreakpoint1,
@@ -137,6 +51,143 @@ static HRESULT IsSameFunctionBreakpoint(
         return E_FAIL;
 
     return S_OK;
+}
+
+Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
+    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr), enabled(true), times(0)
+{}
+
+Breakpoints::ManagedBreakpoint::~ManagedBreakpoint()
+{
+    if (breakpoint)
+        breakpoint->Activate(0);
+}
+
+void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
+{
+    breakpoint.id = this->id;
+    breakpoint.verified = this->IsResolved();
+    breakpoint.condition = this->condition;
+    breakpoint.source = Source(this->fullname);
+    breakpoint.line = this->linenum;
+    breakpoint.hitCount = this->times;
+}
+
+void Breakpoints::ManagedFunctionBreakpoint::ToBreakpoint(Breakpoint &breakpoint) const
+{
+    breakpoint.id = this->id;
+    breakpoint.verified = this->IsResolved();
+    breakpoint.condition = this->condition;
+}
+
+template <typename BreakpointType>
+HRESULT Breakpoints::HandleEnabled(BreakpointType &bp, Debugger *debugger, ICorDebugThread *pThread, Breakpoint &breakpoint)
+{
+    HRESULT Status;
+
+    if (!bp.condition.empty())
+    {
+        DWORD threadId = 0;
+        IfFailRet(pThread->GetID(&threadId));
+        uint64_t frameId = StackFrame(threadId, 0, "").id;
+
+        Variable variable;
+        std::string output;
+        IfFailRet(debugger->Evaluate(frameId, bp.condition, variable, output));
+
+        if (variable.type != "bool" || variable.value != "true")
+            return E_FAIL;
+    }
+    ++bp.times;
+    bp.ToBreakpoint(breakpoint);
+
+    return S_OK;
+}
+
+HRESULT Breakpoints::HitManagedBreakpoint(Debugger *debugger,
+                                          ICorDebugThread *pThread,
+                                          ICorDebugFrame *pFrame,
+                                          mdMethodDef methodToken,
+                                          Breakpoint &breakpoint)
+{
+    ULONG32 ilOffset;
+    Modules::SequencePoint sp;
+    HRESULT Status;
+
+    IfFailRet(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
+
+    auto breakpoints = m_breakpoints.find(sp.document);
+    if (breakpoints == m_breakpoints.end())
+    {
+        // try to find a match with file name only
+        breakpoints = m_breakpoints.find(GetFileName(sp.document));
+        if (breakpoints == m_breakpoints.end())
+            return E_FAIL;
+    }
+
+    auto &breakpointsInSource = breakpoints->second;
+    auto it = breakpointsInSource.find(sp.startLine);
+    if (it == breakpointsInSource.end())
+        return E_FAIL;
+
+    ManagedBreakpoint &b = it->second;
+
+    if (b.ilOffset == ilOffset &&
+        b.methodToken == methodToken &&
+        b.enabled)
+        return HandleEnabled(b, debugger, pThread, breakpoint);
+
+    return E_FAIL;
+}
+
+HRESULT Breakpoints::HitManagedFunctionBreakpoint(Debugger *debugger,
+                                                  ICorDebugThread *pThread,
+                                                  ICorDebugBreakpoint *pBreakpoint,
+                                                  Breakpoint &breakpoint)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
+    if (FAILED(pBreakpoint->QueryInterface(IID_ICorDebugFunctionBreakpoint, (LPVOID *) &pFunctionBreakpoint)))
+        return E_FAIL;
+
+    for (auto &fb : m_funcBreakpoints)
+    {
+        ManagedFunctionBreakpoint &fbp = fb.second;
+
+        if (SUCCEEDED(IsSameFunctionBreakpoint(pFunctionBreakpoint, fbp.funcBreakpoint)) && fbp.enabled)
+            return HandleEnabled(fbp, debugger, pThread, breakpoint);
+    }
+
+    return E_FAIL;
+}
+
+HRESULT Breakpoints::HitBreakpoint(Debugger *debugger,
+                                   ICorDebugThread *pThread,
+                                   ICorDebugBreakpoint *pBreakpoint,
+                                   Breakpoint &breakpoint,
+                                   bool &atEntry)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+
+    HRESULT Status;
+
+    atEntry = HitEntry(pThread, pBreakpoint);
+    if (atEntry)
+        return S_OK;
+
+    mdMethodDef methodToken;
+
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+
+    if (SUCCEEDED(HitManagedBreakpoint(debugger, pThread, pFrame, methodToken, breakpoint)))
+        return S_OK;
+
+    return HitManagedFunctionBreakpoint(debugger, pThread, pBreakpoint, breakpoint);
 }
 
 bool Breakpoints::HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
@@ -328,6 +379,21 @@ void Breakpoints::TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::
         }
     }
 
+    for (auto &funcBreakpoints : m_funcBreakpoints)
+    {
+        ManagedFunctionBreakpoint &fb = funcBreakpoints.second;
+
+        if (fb.IsResolved())
+            continue;
+
+        if (SUCCEEDED(ResolveFunctionBreakpointInModule(pModule, fb)))
+        {
+            Breakpoint breakpoint;
+            fb.ToBreakpoint(breakpoint);
+            events.emplace_back(BreakpointChanged, breakpoint);
+        }
+    }
+
     TrySetupEntryBreakpoint(pModule);
 }
 
@@ -448,6 +514,123 @@ HRESULT Breakpoints::SetBreakpoints(
 
         breakpoints.push_back(breakpoint);
     }
+
+    return S_OK;
+}
+
+HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
+{
+    HRESULT Status;
+    mdMethodDef methodToken;
+
+    ToRelease<ICorDebugModule> pModule;
+
+    IfFailRet(m_modules.GetFunctionInAny(fbp.name, methodToken, &pModule));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
+
+    ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
+    IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
+    IfFailRet(pFunctionBreakpoint->Activate(TRUE));
+
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    fbp.modAddress = modAddress;
+    fbp.methodToken = methodToken;
+    fbp.funcBreakpoint = pFunctionBreakpoint.Detach();
+
+    return S_OK;
+}
+
+HRESULT Breakpoints::ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &fbp)
+{
+    HRESULT Status;
+    mdMethodDef methodToken;
+
+    IfFailRet(m_modules.GetFunctionInModule(
+        pModule,
+        fbp.name,
+        methodToken));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
+
+    ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
+    IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
+    IfFailRet(pFunctionBreakpoint->Activate(TRUE));
+
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    fbp.modAddress = modAddress;
+    fbp.methodToken = methodToken;
+    fbp.funcBreakpoint = pFunctionBreakpoint.Detach();
+
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::SetFunctionBreakpoints(
+    const std::vector<FunctionBreakpoint> &funcBreakpoints,
+    std::vector<Breakpoint> &breakpoints)
+{
+    LogFuncEntry();
+
+    return m_breakpoints.SetFunctionBreakpoints(m_pProcess, funcBreakpoints, breakpoints);
+}
+
+HRESULT Breakpoints::SetFunctionBreakpoints(
+    ICorDebugProcess *pProcess,
+    const std::vector<FunctionBreakpoint> &funcBreakpoints,
+    std::vector<Breakpoint> &breakpoints)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+
+    // Clean all previous function breakpoints
+    for  (auto &fb : funcBreakpoints)
+    {
+        if (m_funcBreakpoints.find(fb.func) == m_funcBreakpoints.end())
+            m_funcBreakpoints.erase(fb.func);
+    }
+
+    if (funcBreakpoints.empty())
+        return S_OK;
+
+
+    // Export function breakpoints
+    for (const auto &fb : funcBreakpoints)
+    {
+        const std::string &func = fb.func;
+        Breakpoint breakpoint;
+
+        auto b = m_funcBreakpoints.find(func);
+        if (b == m_funcBreakpoints.end())
+        {
+            // New function breakpoint
+            ManagedFunctionBreakpoint fbp;
+
+            fbp.id = m_nextBreakpointId++;
+            fbp.name = func;
+            fbp.condition = fb.condition;
+
+            if (pProcess)
+                ResolveFunctionBreakpoint(fbp);
+
+            fbp.ToBreakpoint(breakpoint);
+            m_funcBreakpoints.insert(std::make_pair(func, std::move(fbp)));
+        }
+        else
+        {
+            ManagedFunctionBreakpoint &fbp = b->second;
+
+            fbp.condition = fb.condition;
+            fbp.ToBreakpoint(breakpoint);
+        }
+
+        breakpoints.push_back(breakpoint);
+    }
+
 
     return S_OK;
 }

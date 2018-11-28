@@ -11,7 +11,65 @@
 #include "symbolreader.h"
 #include "platform.h"
 #include "cputil.h"
+#include "typeprinter.h"
 
+
+HRESULT Modules::GetMethodFromModule(ICorDebugModule *pModule, const std::string &funcName, mdMethodDef &methodToken)
+{
+    HRESULT Status;
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMDImport;
+
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID *)&pMDImport));
+
+    ULONG typesCnt = 0;
+    HCORENUM fTypeEnum = NULL;
+    mdTypeDef mdType = mdTypeDefNil;
+
+    while (SUCCEEDED(pMDImport->EnumTypeDefs(&fTypeEnum, &mdType, 1, &typesCnt)) && typesCnt != 0)
+    {
+        std::string typeName;
+        std::list<std::string> args;
+
+        IfFailRet(TypePrinter::NameForToken(mdType, pMDImport, typeName, false, args));
+
+        HCORENUM fFuncEnum = NULL;
+        mdMethodDef mdMethod = mdMethodDefNil;
+        ULONG methodsCnt = 0;
+
+        while (SUCCEEDED(pMDImport->EnumMethods(&fFuncEnum, mdType, &mdMethod, 1, &methodsCnt)) && methodsCnt != 0)
+        {
+            mdTypeDef memTypeDef;
+            ULONG nameLen;
+            WCHAR szFuncName[mdNameLen] = {0};
+
+            Status = pMDImport->GetMethodProps(mdMethod, &memTypeDef, szFuncName, _countof(szFuncName), &nameLen,
+                                               nullptr, nullptr, nullptr, nullptr, nullptr);
+            if (FAILED(Status))
+                continue;
+
+            std::string fullName = typeName + "." + to_utf8(szFuncName);
+
+            // If we've found the target function
+            if (fullName == funcName)
+            {
+                methodToken = mdMethod;
+
+                pMDImport->CloseEnum(fFuncEnum);
+                pMDImport->CloseEnum(fTypeEnum);
+
+                return S_OK;
+            }
+        }
+
+        pMDImport->CloseEnum(fFuncEnum);
+    }
+    pMDImport->CloseEnum(fTypeEnum);
+
+    return E_FAIL;
+}
 
 void Modules::CleanupAllModules()
 {
@@ -112,6 +170,49 @@ HRESULT Modules::GetLocationInModule(
     IfFailRet(info_pair->second.symbols->GetLineByILOffset(methodToken, ilOffset, &resolvedLinenum, wFilename, _countof(wFilename)));
 
     fullname = to_utf8(wFilename);
+
+    return S_OK;
+}
+
+HRESULT Modules::GetFunctionInAny(std::string &funcname,
+                                  mdMethodDef &methodToken,
+                                  ICorDebugModule **ppModule)
+{
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+
+
+    for (auto &info_pair : m_modulesInfo)
+    {
+        ModuleInfo &mdInfo = info_pair.second;
+
+        if (SUCCEEDED(GetMethodFromModule(mdInfo.module, funcname, methodToken)))
+        {
+            mdInfo.module->AddRef();
+            *ppModule = mdInfo.module.GetPtr();
+
+            return S_OK;
+        }
+    }
+
+    return E_FAIL;
+}
+
+
+HRESULT Modules::GetFunctionInModule(ICorDebugModule *pModule,
+                                     std::string &funcname,
+                                     mdMethodDef &methodToken)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress;
+
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+        return E_FAIL;
+
+    IfFailRet(GetMethodFromModule(pModule, funcname, methodToken));
 
     return S_OK;
 }

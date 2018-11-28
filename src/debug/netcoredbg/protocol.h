@@ -250,3 +250,13 @@ struct SourceBreakpoint
 
     SourceBreakpoint(int linenum, const std::string &cond = std::string()) : line(linenum), condition(cond) {}
 };
+
+struct FunctionBreakpoint
+{
+    std::string func;
+    std::string condition;
+
+    FunctionBreakpoint(const std::string &func, const std::string &cond = std::string()) : func(func),
+                                                                                           condition(cond)
+    {}
+};

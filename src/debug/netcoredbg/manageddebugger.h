@@ -197,13 +197,49 @@ class Breakpoints
         ManagedBreakpoint(const ManagedBreakpoint &that) = delete;
     };
 
+    struct ManagedFunctionBreakpoint {
+        uint32_t id;
+        CORDB_ADDRESS modAddress;
+        std::string name;
+        mdMethodDef methodToken;
+        ToRelease<ICorDebugFunctionBreakpoint> funcBreakpoint;
+        ULONG32 times;
+        bool enabled;
+        std::string condition;
+
+        bool IsResolved() const { return modAddress != 0; }
+
+        ManagedFunctionBreakpoint() : id(0),
+                                      modAddress(0),
+                                      methodToken(0),
+                                      funcBreakpoint(nullptr),
+                                      times(0),
+                                      enabled(true)
+        {}
+
+        ~ManagedFunctionBreakpoint()
+        {
+            if (funcBreakpoint)
+                funcBreakpoint->Activate(0);
+        }
+
+        void ToBreakpoint(Breakpoint &breakpoint) const;
+
+        ManagedFunctionBreakpoint(ManagedFunctionBreakpoint &&that) = default;
+        ManagedFunctionBreakpoint(const ManagedFunctionBreakpoint &that) = delete;
+    };
+
     Modules &m_modules;
     uint32_t m_nextBreakpointId;
     std::mutex m_breakpointsMutex;
     std::unordered_map<std::string, std::unordered_map<int, ManagedBreakpoint> > m_breakpoints;
+    std::unordered_map<std::string, ManagedFunctionBreakpoint > m_funcBreakpoints;
 
     HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
     HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
+
+    HRESULT ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &bp);
+    HRESULT ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp);
 
     bool m_stopAtEntry;
     mdMethodDef m_entryPoint;
@@ -211,6 +247,21 @@ class Breakpoints
 
     HRESULT TrySetupEntryBreakpoint(ICorDebugModule *pModule);
     bool HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
+
+    template <typename BreakpointType>
+    HRESULT HandleEnabled(BreakpointType &bp, Debugger *debugger, ICorDebugThread *pThread, Breakpoint &breakpoint);
+
+    HRESULT HitManagedBreakpoint(
+        Debugger *debugger,
+        ICorDebugThread *pThread,
+        ICorDebugFrame *pFrame,
+        mdMethodDef methodToken,
+        Breakpoint &breakpoint);
+
+    HRESULT HitManagedFunctionBreakpoint(Debugger *debugger,
+        ICorDebugThread *pThread,
+        ICorDebugBreakpoint *pBreakpoint,
+        Breakpoint &breakpoint);
 
 public:
     Breakpoints(Modules &modules) :
@@ -233,6 +284,11 @@ public:
         ICorDebugProcess *pProcess,
         std::string filename,
         const std::vector<SourceBreakpoint> &srcBreakpoints,
+        std::vector<Breakpoint> &breakpoints);
+
+    HRESULT SetFunctionBreakpoints(
+        ICorDebugProcess *pProcess,
+        const std::vector<FunctionBreakpoint> &funcBreakpoints,
         std::vector<Breakpoint> &breakpoints);
 
     void SetStopAtEntry(bool stopAtEntry);
@@ -477,6 +533,7 @@ public:
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
     HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
+    HRESULT SetFunctionBreakpoints(const std::vector<FunctionBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) override;
     HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
     HRESULT StepCommand(int threadId, StepType stepType) override;
