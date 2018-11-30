@@ -110,7 +110,9 @@ unzip ../netcoredbg/packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nup
 unzip $SYSCODEPAGES lib/netstandard1.3/System.Text.Encoding.CodePages.dll
 
 find lib/netstandard1.3/ -name '*.dll' -exec chmod 644 {} \;
+%ifnarch %{ix86}
 find lib/netstandard1.3/ -name '*.dll' -exec %{_datarootdir}/%{netcoreappalias}/crossgen -ReadyToRun /Platform_Assemblies_Paths %{_datarootdir}/%{netcoreappalias}:$PWD/lib/netstandard1.3 {} \;
+%endif
 
 install -p -m 644 lib/netstandard1.3/*.dll %{buildroot}%{sdk_install_prefix}
 
