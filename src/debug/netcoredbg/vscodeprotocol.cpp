@@ -238,6 +238,23 @@ void VSCodeProtocol::EmitInitializedEvent()
     EmitEvent("initialized", json::object());
 }
 
+void VSCodeProtocol::EmitCapabilitiesEvent()
+{
+    LogFuncEntry();
+
+    json body = json::object();
+    json capabilities = json::object();
+
+    capabilities["supportsConfigurationDoneRequest"] = true;
+    capabilities["supportsFunctionBreakpoints"] = true;
+    capabilities["supportsConditionalBreakpoints"] = true;
+    capabilities["supportTerminateDebuggee"] = true;
+
+    body["capabilities"] = capabilities;
+
+    EmitEvent("capabilities", body);
+}
+
 void VSCodeProtocol::Cleanup()
 {
 
@@ -252,6 +269,7 @@ void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &bo
     response["event"] = name;
     response["body"] = body;
     std::string output = response.dump();
+
     std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
     std::cout.flush();
     Log(LOG_EVENT, output);
@@ -265,10 +283,11 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 {
     static std::unordered_map<std::string, CommandCallback> commands {
     { "initialize", [this](const json &arguments, json &body){
+
+        EmitCapabilitiesEvent();
+
         m_debugger->Initialize();
-        body["supportsConfigurationDoneRequest"] = true;
-        body["supportTerminateDebuggee"] = true;
-        body["supportsConditionalBreakpoints"] = true;
+
         return S_OK;
     } },
     { "configurationDone", [this](const json &arguments, json &body){
