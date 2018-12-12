@@ -69,7 +69,6 @@ class FileLogger : public LoggerImpl
         static const std::string errorStr;
 
         FILE *logFile;
-        std::time_t timeNow;
 
         static std::string FormatMessageString(LogLevel level, const std::string &str);
         static const std::string& LevelToString(LogLevel level);
