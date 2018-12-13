@@ -69,7 +69,6 @@ class FileLogger : public LoggerImpl
         static const std::string errorStr;
 
         FILE *logFile;
-        std::time_t timeNow;
 
         static std::string FormatMessageString(LogLevel level, const std::string &str);
         static const std::string& LevelToString(LogLevel level);
@@ -87,14 +86,25 @@ const std::string FileLogger::infoStr = "INFO";
 const std::string FileLogger::warnStr = "WARN";
 const std::string FileLogger::errorStr = "ERROR";
 
+static void get_local_time(std::tm *tm_snapshot)
+{
+    auto system_now = std::chrono::system_clock::now();
+    std::time_t time = std::chrono::system_clock::to_time_t(system_now);
+#if (defined(WIN32) || defined(_WIN32) || defined(__WIN32__))
+    ::localtime_s(tm_snapshot, &time);
+#else
+    ::localtime_r(&time, tm_snapshot); // POSIX
+#endif
+}
 
 FileLogger::FileLogger()
 {
-    auto time = std::time(nullptr);
     std::string tmpPath = GetTempFolder();
     std::ostringstream oss;
 
-    oss << std::put_time(std::localtime(&time), "%Y_%m_%d__%H_%M_%S");
+    std::tm tm_snapshot;
+    get_local_time(&tm_snapshot);
+    oss << std::put_time(&tm_snapshot, "%Y_%m_%d__%H_%M_%S");
 
     logFile = fopen(std::string(tmpPath + filenameBase + oss.str() + ".log").c_str(), "w+");
 }
@@ -121,9 +131,10 @@ const std::string& FileLogger::LevelToString(LogLevel level)
 
 std::string FileLogger::FormatMessageString(LogLevel level, const std::string &str)
 {
-    auto time = std::time(nullptr);
     std::ostringstream oss;
-    oss << std::put_time(std::localtime(&time), "%y-%m-%d %OH:%OM:%OS") << " " << LevelToString(level) << " " << str << std::endl;
+    std::tm tm_snapshot;
+    get_local_time(&tm_snapshot);
+    oss << std::put_time(&tm_snapshot, "%y-%m-%d %OH:%OM:%OS") << " " << LevelToString(level) << " " << str << std::endl;
 
     return oss.str();
 }
