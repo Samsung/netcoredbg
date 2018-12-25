@@ -414,6 +414,7 @@ private:
     std::string m_execPath;
     std::vector<std::string> m_execArgs;
     bool m_stopAtEntry;
+    bool m_isConfigurationDone;
 
     Modules m_modules;
     Evaluator m_evaluator;
@@ -451,6 +452,8 @@ private:
     HRESULT AttachToProcess(DWORD pid);
     HRESULT DetachFromProcess();
     HRESULT TerminateProcess();
+
+    HRESULT RunIfReady();
 
 public:
     ManagedDebugger();

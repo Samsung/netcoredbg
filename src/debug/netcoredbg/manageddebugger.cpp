@@ -812,6 +812,7 @@ ManagedDebugger::ManagedDebugger() :
     m_lastStoppedThreadId(-1),
     m_startMethod(StartNone),
     m_stopAtEntry(false),
+    m_isConfigurationDone(false),
     m_evaluator(m_modules),
     m_breakpoints(m_modules),
     m_variables(m_evaluator),
@@ -841,13 +842,32 @@ HRESULT ManagedDebugger::Initialize()
     return S_OK;
 }
 
+HRESULT ManagedDebugger::RunIfReady()
+{
+    if (m_startMethod == StartNone || !m_isConfigurationDone)
+        return S_OK;
+
+    switch(m_startMethod)
+    {
+        case StartLaunch:
+            return RunProcess(m_execPath, m_execArgs);
+        case StartAttach:
+            return AttachToProcess(m_processId);
+        default:
+            return E_FAIL;
+    }
+
+    //Unreachable
+    return E_FAIL;
+}
+
 HRESULT ManagedDebugger::Attach(int pid)
 {
     LogFuncEntry();
 
     m_startMethod = StartAttach;
     m_processId = pid;
-    return S_OK;
+    return RunIfReady();
 }
 
 HRESULT ManagedDebugger::Launch(std::string fileExec, std::vector<std::string> execArgs, bool stopAtEntry)
@@ -859,23 +879,16 @@ HRESULT ManagedDebugger::Launch(std::string fileExec, std::vector<std::string> e
     m_execArgs = execArgs;
     m_stopAtEntry = stopAtEntry;
     m_breakpoints.SetStopAtEntry(m_stopAtEntry);
-    return S_OK;
+    return RunIfReady();
 }
 
 HRESULT ManagedDebugger::ConfigurationDone()
 {
     LogFuncEntry();
 
-    switch(m_startMethod)
-    {
-        case StartLaunch:
-            return RunProcess(m_execPath, m_execArgs);
-        case StartAttach:
-            return AttachToProcess(m_processId);
-        default:
-            return E_FAIL;
-    }
-    return E_FAIL;
+    m_isConfigurationDone = true;
+
+    return RunIfReady();
 }
 
 HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
