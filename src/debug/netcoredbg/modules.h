@@ -77,7 +77,7 @@ public:
         ICorDebugModule **ppModule);
 
     HRESULT GetFunctionInAny(
-        std::string &funcname,
+        const std::string &funcname,
         mdMethodDef &methodToken,
         ICorDebugModule **ppModule);
 

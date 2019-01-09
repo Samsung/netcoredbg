@@ -174,7 +174,7 @@ HRESULT Modules::GetLocationInModule(
     return S_OK;
 }
 
-HRESULT Modules::GetFunctionInAny(std::string &funcname,
+HRESULT Modules::GetFunctionInAny(const std::string &funcname,
                                   mdMethodDef &methodToken,
                                   ICorDebugModule **ppModule)
 {

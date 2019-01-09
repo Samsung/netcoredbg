@@ -78,6 +78,7 @@ void Breakpoints::ManagedFunctionBreakpoint::ToBreakpoint(Breakpoint &breakpoint
     breakpoint.id = this->id;
     breakpoint.verified = this->IsResolved();
     breakpoint.condition = this->condition;
+    breakpoint.funcname = this->name;
 }
 
 template <typename BreakpointType>

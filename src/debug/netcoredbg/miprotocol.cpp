@@ -89,46 +89,100 @@ static bool GetIndices(const std::vector<std::string> &args, int &index1, int &i
     return true;
 }
 
-bool ParseBreakpoint(
-    const std::vector<std::string> &args_orig,
-    std::string &filename,
-    unsigned int &linenum,
-    std::string &condition)
+enum BreakType
 {
-    std::vector<std::string> args = args_orig;
-    StripArgs(args);
+    LineBreak,
+    FuncBreak,
+    Error
+};
+
+
+struct LineBreak
+{
+    std::string filename;
+    unsigned int linenum;
+    std::string condition;
+};
+
+struct FuncBreak
+{
+    std::string funcname;
+    std::string condition;
+};
+
+static BreakType GetBreakpointType(const std::vector<std::string> &args)
+{
+    int ncnt = 0;
 
     if (args.empty())
-        return false;
+        return BreakType::Error;
 
     if (args.at(0) == "-f")
     {
-        args.erase(args.begin());
-        if (args.empty())
-            return false;
+        ++ncnt;
+        if (args.size() <= ncnt)
+            return BreakType::Error;
     }
+
+    if (args.at(ncnt) == "-c")
+    {
+        ncnt += 2;
+
+        if (args.size() < ncnt)
+            return BreakType::Error;
+    }
+
+    std::size_t i = args.at(ncnt).rfind(':');
+
+    if (i == std::string::npos)
+        return BreakType::FuncBreak;
+
+    // i + 1 to skip colon
+    std::string linenum(args.at(ncnt), i + 1);
+
+    if (linenum.find_first_not_of("0123456789") == std::string::npos)
+        return BreakType::LineBreak;
+
+    return BreakType::Error;
+}
+
+static std::string GetConditionPrepareArgs(std::vector<std::string> &args)
+{
+    std::string condition("");
+
+    if (args.at(0) == "-f")
+        args.erase(args.begin());
 
     if (args.at(0) == "-c")
     {
-        if (args.size() < 3)
-            return false;
         condition = args.at(1);
         args.erase(args.begin(), args.begin() + 2);
     }
 
-    std::size_t i = args.at(0).rfind(':');
-
-    if (i == std::string::npos)
-        return false;
-
-    filename = args.at(0).substr(0, i);
-    std::string slinenum = args.at(0).substr(i + 1);
-
-    bool ok;
-    linenum = ParseInt(slinenum, ok);
-    return ok && linenum > 0;
+    return condition;
 }
 
+static bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb)
+{
+    bool ok;
+
+    lb.condition = GetConditionPrepareArgs(args);
+
+    std::size_t i = args.at(0).rfind(':');
+
+    lb.filename = args.at(0).substr(0, i);
+    lb.linenum = ParseInt(args.at(0).substr(i + 1), ok);
+
+    return ok && lb.linenum > 0;
+}
+
+static bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
+{
+    fb.condition = GetConditionPrepareArgs(args);
+    fb.funcname = args.at(0);
+
+    return true;
+}
 
 HRESULT MIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
 {
@@ -444,6 +498,7 @@ HRESULT MIProtocol::SetBreakpoint(
     {
         srcBreakpoints.push_back(it.second);
     }
+
     srcBreakpoints.emplace_back(linenum, condition);
 
     std::vector<Breakpoint> breakpoints;
@@ -455,6 +510,36 @@ HRESULT MIProtocol::SetBreakpoint(
             continue;
 
         breakpointsInSource.insert(std::make_pair(b.id, SourceBreakpoint{ b.line, b.condition }));
+        breakpoint = b;
+        return S_OK;
+    }
+
+    return E_FAIL;
+}
+
+HRESULT MIProtocol::SetFunctionBreakpoint(
+    const std::string &funcname,
+    const std::string &condition,
+    Breakpoint &breakpoint)
+{
+    HRESULT Status;
+    std::vector<FunctionBreakpoint> funcBreakpoints;
+    int line;
+
+    for (const auto &it : m_funcBreakpoints)
+        funcBreakpoints.push_back(it.second);
+
+    funcBreakpoints.emplace_back(funcname, condition);
+
+    std::vector<Breakpoint> breakpoints;
+    IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+
+    for (const Breakpoint& b : breakpoints)
+    {
+        if (b.funcname != funcname)
+            continue;
+
+        m_funcBreakpoints.insert(std::make_pair(b.id, FunctionBreakpoint{ b.funcname, b.condition }));
         breakpoint = b;
         return S_OK;
     }
@@ -672,20 +757,44 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         output = "^done";
         return S_OK;
     } },
-    { "break-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        std::string filename;
-        unsigned int linenum;
-        std::string condition;
+    { "break-insert", [this](const std::vector<std::string> &unmutable_args, std::string &output) -> HRESULT {
+        HRESULT Status = E_FAIL;
         Breakpoint breakpoint;
-        if (ParseBreakpoint(args, filename, linenum, condition)
-            && SUCCEEDED(SetBreakpoint(filename, linenum, condition, breakpoint)))
+        std::vector<std::string> args = unmutable_args;
+
+        StripArgs(args);
+
+        BreakType bt = GetBreakpointType(args);
+
+        if (bt == BreakType::Error)
         {
-            PrintBreakpoint(breakpoint, output);
-            return S_OK;
+            output = "Wrong breakpoint specified";
+            return E_FAIL;
         }
 
-        output = "Unknown breakpoint location format";
-        return E_FAIL;
+        if (bt == BreakType::LineBreak)
+        {
+            struct LineBreak lb;
+
+            if (ParseBreakpoint(args, lb)
+                && SUCCEEDED(SetBreakpoint(lb.filename, lb.linenum, lb.condition, breakpoint)))
+                Status = S_OK;
+        }
+        else if (bt == BreakType::FuncBreak)
+        {
+            struct FuncBreak fb;
+
+            if (ParseBreakpoint(args, fb)
+                && SUCCEEDED(SetFunctionBreakpoint(fb.funcname, fb.condition, breakpoint)))
+                Status = S_OK;
+        }
+
+        if (Status == S_OK)
+            PrintBreakpoint(breakpoint, output);
+        else
+            output = "Unknown breakpoint location format";
+
+        return Status;
     } },
     { "break-delete", [this](const std::vector<std::string> &args, std::string &) -> HRESULT {
         std::unordered_set<uint32_t> ids;
