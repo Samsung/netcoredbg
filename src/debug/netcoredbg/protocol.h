@@ -74,11 +74,11 @@ struct Breakpoint
     uint32_t id;
     bool verified;
     std::string message;
-    std::string condition;
     Source source;
     int line;
 
     uint32_t hitCount; // exposed for MI protocol
+    std::string condition;
 
     Breakpoint() : id(0), verified(false), line(0), hitCount(0) {}
 };
