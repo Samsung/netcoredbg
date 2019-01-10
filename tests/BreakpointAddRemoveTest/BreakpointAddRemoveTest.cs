@@ -17,6 +17,10 @@ Send(String.Format("5-break-insert -f -c \"x>20\" {0}:{1}", filename, Lines["BRE
 r = Expect("5^done");
 int id3 = r.Find("bkpt").FindInt("number");
 
+Send(String.Format("6-break-insert -f -c \"x>50\" BreakpointAddRemoveTest.Program.TestFunc2"));
+r = Expect("6^done");
+int id4 = r.Find("bkpt").FindInt("number");
+
 Send("-exec-run");
 */
 using System;
@@ -34,7 +38,7 @@ var r = Expect("*stopped");
 Assert.Equal("entry-point-hit", r.FindString("reason"));
 Assert.Equal(Lines["START"], r.Find("frame").FindInt("line"));
 
-Send("6-exec-continue");
+Send("7-exec-continue");
 */
             Console.WriteLine("Hello World!"); // //@BREAK1@
 /*
@@ -43,13 +47,15 @@ Assert.Equal("breakpoint-hit", r.FindString("reason"));
 Assert.Equal(Lines["BREAK1"], r.Find("frame").FindInt("line"));
 Assert.Equal(id1, r.FindInt("bkptno"));
 
-Send(String.Format("7-break-delete {0}", id2));
-Expect("7^done");
-Send("8-exec-continue");
+Send(String.Format("8-break-delete {0}", id2));
+Expect("8^done");
+Send("9-exec-continue");
 */
                 TestFunc(10);
                 TestFunc(21);
                 TestFunc(9);
+                TestFunc2(11);
+                TestFunc2(90);
 
                 Console.WriteLine("Hello World!"); // //@BREAK2@
         }
@@ -62,8 +68,20 @@ r = Expect("*stopped");
 Assert.Equal("breakpoint-hit", r.FindString("reason"));
 Assert.Equal(Lines["BREAK3"], r.Find("frame").FindInt("line"));
 Assert.Equal(id3, r.FindInt("bkptno"));
-Send("9-exec-continue");
+Send("10-exec-continue");
 */
+        }
+
+        static void TestFunc2(int x)
+        {                                       // //@FUNC_BREAK@
+/*
+r = Expect("*stopped");
+Assert.Equal("breakpoint-hit", r.FindString("reason"));
+Assert.Equal(Lines["FUNC_BREAK"], r.Find("frame").FindInt("line"));
+Assert.Equal(id4, r.FindInt("bkptno"));
+Send("11-exec-continue");
+*/
+                x++;
         }
     }
 /*
