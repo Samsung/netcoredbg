@@ -812,6 +812,38 @@ std::string GetTempFolder()
 #endif // WIN32
 }
 
+std::string GetBasename(const std::string &path)
+{
+    std::size_t pos;
+
+#ifdef WIN32
+    pos = path.rfind('\\');
+#else
+    pos = path.rfind('/');
+#endif
+
+    if (pos == std::string::npos)
+        return std::string(path);
+
+    return std::string(path, pos + 1);
+}
+
+bool IsFullPath(const std::string &path)
+{
+    std::size_t pos;
+
+#ifdef WIN32
+    pos = path.rfind('\\');
+#else
+    pos = path.rfind('/');
+#endif
+
+    if (pos == std::string::npos)
+        return false;
+
+    return true;
+}
+
 
 IORedirectServer::operator bool() const
 {

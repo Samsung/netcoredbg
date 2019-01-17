@@ -470,10 +470,32 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         std::vector<FunctionBreakpoint> funcBreakpoints;
         for (auto &b : arguments.at("breakpoints"))
-            funcBreakpoints.emplace_back(b.at("name"), b.value("condition", std::string()));
+        {
+            std::string module("");
+            std::string params("");
+            std::string name = b.at("name");
+
+            std::size_t i = name.find('!');
+
+            if (i != std::string::npos)
+            {
+                module = std::string(name, 0, i);
+                name.erase(0, i + 1);
+            }
+
+            i = name.find('(');
+            if (i != std::string::npos)
+            {
+                std::size_t closeBrace = name.find(')');
+
+                params = std::string(name, i, closeBrace - i + 1);
+                name.erase(i, closeBrace);
+            }
+
+            funcBreakpoints.emplace_back(module, name, params, b.value("condition", std::string()));
+        }
 
         std::vector<Breakpoint> breakpoints;
-        Logger::log("SetFuncBreak");
         IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;

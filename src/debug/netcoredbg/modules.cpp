@@ -174,21 +174,41 @@ HRESULT Modules::GetLocationInModule(
     return S_OK;
 }
 
-HRESULT Modules::GetFunctionInAny(const std::string &funcname,
+HRESULT Modules::GetFunctionInAny(const std::string &module,
+                                  const std::string &funcname,
                                   mdMethodDef &methodToken,
                                   ICorDebugModule **ppModule)
 {
-    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    bool isFull = IsFullPath(module);
+    HRESULT Status;
 
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
 
     for (auto &info_pair : m_modulesInfo)
     {
         ModuleInfo &mdInfo = info_pair.second;
+        ICorDebugModule *pModule = mdInfo.module.GetPtr();
+
+        if (module != "") {
+            ULONG nameLen;
+            WCHAR szModuleName[mdNameLen] = {0};
+            std::string modName;
+
+            IfFailRet(pModule->GetName(_countof(szModuleName), &nameLen, szModuleName));
+
+            if (isFull)
+                modName = to_utf8(szModuleName);
+            else
+                modName = GetBasename(to_utf8(szModuleName));
+
+            if (modName != module)
+                continue;
+        }
 
         if (SUCCEEDED(GetMethodFromModule(mdInfo.module, funcname, methodToken)))
         {
             mdInfo.module->AddRef();
-            *ppModule = mdInfo.module.GetPtr();
+            *ppModule = pModule;
 
             return S_OK;
         }
@@ -199,11 +219,29 @@ HRESULT Modules::GetFunctionInAny(const std::string &funcname,
 
 
 HRESULT Modules::GetFunctionInModule(ICorDebugModule *pModule,
+                                     const std::string &module,
                                      std::string &funcname,
                                      mdMethodDef &methodToken)
 {
     HRESULT Status;
     CORDB_ADDRESS modAddress;
+
+    if (module != "")
+    {
+        ULONG len;
+        WCHAR szModuleName[mdNameLen] = {0};
+        std::string modName;
+
+        IfFailRet(pModule->GetName(_countof(szModuleName), &len, szModuleName));
+
+        if (IsFullPath(module))
+            modName = to_utf8(szModuleName);
+        else
+            modName = GetBasename(to_utf8(szModuleName));
+
+        if (modName != module)
+            return E_FAIL;
+    }
 
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 

@@ -19,6 +19,8 @@ void *DLOpen(const std::string &path);
 void *DLSym(void *handle, const std::string &name);
 void UnsetCoreCLREnv();
 std::string GetTempFolder();
+std::string GetBasename(const std::string &path);
+bool IsFullPath(const std::string &path);
 
 class IORedirectServerHandles;
 

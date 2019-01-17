@@ -106,7 +106,9 @@ struct LineBreak
 
 struct FuncBreak
 {
+    std::string module;
     std::string funcname;
+    std::string params;
     std::string condition;
 };
 
@@ -133,6 +135,8 @@ static BreakType GetBreakpointType(const std::vector<std::string> &args)
     }
 
     std::size_t i = args.at(ncnt).rfind(':');
+
+    // TODO: Spaces are avaliable at least for Func breakpoints!
 
     if (i == std::string::npos)
         return BreakType::FuncBreak;
@@ -179,7 +183,40 @@ static bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb
 static bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
 {
     fb.condition = GetConditionPrepareArgs(args);
-    fb.funcname = args.at(0);
+    std::string prepString("");
+
+    if (args.size() == 1)
+        prepString = args.at(0);
+    else
+        for (auto &str : args)
+            prepString += str;
+
+    std::size_t i = prepString.find('!');
+
+    if (i == std::string::npos)
+    {
+        fb.module = "";
+    }
+    else
+    {
+        fb.module = std::string(prepString, 0, i);
+        prepString.erase(0, i + 1);
+    }
+
+    i = prepString.find('(');
+    if (i != std::string::npos)
+    {
+        std::size_t closeBrace = prepString.find(')');
+
+        fb.params = std::string(prepString, i, closeBrace - i + 1);
+        prepString.erase(i, closeBrace);
+    }
+    else
+    {
+        fb.params = "";
+    }
+
+    fb.funcname = prepString;
 
     return true;
 }
@@ -518,7 +555,9 @@ HRESULT MIProtocol::SetBreakpoint(
 }
 
 HRESULT MIProtocol::SetFunctionBreakpoint(
+    const std::string &module,
     const std::string &funcname,
+    const std::string &params,
     const std::string &condition,
     Breakpoint &breakpoint)
 {
@@ -529,7 +568,7 @@ HRESULT MIProtocol::SetFunctionBreakpoint(
     for (const auto &it : m_funcBreakpoints)
         funcBreakpoints.push_back(it.second);
 
-    funcBreakpoints.emplace_back(funcname, condition);
+    funcBreakpoints.emplace_back(module, funcname, params, condition);
 
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
@@ -539,7 +578,8 @@ HRESULT MIProtocol::SetFunctionBreakpoint(
         if (b.funcname != funcname)
             continue;
 
-        m_funcBreakpoints.insert(std::make_pair(b.id, FunctionBreakpoint{ b.funcname, b.condition }));
+        m_funcBreakpoints.insert(std::make_pair(b.id, FunctionBreakpoint{ b.module, b.funcname,
+                                                                          b.params, b.condition }));
         breakpoint = b;
         return S_OK;
     }
@@ -785,7 +825,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             struct FuncBreak fb;
 
             if (ParseBreakpoint(args, fb)
-                && SUCCEEDED(SetFunctionBreakpoint(fb.funcname, fb.condition, breakpoint)))
+                && SUCCEEDED(SetFunctionBreakpoint(fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
                 Status = S_OK;
         }
 

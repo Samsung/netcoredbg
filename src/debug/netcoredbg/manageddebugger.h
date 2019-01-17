@@ -200,7 +200,9 @@ class Breakpoints
     struct ManagedFunctionBreakpoint {
         uint32_t id;
         CORDB_ADDRESS modAddress;
+        std::string module;
         std::string name;
+        std::string params;
         mdMethodDef methodToken;
         ToRelease<ICorDebugFunctionBreakpoint> funcBreakpoint;
         ULONG32 times;
@@ -260,7 +262,9 @@ class Breakpoints
 
     HRESULT HitManagedFunctionBreakpoint(Debugger *debugger,
         ICorDebugThread *pThread,
+        ICorDebugFrame *pFrame,
         ICorDebugBreakpoint *pBreakpoint,
+        mdMethodDef methodToken,
         Breakpoint &breakpoint);
 
 public:

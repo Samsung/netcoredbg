@@ -73,7 +73,7 @@ private:
     void PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output);
     HRESULT ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
-    HRESULT SetFunctionBreakpoint(const std::string &funcname, const std::string &condition, Breakpoint &breakpoint);
+    HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
     HRESULT SetBreakpointCondition(uint32_t id, const std::string &condition);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
