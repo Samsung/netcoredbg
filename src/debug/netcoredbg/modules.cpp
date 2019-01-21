@@ -7,6 +7,7 @@
 #include <sstream>
 #include <vector>
 #include <iomanip>
+#include <algorithm>
 
 #include "symbolreader.h"
 #include "platform.h"
@@ -14,7 +15,8 @@
 #include "typeprinter.h"
 
 
-HRESULT Modules::GetMethodFromModule(ICorDebugModule *pModule, const std::string &funcName, mdMethodDef &methodToken)
+HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName,
+                                       ResolveFunctionBreakpointCallback cb)
 {
     HRESULT Status;
 
@@ -53,14 +55,15 @@ HRESULT Modules::GetMethodFromModule(ICorDebugModule *pModule, const std::string
             std::string fullName = typeName + "." + to_utf8(szFuncName);
 
             // If we've found the target function
-            if (fullName == funcName)
+            if (std::equal(funcName.rbegin(), funcName.rend(), fullName.rbegin()))
             {
-                methodToken = mdMethod;
+                if (FAILED(cb(pModule, mdMethod)))
+                {
+                    pMDImport->CloseEnum(fFuncEnum);
+                    pMDImport->CloseEnum(fTypeEnum);
 
-                pMDImport->CloseEnum(fFuncEnum);
-                pMDImport->CloseEnum(fTypeEnum);
-
-                return S_OK;
+                    return E_FAIL;
+                }
             }
         }
 
@@ -68,7 +71,7 @@ HRESULT Modules::GetMethodFromModule(ICorDebugModule *pModule, const std::string
     }
     pMDImport->CloseEnum(fTypeEnum);
 
-    return E_FAIL;
+    return S_OK;
 }
 
 void Modules::CleanupAllModules()
@@ -174,10 +177,9 @@ HRESULT Modules::GetLocationInModule(
     return S_OK;
 }
 
-HRESULT Modules::GetFunctionInAny(const std::string &module,
-                                  const std::string &funcname,
-                                  mdMethodDef &methodToken,
-                                  ICorDebugModule **ppModule)
+HRESULT Modules::ResolveFunctionInAny(const std::string &module,
+                                      const std::string &funcname,
+                                      ResolveFunctionBreakpointCallback cb)
 {
     bool isFull = IsFullPath(module);
     HRESULT Status;
@@ -205,12 +207,9 @@ HRESULT Modules::GetFunctionInAny(const std::string &module,
                 continue;
         }
 
-        if (SUCCEEDED(GetMethodFromModule(mdInfo.module, funcname, methodToken)))
+        if (SUCCEEDED(ResolveMethodInModule(mdInfo.module, funcname, cb)))
         {
             mdInfo.module->AddRef();
-            *ppModule = pModule;
-
-            return S_OK;
         }
     }
 
@@ -218,10 +217,10 @@ HRESULT Modules::GetFunctionInAny(const std::string &module,
 }
 
 
-HRESULT Modules::GetFunctionInModule(ICorDebugModule *pModule,
-                                     const std::string &module,
-                                     std::string &funcname,
-                                     mdMethodDef &methodToken)
+HRESULT Modules::ResolveFunctionInModule(ICorDebugModule *pModule,
+                                         const std::string &module,
+                                         std::string &funcname,
+                                         ResolveFunctionBreakpointCallback cb)
 {
     HRESULT Status;
     CORDB_ADDRESS modAddress;
@@ -250,7 +249,7 @@ HRESULT Modules::GetFunctionInModule(ICorDebugModule *pModule,
     if (info_pair == m_modulesInfo.end())
         return E_FAIL;
 
-    IfFailRet(GetMethodFromModule(pModule, funcname, methodToken));
+    IfFailRet(ResolveMethodInModule(pModule, funcname, cb));
 
     return S_OK;
 }

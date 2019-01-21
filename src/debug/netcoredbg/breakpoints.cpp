@@ -202,9 +202,12 @@ HRESULT Breakpoints::HitManagedFunctionBreakpoint(Debugger *debugger,
             params += ")";
         }
 
-        if (SUCCEEDED(IsSameFunctionBreakpoint(pFunctionBreakpoint, fbp.funcBreakpoint)) && fbp.enabled
-            && params == fbp.params)
-            return HandleEnabled(fbp, debugger, pThread, breakpoint);
+        for (auto &fbel : fbp.breakpoints)
+        {
+            if (SUCCEEDED(IsSameFunctionBreakpoint(pFunctionBreakpoint, fbel.funcBreakpoint)) && fbp.enabled
+                && params == fbp.params)
+                return HandleEnabled(fbp, debugger, pThread, breakpoint);
+        }
     }
 
     return E_FAIL;
@@ -569,25 +572,26 @@ HRESULT Breakpoints::SetBreakpoints(
 HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
 {
     HRESULT Status;
-    mdMethodDef methodToken;
 
-    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(m_modules.ResolveFunctionInAny(fbp.module, fbp.name, [&](
+        ICorDebugModule *pModule,
+        mdMethodDef &methodToken) -> HRESULT
+    {
+        ToRelease<ICorDebugFunction> pFunc;
+        IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
 
-    IfFailRet(m_modules.GetFunctionInAny(fbp.module, fbp.name, methodToken, &pModule));
+        ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
+        IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
+        IfFailRet(pFunctionBreakpoint->Activate(TRUE));
 
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
+        CORDB_ADDRESS modAddress;
+        IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
-    IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
-    IfFailRet(pFunctionBreakpoint->Activate(TRUE));
+        fbp.breakpoints.emplace_back(modAddress, methodToken, pFunctionBreakpoint.Detach());
 
-    CORDB_ADDRESS modAddress;
-    IfFailRet(pModule->GetBaseAddress(&modAddress));
+        return S_OK;
+    }));
 
-    fbp.modAddress = modAddress;
-    fbp.methodToken = methodToken;
-    fbp.funcBreakpoint = pFunctionBreakpoint.Detach();
 
     return S_OK;
 }
@@ -597,27 +601,28 @@ HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
 HRESULT Breakpoints::ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &fbp)
 {
     HRESULT Status;
-    mdMethodDef methodToken;
 
-    IfFailRet(m_modules.GetFunctionInModule(
+    IfFailRet(m_modules.ResolveFunctionInModule(
         pModule,
         fbp.module,
         fbp.name,
-        methodToken));
+        [&] (ICorDebugModule *pModule, mdMethodDef &methodToken) -> HRESULT
+    {
 
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
+        ToRelease<ICorDebugFunction> pFunc;
+        IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
 
-    ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
-    IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
-    IfFailRet(pFunctionBreakpoint->Activate(TRUE));
+        ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
+        IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
+        IfFailRet(pFunctionBreakpoint->Activate(TRUE));
 
-    CORDB_ADDRESS modAddress;
-    IfFailRet(pModule->GetBaseAddress(&modAddress));
+        CORDB_ADDRESS modAddress;
+        IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    fbp.modAddress = modAddress;
-    fbp.methodToken = methodToken;
-    fbp.funcBreakpoint = pFunctionBreakpoint.Detach();
+        fbp.breakpoints.emplace_back(modAddress, methodToken, pFunctionBreakpoint.Detach());
+
+        return S_OK;
+    }));
 
     return S_OK;
 }

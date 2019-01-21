@@ -198,31 +198,39 @@ class Breakpoints
     };
 
     struct ManagedFunctionBreakpoint {
+
+        struct FuncBreakpointElement {
+            CORDB_ADDRESS modAddress;
+            mdMethodDef methodToken;
+            ToRelease<ICorDebugFunctionBreakpoint> funcBreakpoint;
+
+            FuncBreakpointElement(CORDB_ADDRESS ma, mdMethodDef mt, ICorDebugFunctionBreakpoint *fb) :
+                modAddress(ma), methodToken(mt), funcBreakpoint(fb) {}
+        };
+
         uint32_t id;
-        CORDB_ADDRESS modAddress;
         std::string module;
         std::string name;
         std::string params;
-        mdMethodDef methodToken;
-        ToRelease<ICorDebugFunctionBreakpoint> funcBreakpoint;
         ULONG32 times;
         bool enabled;
         std::string condition;
+        std::vector<FuncBreakpointElement> breakpoints;
 
-        bool IsResolved() const { return modAddress != 0; }
+        bool IsResolved() const { return !breakpoints.empty(); }
 
         ManagedFunctionBreakpoint() : id(0),
-                                      modAddress(0),
-                                      methodToken(0),
-                                      funcBreakpoint(nullptr),
                                       times(0),
                                       enabled(true)
         {}
 
         ~ManagedFunctionBreakpoint()
         {
-            if (funcBreakpoint)
-                funcBreakpoint->Activate(0);
+            for (auto &fbel : breakpoints)
+            {
+                if (fbel.funcBreakpoint)
+                    fbel.funcBreakpoint->Activate(0);
+            }
         }
 
         void ToBreakpoint(Breakpoint &breakpoint) const;
