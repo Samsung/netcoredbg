@@ -17,6 +17,7 @@
 
 
 class SymbolReader;
+typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
 
 class Modules
 {
@@ -34,9 +35,12 @@ class Modules
 
     static bool ShouldLoadSymbolsForModule(const std::string &moduleName);
     static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
+    static HRESULT ResolveMethodInModule(
+        ICorDebugModule *pModule,
+        const std::string &funcName,
+        ResolveFunctionBreakpointCallback cb);
 
 public:
-
     struct SequencePoint {
         int32_t startLine;
         int32_t startColumn;
@@ -71,6 +75,17 @@ public:
         mdMethodDef &methodToken,
         std::string &fullname,
         ICorDebugModule **ppModule);
+
+    HRESULT ResolveFunctionInAny(
+        const std::string &module,
+        const std::string &funcname,
+        ResolveFunctionBreakpointCallback cb);
+
+    HRESULT ResolveFunctionInModule(
+        ICorDebugModule *pModule,
+        const std::string &module,
+        std::string &funcname,
+        ResolveFunctionBreakpointCallback cb);
 
     HRESULT GetStepRangeFromCurrentIP(
         ICorDebugThread *pThread,

@@ -238,6 +238,23 @@ void VSCodeProtocol::EmitInitializedEvent()
     EmitEvent("initialized", json::object());
 }
 
+void VSCodeProtocol::EmitCapabilitiesEvent()
+{
+    LogFuncEntry();
+
+    json body = json::object();
+    json capabilities = json::object();
+
+    capabilities["supportsConfigurationDoneRequest"] = true;
+    capabilities["supportsFunctionBreakpoints"] = true;
+    capabilities["supportsConditionalBreakpoints"] = true;
+    capabilities["supportTerminateDebuggee"] = true;
+
+    body["capabilities"] = capabilities;
+
+    EmitEvent("capabilities", body);
+}
+
 void VSCodeProtocol::Cleanup()
 {
 
@@ -252,6 +269,7 @@ void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &bo
     response["event"] = name;
     response["body"] = body;
     std::string output = response.dump();
+
     std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
     std::cout.flush();
     Log(LOG_EVENT, output);
@@ -265,10 +283,11 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 {
     static std::unordered_map<std::string, CommandCallback> commands {
     { "initialize", [this](const json &arguments, json &body){
+
+        EmitCapabilitiesEvent();
+
         m_debugger->Initialize();
-        body["supportsConfigurationDoneRequest"] = true;
-        body["supportTerminateDebuggee"] = true;
-        body["supportsConditionalBreakpoints"] = true;
+
         return S_OK;
     } },
     { "configurationDone", [this](const json &arguments, json &body){
@@ -445,6 +464,43 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         body["value"] = output;
 
         return S_OK;
+    } },
+    { "setFunctionBreakpoints", [this](const json &arguments, json &body) {
+        HRESULT Status = S_OK;
+
+        std::vector<FunctionBreakpoint> funcBreakpoints;
+        for (auto &b : arguments.at("breakpoints"))
+        {
+            std::string module("");
+            std::string params("");
+            std::string name = b.at("name");
+
+            std::size_t i = name.find('!');
+
+            if (i != std::string::npos)
+            {
+                module = std::string(name, 0, i);
+                name.erase(0, i + 1);
+            }
+
+            i = name.find('(');
+            if (i != std::string::npos)
+            {
+                std::size_t closeBrace = name.find(')');
+
+                params = std::string(name, i, closeBrace - i + 1);
+                name.erase(i, closeBrace);
+            }
+
+            funcBreakpoints.emplace_back(module, name, params, b.value("condition", std::string()));
+        }
+
+        std::vector<Breakpoint> breakpoints;
+        IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+
+        body["breakpoints"] = breakpoints;
+
+        return Status;
     } }
     };
 

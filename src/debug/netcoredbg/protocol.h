@@ -74,11 +74,14 @@ struct Breakpoint
     uint32_t id;
     bool verified;
     std::string message;
-    std::string condition;
     Source source;
     int line;
 
     uint32_t hitCount; // exposed for MI protocol
+    std::string condition;
+    std::string module;
+    std::string funcname;
+    std::string params;
 
     Breakpoint() : id(0), verified(false), line(0), hitCount(0) {}
 };
@@ -249,4 +252,22 @@ struct SourceBreakpoint
     std::string condition;
 
     SourceBreakpoint(int linenum, const std::string &cond = std::string()) : line(linenum), condition(cond) {}
+};
+
+struct FunctionBreakpoint
+{
+    std::string module;
+    std::string func;
+    std::string params;
+    std::string condition;
+
+    FunctionBreakpoint(const std::string &module,
+                       const std::string &func,
+                       const std::string &params,
+                       const std::string &cond = std::string()) :
+        module(module),
+        func(func),
+        params(params),
+        condition(cond)
+    {}
 };

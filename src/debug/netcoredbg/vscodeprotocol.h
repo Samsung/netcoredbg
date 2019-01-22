@@ -61,4 +61,6 @@ public:
     void EmitBreakpointEvent(BreakpointEvent event) override;
     void Cleanup() override;
     void CommandLoop() override;
+
+    void EmitCapabilitiesEvent();
 };

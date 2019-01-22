@@ -7,11 +7,72 @@
 #include <sstream>
 #include <vector>
 #include <iomanip>
+#include <algorithm>
 
 #include "symbolreader.h"
 #include "platform.h"
 #include "cputil.h"
+#include "typeprinter.h"
 
+
+HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName,
+                                       ResolveFunctionBreakpointCallback cb)
+{
+    HRESULT Status;
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMDImport;
+
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID *)&pMDImport));
+
+    ULONG typesCnt = 0;
+    HCORENUM fTypeEnum = NULL;
+    mdTypeDef mdType = mdTypeDefNil;
+
+    while (SUCCEEDED(pMDImport->EnumTypeDefs(&fTypeEnum, &mdType, 1, &typesCnt)) && typesCnt != 0)
+    {
+        std::string typeName;
+        std::list<std::string> args;
+
+        IfFailRet(TypePrinter::NameForToken(mdType, pMDImport, typeName, false, args));
+
+        HCORENUM fFuncEnum = NULL;
+        mdMethodDef mdMethod = mdMethodDefNil;
+        ULONG methodsCnt = 0;
+
+        while (SUCCEEDED(pMDImport->EnumMethods(&fFuncEnum, mdType, &mdMethod, 1, &methodsCnt)) && methodsCnt != 0)
+        {
+            mdTypeDef memTypeDef;
+            ULONG nameLen;
+            WCHAR szFuncName[mdNameLen] = {0};
+
+            Status = pMDImport->GetMethodProps(mdMethod, &memTypeDef, szFuncName, _countof(szFuncName), &nameLen,
+                                               nullptr, nullptr, nullptr, nullptr, nullptr);
+            if (FAILED(Status))
+                continue;
+
+            std::string fullName = typeName + "." + to_utf8(szFuncName);
+
+            // If we've found the target function
+            if (std::equal(funcName.rbegin(), funcName.rend(), fullName.rbegin()))
+            {
+                if (FAILED(cb(pModule, mdMethod)))
+                {
+                    pMDImport->CloseEnum(fFuncEnum);
+                    pMDImport->CloseEnum(fTypeEnum);
+
+                    return E_FAIL;
+                }
+            }
+        }
+
+        pMDImport->CloseEnum(fFuncEnum);
+    }
+    pMDImport->CloseEnum(fTypeEnum);
+
+    return S_OK;
+}
 
 void Modules::CleanupAllModules()
 {
@@ -112,6 +173,83 @@ HRESULT Modules::GetLocationInModule(
     IfFailRet(info_pair->second.symbols->GetLineByILOffset(methodToken, ilOffset, &resolvedLinenum, wFilename, _countof(wFilename)));
 
     fullname = to_utf8(wFilename);
+
+    return S_OK;
+}
+
+HRESULT Modules::ResolveFunctionInAny(const std::string &module,
+                                      const std::string &funcname,
+                                      ResolveFunctionBreakpointCallback cb)
+{
+    bool isFull = IsFullPath(module);
+    HRESULT Status;
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+
+    for (auto &info_pair : m_modulesInfo)
+    {
+        ModuleInfo &mdInfo = info_pair.second;
+        ICorDebugModule *pModule = mdInfo.module.GetPtr();
+
+        if (module != "") {
+            ULONG nameLen;
+            WCHAR szModuleName[mdNameLen] = {0};
+            std::string modName;
+
+            IfFailRet(pModule->GetName(_countof(szModuleName), &nameLen, szModuleName));
+
+            if (isFull)
+                modName = to_utf8(szModuleName);
+            else
+                modName = GetBasename(to_utf8(szModuleName));
+
+            if (modName != module)
+                continue;
+        }
+
+        if (SUCCEEDED(ResolveMethodInModule(mdInfo.module, funcname, cb)))
+        {
+            mdInfo.module->AddRef();
+        }
+    }
+
+    return E_FAIL;
+}
+
+
+HRESULT Modules::ResolveFunctionInModule(ICorDebugModule *pModule,
+                                         const std::string &module,
+                                         std::string &funcname,
+                                         ResolveFunctionBreakpointCallback cb)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress;
+
+    if (module != "")
+    {
+        ULONG len;
+        WCHAR szModuleName[mdNameLen] = {0};
+        std::string modName;
+
+        IfFailRet(pModule->GetName(_countof(szModuleName), &len, szModuleName));
+
+        if (IsFullPath(module))
+            modName = to_utf8(szModuleName);
+        else
+            modName = GetBasename(to_utf8(szModuleName));
+
+        if (modName != module)
+            return E_FAIL;
+    }
+
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+        return E_FAIL;
+
+    IfFailRet(ResolveMethodInModule(pModule, funcname, cb));
 
     return S_OK;
 }

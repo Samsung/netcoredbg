@@ -22,6 +22,7 @@ class MIProtocol : public Protocol
     unsigned int m_varCounter;
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
+    std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
 
     static std::string EscapeMIValue(const std::string &str);
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
@@ -72,6 +73,7 @@ private:
     void PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output);
     HRESULT ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
+    HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
     HRESULT SetBreakpointCondition(uint32_t id, const std::string &condition);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
