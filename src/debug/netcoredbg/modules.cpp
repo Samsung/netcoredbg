@@ -366,18 +366,18 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     // TODO: Merge with similar code in SymbolReader.cs
 
     SymbolReader::SequencePoint &nearestPoint = points.front();
+    bool found = false;
 
     for (auto &p : points)
     {
-        if (p.offset < static_cast<int32_t>(ilOffset))
+        if (found && p.offset > static_cast<int32_t>(ilOffset))
+            break;
+
+        if (p.startLine != SymbolReader::HiddenLine)
         {
             nearestPoint = p;
-            continue;
+            found = true;
         }
-        if (p.offset == ilOffset)
-            nearestPoint = p;
-
-        break;
     }
 
     sequencePoint.startLine = nearestPoint.startLine;

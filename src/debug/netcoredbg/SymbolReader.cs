@@ -335,23 +335,24 @@ namespace SOS
                 SequencePointCollection sequencePoints = methodDebugInfo.GetSequencePoints();
 
                 SequencePoint nearestPoint = sequencePoints.GetEnumerator().Current;
+                bool found = false;
+
                 foreach (SequencePoint point in sequencePoints)
                 {
-                    if (point.Offset < ilOffset)
+                    if (found && point.Offset > ilOffset)
+                        break;
+
+                    if (!point.IsHidden)
                     {
                         nearestPoint = point;
-                    }
-                    else
-                    {
-                        if (point.Offset == ilOffset)
-                            nearestPoint = point;
-
-                        if (nearestPoint.StartLine == 0 || nearestPoint.StartLine == SequencePoint.HiddenLine)
-                            return false;
-
-                        break;
+                        found = true;
                     }
                 }
+
+                if (!found || nearestPoint.StartLine == 0) {
+                    return false;
+                }
+
                 lineNumber = nearestPoint.StartLine;
                 fileName = reader.GetString(reader.GetDocument(nearestPoint.Document).Name);
                 return true;
