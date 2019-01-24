@@ -52,7 +52,39 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
             if (FAILED(Status))
                 continue;
 
+            // Get generic types
+            ToRelease<IMetaDataImport2> pMDImport2;
+
+            IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport2, (LPVOID *)&pMDImport2));
+
+            HCORENUM fGenEnum = NULL;
+            mdGenericParam gp;
+            ULONG fetched;
+            std::string genParams("");
+
+            while (SUCCEEDED(pMDImport2->EnumGenericParams(&fGenEnum, mdMethod, &gp, 1, &fetched)) && fetched == 1)
+            {
+                mdMethodDef memMethodDef;
+                WCHAR szGenName[mdNameLen] = {0};
+                ULONG genNameLen;
+
+                Status = pMDImport2->GetGenericParamProps(gp, nullptr, nullptr, &memMethodDef, nullptr, szGenName, _countof(szGenName), &genNameLen);
+                if (FAILED(Status))
+                    continue;
+
+                // Add comma for each element. The last one will be stripped later.
+                genParams += to_utf8(szGenName) + ",";
+            }
+
+            pMDImport2->CloseEnum(fGenEnum);
+
             std::string fullName = typeName + "." + to_utf8(szFuncName);
+            if (genParams != "")
+            {
+                // Last symbol is comma and it is useless, so remove
+                genParams.pop_back();
+                fullName += "<" + genParams + ">";
+            }
 
             // If we've found the target function
             if (std::equal(funcName.rbegin(), funcName.rend(), fullName.rbegin()))
