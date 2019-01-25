@@ -35,7 +35,7 @@ LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
 DisposeDelegate SymbolReader::disposeDelegate;
 ResolveSequencePointDelegate SymbolReader::resolveSequencePointDelegate;
 GetLocalVariableNameAndScope SymbolReader::getLocalVariableNameAndScopeDelegate;
-GetLineByILOffsetDelegate SymbolReader::getLineByILOffsetDelegate;
+GetSequencePointByILOffsetDelegate SymbolReader::getSequencePointByILOffsetDelegate;
 GetStepRangesFromIPDelegate SymbolReader::getStepRangesFromIPDelegate;
 GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
 ParseExpressionDelegate SymbolReader::parseExpressionDelegate = nullptr;
@@ -278,7 +278,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ResolveSequencePoint", (void **)&resolveSequencePointDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLineByILOffset", (void **)&getLineByILOffsetDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ParseExpression", (void **)&parseExpressionDelegate));
@@ -311,32 +311,23 @@ HRESULT SymbolReader::ResolveSequencePoint(const char *filename, ULONG32 lineNum
     return E_FAIL;
 }
 
-HRESULT SymbolReader::GetLineByILOffset(
+HRESULT SymbolReader::GetSequencePointByILOffset(
     mdMethodDef methodToken,
     ULONG64 ilOffset,
-    ULONG *pLinenum,
-    WCHAR* pwszFileName,
-    ULONG cchFileName)
+    SequencePoint *sequencePoint)
 {
     HRESULT Status = S_OK;
 
     if (m_symbolReaderHandle != 0)
     {
-        _ASSERTE(getLineByILOffsetDelegate != nullptr);
+        _ASSERTE(getSequencePointByILOffsetDelegate != nullptr);
 
-        BSTR bstrFileName = sysAllocStringLen(0, MAX_LONGPATH);
-        if (sysStringLen(bstrFileName) == 0)
+        // Sequence points with startLine equal to 0xFEEFEE marker are filtered out on the managed side.
+        if (getSequencePointByILOffsetDelegate(m_symbolReaderHandle, methodToken, ilOffset, sequencePoint) == FALSE)
         {
-            return E_OUTOFMEMORY;
-        }
-        // Source lines with 0xFEEFEE markers are filtered out on the managed side.
-        if ((getLineByILOffsetDelegate(m_symbolReaderHandle, methodToken, ilOffset, pLinenum, &bstrFileName) == FALSE) || (*pLinenum == 0))
-        {
-            sysFreeString(bstrFileName);
             return E_FAIL;
         }
-        wcscpy_s(pwszFileName, cchFileName, bstrFileName);
-        sysFreeString(bstrFileName);
+
         return S_OK;
     }
 

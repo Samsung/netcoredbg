@@ -48,7 +48,8 @@ namespace SOS
 
         }
 
-        [StructLayout(LayoutKind.Sequential)]
+        // Unmanaged code expects struct with packing size is 1
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         internal struct DbgSequencePoint
         {
             public int startLine;
@@ -56,6 +57,7 @@ namespace SOS
             public int endLine;
             public int endColumn;
             public int offset;
+            public IntPtr document;
         }
 
         /// <summary>
@@ -284,45 +286,23 @@ namespace SOS
         /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
         /// <param name="methodToken">method token</param>
         /// <param name="ilOffset">IL offset</param>
-        /// <param name="lineNumber">source line number return</param>
-        /// <param name="fileName">source file name return</param>
+        /// <param name="sequencePoint">sequence point return</param>
         /// <returns> true if information is available</returns>
-        internal static bool GetLineByILOffset(IntPtr symbolReaderHandle, int methodToken, long ilOffset, out int lineNumber, out IntPtr fileName)
-        {
-            lineNumber = 0;
-            fileName = IntPtr.Zero;
-
-            string sourceFileName = null;
-
-            if (!GetSourceLineByILOffset(symbolReaderHandle, methodToken, ilOffset, out lineNumber, out sourceFileName))
-            {
-                return false;
-            }
-            fileName = Marshal.StringToBSTR(sourceFileName);
-            sourceFileName = null;
-            return true;
-        }
-
-        /// <summary>
-        /// Helper method to return source line number and source file name for given IL offset and method token.
-        /// </summary>
-        /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
-        /// <param name="methodToken">method token</param>
-        /// <param name="ilOffset">IL offset</param>
-        /// <param name="lineNumber">source line number return</param>
-        /// <param name="fileName">source file name return</param>
-        /// <returns> true if information is available</returns>
-        private static bool GetSourceLineByILOffset(IntPtr symbolReaderHandle, int methodToken, long ilOffset, out int lineNumber, out string fileName)
+        private static bool GetSequencePointByILOffset(IntPtr symbolReaderHandle, int methodToken, long ilOffset, out DbgSequencePoint sequencePoint)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
-            lineNumber = 0;
-            fileName = null;
-
-            GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
-            MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+            sequencePoint.document = IntPtr.Zero;
+            sequencePoint.startLine = 0;
+            sequencePoint.startColumn = 0;
+            sequencePoint.endLine = 0;
+            sequencePoint.endColumn = 0;
+            sequencePoint.offset = 0;
 
             try
             {
+                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+                MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
                 Handle handle = MetadataTokens.Handle(methodToken);
                 if (handle.Kind != HandleKind.MethodDefinition)
                     return false;
@@ -353,8 +333,16 @@ namespace SOS
                     return false;
                 }
 
-                lineNumber = nearestPoint.StartLine;
-                fileName = reader.GetString(reader.GetDocument(nearestPoint.Document).Name);
+
+                var fileName = reader.GetString(reader.GetDocument(nearestPoint.Document).Name);
+                sequencePoint.document = Marshal.StringToBSTR(fileName);
+                sequencePoint.startLine = nearestPoint.StartLine;
+                sequencePoint.startColumn = nearestPoint.StartColumn;
+                sequencePoint.endLine = nearestPoint.EndLine;
+                sequencePoint.endColumn = nearestPoint.EndColumn;
+                sequencePoint.offset = nearestPoint.Offset;
+                fileName = null;
+
                 return true;
             }
             catch
@@ -366,10 +354,9 @@ namespace SOS
         internal static bool GetSequencePoints(IntPtr symbolReaderHandle, int methodToken, out IntPtr points, out int pointsCount)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            var list = new List<DbgSequencePoint>();
             pointsCount = 0;
             points = IntPtr.Zero;
-
-            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
 
             GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
             MetadataReader reader = ((OpenedReader)gch.Target).Reader;
@@ -387,10 +374,11 @@ namespace SOS
                 MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugHandle);
                 SequencePointCollection sequencePoints = methodDebugInfo.GetSequencePoints();
 
-                var list = new List<DbgSequencePoint>();
                 foreach (SequencePoint p in sequencePoints)
                 {
+                    string fileName = reader.GetString(reader.GetDocument(p.Document).Name);
                     list.Add(new DbgSequencePoint() {
+                        document =  Marshal.StringToBSTR(fileName),
                         startLine = p.StartLine,
                         endLine = p.EndLine,
                         startColumn = p.StartColumn,
@@ -418,6 +406,9 @@ namespace SOS
             }
             catch
             {
+                foreach (var p in list) {
+                    Marshal.FreeBSTR(p.document);
+                }
             }
             return false;
         }
