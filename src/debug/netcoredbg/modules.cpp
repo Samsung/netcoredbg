@@ -78,7 +78,8 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
 
             pMDImport2->CloseEnum(fGenEnum);
 
-            std::string fullName = typeName + "." + to_utf8(szFuncName);
+            const std::string typePrefix = typeName + ".";
+            std::string fullName = to_utf8(szFuncName);
             if (genParams != "")
             {
                 // Last symbol is comma and it is useless, so remove
@@ -87,7 +88,7 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
             }
 
             // If we've found the target function
-            if (std::equal(funcName.rbegin(), funcName.rend(), fullName.rbegin()))
+            if (fullName == funcName || typePrefix + fullName == funcName)
             {
                 if (FAILED(cb(pModule, mdMethod)))
                 {
