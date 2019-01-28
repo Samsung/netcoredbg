@@ -125,7 +125,7 @@ namespace Runner
                 return queue.ReceiveAsync().Result;
             }
 
-            public MICore.Results Expect(string text, int timeoutSec)
+            public MICore.Results Expect(string text, int timeoutSec, int line)
             {
                 if (timeoutSec < 0)
                     timeoutSec = defaultTimeoutSec;
@@ -164,7 +164,7 @@ namespace Runner
                 {
                     ts.Dispose();
                 }
-                throw new Exception($"Expected '{text}' in {timeSpan}");
+                throw new Exception($"Expected '{text}' (at line {line}) in {timeSpan}");
             }
 
             public void Send(string s)
@@ -201,7 +201,7 @@ namespace Runner
             public int GetCurrentLine([CallerLineNumber] int line = 0) { return line; }
 
             public void Send(string s) => processInfo.Send(s);
-            public MICore.Results Expect(string s, int timeoutSec = -1) => processInfo.Expect(s, timeoutSec);
+            public MICore.Results Expect(string s, int timeoutSec = -1, [CallerLineNumber] int line = 0) => processInfo.Expect(s, timeoutSec, line);
             public readonly string TestSource;
             public readonly string TestBin;
             public readonly int DefaultExpectTimeout;
