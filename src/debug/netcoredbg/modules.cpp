@@ -224,7 +224,7 @@ HRESULT Modules::ResolveFunctionInAny(const std::string &module,
         ICorDebugModule *pModule = mdInfo.module.GetPtr();
 
         if (module != "") {
-            ULONG nameLen;
+            ULONG32 nameLen;
             WCHAR szModuleName[mdNameLen] = {0};
             std::string modName;
 
@@ -259,7 +259,7 @@ HRESULT Modules::ResolveFunctionInModule(ICorDebugModule *pModule,
 
     if (module != "")
     {
-        ULONG len;
+        ULONG32 len;
         WCHAR szModuleName[mdNameLen] = {0};
         std::string modName;
 
