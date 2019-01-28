@@ -15,11 +15,37 @@
 #include "typeprinter.h"
 
 
+bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)
+{
+    // Function should be matched by substring, i.e. received target function name should fully or partly equal with the
+    // real function name. For example:
+    //
+    // "MethodA" matches
+    // Program.ClassA.MethodA
+    // Program.ClassB.MethodA
+    // Program.ClassA.InnerClass.MethodA
+    //
+    // "ClassA.MethodB" matches
+    // Program.ClassA.MethodB
+    // Program.ClassB.ClassA.MethodB
+
+    auto fullIt = fullName.rbegin();
+    for (auto it = targetName.rbegin(); it != targetName.rend(); it++)
+    {
+        if (fullIt == fullName.rend() || *it != *fullIt)
+            return false;
+
+        fullIt++;
+    }
+
+    return true;
+}
+
 HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName,
                                        ResolveFunctionBreakpointCallback cb)
 {
     HRESULT Status;
-
+    std::vector<std::string> splittedName = split_on_tokens(funcName, '.');
     ToRelease<IUnknown> pMDUnknown;
     ToRelease<IMetaDataImport> pMDImport;
 
@@ -78,7 +104,6 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
 
             pMDImport2->CloseEnum(fGenEnum);
 
-            const std::string typePrefix = typeName + ".";
             std::string fullName = to_utf8(szFuncName);
             if (genParams != "")
             {
@@ -87,8 +112,10 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
                 fullName += "<" + genParams + ">";
             }
 
+            std::vector<std::string> splittedFullName = split_on_tokens(typeName + "." + fullName, '.');
+
             // If we've found the target function
-            if (fullName == funcName || typePrefix + fullName == funcName)
+            if (IsTargetFunction(splittedFullName, splittedName))
             {
                 if (FAILED(cb(pModule, mdMethod)))
                 {
