@@ -58,6 +58,7 @@ namespace Runner
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardInput = true;
                 process.StartInfo.UseShellExecute = false;
+                process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
                 if (TestRunner.IsWindows)
                 {
                     // For older Windows versions:
@@ -169,7 +170,9 @@ namespace Runner
 
             public void Send(string s)
             {
-                process.StandardInput.WriteLine(s);
+                var bytes = Encoding.UTF8.GetBytes(s);
+                process.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
+                process.StandardInput.WriteLine();
                 output.WriteLine("< " + s);
             }
 
