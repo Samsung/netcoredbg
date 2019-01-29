@@ -24,6 +24,7 @@ namespace values
             decimal d = 12345678901234567890123456m;
             decimal long_zero_dec = 0.00000000000000000017M;
             decimal short_zero_dec = 0.17M;
+            string 测试 = "电视机"; // //Chinese named variable
             int x = 1; // //@BREAK@
             /*
 r = Expect("*stopped");
@@ -44,12 +45,20 @@ Assert.Equal("0.00000000000000000017", r.FindString("value"));
 Send(String.Format("8-var-create 8 * \"{0}\"", "short_zero_dec"));
 r = Expect("8^done");
 Assert.Equal("0.17", r.FindString("value"));
+
+Send(String.Format("9-var-create - * \"{0}\"", "测试"));
+r = Expect("9^done");
+Assert.Equal("\"电视机\"", r.FindString("value"));
+
+Send(String.Format("99-var-create - * \"{0}\"", "测试 + 测试"));
+r = Expect("99^done");
+Assert.Equal("\"电视机电视机\"", r.FindString("value"));
              */
         }
     }
 }
 /*
-Send("9-exec-continue");
+Send("10-exec-continue");
 r = Expect("*stopped");
 Assert.Equal("exited", r.FindString("reason"));
 */

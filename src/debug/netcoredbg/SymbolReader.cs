@@ -182,7 +182,7 @@ namespace SOS
         /// <param name="inMemoryPdbAddress">in memory PDB address or zero</param>
         /// <param name="inMemoryPdbSize">in memory PDB size</param>
         /// <returns>Symbol reader handle or zero if error</returns>
-        internal static IntPtr LoadSymbolsForModule(string assemblyPath, bool isFileLayout, ulong loadedPeAddress, int loadedPeSize, 
+        internal static IntPtr LoadSymbolsForModule([MarshalAs(UnmanagedType.LPWStr)] string assemblyPath, bool isFileLayout, ulong loadedPeAddress, int loadedPeSize, 
             ulong inMemoryPdbAddress, int inMemoryPdbSize, ReadMemoryDelegate readMemory)
         {
             try
@@ -237,7 +237,7 @@ namespace SOS
         /// <param name="methodToken">method token return</param>
         /// <param name="ilOffset">IL offset return</param>
         /// <returns> true if information is available</returns>
-        internal static bool ResolveSequencePoint(IntPtr symbolReaderHandle, string filePath, int lineNumber, out int methodToken, out int ilOffset)
+        internal static bool ResolveSequencePoint(IntPtr symbolReaderHandle, [MarshalAs(UnmanagedType.LPWStr)] string filePath, int lineNumber, out int methodToken, out int ilOffset)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
             methodToken = 0;
@@ -1052,7 +1052,7 @@ namespace SOS
             "System.String"
         };
 
-        internal delegate bool GetChildDelegate(IntPtr opaque, IntPtr corValue, string name, out int dataTypeId, out IntPtr dataPtr);
+        internal delegate bool GetChildDelegate(IntPtr opaque, IntPtr corValue, [MarshalAs(UnmanagedType.LPWStr)] string name, out int dataTypeId, out IntPtr dataPtr);
 
         private static GetChildDelegate getChild;
 
@@ -1305,7 +1305,7 @@ namespace SOS
             }
         }
 
-        internal static bool EvalExpression(string expr, IntPtr opaque, out IntPtr errorText, out int typeId, out int size, out IntPtr result)
+        internal static bool EvalExpression([MarshalAs(UnmanagedType.LPWStr)] string expr, IntPtr opaque, out IntPtr errorText, out int typeId, out int size, out IntPtr result)
         {
             SyntaxAnalyzer sa = new SyntaxAnalyzer(expr);
 
@@ -1363,7 +1363,7 @@ namespace SOS
             return true;
         }
 
-        internal static bool ParseExpression(string expr, string resultTypeName, out IntPtr data, out int size, out IntPtr errorText)
+        internal static bool ParseExpression([MarshalAs(UnmanagedType.LPWStr)] string expr, [MarshalAs(UnmanagedType.LPWStr)] string resultTypeName, out IntPtr data, out int size, out IntPtr errorText)
         {
             object value = null;
             data = IntPtr.Zero;
