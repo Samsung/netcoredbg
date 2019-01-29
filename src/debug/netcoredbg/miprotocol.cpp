@@ -563,7 +563,6 @@ HRESULT MIProtocol::SetFunctionBreakpoint(
 {
     HRESULT Status;
     std::vector<FunctionBreakpoint> funcBreakpoints;
-    int line;
 
     for (const auto &it : m_funcBreakpoints)
         funcBreakpoints.push_back(it.second);

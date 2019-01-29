@@ -21,7 +21,7 @@ Send(String.Format("6-break-insert -f -c \"x>50\" BreakpointAddRemoveTest.Progra
 r = Expect("6^done");
 int id4 = r.Find("bkpt").FindInt("number");
 
-Send(String.Format("7-break-insert -f TestFunc3"));
+Send(String.Format("7-break-insert -f Program.TestFunc3"));
 r = Expect("7^done");
 int id5 = r.Find("bkpt").FindInt("number");
 

@@ -15,11 +15,37 @@
 #include "typeprinter.h"
 
 
+bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)
+{
+    // Function should be matched by substring, i.e. received target function name should fully or partly equal with the
+    // real function name. For example:
+    //
+    // "MethodA" matches
+    // Program.ClassA.MethodA
+    // Program.ClassB.MethodA
+    // Program.ClassA.InnerClass.MethodA
+    //
+    // "ClassA.MethodB" matches
+    // Program.ClassA.MethodB
+    // Program.ClassB.ClassA.MethodB
+
+    auto fullIt = fullName.rbegin();
+    for (auto it = targetName.rbegin(); it != targetName.rend(); it++)
+    {
+        if (fullIt == fullName.rend() || *it != *fullIt)
+            return false;
+
+        fullIt++;
+    }
+
+    return true;
+}
+
 HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName,
                                        ResolveFunctionBreakpointCallback cb)
 {
     HRESULT Status;
-
+    std::vector<std::string> splittedName = split_on_tokens(funcName, '.');
     ToRelease<IUnknown> pMDUnknown;
     ToRelease<IMetaDataImport> pMDImport;
 
@@ -78,7 +104,7 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
 
             pMDImport2->CloseEnum(fGenEnum);
 
-            std::string fullName = typeName + "." + to_utf8(szFuncName);
+            std::string fullName = to_utf8(szFuncName);
             if (genParams != "")
             {
                 // Last symbol is comma and it is useless, so remove
@@ -86,8 +112,10 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
                 fullName += "<" + genParams + ">";
             }
 
+            std::vector<std::string> splittedFullName = split_on_tokens(typeName + "." + fullName, '.');
+
             // If we've found the target function
-            if (std::equal(funcName.rbegin(), funcName.rend(), fullName.rbegin()))
+            if (IsTargetFunction(splittedFullName, splittedName))
             {
                 if (FAILED(cb(pModule, mdMethod)))
                 {
@@ -224,7 +252,7 @@ HRESULT Modules::ResolveFunctionInAny(const std::string &module,
         ICorDebugModule *pModule = mdInfo.module.GetPtr();
 
         if (module != "") {
-            ULONG nameLen;
+            ULONG32 nameLen;
             WCHAR szModuleName[mdNameLen] = {0};
             std::string modName;
 
@@ -259,7 +287,7 @@ HRESULT Modules::ResolveFunctionInModule(ICorDebugModule *pModule,
 
     if (module != "")
     {
-        ULONG len;
+        ULONG32 len;
         WCHAR szModuleName[mdNameLen] = {0};
         std::string modName;
 

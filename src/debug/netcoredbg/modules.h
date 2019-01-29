@@ -39,6 +39,7 @@ class Modules
         ICorDebugModule *pModule,
         const std::string &funcName,
         ResolveFunctionBreakpointCallback cb);
+    static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName);
 
 public:
     struct SequencePoint {
