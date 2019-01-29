@@ -111,10 +111,11 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
     }
 
     // The module name needs to be null for in-memory PE's.
-    const char *szModuleName = nullptr;
+    const WCHAR *szModuleName = nullptr;
+    auto wModulePath = to_utf16(modulePath);
     if (!isInMemory && !modulePath.empty())
     {
-        szModuleName = modulePath.c_str();
+        szModuleName = wModulePath.c_str();
     }
 
     m_symbolReaderHandle = loadSymbolsForModuleDelegate(szModuleName, isFileLayout, peAddress,
@@ -131,9 +132,10 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
 struct GetChildProxy
 {
     SymbolReader::GetChildCallback &m_cb;
-    static BOOL GetChild(PVOID opaque, PVOID corValue, const char* name, int *typeId, PVOID *data)
+    static BOOL GetChild(PVOID opaque, PVOID corValue, const WCHAR* name, int *typeId, PVOID *data)
     {
-        return static_cast<GetChildProxy*>(opaque)->m_cb(corValue, name, typeId, data);
+        std::string uft8Name = to_utf8(name);
+        return static_cast<GetChildProxy*>(opaque)->m_cb(corValue, uft8Name, typeId, data);
     }
 };
 
@@ -299,7 +301,7 @@ HRESULT SymbolReader::ResolveSequencePoint(const char *filename, ULONG32 lineNum
     {
         _ASSERTE(resolveSequencePointDelegate != nullptr);
 
-        if (resolveSequencePointDelegate(m_symbolReaderHandle, filename, lineNumber, pToken, pIlOffset) == FALSE)
+        if (resolveSequencePointDelegate(m_symbolReaderHandle, to_utf16(filename).c_str(), lineNumber, pToken, pIlOffset) == FALSE)
         {
             return E_FAIL;
         }
@@ -440,7 +442,7 @@ HRESULT SymbolReader::ParseExpression(
     BSTR werrorText;
     PVOID dataPtr;
     int dataSize = 0;
-    if (parseExpressionDelegate(expr.c_str(), typeName.c_str(), &dataPtr, &dataSize, &werrorText) == FALSE)
+    if (parseExpressionDelegate(to_utf16(expr).c_str(), to_utf16(typeName).c_str(), &dataPtr, &dataSize, &werrorText) == FALSE)
     {
         errorText = to_utf8(werrorText);
         sysFreeString(werrorText);
@@ -474,7 +476,7 @@ HRESULT SymbolReader::EvalExpression(const std::string &expr, std::string &resul
     PVOID valuePtr = nullptr;
     int size = 0;
     BSTR resultText;
-    BOOL ok = evalExpressionDelegate(expr.c_str(), &proxy, &resultText, typeId, &size, &valuePtr);
+    BOOL ok = evalExpressionDelegate(to_utf16(expr).c_str(), &proxy, &resultText, typeId, &size, &valuePtr);
     if (!ok)
     {
         if (resultText)

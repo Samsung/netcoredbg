@@ -58,6 +58,7 @@ namespace Runner
                 process.StartInfo.RedirectStandardOutput = true;
                 process.StartInfo.RedirectStandardInput = true;
                 process.StartInfo.UseShellExecute = false;
+                process.StartInfo.StandardOutputEncoding = Encoding.UTF8;
                 if (TestRunner.IsWindows)
                 {
                     // For older Windows versions:
@@ -125,7 +126,7 @@ namespace Runner
                 return queue.ReceiveAsync().Result;
             }
 
-            public MICore.Results Expect(string text, int timeoutSec)
+            public MICore.Results Expect(string text, int timeoutSec, int line)
             {
                 if (timeoutSec < 0)
                     timeoutSec = defaultTimeoutSec;
@@ -164,12 +165,14 @@ namespace Runner
                 {
                     ts.Dispose();
                 }
-                throw new Exception($"Expected '{text}' in {timeSpan}");
+                throw new Exception($"Expected '{text}' (at line {line}) in {timeSpan}");
             }
 
             public void Send(string s)
             {
-                process.StandardInput.WriteLine(s);
+                var bytes = Encoding.UTF8.GetBytes(s);
+                process.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
+                process.StandardInput.WriteLine();
                 output.WriteLine("< " + s);
             }
 
@@ -201,7 +204,7 @@ namespace Runner
             public int GetCurrentLine([CallerLineNumber] int line = 0) { return line; }
 
             public void Send(string s) => processInfo.Send(s);
-            public MICore.Results Expect(string s, int timeoutSec = -1) => processInfo.Expect(s, timeoutSec);
+            public MICore.Results Expect(string s, int timeoutSec = -1, [CallerLineNumber] int line = 0) => processInfo.Expect(s, timeoutSec, line);
             public readonly string TestSource;
             public readonly string TestBin;
             public readonly int DefaultExpectTimeout;

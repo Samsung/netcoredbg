@@ -18,16 +18,16 @@
 
 
 typedef  int (*ReadMemoryDelegate)(ULONG64, char *, int);
-typedef  PVOID (*LoadSymbolsForModuleDelegate)(const char*, BOOL, ULONG64, int, ULONG64, int, ReadMemoryDelegate);
+typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, ULONG64, int, ULONG64, int, ReadMemoryDelegate);
 typedef  void (*DisposeDelegate)(PVOID);
-typedef  BOOL (*ResolveSequencePointDelegate)(PVOID, const char*, unsigned int, unsigned int*, unsigned int*);
+typedef  BOOL (*ResolveSequencePointDelegate)(PVOID, const WCHAR*, unsigned int, unsigned int*, unsigned int*);
 typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned int*, unsigned int*);
 typedef  BOOL (*GetLineByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, ULONG *, BSTR*);
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
 typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
-typedef  BOOL (*ParseExpressionDelegate)(const char*, const char*, PVOID*, int *, BSTR*);
-typedef  BOOL (*EvalExpressionDelegate)(const char*, PVOID, BSTR*, int*, int*, PVOID*);
-typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const char*, int *, PVOID*);
+typedef  BOOL (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int *, BSTR*);
+typedef  BOOL (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int*, int*, PVOID*);
+typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int *, PVOID*);
 typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
 
 typedef BSTR (*SysAllocStringLen_t)(const OLECHAR*, UINT);
