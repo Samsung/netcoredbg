@@ -108,5 +108,11 @@ public:
         ULONG32 *pIlStart,
         ULONG32 *pIlEnd);
 
+    HRESULT GetSequencePointByILOffset(
+        SymbolReader *symbols,
+        mdMethodDef methodToken,
+        ULONG32 &ilOffset,
+        SequencePoint *sequencePoint);
+
     HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
 };

@@ -192,12 +192,11 @@ HRESULT Modules::GetLocationInAny(
         if (FAILED(mdInfo.symbols->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset)))
             continue;
 
-        WCHAR wFilename[MAX_LONGPATH];
-        ULONG resolvedLinenum;
-        if (FAILED(mdInfo.symbols->GetLineByILOffset(methodToken, ilOffset, &resolvedLinenum, wFilename, _countof(wFilename))))
+        SequencePoint resolvedSequencePoint;
+        if (FAILED(GetSequencePointByILOffset(mdInfo.symbols.get(), methodToken, ilOffset, &resolvedSequencePoint)))
             continue;
 
-        fullname = to_utf8(wFilename);
+        fullname = resolvedSequencePoint.document;
 
         mdInfo.module->AddRef();
         *ppModule = mdInfo.module.GetPtr();
@@ -228,11 +227,10 @@ HRESULT Modules::GetLocationInModule(
 
     IfFailRet(info_pair->second.symbols->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset));
 
-    WCHAR wFilename[MAX_LONGPATH];
-    ULONG resolvedLinenum;
-    IfFailRet(info_pair->second.symbols->GetLineByILOffset(methodToken, ilOffset, &resolvedLinenum, wFilename, _countof(wFilename)));
+    SequencePoint resolvedSequencePoint;
+    IfFailRet(GetSequencePointByILOffset(info_pair->second.symbols.get(), methodToken, ilOffset, &resolvedSequencePoint));
 
-    fullname = to_utf8(wFilename);
+    fullname = resolvedSequencePoint.document;
 
     return S_OK;
 }
@@ -343,49 +341,15 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    WCHAR name[MAX_LONGPATH];
-
-    std::vector<SymbolReader::SequencePoint> points;
-    ULONG linenum;
-
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
     {
-        std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
-        auto info_pair = m_modulesInfo.find(modAddress);
-        if (info_pair == m_modulesInfo.end())
-        {
-            return E_FAIL;
-        }
-
-        IfFailRet(info_pair->second.symbols->GetLineByILOffset(methodToken, ilOffset, &linenum, name, _countof(name)));
-        IfFailRet(info_pair->second.symbols->GetSequencePoints(methodToken, points));
-    }
-
-    if (points.empty())
         return E_FAIL;
-
-    // TODO: Merge with similar code in SymbolReader.cs
-
-    SymbolReader::SequencePoint &nearestPoint = points.front();
-
-    for (auto &p : points)
-    {
-        if (p.offset < static_cast<int32_t>(ilOffset))
-        {
-            nearestPoint = p;
-            continue;
-        }
-        if (p.offset == ilOffset)
-            nearestPoint = p;
-
-        break;
     }
 
-    sequencePoint.startLine = nearestPoint.startLine;
-    sequencePoint.endLine = nearestPoint.endLine;
-    sequencePoint.startColumn = nearestPoint.startColumn;
-    sequencePoint.endColumn = nearestPoint.endColumn;
-    sequencePoint.offset = nearestPoint.offset;
-    sequencePoint.document = to_utf8(name);
+    IfFailRet(GetSequencePointByILOffset(info_pair->second.symbols.get(), methodToken, ilOffset, &sequencePoint));
+
     return S_OK;
 }
 
@@ -578,6 +542,28 @@ HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **pp
         }
     }
     return E_FAIL;
+}
+
+HRESULT Modules::GetSequencePointByILOffset(
+    SymbolReader *symbols,
+    mdMethodDef methodToken,
+    ULONG32 &ilOffset,
+    SequencePoint *sequencePoint)
+{
+    SymbolReader::SequencePoint symSequencePoint;
+
+    if (FAILED(symbols->GetSequencePointByILOffset(methodToken, ilOffset, &symSequencePoint))) {
+        return E_FAIL;
+    }
+
+    sequencePoint->document = to_utf8(symSequencePoint.document);
+    sequencePoint->startLine = symSequencePoint.startLine;
+    sequencePoint->startColumn = symSequencePoint.startColumn;
+    sequencePoint->endLine = symSequencePoint.endLine;
+    sequencePoint->endColumn = symSequencePoint.endColumn;
+    sequencePoint->offset = symSequencePoint.offset;
+
+    return S_OK;
 }
 
 HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb)

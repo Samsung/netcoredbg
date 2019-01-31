@@ -22,7 +22,7 @@ typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, ULONG64, int,
 typedef  void (*DisposeDelegate)(PVOID);
 typedef  BOOL (*ResolveSequencePointDelegate)(PVOID, const WCHAR*, unsigned int, unsigned int*, unsigned int*);
 typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned int*, unsigned int*);
-typedef  BOOL (*GetLineByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, ULONG *, BSTR*);
+typedef  BOOL (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, PVOID);
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
 typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
 typedef  BOOL (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int *, BSTR*);
@@ -49,7 +49,7 @@ private:
     static DisposeDelegate disposeDelegate;
     static ResolveSequencePointDelegate resolveSequencePointDelegate;
     static GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate;
-    static GetLineByILOffsetDelegate getLineByILOffsetDelegate;
+    static GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate;
     static GetStepRangesFromIPDelegate getStepRangesFromIPDelegate;
     static GetSequencePointsDelegate getSequencePointsDelegate;
     static ParseExpressionDelegate parseExpressionDelegate;
@@ -82,6 +82,14 @@ public:
         int32_t endLine;
         int32_t endColumn;
         int32_t offset;
+        BSTR document;
+        SequencePoint() :
+            startLine(0), startColumn(0),
+            endLine(0), endColumn(0),
+            offset(0),
+            document(nullptr)
+        {}
+        ~SequencePoint() { sysFreeString(document); }
     } PACK_END;
 
     // Keep in sync with string[] basicTypes in SymbolReader.cs
@@ -127,7 +135,7 @@ public:
     typedef std::function<bool(PVOID, const std::string&, int *, PVOID*)> GetChildCallback;
 
     HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule);
-    HRESULT GetLineByILOffset(mdMethodDef MethodToken, ULONG64 IlOffset, ULONG *pLinenum, WCHAR* pwszFileName, ULONG cchFileName);
+    HRESULT GetSequencePointByILOffset(mdMethodDef MethodToken, ULONG64 IlOffset, SequencePoint *sequencePoint);
     HRESULT GetNamedLocalVariableAndScope(ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex, WCHAR* paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32* pIlStart, ULONG32* pIlEnd);
     HRESULT ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset);
     HRESULT GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
