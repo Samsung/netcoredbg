@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SetValuesTest", "SetValuesT
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExpressionsTest", "ExpressionsTest\ExpressionsTest.csproj", "{3477E658-CB14-4D86-8909-F7448C17AC9A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LambdaTest", "LambdaTest\LambdaTest.csproj", "{70F91400-AB4E-4A19-A137-9B5BF36C8543}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -114,5 +116,17 @@ Global
 		{3477E658-CB14-4D86-8909-F7448C17AC9A}.Release|x64.Build.0 = Release|x64
 		{3477E658-CB14-4D86-8909-F7448C17AC9A}.Release|x86.ActiveCfg = Release|x86
 		{3477E658-CB14-4D86-8909-F7448C17AC9A}.Release|x86.Build.0 = Release|x86
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Debug|x64.ActiveCfg = Debug|x64
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Debug|x64.Build.0 = Debug|x64
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Debug|x86.ActiveCfg = Debug|x86
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Debug|x86.Build.0 = Debug|x86
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Release|Any CPU.Build.0 = Release|Any CPU
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Release|x64.ActiveCfg = Release|x64
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Release|x64.Build.0 = Release|x64
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Release|x86.ActiveCfg = Release|x86
+		{70F91400-AB4E-4A19-A137-9B5BF36C8543}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection
 EndGlobal

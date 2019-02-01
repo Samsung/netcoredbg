@@ -738,6 +738,11 @@ HRESULT Evaluator::WalkMembers(
     return WalkMembers(pValue, pThread, pILFrame, nullptr, cb);
 }
 
+static bool has_prefix(const std::string &s, const std::string &prefix)
+{
+    return prefix.length() <= s.length() && std::equal(prefix.begin(), prefix.end(), s.begin());
+}
+
 HRESULT Evaluator::HandleSpecialLocalVar(
     const std::string &localName,
     ICorDebugValue *pLocalValue,
@@ -749,7 +754,7 @@ HRESULT Evaluator::HandleSpecialLocalVar(
 
     HRESULT Status;
 
-    if (captureName != localName)
+    if (!has_prefix(localName, captureName))
         return S_FALSE;
 
     // Substitute local value with its fields
@@ -763,11 +768,11 @@ HRESULT Evaluator::HandleSpecialLocalVar(
     {
         if (is_static)
             return S_OK;
-        if (captureName == name)
+        if (has_prefix(name, captureName))
             return S_OK;
         if (!locals.insert(name).second)
             return S_OK; // already in the list
-        return cb(pILFrame, pValue, name);
+        return cb(pILFrame, pValue, name.empty() ? "this" : name);
     }));
 
     return S_OK;
@@ -780,7 +785,6 @@ HRESULT Evaluator::HandleSpecialThisParam(
     WalkStackVarsCallback cb)
 {
     static const std::string displayClass = "<>c__DisplayClass";
-    static const std::string hideClass = "<>c";
 
     HRESULT Status;
 
@@ -793,11 +797,8 @@ HRESULT Evaluator::HandleSpecialThisParam(
 
     typeName = typeName.substr(start + 1);
 
-    if (hideClass != typeName)
+    if (!has_prefix(typeName, displayClass))
         return S_FALSE;
-
-    if (displayClass != typeName)
-        return S_OK; // just do not show this value
 
     // Substitute this with its fields
     IfFailRet(WalkMembers(pThisValue, nullptr, pILFrame, [&](
