@@ -5,8 +5,6 @@ The debugger provides GDB/MI or VSCode Debug Adapter protocol and allows to debu
 
 ## Build
 
-Build coreclr for your platform, see https://github.com/dotnet/coreclr for instructions.
-
 Switch to `netcoredbg` directory, create `build` directory and switch into it:
 ```
 mkdir build
@@ -15,7 +13,7 @@ cd build
 
 Proceed to build with `cmake`.
 
-> If `coreclr` and `netcoredbg` directories are next to each other, necessary `coreclr` files would be located automatically. Otherwise add `-DCLR_DIR=<path>/coreclr` to `cmake` command.
+> Necessary dependencies (CoreCLR sources and .NET SDK binaries) are going to be downloaded during CMake configure step. It is possible to override them with CMake options `-DCORECLR_DIR=<path-to-coreclr>` and `-DDOTNET_DIR=<path-to-dotnet-sdk>`.
 
 ### Ubuntu
 

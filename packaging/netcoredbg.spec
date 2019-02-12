@@ -82,12 +82,11 @@ cd build
 cmake ../netcoredbg \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
-    -DCLR_BIN_DIR=$NETCOREAPPDIR \
-    -DCLR_DIR=$NETCOREAPPDIR \
+    -DCORECLR_DIR=$NETCOREAPPDIR \
     -DCMAKE_INSTALL_PREFIX=%{install_prefix} \
     -DCMAKE_BUILD_TYPE=Release \
     -DCLR_CMAKE_LINUX_ID=tizen \
-    -DDBGSHIM_DIR=$NETCOREAPPDIR \
+    -DDBGSHIM_RUNTIME_DIR=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF
 make %{?jobs:-j%jobs}
 

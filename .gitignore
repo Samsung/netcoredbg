@@ -20,3 +20,5 @@ CMakeLists.txt.user
 *.pdb
 bin/
 obj/
+/.dotnet/
+/.coreclr/

@@ -1,33 +1,22 @@
 matrix:
+  allow_failures:
+    - os: windows
   include:
     - os: linux
-      dist: trusty
+      dist: xenial
       sudo: false
       addons:
         apt:
           sources:
-          - ubuntu-toolchain-r-test
-          - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-3.9 main'
-            key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
+          - sourceline: 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-5.0 main'
+            key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
           packages:
           - git
           - ninja-build
           - cmake
-          - llvm-3.9
-          - clang-3.9
-          - lldb-3.9
-          - liblldb-3.9-dev
-          - libunwind8
-          - libunwind8-dev
-          - gettext
-          - libicu-dev
-          - liblttng-ust-dev
-          - libcurl4-openssl-dev
-          - libssl-dev
-          - uuid-dev
-          - libnuma-dev
-          - libkrb5-dev
-          - g++-5
+          - llvm-5.0
+          - clang-5.0
+      env: MATRIX_EVAL="CC=clang-5.0 CXX=clang++-5.0"
     - os: linux
       dist: trusty
       sudo: required
@@ -38,10 +27,10 @@ matrix:
           - sourceline: 'deb http://download.tizen.org/tools/latest-release/Ubuntu_14.04/ /'
     - os: osx
       osx_image: xcode9.4
+    - os: windows
 
 env:
   global:
-  - CLI_VERSION=2.1
   - RELEASE_BRANCH=master
   - RELEASE_REPO=Samsung/netcoredbg
   - secure: "goktFL3DGZOhxD11w6BNUFmA02pMJLbQ8YbbrbaaeV831iFScbJf3TUFUJqrgn4ecWCz7d9bPD38XIMrRAr2m1VPW9N0aH/Zd/goxgVwO9Eu3JH3VclGMzBwnu1em1N7XNbhcAyFd7AqgBbAk0D5uBAfbMQqsJRDtXw+buqzrfwPUDEMlMr4ipt2RBSNOGvgFAixT1XCTNJi+gxoTuKAXB9UZHE4jPzC5c/xQVJQBCJI9jm6GlJ6Yr7aWpAXjGV1d0v1ZFpWNpD7FslVzFe3iX4oNqAjODHrgBVg2IO5M1A9BnfnUDh3xPahZNoE1yiAYGenXrjOs6x15KlzNEaoJ3/bOeNVytdddGRqbp2iw7nDMYp0uIjorD0WmFU9keKUC6K3g1m1i7GVrimTZR+kvYVifwMmotRuos6Kh7VGdAL0drsOgjdwZAOVNvEBcCYKcpawMNinccRQ77iLRC9iu8yfQiz9aRnHWrFbj/8v0V+hXDBDYk37of3v9e5+56iHOftpJZgs/4Eaf6SZpfCo8TqKiRKoqBpE9p2udjs+INcBY2Jdqd4zJzO3JzHd0GWIyR/9MxI0fE/4J6p/wlybdQat+yfqvdMXJg72Sd2FNcZZjgjtTYKlAK3up8KBxAew9i1YTwnYJsXR/+dKq61OKYVXM7ixAZuTmaJjEbAEDcI="
@@ -51,76 +40,36 @@ branches:
     - latest
 
 language: cpp
-compiler: clang
 
 cache:
   directories:
-    - $HOME/.nuget
-    - coreclr/bin/Product/Linux.x64.Release/inc
-    - coreclr/bin/Product/Linux.x64.Release/lib
-    - coreclr/bin/Product/OSX.x64.Release/inc
-    - coreclr/bin/Product/OSX.x64.Release/lib
-    - coreclr/src/inc
-    - coreclr/src/pal/inc
-    - coreclr/src/pal/inc/rt
-    - coreclr/src/pal/prebuilt/inc
-    - coreclr/src/debug/inc
-    - coreclr/src/debug/shim
-    - coreclr/src/dlls/dbgshim
-    - coreclr/src/coreclr/hosts/inc
-    - coreclr/src/ToolBox/SOS/Strike
     - $HOME/GBS-ROOT/local/cache
 
 before_install:
   - |
       if [ ${TRAVIS_OS_NAME} = 'osx' ]; then
         brew update
-        brew install git cmake ninja icu4c pkgconfig
-        brew link --force icu4c
-        mkdir -p /usr/local/lib/pkgconfig
-        ln -s /usr/local/opt/openssl/lib/libcrypto.1.0.0.dylib /usr/local/lib/
-        ln -s /usr/local/opt/openssl/lib/libssl.1.0.0.dylib /usr/local/lib/
-        ln -s /usr/local/opt/openssl/lib/pkgconfig/libcrypto.pc /usr/local/lib/pkgconfig/
-        ln -s /usr/local/opt/openssl/lib/pkgconfig/libssl.pc /usr/local/lib/pkgconfig/
-        ln -s /usr/local/opt/openssl/lib/pkgconfig/openssl.pc /usr/local/lib/pkgconfig/
-      elif [ ! -z "$TIZEN" ]; then
+        brew install ninja
+      elif [ ${TRAVIS_OS_NAME} = 'linux' ] && [ ! -z "$TIZEN" ]; then
         sudo apt-get update && sudo apt-get install -y --allow-unauthenticated gbs rpm2cpio
-      fi
-
-install:
-  - |
-      if [ -z "$TIZEN" ]; then
-        # Download .NET CLI
-        export DOTNET_INSTALL_DIR="$PWD/.dotnetcli"
-        curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel "$CLI_VERSION" --install-dir "$DOTNET_INSTALL_DIR"
-        export PATH="$DOTNET_INSTALL_DIR:$PATH"
-        # Set CoreCLR binaries output directory name and (for linux) specific compiler versions
-        if [ ${TRAVIS_OS_NAME} = 'linux' ]; then
-          export CORECLR_PRODUCT=Linux.x64.Release CC=clang-3.9 CXX=clang++-3.9
-        elif [ ${TRAVIS_OS_NAME} = 'osx' ]; then
-          export CORECLR_PRODUCT=OSX.x64.Release
-        fi
-        # Make CoreCLR sources and binaries available for build script
-        if [ ! -f "coreclr/src/inc/.cache_valid" ]; then
-          # Invalidate cache and build CoreCLR, put dbgshim library into cached directory
-          rm -rf coreclr
-          git clone --depth 1 https://github.com/dotnet/coreclr -b "release/$CLI_VERSION" && cd coreclr
-          ./build.sh ninja skiptests skipnuget release && cp bin/Product/$CORECLR_PRODUCT/libdbgshim.* bin/Product/$CORECLR_PRODUCT/lib && touch src/inc/.cache_valid
-          cd ..
-        else
-          # Restore dbgshim library location from cached directory
-          cp coreclr/bin/Product/$CORECLR_PRODUCT/lib/libdbgshim.* coreclr/bin/Product/$CORECLR_PRODUCT
-        fi
       fi
 
 script:
   - |
+      eval "${MATRIX_EVAL}"
       if [ -z "$TIZEN" ]; then
         # Build and run tests
         mkdir build && cd build
-        cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCLR_DIR=$PWD/../coreclr -DCMAKE_INSTALL_PREFIX=$PWD/../bin
-        ninja && ninja install
+        if [ ${TRAVIS_OS_NAME} = 'windows' ]; then
+          powershell -Command "Set-ExecutionPolicy Unrestricted"
+          cmake .. -G "Visual Studio 15 2017 Win64" -DCMAKE_INSTALL_PREFIX=$PWD/../bin
+          cmake --build . --config Release --target install
+        else
+          cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/../bin
+          ninja && ninja install
+        fi
         cd ..
+        export PATH=$PWD/.dotnet:$PATH
         dotnet build tests && dotnet test tests/runner
       else
         # Verify that Tizen build does not break
@@ -154,15 +103,18 @@ before_deploy:
         # Prepare files for deployment
         if [ -z "$TIZEN" ]; then
           mv bin netcoredbg
-          tar cfz netcoredbg-${TRAVIS_OS_NAME}-${TRAVIS_BRANCH}.tar.gz ./netcoredbg/*
+          if [ ${TRAVIS_OS_NAME} = 'windows' ]; then
+            7z a netcoredbg-win64-${TRAVIS_BRANCH}.zip netcoredbg
+          else
+            tar cfz netcoredbg-${TRAVIS_OS_NAME}-${TRAVIS_BRANCH}.tar.gz ./netcoredbg/*
+          fi
         else
           # Generate tar.gz from rpm for Tizen SDK
           RPMFILE=$(find ~/GBS-ROOT/local/repos/target_TM1.unified/armv7l/RPMS -type f -name 'netcoredbg-[0-9]*.rpm')
           if [ ! -f "$RPMFILE" ]; then travis_terminate; fi
-          FILENAME=$(basename -- "$RPMFILE")
-          PKGNAME=$(echo "$FILENAME" | cut -d'-' -f1)
-          PKGVERSION=$(echo "$FILENAME" | cut -d'-' -f2)
-          PKGARCH=$(echo "$FILENAME"| cut -d'-' -f3 | cut -d'.' -f2)
+          PKGNAME=`rpm -q --qf "%{n}" -p $RPMFILE`
+          PKGVERSION=`rpm -q --qf "%{v}" -p $RPMFILE`
+          PKGARCH=`rpm -q --qf "%{arch}" -p $RPMFILE`
           TARGZNAME=$PKGNAME-$PKGVERSION-$PKGARCH.tar.gz
           mkdir unpacked && cd unpacked
           rpm2cpio "$RPMFILE" | cpio -idmv
@@ -178,6 +130,7 @@ deploy:
   file:
     - "*.tar.gz"
     - "*.rpm"
+    - "*.zip"
   file_glob: true
   skip_cleanup: true
   overwrite: true

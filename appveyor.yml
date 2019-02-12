@@ -2,7 +2,6 @@ image:
   - Visual Studio 2017
 
 environment:
-  CLI_VERSION: 2.1
   RELEASE_BRANCH: master
   RELEASE_REPO: Samsung/netcoredbg
   GITHUB_API_KEY:
@@ -12,41 +11,14 @@ branches:
   except:
     - latest
 
-cache:
-  - '%USERPROFILE%\.nuget\packages'
-  - coreclr\bin\Product\Windows_NT.x64.Release\inc
-  - coreclr\bin\Product\Windows_NT.x64.Release\lib
-  - coreclr\src\inc
-  - coreclr\src\debug\inc
-  - coreclr\src\debug\shim
-  - coreclr\src\dlls\dbgshim
-  - coreclr\src\coreclr\hosts\inc
-  - coreclr\src\ToolBox\SOS\Strike
-
-install:
-  ps: |
-        $env:CORECLR_PRODUCT = "Windows_NT.x64.Release"
-        # Make CoreCLR sources and binaries available for build script
-        if (-not (Test-Path "coreclr\src\inc\.cache_valid")) {
-          # Invalidate cache and build CoreCLR, put dbgshim library into cached directory
-          rm -r -fo coreclr
-          git clone --depth 1 https://github.com/dotnet/coreclr -b "release/$env:CLI_VERSION"
-          cd coreclr
-          .\build.cmd skiptests release ; if($?) { cp bin\Product\$env:CORECLR_PRODUCT\dbgshim.dll bin\Product\$env:CORECLR_PRODUCT\lib ; echo $null >> src\inc\.cache_valid }
-          cd ..
-        } else {
-          # Restore dbgshim library location from cached directory
-          cp coreclr\bin\Product\$env:CORECLR_PRODUCT\lib\dbgshim.dll coreclr\bin\Product\$env:CORECLR_PRODUCT
-        }
-
 build_script:
   ps: |
         mkdir build
         cd build
-        cmake .. -G "Visual Studio 15 2017 Win64" -DCLR_DIR="$pwd\..\coreclr" -DCMAKE_INSTALL_PREFIX="$pwd\..\netcoredbg"
+        cmake .. -G "Visual Studio 15 2017 Win64" -DCMAKE_INSTALL_PREFIX="$pwd\..\netcoredbg"
         cmake --build . --config Release --target install
         cd ..
-        dotnet build tests
+        .dotnet\dotnet.exe build tests
 
 after_build:
   ps: |
@@ -55,6 +27,7 @@ after_build:
 test_script:
   ps: |
         $env:PIPE = "$pwd\netcoredbg\netcoredbg.exe"
+        $env:PATH = "$pwd\.dotnet;$env:PATH"
         dotnet test tests\runner
 
 artifacts:

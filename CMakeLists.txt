@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 2.8.12.2)
 project(netcoredbg)
 
-set(CLR_DIR "${CMAKE_SOURCE_DIR}/../coreclr" CACHE FILEPATH "Path to coreclr directory")
-set(CLR_BIN_DIR "" CACHE FILEPATH "Path to coreclr bin directory")
+set(CORECLR_DIR "" CACHE FILEPATH "Path to CoreCLR source directory")
+set(DOTNET_DIR "" CACHE FILEPATH "Path to .NET SDK directory")
+set(CORECLR_BRANCH "release/2.1" CACHE STRING "CoreCLR source branch")
+set(DOTNET_CHANNEL "2.1" CACHE STRING ".NET SDK channel")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
-set(DBGSHIM_DIR "" CACHE FILEPATH "Path to dbgshim library directory")
+set(DBGSHIM_RUNTIME_DIR "" CACHE FILEPATH "Path to dbgshim library directory (at runtime)")
 
 if (WIN32)
     set(CMAKE_CXX_STANDARD 11)
@@ -35,34 +37,15 @@ include(platformdefinitions.cmake) # from root
 include(compileoptions.cmake) # disabled setting arm compiler flags in Tizen build
 include(clrdefinitions.cmake)
 
-if (NOT IS_DIRECTORY "${CLR_DIR}")
-    message(FATAL_ERROR "Unable to find CoreCLR directory")
+include(fetchdeps.cmake)
+
+# Basic checks for valid paths
+if (NOT IS_DIRECTORY "${CORECLR_DIR}/src/pal")
+    message(FATAL_ERROR "Invalid CoreCLR source directory")
 endif()
-
-set(CLR_CONFIGURATION_TYPES "Debug;Checked;Release;RelWithDebInfo" CACHE STRING "")
-
-if ("${CLR_BIN_DIR}" STREQUAL "")
-    if (WIN32)
-        set(TARGET_OS_NAME "Windows_NT")
-    elseif (CMAKE_SYSTEM_NAME STREQUAL Darwin)
-        set(TARGET_OS_NAME "OSX")
-    elseif (CMAKE_SYSTEM_NAME STREQUAL Linux)
-        set(TARGET_OS_NAME "Linux")
-    endif()
-
-    # TODO: Search for CMAKE_BUILD_TYPE configuration first
-    # TODO: CLR_CMAKE_TARGET_ARCH may be armel
-    foreach(CONFIG IN LISTS CLR_CONFIGURATION_TYPES)
-        set(CLR_BIN_DIR ${CLR_DIR}/bin/Product/${TARGET_OS_NAME}.${CLR_CMAKE_TARGET_ARCH}.${CONFIG})
-        if (IS_DIRECTORY "${CLR_BIN_DIR}")
-            break()
-        endif()
-    endforeach()
-
-    if (IS_DIRECTORY "${CLR_BIN_DIR}")
-        message(STATUS "CoreCLR bin directory: " ${CLR_BIN_DIR})
-    else()
-        message(FATAL_ERROR "Unable to find CoreCLR bin directory")
+if (NOT "${DOTNET_DIR}" STREQUAL "")
+    if (NOT IS_DIRECTORY "${DOTNET_DIR}/shared/Microsoft.NETCore.App")
+        message(FATAL_ERROR "Invalid .NET SDK directory")
     endif()
 endif()
 
