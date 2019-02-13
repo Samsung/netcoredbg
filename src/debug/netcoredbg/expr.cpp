@@ -223,9 +223,9 @@ HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue 
 void Evaluator::Cleanup()
 {
     if (m_pRunClassConstructor)
-        m_pRunClassConstructor->Release();
+        m_pRunClassConstructor.Release();
     if (m_pGetTypeHandle)
-        m_pGetTypeHandle->Release();
+        m_pGetTypeHandle.Release();
 }
 
 HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,

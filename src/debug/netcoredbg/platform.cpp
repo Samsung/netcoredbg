@@ -883,11 +883,10 @@ IORedirectServer::IORedirectServer(
 
 IORedirectServer::~IORedirectServer()
 {
+    // We can not switch rdbuf here because streams are in use by detached threads in IORedirectServerHandles::RedirectOutput.
+    // But this is not a big deal because the debugger process is terminating anyway.
+
     std::cin.rdbuf(m_prevIn);
-    std::cout.rdbuf(m_prevOut);
-    std::cout.rdbuf(m_prevErr);
     delete m_in;
-    delete m_out;
-    delete m_err;
     delete m_handles;
 }
