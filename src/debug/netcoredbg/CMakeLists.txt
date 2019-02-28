@@ -31,6 +31,8 @@ include_directories(${CORECLR_DIR}/src/ToolBox/SOS/Strike)
 
 # Build native part of the debugger
 
+include_directories(${PROJECT_SOURCE_DIR}/third_party)
+
 set(netcoredbg_SRC
     main.cpp
     manageddebugger.cpp
