@@ -22,7 +22,7 @@ PKGNAME=`rpm -q --qf "%{n}" -p $RPMFILE`
 PKGVERSION=`rpm -q --qf "%{v}" -p $RPMFILE`
 PKGARCH=`rpm -q --qf "%{arch}" -p $RPMFILE`
 TARGZNAME=$PKGNAME-$PKGVERSION-$PKGARCH.tar.gz
-if [ -d $SCRIPTDIR/unpacked ]; then rm -rf $SCRIPTDIR/unpacked; fi
+if [ -d $SCRIPTDIR/unpacked ]; then rm -rf "$SCRIPTDIR/unpacked"; fi
 mkdir $SCRIPTDIR/unpacked && cd $SCRIPTDIR/unpacked
 rpm2cpio "$RPMFILE" | cpio -idmv
 touch .$TOOLS_ABS_PATH/$PKGNAME/version-$PKGVERSION
@@ -34,11 +34,11 @@ cd ..
 REMOTETESTDIR=$TOOLS_ABS_PATH/netcoredbg-tests
 
 $SDB root on
-$SDB shell rm -rf $TOOLS_ABS_PATH/netcoredbg
+$SDB shell rm -rf "$TOOLS_ABS_PATH/netcoredbg"
 $SDB shell mkdir -p $TOOLS_ABS_PATH/on-demand
 $SDB push $TARGZNAME $TOOLS_ABS_PATH/on-demand
 $SDB shell "cd $TOOLS_ABS_PATH && tar xf $TOOLS_ABS_PATH/on-demand/$(basename $TARGZNAME)"
-$SDB shell rm -rf $REMOTETESTDIR
+$SDB shell rm -rf "$REMOTETESTDIR"
 $SDB shell mkdir $REMOTETESTDIR
 
 # Upload all test dlls and pdbs
