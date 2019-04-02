@@ -22,8 +22,8 @@ PKGNAME=`rpm -q --qf "%{n}" -p $RPMFILE`
 PKGVERSION=`rpm -q --qf "%{v}" -p $RPMFILE`
 PKGARCH=`rpm -q --qf "%{arch}" -p $RPMFILE`
 TARGZNAME=$PKGNAME-$PKGVERSION-$PKGARCH.tar.gz
-if [ -d $SCRIPTDIR/unpacked ]; then rm -rf "$SCRIPTDIR/unpacked"; fi
-mkdir $SCRIPTDIR/unpacked && cd $SCRIPTDIR/unpacked
+if [ -d "$SCRIPTDIR/unpacked" ]; then rm -rf "$SCRIPTDIR/unpacked"; fi
+mkdir "$SCRIPTDIR/unpacked" && cd "$SCRIPTDIR/unpacked"
 rpm2cpio "$RPMFILE" | cpio -idmv
 touch .$TOOLS_ABS_PATH/$PKGNAME/version-$PKGVERSION
 tar cfz ../$TARGZNAME --owner=root --group=root -C .$TOOLS_ABS_PATH .
@@ -43,7 +43,7 @@ $SDB shell mkdir $REMOTETESTDIR
 
 # Upload all test dlls and pdbs
 
-find $SCRIPTDIR -name '*Test.runtimeconfig.json' | while read fname; do
+find "$SCRIPTDIR" -name '*Test.runtimeconfig.json' | while read fname; do
   base=$(echo $fname | rev | cut -f 3- -d '.' | rev)
   $SDB push ${base}.dll ${base}.pdb $REMOTETESTDIR
 done
@@ -57,4 +57,4 @@ DEBUGGER=$TOOLS_ABS_PATH/netcoredbg/netcoredbg
 
 # sdb always allocates a terminal for a shell command, but we do not want MI commands to be echoed.
 # So we need to delay stdin by 1 second and hope that `stty raw -echo` turns the echo off during the delay.
-TESTDIR=$REMOTETESTDIR PIPE="(sleep 1; cat) | $SDB shell stty raw -echo\\; export PATH=\$PATH:$TOOLS_ABS_PATH/netcoredbg-tests\\; $DEBUGGER --log=file --interpreter=mi" dotnet test $SCRIPTDIR --logger "trx;LogFileName=$SCRIPTDIR/Results.trx"
+TESTDIR=$REMOTETESTDIR PIPE="(sleep 1; cat) | $SDB shell stty raw -echo\\; export PATH=\$PATH:$TOOLS_ABS_PATH/netcoredbg-tests\\; $DEBUGGER --log=file --interpreter=mi" dotnet test "$SCRIPTDIR" --logger "trx;LogFileName=$SCRIPTDIR/Results.trx"
