@@ -48,7 +48,7 @@ find "$SCRIPTDIR" -name '*Test.runtimeconfig.json' | while read fname; do
   $SDB push ${base}.dll ${base}.pdb $REMOTETESTDIR
 done
 
-$SDB shell "echo -e '#!/bin/sh\nexec /lib/ld-linux.so.3 /usr/share/dotnet/corerun --clr-path /usr/share/dotnet/shared/Microsoft.NETCore.App/2.0.0 \$@' > $REMOTETESTDIR/dotnet"
+$SDB shell "echo -e '#!/bin/sh\nexec /lib/ld-linux.so.3 /usr/share/dotnet/corerun --clr-path /opt/usr/dotnet.tizen/netcoreapp \$@' > $REMOTETESTDIR/dotnet"
 $SDB shell chmod +x $REMOTETESTDIR/dotnet
 
 # Run tests
