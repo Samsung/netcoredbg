@@ -9,7 +9,9 @@ SCRIPTDIR=$(dirname $(readlink -f $0))
 
 # Detect target arch
 
-if $SDB shell cat /proc/cpuinfo | grep -q ARMv7; then ARCH=armv7l; else ARCH=i686; fi
+if   $SDB shell lscpu | grep -q armv7l; then ARCH=armv7l; 
+elif $SDB shell lscpu | grep -q i686;   then ARCH=i686;
+else echo "Unknown target architecture"; exit 1; fi
 
 # The following command assumes that GBS build was performed on a clean system (or in Docker),
 # which means only one such file exists.
@@ -17,7 +19,7 @@ RPMFILE=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-[0-9]\*$ARCH.rpm -
 
 # Repackage RPM file as TGZ
 
-if [ ! -f "$RPMFILE" ]; then exit 1; fi
+if [ ! -f "$RPMFILE" ]; then echo "Debugger RPM not found"; exit 1; fi
 PKGNAME=`rpm -q --qf "%{n}" -p $RPMFILE`
 PKGVERSION=`rpm -q --qf "%{v}" -p $RPMFILE`
 PKGARCH=`rpm -q --qf "%{arch}" -p $RPMFILE`
@@ -48,7 +50,7 @@ find "$SCRIPTDIR" -name '*Test.runtimeconfig.json' | while read fname; do
   $SDB push ${base}.dll ${base}.pdb $REMOTETESTDIR
 done
 
-$SDB shell "echo -e '#!/bin/sh\nexec /lib/ld-linux.so.3 /usr/share/dotnet/corerun --clr-path /opt/usr/dotnet.tizen/netcoreapp \$@' > $REMOTETESTDIR/dotnet"
+$SDB shell "echo -e '#!/bin/sh\nexec /lib/ld-linux.so.* /usr/share/dotnet/corerun --clr-path /usr/share/dotnet.tizen/netcoreapp \$@' > $REMOTETESTDIR/dotnet"
 $SDB shell chmod +x $REMOTETESTDIR/dotnet
 
 # Run tests
