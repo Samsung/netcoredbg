@@ -1,28 +1,62 @@
 #!/bin/sh
 
-# Before running this script:
-#   1. Enable root mode:         sdb root on
-#   2. Remount system partition: sdb shell mount -o rw,remount /
-#   3. Install netcoredbg rpm:   sdb push netcoredbg-*.rpm /tmp && sdb shell rpm -i --force /tmp/netcoredbg-*.rpm
-#   4. Create dotnet symlink:    sdb shell ln -s /usr/share/dotnet/corerun /usr/bin/dotnet
-
 SDB=${SDB:-sdb}
+
+GBSROOT=$HOME/GBS-ROOT
+TOOLS_ABS_PATH=/home/owner/share/tmp/sdk_tools
 
 SCRIPTDIR=$(dirname $(readlink -f $0))
 
+# Detect target arch
+
+if   $SDB shell lscpu | grep -q armv7l; then ARCH=armv7l; 
+elif $SDB shell lscpu | grep -q i686;   then ARCH=i686;
+else echo "Unknown target architecture"; exit 1; fi
+
+# The following command assumes that GBS build was performed on a clean system (or in Docker),
+# which means only one such file exists.
+RPMFILE=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-[0-9]\*$ARCH.rpm -print -quit)
+
+# Repackage RPM file as TGZ
+
+if [ ! -f "$RPMFILE" ]; then echo "Debugger RPM not found"; exit 1; fi
+PKGNAME=`rpm -q --qf "%{n}" -p $RPMFILE`
+PKGVERSION=`rpm -q --qf "%{v}" -p $RPMFILE`
+PKGARCH=`rpm -q --qf "%{arch}" -p $RPMFILE`
+TARGZNAME=$PKGNAME-$PKGVERSION-$PKGARCH.tar.gz
+if [ -d "$SCRIPTDIR/unpacked" ]; then rm -rf "$SCRIPTDIR/unpacked"; fi
+mkdir "$SCRIPTDIR/unpacked" && cd "$SCRIPTDIR/unpacked"
+rpm2cpio "$RPMFILE" | cpio -idmv
+touch .$TOOLS_ABS_PATH/$PKGNAME/version-$PKGVERSION
+tar cfz ../$TARGZNAME --owner=root --group=root -C .$TOOLS_ABS_PATH .
+cd ..
+
+# Upload TGZ to target and unpack
+
+REMOTETESTDIR=$TOOLS_ABS_PATH/netcoredbg-tests
+
+$SDB root on
+$SDB shell rm -rf "$TOOLS_ABS_PATH/netcoredbg"
+$SDB shell mkdir -p $TOOLS_ABS_PATH/on-demand
+$SDB push $TARGZNAME $TOOLS_ABS_PATH/on-demand
+$SDB shell "cd $TOOLS_ABS_PATH && tar xf $TOOLS_ABS_PATH/on-demand/$(basename $TARGZNAME)"
+$SDB shell rm -rf "$REMOTETESTDIR"
+$SDB shell mkdir $REMOTETESTDIR
+
 # Upload all test dlls and pdbs
-find $SCRIPTDIR -name '*Test.runtimeconfig.json' | while read fname; do
+
+find "$SCRIPTDIR" -name '*Test.runtimeconfig.json' | while read fname; do
   base=$(echo $fname | rev | cut -f 3- -d '.' | rev)
-  $SDB push ${base}.dll ${base}.pdb /tmp
-  # After push some targets set SMACK access label to System, but the debugger can not access System files.
-  # Also, prevent sdb from consuming input.
-  cat /dev/null | $SDB shell "chsmack -a '*' /tmp/$(basename ${base}).dll /tmp/$(basename ${base}).pdb"
+  $SDB push ${base}.dll ${base}.pdb $REMOTETESTDIR
 done
+
+$SDB shell "echo -e '#!/bin/sh\nexec /lib/ld-linux.so.* /usr/share/dotnet/corerun --clr-path /usr/share/dotnet.tizen/netcoreapp \$@' > $REMOTETESTDIR/dotnet"
+$SDB shell chmod +x $REMOTETESTDIR/dotnet
 
 # Run tests
 
-DEBUGGER=/home/owner/share/tmp/sdk_tools/netcoredbg/netcoredbg
+DEBUGGER=$TOOLS_ABS_PATH/netcoredbg/netcoredbg
 
 # sdb always allocates a terminal for a shell command, but we do not want MI commands to be echoed.
 # So we need to delay stdin by 1 second and hope that `stty raw -echo` turns the echo off during the delay.
-TESTDIR=/tmp PIPE="(sleep 1; cat) | $SDB shell stty raw -echo\\;$DEBUGGER --interpreter=mi" dotnet test $SCRIPTDIR --logger "trx;LogFileName=$SCRIPTDIR/Results.trx"
+TESTDIR=$REMOTETESTDIR PIPE="(sleep 1; cat) | $SDB shell stty raw -echo\\; export PATH=\$PATH:$TOOLS_ABS_PATH/netcoredbg-tests\\; $DEBUGGER --log=file --interpreter=mi" dotnet test "$SCRIPTDIR" --logger "trx;LogFileName=$SCRIPTDIR/Results.trx"
