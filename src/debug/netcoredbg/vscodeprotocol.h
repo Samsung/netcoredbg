@@ -35,6 +35,7 @@ class VSCodeProtocol : public Protocol
 
     static std::string ReadData();
 
+    void AddCapabilitiesTo(nlohmann::json &capabilities);
     void EmitEvent(const std::string &name, const nlohmann::json &body);
     HRESULT HandleCommand(const std::string &command, const nlohmann::json &arguments, nlohmann::json &body);
 

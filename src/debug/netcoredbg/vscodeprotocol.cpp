@@ -245,10 +245,7 @@ void VSCodeProtocol::EmitCapabilitiesEvent()
     json body = json::object();
     json capabilities = json::object();
 
-    capabilities["supportsConfigurationDoneRequest"] = true;
-    capabilities["supportsFunctionBreakpoints"] = true;
-    capabilities["supportsConditionalBreakpoints"] = true;
-    capabilities["supportTerminateDebuggee"] = true;
+    AddCapabilitiesTo(capabilities);
 
     body["capabilities"] = capabilities;
 
@@ -279,6 +276,14 @@ typedef std::function<HRESULT(
     const json &arguments,
     json &body)> CommandCallback;
 
+void VSCodeProtocol::AddCapabilitiesTo(json &capabilities)
+{
+    capabilities["supportsConfigurationDoneRequest"] = true;
+    capabilities["supportsFunctionBreakpoints"] = true;
+    capabilities["supportsConditionalBreakpoints"] = true;
+    capabilities["supportTerminateDebuggee"] = true;
+}
+
 HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &arguments, json &body)
 {
     static std::unordered_map<std::string, CommandCallback> commands {
@@ -287,6 +292,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         EmitCapabilitiesEvent();
 
         m_debugger->Initialize();
+        AddCapabilitiesTo(body);
 
         return S_OK;
     } },
