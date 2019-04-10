@@ -516,21 +516,18 @@ HRESULT Breakpoints::SetBreakpoints(
     auto &breakpointsInSource = m_breakpoints[filename];
 
     // Remove old breakpoints
-    std::unordered_set<int> unchangedLines;
+    std::unordered_set<int> funcBreakpointLines;
     for (const auto &sb : srcBreakpoints)
     {
-        int line = sb.line;
-        if (breakpointsInSource.find(line) != breakpointsInSource.end())
-            unchangedLines.insert(line);
+        funcBreakpointLines.insert(sb.line);
     }
-
-    std::unordered_set<int> removedLines;
-    for (auto &b : breakpointsInSource)
-        if (unchangedLines.find(b.first) == unchangedLines.end())
-            removedLines.insert(b.first);
-
-    for (int line : removedLines)
-        breakpointsInSource.erase(line);
+    for (auto it = breakpointsInSource.begin(); it != breakpointsInSource.end();)
+    {
+        if (funcBreakpointLines.find(it->first) == funcBreakpointLines.end())
+            it = breakpointsInSource.erase(it);
+        else
+            ++it;
+    }
 
     // Export breakpoints
 
@@ -643,11 +640,24 @@ HRESULT Breakpoints::SetFunctionBreakpoints(
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
-    // Clean all previous function breakpoints
-    for  (auto &fb : funcBreakpoints)
+    // Remove old breakpoints
+    std::unordered_set<std::string> funcBreakpointFuncs;
+    for (const auto &fb : funcBreakpoints)
     {
-        if (m_funcBreakpoints.find(fb.func) == m_funcBreakpoints.end())
-            m_funcBreakpoints.erase(fb.func);
+        std::string fullFuncName("");
+        if (fb.module != "")
+        {
+            fullFuncName = fb.module + "!";
+        }
+        fullFuncName += fb.func + fb.params;
+        funcBreakpointFuncs.insert(fullFuncName);
+    }
+    for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
+    {
+        if (funcBreakpointFuncs.find(it->first) == funcBreakpointFuncs.end())
+            it = m_funcBreakpoints.erase(it);
+        else
+            ++it;
     }
 
     if (funcBreakpoints.empty())
