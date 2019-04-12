@@ -633,6 +633,18 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
         std::vector<Breakpoint> tmpBreakpoints;
         m_debugger->SetBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
     }
+
+    std::vector<FunctionBreakpoint> remainingFuncBreakpoints;
+    for (auto &fb : m_funcBreakpoints)
+    {
+        if (ids.find(fb.first) == ids.end())
+            remainingFuncBreakpoints.push_back(fb.second);
+    }
+    if (remainingFuncBreakpoints.size() != m_funcBreakpoints.size())
+    {
+        std::vector<Breakpoint> tmpBreakpoints;
+        m_debugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
+    }
 }
 
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
