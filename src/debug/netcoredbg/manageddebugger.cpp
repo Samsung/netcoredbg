@@ -1006,7 +1006,18 @@ HRESULT ManagedDebugger::Pause()
 
     if (!m_pProcess)
         return E_FAIL;
-    HRESULT Status = m_pProcess->Stop(0);
+
+    // The debugger maintains a stop counter. When the counter goes to zero, the controller is resumed.
+    // Each call to Stop or each dispatched callback increments the counter.
+    // Each call to ICorDebugController::Continue decrements the counter.
+    BOOL running = FALSE;
+    HRESULT Status = m_pProcess->IsRunning(&running);
+    if (Status != S_OK)
+        return Status;
+    if (!running)
+        return S_OK;
+    
+    Status = m_pProcess->Stop(0);
     if (Status != S_OK)
         return Status;
 
