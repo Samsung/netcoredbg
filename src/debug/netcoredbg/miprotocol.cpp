@@ -603,6 +603,7 @@ HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condi
 
         // Gather all breakpoints in this file
         std::vector<SourceBreakpoint> existingBreakpoints;
+        existingBreakpoints.reserve(fileBreakpoints.size());
         for (const auto &it : fileBreakpoints)
             existingBreakpoints.emplace_back(it.second);
 
@@ -612,7 +613,19 @@ HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condi
         return m_debugger->SetBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
     }
 
-    return E_FAIL;
+    const auto &fbIter = m_funcBreakpoints.find(id);
+    if (fbIter == m_funcBreakpoints.end())
+        return E_FAIL;
+
+    fbIter->second.condition = condition;
+
+    std::vector<FunctionBreakpoint> existingFuncBreakpoints;
+    existingFuncBreakpoints.reserve(m_funcBreakpoints.size());
+    for (const auto &fb : m_funcBreakpoints)
+        existingFuncBreakpoints.emplace_back(fb.second);
+
+    std::vector<Breakpoint> tmpBreakpoints;
+    return m_debugger->SetFunctionBreakpoints(existingFuncBreakpoints, tmpBreakpoints);
 }
 
 void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
