@@ -413,12 +413,15 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "evaluate", [this](const json &arguments, json &body){
         HRESULT Status;
         std::string expression = arguments.at("expression");
+        uint64_t frameId;
         auto frameIdIter = arguments.find("frameId");
         if (frameIdIter == arguments.end())
         {
-            return E_FAIL;
+            int threadId = m_debugger->GetLastStoppedThreadId();
+            frameId = StackFrame(threadId, 0, "").id;
         }
-        uint64_t frameId = frameIdIter.value();
+        else 
+            frameId = frameIdIter.value();
 
         Variable variable;
         std::string output;
