@@ -613,6 +613,11 @@ HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condi
         return m_debugger->SetBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
     }
 
+    return E_FAIL;
+}
+
+HRESULT MIProtocol::SetFunctionBreakpointCondition(uint32_t id, const std::string &condition)
+{
     const auto &fbIter = m_funcBreakpoints.find(id);
     if (fbIter == m_funcBreakpoints.end())
         return E_FAIL;
@@ -646,18 +651,22 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
         std::vector<Breakpoint> tmpBreakpoints;
         m_debugger->SetBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
     }
+}
 
+void MIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids)
+{
     std::vector<FunctionBreakpoint> remainingFuncBreakpoints;
     for (auto &fb : m_funcBreakpoints)
     {
         if (ids.find(fb.first) == ids.end())
             remainingFuncBreakpoints.push_back(fb.second);
     }
-    if (remainingFuncBreakpoints.size() != m_funcBreakpoints.size())
-    {
-        std::vector<Breakpoint> tmpBreakpoints;
-        m_debugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
-    }
+
+    if (remainingFuncBreakpoints.size() == m_funcBreakpoints.size())
+        return;
+
+    std::vector<Breakpoint> tmpBreakpoints;
+    m_debugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
@@ -870,6 +879,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
                 ids.insert(id);
         }
         DeleteBreakpoints(ids);
+        DeleteFunctionBreakpoints(ids);
         return S_OK;
     } },
     { "break-condition", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -887,7 +897,11 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             return E_FAIL;
         }
 
-        return SetBreakpointCondition(id, args.at(1));
+        HRESULT Status = SetBreakpointCondition(id, args.at(1));
+        if (SUCCEEDED(Status))
+            return Status;
+
+        return SetFunctionBreakpointCondition(id, args.at(1));
     } },
     { "exec-step", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return StepCommand(args, output, Debugger::STEP_IN);

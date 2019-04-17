@@ -75,6 +75,8 @@ private:
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
     HRESULT SetBreakpointCondition(uint32_t id, const std::string &condition);
+    HRESULT SetFunctionBreakpointCondition(uint32_t id, const std::string &condition);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
+    void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
 };
