@@ -1071,6 +1071,16 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         }
         return S_OK;
     }},
+    { "gdb-show", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (args.size() != 1
+            || args.at(0) != "just-my-code")
+            return E_FAIL;
+
+        std::ostringstream ss;
+        ss << "value=\"" << (m_debugger->IsJustMyCode() ? "1" : "0") << "\"";
+        output = ss.str();
+        return S_OK;
+    }},
     { "interpreter-exec", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return S_OK;
     }},
