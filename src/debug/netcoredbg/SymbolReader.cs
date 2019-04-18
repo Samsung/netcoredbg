@@ -254,9 +254,9 @@ namespace SOS
                 Func<string, bool> FileNameMatches;
                 string fileName = GetFileName(filePath);
                 if (fileName == filePath)
-                    FileNameMatches = s => GetFileName(s) == fileName;
+                    FileNameMatches = s => GetFileName(s).Equals(fileName, StringComparison.OrdinalIgnoreCase);
                 else
-                    FileNameMatches = s => s == filePath;
+                    FileNameMatches = s => s.Equals(filePath, StringComparison.OrdinalIgnoreCase);
 
                 foreach (MethodDebugInformationHandle methodDebugInformationHandle in reader.MethodDebugInformation)
                 {
