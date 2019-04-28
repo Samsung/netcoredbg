@@ -1274,6 +1274,7 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
                                      &m_processId, &resumeHandle));
 
     IfFailRet(g_dbgshim.RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
+    m_protocol->EmitProcessEvent(m_processId, fileExec);
 
     // Resume the process so that StartupCallback can run
     IfFailRet(g_dbgshim.ResumeProcess(resumeHandle));

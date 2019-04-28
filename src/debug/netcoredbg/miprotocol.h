@@ -39,6 +39,7 @@ public:
 
     MIProtocol() : Protocol(), m_varCounter(0) {}
     void EmitInitializedEvent() override {}
+    void EmitProcessEvent(int id, const std::string name) override {}
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
     void EmitTerminatedEvent() override {}
