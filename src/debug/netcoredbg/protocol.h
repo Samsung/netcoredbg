@@ -40,7 +40,7 @@ struct ClrAddr
 
 struct StackFrame
 {
-    uint64_t id; // (threadId << 32) | level
+    uint32_t id; // (threadId << 32) | level
     std::string name;
     Source source;
     int line;
@@ -59,14 +59,14 @@ struct StackFrame
         name(name), line(0), column(0), endLine(0), endColumn(0), addr(0)
     {
         id = threadId;
-        id <<= 32;
+        id <<= 16;
         id |= level;
     }
 
     StackFrame(uint64_t id) : id(id), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
-    uint32_t GetLevel() const { return id & 0xFFFFFFFFul; }
-    int GetThreadId() const { return id >> 32; }
+    uint32_t GetLevel() const { return id & 0x0000FFFFul; }
+    int GetThreadId() const { return id >> 16; }
 };
 
 struct Breakpoint

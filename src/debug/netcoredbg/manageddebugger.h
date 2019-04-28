@@ -318,9 +318,9 @@ class Variables
 
         ValueKind valueKind;
         ToRelease<ICorDebugValue> value;
-        uint64_t frameId;
+        uint32_t frameId;
 
-        VariableReference(const Variable &variable, uint64_t frameId, ToRelease<ICorDebugValue> value, ValueKind valueKind) :
+        VariableReference(const Variable &variable, uint32_t frameId, ToRelease<ICorDebugValue> value, ValueKind valueKind) :
             variablesReference(variable.variablesReference),
             namedVariables(variable.namedVariables),
             indexedVariables(variable.indexedVariables),
@@ -330,7 +330,7 @@ class Variables
             frameId(frameId)
         {}
 
-        VariableReference(uint32_t variablesReference, uint64_t frameId, int namedVariables) :
+        VariableReference(uint32_t variablesReference, uint32_t frameId, int namedVariables) :
             variablesReference(variablesReference),
             namedVariables(namedVariables),
             indexedVariables(0),
@@ -350,10 +350,10 @@ class Variables
     std::unordered_map<uint32_t, VariableReference> m_variables;
     uint32_t m_nextVariableReference;
 
-    void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
+    void AddVariableReference(Variable &variable, uint32_t frameId, ICorDebugValue *value, ValueKind valueKind);
 
     HRESULT GetStackVariables(
-        uint64_t frameId,
+        uint32_t frameId,
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         int start,
@@ -388,7 +388,7 @@ class Variables
         bool static_members = false);
 
     HRESULT SetStackVariable(
-        uint64_t frameId,
+        uint32_t frameId,
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         const std::string &name,
@@ -431,16 +431,16 @@ public:
         ICorDebugProcess *pProcess,
         ICorDebugValue *pVariable,
         const std::string &value,
-        uint64_t frameId,
+        uint32_t frameId,
         std::string &output);
 
-    HRESULT GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes);
+    HRESULT GetScopes(ICorDebugProcess *pProcess, uint32_t frameId, std::vector<Scope> &scopes);
 
-    HRESULT Evaluate(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression, Variable &variable, std::string &output);
+    HRESULT Evaluate(ICorDebugProcess *pProcess, uint32_t frameId, const std::string &expression, Variable &variable, std::string &output);
 
     HRESULT GetValueByExpression(
         ICorDebugProcess *pProcess,
-        uint64_t frameId,
+        uint32_t frameId,
         const std::string &expression,
         ICorDebugValue **ppResult);
 
@@ -549,10 +549,10 @@ public:
     void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) override;
     HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
     HRESULT StepCommand(int threadId, StepType stepType) override;
-    HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) override;
+    HRESULT GetScopes(uint32_t frameId, std::vector<Scope> &scopes) override;
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;
     int GetNamedVariables(uint32_t variablesReference) override;
-    HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output) override;
+    HRESULT Evaluate(uint32_t frameId, const std::string &expression, Variable &variable, std::string &output) override;
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
-    HRESULT SetVariableByExpression(uint64_t frameId, const std::string &expression, const std::string &value, std::string &output) override;
+    HRESULT SetVariableByExpression(uint32_t frameId, const std::string &expression, const std::string &value, std::string &output) override;
 };

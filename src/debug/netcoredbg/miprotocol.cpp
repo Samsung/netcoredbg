@@ -432,7 +432,7 @@ HRESULT MIProtocol::CreateVar(int threadId, int level, const std::string &varobj
 {
     HRESULT Status;
 
-    uint64_t frameId = StackFrame(threadId, level, "").id;
+    uint32_t frameId = StackFrame(threadId, level, "").id;
 
     Variable variable;
     IfFailRet(m_debugger->Evaluate(frameId, expression, variable, output));
@@ -1129,7 +1129,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
         int level = GetIntArg(args, "--frame", 0);
-        uint64_t frameId = StackFrame(threadId, level, "").id;
+        uint32_t frameId = StackFrame(threadId, level, "").id;
 
         Variable variable;
         IfFailRet(FindVar(varName, variable));

@@ -205,7 +205,7 @@ HRESULT Variables::GetVariables(
     return S_OK;
 }
 
-void Variables::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind)
+void Variables::AddVariableReference(Variable &variable, uint32_t frameId, ICorDebugValue *value, ValueKind valueKind)
 {
     unsigned int numChild = 0;
     GetNumChild(value, numChild, valueKind == ValueIsClass);
@@ -220,7 +220,7 @@ void Variables::AddVariableReference(Variable &variable, uint64_t frameId, ICorD
 }
 
 HRESULT Variables::GetStackVariables(
-    uint64_t frameId,
+    uint32_t frameId,
     ICorDebugThread *pThread,
     ICorDebugFrame *pFrame,
     int start,
@@ -271,14 +271,14 @@ HRESULT Variables::GetStackVariables(
     return S_OK;
 }
 
-HRESULT ManagedDebugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
+HRESULT ManagedDebugger::GetScopes(uint32_t frameId, std::vector<Scope> &scopes)
 {
     LogFuncEntry();
 
     return m_variables.GetScopes(m_pProcess, frameId, scopes);
 }
 
-HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes)
+HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, uint32_t frameId, std::vector<Scope> &scopes)
 {
     if (pProcess == nullptr)
         return E_FAIL;
@@ -406,7 +406,7 @@ HRESULT Variables::GetChildren(
     return S_OK;
 }
 
-HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output)
+HRESULT ManagedDebugger::Evaluate(uint32_t frameId, const std::string &expression, Variable &variable, std::string &output)
 {
     LogFuncEntry();
 
@@ -415,7 +415,7 @@ HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expressio
 
 HRESULT Variables::Evaluate(
     ICorDebugProcess *pProcess,
-    uint64_t frameId,
+    uint32_t frameId,
     const std::string &expression,
     Variable &variable,
     std::string &output)
@@ -587,7 +587,7 @@ HRESULT Variables::SetVariable(
 }
 
 HRESULT Variables::SetStackVariable(
-    uint64_t frameId,
+    uint32_t frameId,
     ICorDebugThread *pThread,
     ICorDebugFrame *pFrame,
     const std::string &name,
@@ -657,7 +657,7 @@ HRESULT Variables::SetChild(
 }
 
 HRESULT ManagedDebugger::SetVariableByExpression(
-    uint64_t frameId,
+    uint32_t frameId,
     const std::string &expression,
     const std::string &value,
     std::string &output)
@@ -669,7 +669,7 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
 }
 
-HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression,
+HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint32_t frameId, const std::string &expression,
                                         ICorDebugValue **ppResult)
 {
     if (pProcess == nullptr)
@@ -690,7 +690,7 @@ HRESULT Variables::SetVariable(
     ICorDebugProcess *pProcess,
     ICorDebugValue *pVariable,
     const std::string &value,
-    uint64_t frameId,
+    uint32_t frameId,
     std::string &output)
 {
     HRESULT Status;

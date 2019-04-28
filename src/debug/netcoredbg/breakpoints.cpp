@@ -93,7 +93,7 @@ HRESULT Breakpoints::HandleEnabled(BreakpointType &bp, Debugger *debugger, ICorD
     {
         DWORD threadId = 0;
         IfFailRet(pThread->GetID(&threadId));
-        uint64_t frameId = StackFrame(threadId, 0, "").id;
+        uint32_t frameId = StackFrame(threadId, 0, "").id;
 
         Variable variable;
         std::string output;
