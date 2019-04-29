@@ -413,7 +413,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "evaluate", [this](const json &arguments, json &body){
         HRESULT Status;
         std::string expression = arguments.at("expression");
-        uint64_t frameId;
+        uint32_t frameId;
         auto frameIdIter = arguments.find("frameId");
         if (frameIdIter == arguments.end())
         {

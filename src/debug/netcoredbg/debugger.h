@@ -54,12 +54,12 @@ public:
     virtual void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) = 0;
     virtual HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) = 0;
     virtual HRESULT StepCommand(int threadId, StepType stepType) = 0;
-    virtual HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) = 0;
+    virtual HRESULT GetScopes(uint32_t frameId, std::vector<Scope> &scopes) = 0;
     virtual HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) = 0;
     virtual int GetNamedVariables(uint32_t variablesReference) = 0;
-    virtual HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output) = 0;
+    virtual HRESULT Evaluate(uint32_t frameId, const std::string &expression, Variable &variable, std::string &output) = 0;
     virtual HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) = 0;
-    virtual HRESULT SetVariableByExpression(uint64_t frameId, const std::string &name, const std::string &value, std::string &output) = 0;
+    virtual HRESULT SetVariableByExpression(uint32_t frameId, const std::string &name, const std::string &value, std::string &output) = 0;
 };
 
 class Protocol

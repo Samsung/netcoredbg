@@ -5,6 +5,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "platform.h"
 
@@ -38,9 +39,30 @@ struct ClrAddr
     bool IsNull() const { return methodToken == 0; }
 };
 
+struct StackFrameData
+{
+    static std::unordered_map<uint64_t, uint32_t> idStore;
+    static uint32_t nextId;
+    int id;
+
+    StackFrameData(int threadId, uint32_t level)
+    {
+        uint64_t key = threadId;
+        key <<= 32;
+        key |= level;
+        if (idStore.find(key) == idStore.end())
+        {
+            StackFrameData::nextId++;
+            idStore[key] = StackFrameData::nextId;
+        }
+
+        id = idStore[key];
+    }
+};
+
 struct StackFrame
 {
-    uint64_t id; // (threadId << 32) | level
+    uint32_t id;
     std::string name;
     Source source;
     int line;
@@ -52,21 +74,23 @@ struct StackFrame
     ClrAddr clrAddr; // exposed for MI protocol
     uint64_t addr; // exposed for MI protocol
 
+    int threadId;
+    uint32_t level;
+
     StackFrame() :
         id(0), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
     StackFrame(int threadId, uint32_t level, std::string name) :
-        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0)
+        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0), threadId(threadId), level(level)
     {
-        id = threadId;
-        id <<= 32;
-        id |= level;
+        StackFrameData data = StackFrameData(threadId, level);
+        id = data.id;
     }
 
-    StackFrame(uint64_t id) : id(id), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
+    StackFrame(uint32_t id) : id(id), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
-    uint32_t GetLevel() const { return id & 0xFFFFFFFFul; }
-    int GetThreadId() const { return id >> 32; }
+    uint32_t GetLevel() const { return level; }
+    int GetThreadId() const { return threadId; }
 };
 
 struct Breakpoint

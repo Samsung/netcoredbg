@@ -15,6 +15,9 @@
 
 static const uint16_t DEFAULT_SERVER_PORT = 4711;
 
+std::unordered_map<uint64_t, uint32_t> StackFrameData::idStore {};
+uint32_t StackFrameData::nextId = 0;
+
 static void print_help()
 {
     fprintf(stdout,
