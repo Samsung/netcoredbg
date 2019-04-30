@@ -44,10 +44,11 @@ struct StackFrameData
     static std::unordered_map<uint64_t, uint32_t> idStore;
     static uint32_t nextId;
     int id;
+    uint64_t key;
 
     StackFrameData(int threadId, uint32_t level)
     {
-        uint64_t key = threadId;
+        key = threadId;
         key <<= 32;
         key |= level;
         if (idStore.find(key) == idStore.end())
@@ -62,6 +63,8 @@ struct StackFrameData
 
 struct StackFrame
 {
+    static std::unordered_map<uint32_t, uint64_t> keyStore;
+
     uint32_t id;
     std::string name;
     Source source;
@@ -74,23 +77,21 @@ struct StackFrame
     ClrAddr clrAddr; // exposed for MI protocol
     uint64_t addr; // exposed for MI protocol
 
-    int threadId;
-    uint32_t level;
-
     StackFrame() :
         id(0), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
     StackFrame(int threadId, uint32_t level, std::string name) :
-        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0), threadId(threadId), level(level)
+        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0)
     {
         StackFrameData data = StackFrameData(threadId, level);
         id = data.id;
+        keyStore[id] = data.key;
     }
 
     StackFrame(uint32_t id) : id(id), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
-    uint32_t GetLevel() const { return level; }
-    int GetThreadId() const { return threadId; }
+    uint32_t GetLevel() const { return keyStore[id] & 0xFFFFFFFFul; }
+    int GetThreadId() const { return keyStore[id] >> 32; }
 };
 
 struct Breakpoint
