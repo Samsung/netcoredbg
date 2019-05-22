@@ -4,7 +4,28 @@ $NETCOREDBG = "/home/owner/share/tmp/sdk_tools/netcoredbg/netcoredbg"
 
 $ALL_TEST_NAMES = @(
     "MIExampleTest"
+    "MITestBreakpoint"
+    "MITestExpression"
+    "MITestSetValue"
+    "MITestStepping"
+    "MITestVarObject"
+    "MITestException"
+    "MITestLambda"
+    "MITestEnv"
+    "MITestGDB"
+    "MITestExecFinish"
+    "MITestExecAbort"
+    "MITestExecInt"
+    "MITestHandshake"
     "VSCodeExampleTest"
+    "VSCodeTestBreakpoint"
+    "VSCodeTestFuncBreak"
+    "VSCodeTestPause"
+    "VSCodeTestDisconnect"
+    "VSCodeTestThreads"
+    "VSCodeTestVariables"
+    "VSCodeTestEvaluate"
+    "VSCodeTestStepping"
 )
 
 $TEST_NAMES = $args
