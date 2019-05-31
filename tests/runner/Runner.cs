@@ -37,6 +37,9 @@ namespace Runner
         public void BreakpointAddRemoveTest() => ExecuteTest();
 
         [Fact]
+        public void ExceptionBreakpointTest() => ExecuteTest();
+
+        [Fact]
         public void SetValuesTest() => ExecuteTest();
 
         [Fact]

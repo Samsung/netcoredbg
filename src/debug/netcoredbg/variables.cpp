@@ -17,7 +17,11 @@
 #include "frames.h"
 #include "symbolreader.h"
 #include "logger.h"
+#include "cputil.h"
+#include "protocol.h"
 
+using std::string;
+using std::vector;
 
 HRESULT Variables::GetNumChild(
     ICorDebugValue *pValue,
@@ -72,6 +76,17 @@ struct Variables::Member
     Member(Member &&that) = default;
     Member(const Member &that) = delete;
 };
+
+void Variables::FillValueAndType(Member &member, Variable &var, bool escape)
+{
+    if (member.value == nullptr)
+    {
+        var.value = "<error>";
+        return;
+    }
+    PrintValue(member.value, var.value, escape);
+    TypePrinter::GetTypeOfValue(member.value, var.type);
+}
 
 HRESULT Variables::FetchFieldsAndProperties(
     ICorDebugValue *pInputValue,
@@ -219,6 +234,228 @@ void Variables::AddVariableReference(Variable &variable, uint64_t frameId, ICorD
     m_variables.emplace(std::make_pair(variable.variablesReference, std::move(variableReference)));
 }
 
+HRESULT Variables::GetICorDebugValueMembers(
+    ICorDebugProcess *pProcess,
+    ICorDebugThread *pThread,
+    uint64_t frameId,
+    ICorDebugValue *value,
+    bool fetchOnlyStatic,
+    vector<Member> &members)
+{
+    if (pProcess == nullptr || pThread == nullptr || value == nullptr)
+        return E_FAIL;
+
+    HRESULT Status;
+
+    StackFrame stackFrame(frameId);
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    if (pFrame)
+        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*)&pILFrame));
+
+    bool hasStaticMembers = false;
+    IfFailRet(FetchFieldsAndProperties(value,
+        pThread,
+        pILFrame,
+        members,
+        fetchOnlyStatic,
+        hasStaticMembers,
+        0,
+        INT_MAX));
+
+    return S_OK;
+}
+
+HRESULT Variables::GetVariableMembers(
+    ICorDebugProcess *pProcess,
+    ICorDebugThread *pThread,
+    uint64_t frameId,
+    Variable &var,
+    vector<Member> &members)
+{
+    if (pProcess == nullptr || pThread == nullptr)
+        return E_FAIL;
+
+    VariableReference &ref = m_variables.at(var.variablesReference);
+    if (ref.IsScope())
+        return E_INVALIDARG;
+
+    if (!ref.value)
+        return E_FAIL;
+
+    bool fetchOnlyStatic = ref.valueKind == ValueIsClass;
+    return GetICorDebugValueMembers(pProcess, pThread, frameId, ref.value,
+        fetchOnlyStatic, members);
+}
+
+static HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module) {
+    HRESULT Status;
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+
+    if (pFrame == nullptr)
+        return E_FAIL;
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMDImport;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*)&pMDImport));
+
+    WCHAR mdName[mdNameLen];
+    ULONG nameLen;
+    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
+    module = to_utf8(mdName);
+
+    return S_OK;
+}
+
+HRESULT Variables::GetExceptionInfoResponseDetailsMembers(
+    ICorDebugProcess *pProcess,
+    ICorDebugThread *pThread,
+    uint64_t frameId,
+    Variable &varRoot,
+    ExceptionDetails &details,
+    bool &isFoundInnerException,
+    vector<Member> &members)
+{
+    HRESULT Status;
+
+    details.evaluateName = varRoot.name;
+    details.typeName = varRoot.type;
+    details.fullTypeName = varRoot.type;
+
+    bool isMessage, isStackTrace, isInnerException;
+    for (auto &it : members)
+    {
+        isMessage = isStackTrace = isInnerException = false;
+        if ( !(isMessage = (it.name == "Message")) &&
+             !(isStackTrace = (it.name == "StackTrace")) &&
+             !(isInnerException = (it.name == "InnerException")))
+            continue;
+
+        Variable var;
+        var.name = it.name;
+        FillValueAndType(it, var);
+
+        if (isMessage)
+        {
+            details.message = var.value;
+            continue;
+        }
+
+        if (isStackTrace)
+        {
+            details.stackTrace = var.value;
+            continue;
+        }
+
+        if (isInnerException)
+        {
+            vector<Member> mem;
+            if ((Status = GetICorDebugValueMembers(pProcess, pThread, frameId,
+                 it.value, false, mem)) != S_OK)
+                return Status;
+
+            if (!mem.empty())
+            {
+                isFoundInnerException = true;
+                details.innerException.emplace_back(std::move(ExceptionDetails()));
+                bool dummy;
+                if ((Status = GetExceptionInfoResponseDetailsMembers(pProcess, pThread,
+                    frameId, var, details.innerException.back(), dummy, mem)) != S_OK)
+                {
+                    details.innerException.pop_back();
+                    return Status;
+                }
+            }
+        }
+    }
+
+    return S_OK;
+}
+
+HRESULT Variables::GetExceptionInfoResponseData(
+    ICorDebugProcess *pProcess,
+    int threadId,
+    const ExceptionBreakMode &mode,
+    ExceptionInfoResponse &exceptionInfoResponse)
+{
+    HRESULT Status;
+
+    uint64_t frameId = StackFrame(threadId, 0, "").id;
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(pProcess->GetThread(threadId, &pThread));
+
+    Variable varException;
+    if (GetExceptionVariable(frameId, pThread, varException))
+        return E_FAIL;
+
+    vector<Member> members;
+    if ((Status = GetVariableMembers(pProcess, pThread, frameId, varException, members)) != S_OK)
+       return Status;
+
+    if (mode.OnlyUnhandled() || mode.UserUnhandled())
+    {
+        exceptionInfoResponse.description = "An unhandled exception of type '" + varException.type +
+            "' occurred in " + varException.module;
+    }
+    else
+    {
+        exceptionInfoResponse.description = "Exception thrown: '" + varException.type +
+            "' in " + varException.module;
+    }
+
+    exceptionInfoResponse.exceptionId = varException.type;
+    exceptionInfoResponse.breakMode = mode;
+
+    bool isFoundInnerException = false;
+    if ((Status = GetExceptionInfoResponseDetailsMembers(pProcess, pThread, frameId,
+            varException, exceptionInfoResponse.details, isFoundInnerException, members)) != S_OK)
+        return Status;
+
+    if (isFoundInnerException)
+        exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
+
+    return S_OK;
+}
+
+HRESULT Variables::GetExceptionVariable(
+    uint64_t frameId,
+    ICorDebugThread *pThread,
+    Variable &var)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue> pExceptionValue;
+    if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
+    {
+        var.name = "$exception";
+        var.evaluateName = var.name;
+
+        bool escape = true;
+        PrintValue(pExceptionValue, var.value, escape);
+        TypePrinter::GetTypeOfValue(pExceptionValue, var.type);
+
+        // AddVariableReference is re-interable function.
+        AddVariableReference(var, frameId, pExceptionValue, ValueIsVariable);
+
+        string excModule;
+        IfFailRet(GetModuleName(pThread, excModule));
+        var.module = excModule;
+
+        return S_OK;
+    }
+
+    return E_FAIL;
+}
+
 HRESULT Variables::GetStackVariables(
     uint64_t frameId,
     ICorDebugThread *pThread,
@@ -228,25 +465,11 @@ HRESULT Variables::GetStackVariables(
     std::vector<Variable> &variables)
 {
     HRESULT Status;
-
     int currentIndex = -1;
-
-    ToRelease<ICorDebugValue> pExceptionValue;
-    if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
-    {
+    Variable var;
+    if (GetExceptionVariable(frameId, pThread, var) == S_OK) {
+        variables.push_back(var);
         ++currentIndex;
-        bool outOfRange = currentIndex < start || (count != 0 && currentIndex >= start + count);
-        if (!outOfRange)
-        {
-            Variable var;
-            var.name = "$exception";
-            var.evaluateName = var.name;
-            bool escape = true;
-            PrintValue(pExceptionValue, var.value, escape);
-            TypePrinter::GetTypeOfValue(pExceptionValue, var.type);
-            AddVariableReference(var, frameId, pExceptionValue, ValueIsVariable);
-            variables.push_back(var);
-        }
     }
 
     IfFailRet(m_evaluator.WalkStackVars(pFrame, [&](
@@ -374,16 +597,7 @@ HRESULT Variables::GetChildren(
         bool isIndex = !it.name.empty() && it.name.at(0) == '[';
         if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
             var.evaluateName = ref.evaluateName + (isIndex ? "" : ".") + var.name;
-        bool escape = true;
-        if (it.value == nullptr)
-        {
-            var.value = "<error>";
-        }
-        else
-        {
-            PrintValue(it.value, var.value, escape);
-            TypePrinter::GetTypeOfValue(it.value, var.type);
-        }
+        FillValueAndType(it, var);
         AddVariableReference(var, ref.frameId, it.value, ValueIsVariable);
         variables.push_back(var);
     }

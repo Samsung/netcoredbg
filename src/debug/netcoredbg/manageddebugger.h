@@ -244,6 +244,7 @@ class Breakpoints
     std::mutex m_breakpointsMutex;
     std::unordered_map<std::string, std::unordered_map<int, ManagedBreakpoint> > m_breakpoints;
     std::unordered_map<std::string, ManagedFunctionBreakpoint > m_funcBreakpoints;
+    ExceptionBreakpointStorage m_exceptionBreakpoints;
 
     HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
     HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
@@ -290,8 +291,6 @@ public:
 
     void TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events);
 
-    void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint);
-
     HRESULT SetBreakpoints(
         ICorDebugProcess *pProcess,
         std::string filename,
@@ -304,6 +303,11 @@ public:
         std::vector<Breakpoint> &breakpoints);
 
     void SetStopAtEntry(bool stopAtEntry);
+
+    HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output);
+    HRESULT DeleteExceptionBreakpoint(const uint32_t id);
+    HRESULT GetExceptionBreakMode(ExceptionBreakMode &mode, const std::string &name);
+    bool MatchExceptionBreakpoint(const std::string &exceptionName, const ExceptionBreakCategory category);
 };
 
 class Variables
@@ -346,11 +350,41 @@ class Variables
     };
 
     Evaluator &m_evaluator;
+    struct Member;
 
     std::unordered_map<uint32_t, VariableReference> m_variables;
     uint32_t m_nextVariableReference;
 
     void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
+
+    HRESULT GetExceptionInfoResponseDetailsMembers(
+        ICorDebugProcess *pProcess,
+        ICorDebugThread *pThread,
+        uint64_t frameId,
+        Variable &var,
+        ExceptionDetails &details,
+        bool &isFoundInnerException,
+        std::vector<Member> &members);
+
+    HRESULT GetICorDebugValueMembers(
+        ICorDebugProcess *pProcess,
+        ICorDebugThread *pThread,
+        uint64_t frameId,
+        ICorDebugValue *value,
+        bool fetchOnlyStatic,
+        std::vector<Member> &members);
+
+    HRESULT GetVariableMembers(
+        ICorDebugProcess *pProcess,
+        ICorDebugThread *pThread,
+        uint64_t frameId,
+        Variable &var,
+        std::vector<Member> &members);
+
+    HRESULT GetExceptionVariable(
+        uint64_t frameId,
+        ICorDebugThread *pThread,
+        Variable &variable);
 
     HRESULT GetStackVariables(
         uint64_t frameId,
@@ -367,8 +401,6 @@ class Variables
         int start,
         int count,
         std::vector<Variable> &variables);
-
-    struct Member;
 
     static void FixupInheritedFieldNames(std::vector<Member> &members);
 
@@ -405,14 +437,18 @@ class Variables
 
     static BOOL VarGetChild(void *opaque, uint32_t varRef, const char* name, int *typeId, void **data);
     bool GetChildDataByName(uint32_t varRef, const std::string &name, int *typeId, void **data);
+    void FillValueAndType(Member &member, Variable &var, bool escape = true);
 
 public:
 
-    Variables(Evaluator &evaluator) : m_evaluator(evaluator), m_nextVariableReference(1) {}
+    Variables(Evaluator &evaluator) :
+        m_evaluator(evaluator),
+        m_nextVariableReference(1)
+    {}
 
     int GetNamedVariables(uint32_t variablesReference);
 
-    HRESULT Variables::GetVariables(
+    HRESULT GetVariables(
         ICorDebugProcess *pProcess,
         uint32_t variablesReference,
         VariablesFilter filter,
@@ -445,6 +481,8 @@ public:
         ICorDebugValue **ppResult);
 
     void Clear() { m_variables.clear(); m_nextVariableReference = 1; }
+
+    HRESULT GetExceptionInfoResponseData(ICorDebugProcess *pProcess, int threadId, const ExceptionBreakMode &mode, ExceptionInfoResponse &exceptionInfoResponse);
 };
 
 class ManagedCallback;
@@ -546,7 +584,6 @@ public:
     HRESULT GetThreads(std::vector<Thread> &threads) override;
     HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT SetFunctionBreakpoints(const std::vector<FunctionBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
-    void InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint) override;
     HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
     HRESULT StepCommand(int threadId, StepType stepType) override;
     HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) override;
@@ -555,4 +592,9 @@ public:
     HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output) override;
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
     HRESULT SetVariableByExpression(uint64_t frameId, const std::string &expression, const std::string &value, std::string &output) override;
+    HRESULT GetExceptionInfoResponse(int threadId, ExceptionInfoResponse &exceptionResponse) override;
+    HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
+    HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
+private:
+    bool MatchExceptionBreakpoint(const std::string &exceptionName, const ExceptionBreakCategory category);
 };

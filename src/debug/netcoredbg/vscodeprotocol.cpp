@@ -11,6 +11,10 @@
 #include "cputil.h"
 #include "logger.h"
 
+using std::string;
+using std::vector;
+using std::min;
+
 // for convenience
 using json = nlohmann::json;
 
@@ -72,6 +76,28 @@ void to_json(json &j, const Variable &v) {
         j["namedVariables"] = v.namedVariables;
         // j["indexedVariables"] = v.indexedVariables;
     }
+}
+
+static json getVSCode(const ExceptionDetails &self) {
+    json details = json({});
+
+    details["message"] = self.message;
+    details["typeName"] = self.typeName;
+    details["fullTypeName"] = self.fullTypeName;
+    details["evaluateName"] = self.evaluateName;
+    details["stackTrace"] = self.stackTrace;
+
+    json arr = json::array();
+    if (!self.innerException.empty()) {
+        // INFO: Visual Studio Code does not display inner exception,
+        // but vsdbg fill all nested InnerExceptions in Response.
+        const auto it = self.innerException.begin();
+        json inner = getVSCode(*it);
+        arr.push_back(inner);
+    }
+    details["innerException"] = arr;
+
+    return details;
 }
 
 void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
@@ -282,6 +308,7 @@ void VSCodeProtocol::AddCapabilitiesTo(json &capabilities)
     capabilities["supportsFunctionBreakpoints"] = true;
     capabilities["supportsConditionalBreakpoints"] = true;
     capabilities["supportTerminateDebuggee"] = true;
+    capabilities["supportsExceptionInfoRequest"] = true;
 }
 
 HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &arguments, json &body)
@@ -292,12 +319,63 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         EmitCapabilitiesEvent();
 
         m_debugger->Initialize();
+
         AddCapabilitiesTo(body);
+
+        return S_OK;
+    } },
+    { "setExceptionBreakpoints", [this](const json &arguments, json &body) {
+        vector<string> filters = arguments.value("filters", vector<string>());
+        ExceptionBreakMode mode;
+
+        namespace KW = VSCodeExceptionBreakModeKeyWord;
+
+        for (unsigned i = 0; i < filters.size(); i++)
+        {
+            if (filters[i].compare(KW::ALL) == 0 ||
+                filters[i].compare(KW::ALWAYS) == 0) {
+                mode.setAll();
+            }
+            if (filters[i].compare(KW::USERUNHANDLED) == 0 ||
+                filters[i].compare(KW::USERUNHANDLED_A) == 0) {
+                mode.setUserUnhandled();
+            }
+            // Nothing to do for "unhandled"
+            if (filters[i].compare(KW::NEVER) == 0) {
+                mode.resetAll();
+            }
+        }
+
+        const string globalExceptionBreakpoint = "*";
+        uint32_t id;
+        m_debugger->InsertExceptionBreakpoint(mode, globalExceptionBreakpoint, id);
+
+        //
+        // TODO:
+        // - implement options support. options not supported in
+        // current vscode 1.31.1 with C# plugin 1.17.1
+        // - use ExceptionBreakpointStorage type for support options feature
+        body["supportsExceptionOptions"] = false;
 
         return S_OK;
     } },
     { "configurationDone", [this](const json &arguments, json &body){
         return m_debugger->ConfigurationDone();
+    } },
+    { "exceptionInfo", [this](const json &arguments, json &body) {
+        int threadId = arguments.at("threadId");
+        ExceptionInfoResponse exceptionResponse;
+        if (!m_debugger->GetExceptionInfoResponse(threadId, exceptionResponse))
+        {
+            body["breakMode"] = exceptionResponse.getVSCodeBreakMode();
+            body["exceptionId"] = exceptionResponse.exceptionId;
+            body["description"] = exceptionResponse.description;
+            body["details"] = getVSCode(exceptionResponse.details);
+
+            return S_OK;
+        }
+
+        return E_FAIL;
     } },
     { "setBreakpoints", [this](const json &arguments, json &body){
         HRESULT Status;
@@ -668,4 +746,28 @@ void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
             return;
         }
     }
+}
+
+string ExceptionInfoResponse::getVSCodeBreakMode() const
+{
+    namespace KW = VSCodeExceptionBreakModeKeyWord;
+
+    if (breakMode.Never())
+        return KW::NEVER;
+
+    if (breakMode.All())
+        return KW::ALWAYS;
+
+    if (breakMode.OnlyUnhandled())
+        return KW::UNHANDLED;
+
+    // Throw() not supported for VSCode
+    //  - description of "always: always breaks".
+    // if (breakMode.Throw())
+
+    if (breakMode.UserUnhandled())
+        return KW::USERUNHANDLED;
+
+    // Logical Error
+    return "undefined";
 }

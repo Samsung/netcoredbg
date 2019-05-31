@@ -17,6 +17,8 @@
 #include "frames.h"
 #include "logger.h"
 
+using std::string;
+
 // From dbgshim.h
 struct dbgshim_t
 {
@@ -444,11 +446,11 @@ public:
         {
             LogFuncEntry();
 
-            std::string excType;
-            std::string excModule;
+            string excType;
+            string excModule;
             GetExceptionInfo(pThread, excType, excModule);
 
-            if (unhandled)
+            if (unhandled || m_debugger.MatchExceptionBreakpoint(excType, ExceptionBreakCategory::CLR))
             {
                 DWORD threadId = 0;
                 pThread->GetID(&threadId);
@@ -460,11 +462,15 @@ public:
 
                 m_debugger.SetLastStoppedThread(pThread);
 
-                std::string details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
+                string details;
+                if (unhandled)
+                    details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
+                else
+                    details = "Exception thrown: '" + excType + "' in " + excModule;
 
                 ToRelease<ICorDebugValue> pExceptionValue;
 
-                auto emitFunc = [=](const std::string &message) {
+                auto emitFunc = [=](const string &message) {
                     StoppedEvent event(StopException, threadId);
                     event.text = excType;
                     event.description = message.empty() ? details : message;
@@ -477,10 +483,11 @@ public:
                 {
                     emitFunc(details);
                 }
+
             }
             else
             {
-                std::string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
+                string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
                 OutputEvent event(OutputConsole, text);
                 event.source = "target-exception";
                 m_debugger.m_protocol->EmitOutputEvent(event);
@@ -802,6 +809,11 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugMDA *pMDA)
         {
+            // TODO: MDA notification should be supported with exception breakpoint feature
+            // https://docs.microsoft.com/ru-ru/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback2-mdanotification-method
+            // https://docs.microsoft.com/ru-ru/dotnet/framework/debug-trace-profile/diagnosing-errors-with-managed-debugging-assistants#enable-and-disable-mdas
+            //
+
             LogFuncEntry();
             return E_NOTIMPL;
         }
@@ -1016,7 +1028,7 @@ HRESULT ManagedDebugger::Pause()
         return Status;
     if (!running)
         return S_OK;
-    
+
     Status = m_pProcess->Stop(0);
     if (Status != S_OK)
         return Status;
@@ -1393,4 +1405,39 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 
     m_unregisterToken = nullptr;
     return Startup(pCordb, pid);
+}
+
+// VSCode
+HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
+    ExceptionInfoResponse &exceptionInfoResponse)
+{
+    LogFuncEntry();
+
+    HRESULT Status;
+    ExceptionBreakMode mode;
+    IfFailRet(m_breakpoints.GetExceptionBreakMode(mode, "*"));
+    return m_variables.GetExceptionInfoResponseData(m_pProcess, threadId, mode, exceptionInfoResponse);
+}
+
+// MI
+HRESULT ManagedDebugger::InsertExceptionBreakpoint(const ExceptionBreakMode &mode,
+    const string &name, uint32_t &id)
+{
+    LogFuncEntry();
+    return m_breakpoints.InsertExceptionBreakpoint(mode, name, id);
+}
+
+// MI
+HRESULT ManagedDebugger::DeleteExceptionBreakpoint(const uint32_t id)
+{
+    LogFuncEntry();
+    return m_breakpoints.DeleteExceptionBreakpoint(id);
+}
+
+// MI and VSCode
+bool ManagedDebugger::MatchExceptionBreakpoint(const string &exceptionName,
+    const ExceptionBreakCategory category)
+{
+    LogFuncEntry();
+    return m_breakpoints.MatchExceptionBreakpoint(exceptionName, category);
 }

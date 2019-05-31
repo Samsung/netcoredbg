@@ -15,8 +15,10 @@
 
 #include "logger.h"
 
-
 using namespace std::placeholders;
+using std::unordered_set;
+using std::string;
+using std::vector;
 
 typedef std::function<HRESULT(
     const std::vector<std::string> &args,
@@ -669,6 +671,51 @@ void MIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &i
     m_debugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
+HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode,
+    const vector<string>& names, string &output)
+{
+    if (names.empty())
+        return E_FAIL;
+
+    HRESULT Status;
+    string buf = "";
+    uint32_t id = 0;
+    for (const auto &name : names) {
+        Status = m_debugger->InsertExceptionBreakpoint(mode, name, id);
+        if (S_OK != Status) {
+            return Status;
+        }
+        buf += "{number=\"" + std::to_string(id) + "\"},";
+    }
+    if (!buf.empty())
+        buf.pop_back();
+
+    // This line fixes double comma ',,' in output
+    if (names.size() > 1) {
+        output = "^done,bkpt=[" + buf + "]";
+    }
+    else {
+    // This sensitive for current CI Runner.cs
+        output = "^done,bkpt=" + buf;
+    }
+
+    return S_OK;
+}
+
+HRESULT MIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids,
+    string &output)
+{
+    HRESULT Status;
+    for (const auto &id : ids) {
+        Status = m_debugger->DeleteExceptionBreakpoint(id);
+        if (S_OK != Status) {
+            output = "Cannot delete exception breakpoint by id=:'" + std::to_string(id) + "'";
+            return Status;
+        }
+    }
+    return S_OK;
+}
+
 void MIProtocol::EmitStoppedEvent(StoppedEvent event)
 {
     LogFuncEntry();
@@ -1084,28 +1131,75 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     { "interpreter-exec", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return S_OK;
     }},
-    { "break-exception-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        if (args.empty())
-            return E_FAIL;
-        size_t i = 1;
-        if (args.at(0) == "--mda")
-            i = 2;
-
-        std::ostringstream ss;
-        const char *sep = "";
-        ss << "bkpt=[";
-        for (; i < args.size(); i++)
-        {
-            Breakpoint b;
-            m_debugger->InsertExceptionBreakpoint(args.at(i), b);
-            ss << sep;
-            sep = ",";
-            ss << "{number=\"" << b.id << "\"}";
+    { "break-exception-insert", [this](const vector<string> &args, string &output) -> HRESULT {
+        // That's all info about MI "-break-exception-insert" feature:
+        // https://sourceware.org/gdb/onlinedocs/gdb/GDB_002fMI.html#GDB_002fMI
+        // https://raw.githubusercontent.com/gregg-miskelly/MIEngine/f5f22f53908644aacffdc3f843fba20b639d07bb/src/MICore/MICommandFactory.cs
+        // https://github.com/OmniSharp/omnisharp-vscode/files/626936/vscodelog.txt
+        if (args.size() < 2) {
+            output = "Command usage: -break-exception-insert [--mda] <unhandled|user-unhandled|throw|throw+user-unhandled> *|<Exception names>";
+            return E_INVALIDARG;
         }
-        ss << "]";
-        output = ss.str();
 
-        return S_OK;
+        size_t i = 0;
+        ExceptionBreakMode filterValue;
+        if (args.at(i) == "--mda") {
+            filterValue.category = ExceptionBreakCategory::MDA;
+            ++i;
+        }
+
+        // Unavailale for changing by user
+        if (args.at(i).compare("unhandled") == 0) {
+            return S_OK;
+        }
+
+        if (args.at(i).compare("user-unhandled") == 0) {
+            filterValue.setUserUnhandled();
+        }
+
+        if (args.at(i).compare("throw") == 0 ) {
+            filterValue.setThrow();
+        }
+
+        if (args.at(i).compare("throw+user-unhandled") == 0) {
+            filterValue.setAll();
+        }
+
+        if (!filterValue.Any()) {
+            output = "Command requires only:'unhandled','user-unhandled','throw','throw+user-unhandled' arguments as an exception stages";
+            return E_FAIL;
+        }
+
+        // Exception names example:
+        // And vsdbg have common numbers for all type of breakpoints
+        //-break-exception-insert throw A B C
+        //^done,bkpt=[{number="1"},{number="2"},{number="3"}]
+        //(gdb)
+        //-break-insert Class1.cs:1
+        //^done,bkpt={number="4",type="breakpoint",disp="keep",enabled="y"}
+        //(gdb)
+        const vector<string> names(args.begin() + (i + 1), args.end());
+        return InsertExceptionBreakpoints(filterValue, names, output);
+    }},
+    { "break-exception-delete", [this](const vector<string> &args, string &output) -> HRESULT {
+        if (args.empty()) {
+            output = "Command usage: -break-exception-delete <Exception indexes>";
+            return E_INVALIDARG;
+        }
+        unordered_set<uint32_t> indexes;
+        for (const string &id : args)
+        {
+            bool isTrue = false;
+            int value = ParseInt(id, isTrue);
+            if (isTrue) {
+                indexes.insert(value);
+            }
+            else {
+                output = "Invalid argument:'"+ id + "'";
+                return E_INVALIDARG;
+            }
+        }
+        return DeleteExceptionBreakpoints(indexes, output);
     }},
     { "var-show-attributes", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;

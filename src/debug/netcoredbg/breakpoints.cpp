@@ -9,9 +9,9 @@
 #include <fstream>
 #include "typeprinter.h"
 #include "logger.h"
+#include "cputil.h"
 
-
-
+using std::string;
 
 static HRESULT IsSameFunctionBreakpoint(
     ICorDebugFunctionBreakpoint *pBreakpoint1,
@@ -256,19 +256,6 @@ bool Breakpoints::HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreak
     m_entryBreakpoint->Activate(0);
     m_entryBreakpoint.Release();
     return true;
-}
-
-void ManagedDebugger::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
-{
-    LogFuncEntry();
-
-    m_breakpoints.InsertExceptionBreakpoint(name, breakpoint);
-}
-
-void Breakpoints::InsertExceptionBreakpoint(const std::string &name, Breakpoint &breakpoint)
-{
-    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
-    breakpoint.id = m_nextBreakpointId++;
 }
 
 void Breakpoints::DeleteAllBreakpoints()
@@ -593,8 +580,6 @@ HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
     return S_OK;
 }
 
-#include "cputil.h"
-
 HRESULT Breakpoints::ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &fbp)
 {
     HRESULT Status;
@@ -705,6 +690,121 @@ HRESULT Breakpoints::SetFunctionBreakpoints(
         breakpoints.push_back(breakpoint);
     }
 
+
+    return S_OK;
+}
+
+HRESULT Breakpoints::InsertExceptionBreakpoint(const ExceptionBreakMode &mode,
+    const string &name, uint32_t &rid)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+    HRESULT Status;
+    IfFailRet(m_exceptionBreakpoints.Insert(m_nextBreakpointId, mode, name));
+    rid = m_nextBreakpointId;
+    ++m_nextBreakpointId;
+    return S_OK;
+}
+
+HRESULT Breakpoints::DeleteExceptionBreakpoint(const uint32_t id)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+    return m_exceptionBreakpoints.Delete(id);
+}
+
+HRESULT Breakpoints::GetExceptionBreakMode(ExceptionBreakMode &mode,
+    const string &name)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+    return m_exceptionBreakpoints.GetExceptionBreakMode(mode, name);
+}
+
+bool Breakpoints::MatchExceptionBreakpoint(const string &name,
+    const ExceptionBreakCategory category)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+    return m_exceptionBreakpoints.Match(name, category);
+}
+
+HRESULT ExceptionBreakpointStorage::Insert(uint32_t id,
+    const ExceptionBreakMode &mode, const string &name)
+{
+    HRESULT Status = S_OK;
+    // vsdbg each time creates a new exception breakpoint id.
+    // But, for "*" name, the last `id' silently are deleted by vsdbg.
+    if (name.compare("*") == 0) {
+        if (bp.current_asterix_id != 0) {
+            // Silent remove for global filter
+            Status = Delete(bp.current_asterix_id);
+        }
+        bp.current_asterix_id = id;
+    }
+
+    bp.exceptionBreakpoints.insert(std::make_pair(name, mode));
+    bp.table[id] = name;
+
+    return Status;
+}
+
+HRESULT ExceptionBreakpointStorage::Delete(uint32_t id) {
+    const auto it = bp.table.find(id);
+    if (it == bp.table.end()) {
+        return E_FAIL;
+    }
+    const string name = it->second;
+    if (name.compare("*") == 0) {
+        bp.current_asterix_id = 0;
+    }
+    bp.exceptionBreakpoints.erase(name);
+    bp.table.erase(id);
+
+    return S_OK;
+}
+
+bool ExceptionBreakpointStorage::Match(const string &exceptionName,
+    const ExceptionBreakCategory category) const
+{
+    // Try to match exactly by name after check global name "*"
+    // ExceptionBreakMode can be specialized by explicit filter.
+    ExceptionBreakMode mode;
+    GetExceptionBreakMode(mode, "*");
+    GetExceptionBreakMode(mode, exceptionName);
+    if (category == ExceptionBreakCategory::ANY ||
+        category == mode.category)
+    {
+        if (mode.BothUnhandledAndUserUnhandled())
+        {
+            const string SystemPrefix = "System.";
+            if (exceptionName.compare(0, SystemPrefix.size(), SystemPrefix) == 0)
+            {
+                // Expected user-applications exceptions from throw(), but get
+                // explicit/implicit exception from `System.' clases.
+                return false;
+            }
+        }
+
+        return mode.Any();
+    }
+
+    return false;
+}
+
+HRESULT ExceptionBreakpointStorage::GetExceptionBreakMode(ExceptionBreakMode &out,
+    const string &name) const
+{
+    auto p = bp.exceptionBreakpoints.equal_range(name);
+    if (p.first == bp.exceptionBreakpoints.end()) {
+        return E_FAIL;
+    }
+
+    out.category = p.first->second.category;
+    out.flags |= p.first->second.flags;
+    ++p.first;
+    while (p.first != p.second) {
+        if (out.category == ExceptionBreakCategory::ANY ||
+            out.category == p.first->second.category)
+            out.flags |= p.first->second.flags;
+        ++p.first;
+    }
 
     return S_OK;
 }
