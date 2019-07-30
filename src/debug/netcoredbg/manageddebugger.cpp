@@ -361,6 +361,42 @@ public:
                 return S_OK;
             }
 
+            auto stepForcedIgnoreBP = [&] () {
+                DWORD threadId = 0;
+                pThread->GetID(&threadId);
+
+                {
+                    std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
+                    auto stepSettedUpForThread = m_debugger.m_stepSettedUp.find(threadId);
+                    if (stepSettedUpForThread == m_debugger.m_stepSettedUp.end() || !stepSettedUpForThread->second)
+                    {
+                        return false;
+                    }
+                }
+
+                ToRelease<ICorDebugStepperEnum> steppers;
+                if (FAILED(pAppDomain->EnumerateSteppers(&steppers)))
+                    return false;
+
+                ICorDebugStepper *curStepper;
+                ULONG steppersFetched;
+                while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
+                {
+                    BOOL pbActive;
+                    ToRelease<ICorDebugStepper> pStepper(curStepper);
+                    if (SUCCEEDED(pStepper->IsActive(&pbActive)) && pbActive)
+                        return false;
+                }
+
+                return true;
+            };
+
+            if (stepForcedIgnoreBP())
+            {
+                pAppDomain->Continue(0);
+                return S_OK;  
+            }
+
             ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);
             pAppDomain->AddRef();
             ToRelease<ICorDebugThread> callbackThread(pThread);
@@ -435,6 +471,10 @@ public:
                 m_debugger.SetLastStoppedThread(pThread);
                 m_debugger.m_protocol->EmitStoppedEvent(event);
             }
+
+            std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
+            m_debugger.m_stepSettedUp[threadId] = false;
+
             return S_OK;
         }
 
@@ -1108,9 +1148,16 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType 
 
     IfFailRet(pStepper2->SetJMC(IsJustMyCode()));
 
+    DWORD threadId = 0;
+    pThread->GetID(&threadId);
+
     if (stepType == STEP_OUT)
     {
         IfFailRet(pStepper->StepOut());
+
+        std::lock_guard<std::mutex> lock(m_stepMutex);
+        m_stepSettedUp[threadId] = true;
+
         return S_OK;
     }
 
@@ -1123,6 +1170,9 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType 
     } else {
         IfFailRet(pStepper->Step(bStepIn));
     }
+
+    std::lock_guard<std::mutex> lock(m_stepMutex);
+    m_stepSettedUp[threadId] = true;
 
     return S_OK;
 }

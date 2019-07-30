@@ -579,6 +579,9 @@ private:
     ICorDebug *m_pDebug;
     ICorDebugProcess *m_pProcess;
 
+    std::mutex m_stepMutex;
+    std::unordered_map<DWORD, bool> m_stepSettedUp;
+
     bool m_justMyCode;
 
     std::mutex m_startupMutex;
