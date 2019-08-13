@@ -25,6 +25,7 @@ BuildRequires: unzip
 BuildRequires: corefx-managed
 BuildRequires: libdlog-devel
 Requires: coreclr
+Requires: coreclr-diagnostics
 
 # .NET Core Runtime
 %define dotnetdir       dotnet

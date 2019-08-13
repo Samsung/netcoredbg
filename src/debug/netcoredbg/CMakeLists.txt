@@ -27,7 +27,6 @@ include_directories(${CORECLR_DIR}/src/debug/inc)
 include_directories(${CORECLR_DIR}/src/debug/shim)
 include_directories(${CORECLR_DIR}/src/dlls/dbgshim)
 include_directories(${CORECLR_DIR}/src/coreclr/hosts/inc)
-include_directories(${CORECLR_DIR}/src/ToolBox/SOS/Strike)
 
 # Build native part of the debugger
 

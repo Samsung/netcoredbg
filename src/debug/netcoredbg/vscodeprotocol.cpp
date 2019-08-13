@@ -7,6 +7,8 @@
 #include <iostream>
 #include <unordered_map>
 
+#include <winerror.h>
+
 #include "torelease.h"
 #include "cputil.h"
 #include "logger.h"
