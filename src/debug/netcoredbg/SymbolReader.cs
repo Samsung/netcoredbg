@@ -917,7 +917,29 @@ namespace SOS
                 var pdbStream = TryOpenFile(pdbPath);
                 if (pdbStream == null)
                 {
-                    return null;
+                    // workaround, since NI file could be generated in `.native_image` subdirectory
+                    // NOTE this is temporary solution until we add option for specifying pdb path
+                    try
+                    {
+                        int tmpLastIndex = assemblyPath.LastIndexOf(".native_image");
+                        if (tmpLastIndex == -1)
+                        {
+                            return null;
+                        }
+                        string tmpPath = assemblyPath.Substring(0, tmpLastIndex);
+                        pdbPath = Path.Combine(Path.GetDirectoryName(tmpPath), GetFileName(pdbPath));
+                    }
+                    catch
+                    {
+                         // invalid characters in CodeView path
+                        return null;
+                    }
+
+                    pdbStream = TryOpenFile(pdbPath);
+                    if (pdbStream == null)
+                    {
+                        return null;
+                    }
                 }
 
                 provider = MetadataReaderProvider.FromPortablePdbStream(pdbStream);
