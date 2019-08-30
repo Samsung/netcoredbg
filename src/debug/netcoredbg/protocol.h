@@ -61,7 +61,7 @@ struct StackFrame
     StackFrame(int threadId, uint32_t level, std::string name) :
         name(name), line(0), column(0), endLine(0), endColumn(0), addr(0)
     {
-        id = threadId;
+        id = static_cast<uint64_t>(threadId);
         id <<= 32;
         id |= level;
     }
