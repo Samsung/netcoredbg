@@ -367,7 +367,7 @@ HRESULT Variables::GetExceptionInfoResponseDetailsMembers(
             if (!mem.empty())
             {
                 isFoundInnerException = true;
-                details.innerException.emplace_back(std::move(ExceptionDetails()));
+                details.innerException.emplace_back(ExceptionDetails());
                 bool dummy;
                 if ((Status = GetExceptionInfoResponseDetailsMembers(pProcess, pThread,
                     frameId, var, details.innerException.back(), dummy, mem)) != S_OK)
