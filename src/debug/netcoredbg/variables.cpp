@@ -335,7 +335,7 @@ HRESULT Variables::GetExceptionInfoResponseDetailsMembers(
     bool isMessage, isStackTrace, isInnerException;
     for (auto &it : members)
     {
-        isMessage = isStackTrace = isInnerException = false;
+        isStackTrace = isInnerException = false;
         if ( !(isMessage = (it.name == "Message")) &&
              !(isStackTrace = (it.name == "StackTrace")) &&
              !(isInnerException = (it.name == "InnerException")))
