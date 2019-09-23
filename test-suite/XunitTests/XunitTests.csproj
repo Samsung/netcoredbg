@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp2.1</TargetFramework>
+
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis" Version="2.10.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.9.0" />
+    <PackageReference Include="xunit" Version="2.4.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalDebugger\LocalDebugger.csproj" />
+    <ProjectReference Include="..\NetcoreDbgTest\NetcoreDbgTest.csproj" />
+    <ProjectReference Include="..\MIExampleTest\MIExampleTest.csproj" />
+    <ProjectReference Include="..\MITestStepping\MITestStepping.csproj" />
+    <ProjectReference Include="..\MITestException\MITestException.csproj" />
+    <ProjectReference Include="..\MITestExpression\MITestExpression.csproj" />
+    <ProjectReference Include="..\MITestLambda\MITestLambda.csproj" />
+    <ProjectReference Include="..\MITestSetValue\MITestSetValue.csproj" />
+    <ProjectReference Include="..\MITestVarObject\MITestVarObject.csproj" />
+    <ProjectReference Include="..\MITestBreakpoint\MITestBreakpoint.csproj" />
+    <ProjectReference Include="..\MITestEnv\MITestEnv.csproj" />
+    <ProjectReference Include="..\MITestGDB\MITestGDB.csproj" />
+    <ProjectReference Include="..\MITestExecFinish\MITestExecFinish.csproj" />
+    <ProjectReference Include="..\MITestExecAbort\MITestExecAbort.csproj" />
+    <ProjectReference Include="..\MITestExecInt\MITestExecInt.csproj" />
+    <ProjectReference Include="..\MITestHandshake\MITestHandshake.csproj" />
+    <ProjectReference Include="..\MITestTarget\MITestTarget.csproj" />
+    <ProjectReference Include="..\VSCodeExampleTest\VSCodeExampleTest.csproj" />
+    <ProjectReference Include="..\VSCodeTestBreakpoint\VSCodeTestBreakpoint.csproj" />
+    <ProjectReference Include="..\VSCodeTestFuncBreak\VSCodeTestFuncBreak.csproj" />
+    <ProjectReference Include="..\VSCodeTestAttach\VSCodeTestAttach.csproj" />
+    <ProjectReference Include="..\VSCodeTestPause\VSCodeTestPause.csproj" />
+    <ProjectReference Include="..\VSCodeTestDisconnect\VSCodeTestDisconnect.csproj" />
+    <ProjectReference Include="..\VSCodeTestThreads\VSCodeTestThreads.csproj" />
+    <ProjectReference Include="..\VSCodeTestVariables\VSCodeTestVariables.csproj" />
+    <ProjectReference Include="..\VSCodeTestEvaluate\VSCodeTestEvaluate.csproj" />
+    <ProjectReference Include="..\VSCodeTestStepping\VSCodeTestStepping.csproj" />
+  </ItemGroup>
+
+</Project>
