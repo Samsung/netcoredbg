@@ -9,6 +9,7 @@ namespace NetcoreDbgTest.MI
         public MIResultRecord Request(string command, int timeout = -1)
         {
             MIResultRecord resultRecord = null;
+            EventsAddedOnLastRequest = false;
 
             Logger.LogLine("> " + command);
 
@@ -32,6 +33,9 @@ namespace NetcoreDbgTest.MI
                 if (output.ResultRecord != null) {
                     resultRecord = output.ResultRecord;
                     break;
+                } else {
+                    OutOfBandRecords.AddRange(output.OutOfBandRecords);
+                    EventsAddedOnLastRequest = true;
                 }
             }
 
@@ -40,6 +44,11 @@ namespace NetcoreDbgTest.MI
 
         public MIOutOfBandRecord[] Receive(int timeout = -1)
         {
+            if (EventsAddedOnLastRequest) {
+                EventsAddedOnLastRequest = false;
+                return OutOfBandRecords.ToArray();
+            }
+
             string[] response = Debuggee.DebuggerClient.Receive(timeout);
 
             if (response == null) {
@@ -64,5 +73,6 @@ namespace NetcoreDbgTest.MI
 
         List<MIOutOfBandRecord> OutOfBandRecords = new List<MIOutOfBandRecord>();
         MIParser MIParser = new MIParser();
+        bool EventsAddedOnLastRequest = false;
     }
 }

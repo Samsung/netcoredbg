@@ -42,8 +42,9 @@ SCRIPTDIR=$(dirname $(readlink -f $0))
 
 # Detect target arch
 
-if   $SDB shell lscpu | grep -q armv7l; then ARCH=armv7l; 
-elif $SDB shell lscpu | grep -q i686;   then ARCH=i686;
+if   $SDB shell lscpu | grep -q armv7l;  then ARCH=armv7l;
+elif $SDB shell lscpu | grep -q aarch64; then ARCH=armv7l;
+elif $SDB shell lscpu | grep -q i686;    then ARCH=i686;
 else echo "Unknown target architecture"; exit 1; fi
 
 # The following command assumes that GBS build was performed on a clean system (or in Docker),

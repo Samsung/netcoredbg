@@ -68,6 +68,34 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void WasExit()
+        {
+            var records = MIDebugger.Receive();
+
+            foreach (MIOutOfBandRecord record in records) {
+                if (!IsStoppedEvent(record)) {
+                    continue;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+
+                if (reason.CString != "exited") {
+                    continue;
+                }
+
+                var exitCode = (MIConst)output["exit-code"];
+
+                if (exitCode.CString == "0") {
+                    return;
+                } else {
+                    throw new NetcoreDbgTestCore.ResultNotSuccessException();
+                }
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
         public static void Continue()
         {
             Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
@@ -111,16 +139,7 @@ namespace MITestGDB
                 Assert.Equal(MIResultClass.Exit,
                              Context.MIDebugger.Request("-gdb-exit").Class);
 
-                try
-                {
-                    Context.MIDebugger.Receive();
-                }
-                catch (NetcoreDbgTestCore.DebuggerNotResponsesException)
-                {
-                    return;
-                }
-
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+                Context.WasExit();
             });
 
             Thread.Sleep(10000);

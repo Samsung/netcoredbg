@@ -54,6 +54,7 @@ namespace NetcoreDbgTest.VSCode
         }
         public VSCodeResult Request(Request command, int timeout = -1)
         {
+            EventsAddedOnLastRequestPos = -1;
             string stringJSON = JsonConvert.SerializeObject(command,
                                                             Formatting.None,
                                                             new JsonSerializerSettings { 
@@ -79,6 +80,9 @@ namespace NetcoreDbgTest.VSCode
                     return new VSCodeResult((bool)GetResponsePropertyValue(line, "success"), line);
                 } else {
                     Logger.LogLine("<- (E) " + line);
+                    if (EventsAddedOnLastRequestPos == -1) {
+                        EventsAddedOnLastRequestPos = EventList.Count;
+                    }
                     EventList.Add(line);
                 }
             }
@@ -86,6 +90,12 @@ namespace NetcoreDbgTest.VSCode
 
         public string Receive(int timeout = -1)
         {
+            if (EventsAddedOnLastRequestPos != -1 && EventsAddedOnLastRequestPos < EventList.Count) {
+                string line = EventList[EventsAddedOnLastRequestPos];
+                EventsAddedOnLastRequestPos++;
+                return line;
+            }
+
             while (true) {
                 string[] response = Debuggee.DebuggerClient.Receive(timeout);
                 if (response == null) {
@@ -105,6 +115,7 @@ namespace NetcoreDbgTest.VSCode
         }
 
         public List<string> EventList = new List<string>();
+        int EventsAddedOnLastRequestPos = -1;
         string[] StopEvents = {"stopped",
                                "terminated"};
     }
