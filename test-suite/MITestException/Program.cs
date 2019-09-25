@@ -104,6 +104,11 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void DebuggerExit()
+        {
+            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+        }
+
         public static bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
@@ -252,6 +257,7 @@ namespace MITestException
 
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
+                Context.DebuggerExit();
             });
         }
     }

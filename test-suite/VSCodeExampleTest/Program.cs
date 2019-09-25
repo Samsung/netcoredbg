@@ -69,7 +69,10 @@ namespace NetcoreDbgTest.Script
         {
             string resJSON = VSCodeDebugger.Receive(-1);
             Assert.True(VSCodeDebugger.isResponseContainProperty(resJSON, "event", "terminated"));
+        }
 
+        public static void DebuggerExit()
+        {
             DisconnectRequest disconnectRequest = new DisconnectRequest();
             disconnectRequest.arguments = new DisconnectArguments();
             disconnectRequest.arguments.restart = false;
@@ -177,6 +180,7 @@ namespace VSCodeExampleTest
             // last checkpoint must provide "finish" as id or empty string ("") as next checkpoint id
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
+                Context.DebuggerExit();
             });
         }
     }

@@ -72,6 +72,11 @@ namespace NetcoreDbgTest.Script
                                             + lbp.FileName + ":" + lbp.NumLine).Class);
         }
 
+        public static void DebuggerExit()
+        {
+            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+        }
+
         public static void Continue()
         {
             Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
@@ -131,6 +136,8 @@ namespace MITestTarget
                 while (!Context.testProcess.HasExited) {};
                 // killed by SIGKILL
                 Assert.NotEqual(0, Context.testProcess.ExitCode);
+
+                Context.DebuggerExit();
             });
         }
     }

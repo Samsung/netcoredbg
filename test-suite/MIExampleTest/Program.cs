@@ -131,6 +131,11 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void DebuggerExit()
+        {
+            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+        }
+
         public static void EnableBreakpoint(string bpName)
         {
             Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
@@ -180,6 +185,7 @@ namespace MIExampleTest
             // last checkpoint must provide "finish" as id or empty string ("") as next checkpoint id
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
+                Context.DebuggerExit();
             });
         }
     }

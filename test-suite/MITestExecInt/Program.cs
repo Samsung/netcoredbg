@@ -68,6 +68,11 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void DebuggerExit()
+        {
+            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+        }
+
         public static MIDebugger MIDebugger = new MIDebugger();
     }
 }
@@ -92,6 +97,8 @@ namespace MITestExecInt
                 Assert.Equal(MIResultClass.Error, Context.MIDebugger.Request("6-exec-continue").Class);
 
                 Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("7-exec-abort").Class);
+
+                Context.DebuggerExit();
             });
 
             Thread.Sleep(10000);

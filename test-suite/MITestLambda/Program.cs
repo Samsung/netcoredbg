@@ -94,6 +94,11 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void DebuggerExit()
+        {
+            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+        }
+
         public static void CheckVar(string varName)
         {
             // varName is equal to it value;
@@ -181,6 +186,7 @@ namespace MITestLambda
 
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
+                Context.DebuggerExit();
             });
         }
     }

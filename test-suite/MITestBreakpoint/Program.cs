@@ -140,6 +140,11 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void DebuggerExit()
+        {
+            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+        }
+
         public static MIDebugger MIDebugger = new MIDebugger();
         public static string id1 = null;
         public static string id2 = null;
@@ -249,6 +254,7 @@ namespace MITestBreakpoint
 
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
+                Context.DebuggerExit();
             });
         }
 

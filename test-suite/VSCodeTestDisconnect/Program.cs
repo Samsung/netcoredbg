@@ -63,21 +63,6 @@ namespace NetcoreDbgTest.Script
             }
         }
 
-        public static void WasDisconnected()
-        {
-            bool wasExited = false;
-            bool wasTerminated = false;
-            foreach (var Event in VSCodeDebugger.EventList) {
-                if (VSCodeDebugger.isResponseContainProperty(Event, "event", "exited")) {
-                    wasExited = true;
-                }
-                if (VSCodeDebugger.isResponseContainProperty(Event, "event", "terminated")) {
-                    wasTerminated = true;
-                }
-            }
-            Assert.True(wasExited && wasTerminated);
-        }
-
         public static void Continue()
         {
             ContinueRequest continueRequest = new ContinueRequest();
@@ -108,7 +93,22 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success);
         }
 
-        public static void Disconnect()
+        public static void WasExit()
+        {
+            bool wasExited = false;
+            bool wasTerminated = false;
+            foreach (var Event in VSCodeDebugger.EventList) {
+                if (VSCodeDebugger.isResponseContainProperty(Event, "event", "exited")) {
+                    wasExited = true;
+                }
+                if (VSCodeDebugger.isResponseContainProperty(Event, "event", "terminated")) {
+                    wasTerminated = true;
+                }
+            }
+            Assert.True(wasExited && wasTerminated);
+        }
+
+        public static void DebuggerExit()
         {
             DisconnectRequest disconnectRequest = new DisconnectRequest();
             disconnectRequest.arguments = new DisconnectArguments();
@@ -137,16 +137,15 @@ namespace VSCodeTestDisconnect
                 Context.PrepareEnd();
                 Context.WasEntryPointHit();
                 Context.Continue();
-
-                Context.Disconnect();
             });
 
             Label.Checkpoint("finish", "", () => {;
-                Context.WasDisconnected();
+                Context.DebuggerExit();
+                Context.WasExit();
             });
 
-            // we should never reach this code
             System.Threading.Thread.Sleep(30000);
+            // we should never reach this code
             Console.WriteLine("A breakpoint \"bp\" is set on this line"); Label.Breakpoint("bp");
         }
     }
