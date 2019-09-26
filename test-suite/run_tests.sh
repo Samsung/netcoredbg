@@ -16,6 +16,7 @@ ALL_TEST_NAMES=(
     "MITestExecInt"
     "MITestHandshake"
     "MITestTarget"
+    "MITestExceptionBreakpoint"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"

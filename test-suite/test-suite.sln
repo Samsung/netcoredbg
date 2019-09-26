@@ -57,6 +57,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestEvaluate", "VSCod
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestStepping", "VSCodeTestStepping\VSCodeTestStepping.csproj", "{2D3C0476-5F92-4956-B3C9-00D06544B1EF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestExceptionBreakpoint", "MITestExceptionBreakpoint\MITestExceptionBreakpoint.csproj", "{41431C99-59DF-4B7D-9647-BDF4258B048D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -394,5 +396,17 @@ Global
 		{2D3C0476-5F92-4956-B3C9-00D06544B1EF}.Release|x64.Build.0 = Release|Any CPU
 		{2D3C0476-5F92-4956-B3C9-00D06544B1EF}.Release|x86.ActiveCfg = Release|Any CPU
 		{2D3C0476-5F92-4956-B3C9-00D06544B1EF}.Release|x86.Build.0 = Release|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Debug|x64.Build.0 = Debug|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Debug|x86.Build.0 = Debug|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Release|x64.ActiveCfg = Release|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Release|x64.Build.0 = Release|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Release|x86.ActiveCfg = Release|Any CPU
+		{41431C99-59DF-4B7D-9647-BDF4258B048D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

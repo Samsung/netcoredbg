@@ -33,6 +33,7 @@ namespace XUnitTests
         [InlineData("MITestExecInt", "Program.cs")]
         [InlineData("MITestHandshake", "Program.cs")]
         [InlineData("MITestTarget", "Program.cs")]
+        [InlineData("MITestExceptionBreakpoint", "Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestFuncBreak", "Program.cs")]

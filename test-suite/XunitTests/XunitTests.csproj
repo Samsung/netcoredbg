@@ -31,6 +31,7 @@
     <ProjectReference Include="..\MITestExecInt\MITestExecInt.csproj" />
     <ProjectReference Include="..\MITestHandshake\MITestHandshake.csproj" />
     <ProjectReference Include="..\MITestTarget\MITestTarget.csproj" />
+    <ProjectReference Include="..\MITestExceptionBreakpoint\MITestExceptionBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeExampleTest\VSCodeExampleTest.csproj" />
     <ProjectReference Include="..\VSCodeTestBreakpoint\VSCodeTestBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeTestFuncBreak\VSCodeTestFuncBreak.csproj" />
