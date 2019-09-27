@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Sockets;
 using System.Text;
 
@@ -73,12 +74,24 @@ namespace NetcoreDbgTestCore
                     }
 
                     int contentLength = Int32.Parse(header.Substring(lengthIndex + CONTENT_LENGTH.Length));
-                    byte[] result = new byte[contentLength];
-                    if (stream.Read(result, 0, contentLength) == -1) {
-                        return null;
+
+                    byte[] buffer = new byte[contentLength + 1];
+                    buffer[contentLength] = 0;
+                    int buffer_i = 0;
+                    while (buffer_i < contentLength) {
+                        int count = 0;
+                        try {
+                            count = stream.Read(buffer, buffer_i, contentLength - buffer_i);
+                        }
+                        catch (SystemException ex) when (ex is InvalidOperationException ||
+                                                         ex is IOException ||
+                                                         ex is ObjectDisposedException) {
+                            return null;
+                        }
+                        buffer_i += count;
                     }
 
-                    return System.Text.Encoding.UTF8.GetString(result);
+                    return System.Text.Encoding.UTF8.GetString(buffer);
                 }
                 // unreachable
             }

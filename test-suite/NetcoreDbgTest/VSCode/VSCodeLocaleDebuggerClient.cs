@@ -78,12 +78,21 @@ namespace NetcoreDbgTestCore.VSCode
 
                 int contentLength = Int32.Parse(header.Substring(lengthIndex + CONTENT_LENGTH.Length));
 
-                char[] result = new char[contentLength];
-                if (DebuggerOutput.Read(result, 0, contentLength) == -1) {
-                    return null;
+                char[] buffer = new char[contentLength + 1];
+                buffer[contentLength] = '\0';
+                int buffer_i = 0;
+                while (buffer_i < contentLength) {
+                    int count = 0;
+                    try {
+                        count = DebuggerOutput.Read(buffer, buffer_i, contentLength - buffer_i);
+                    }
+                    catch (IOException) {
+                        return null;
+                    }
+                    buffer_i += count;
                 }
 
-                return new string(result);
+                return new string(buffer);
             }
             // unreachable
         }
