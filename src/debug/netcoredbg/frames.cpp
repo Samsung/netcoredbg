@@ -48,7 +48,7 @@ HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &th
     return S_OK;
 }
 
-static uint64_t FrameAddr(ICorDebugFrame *pFrame)
+static uint64_t GetFrameAddr(ICorDebugFrame *pFrame)
 {
     CORDB_ADDRESS startAddr = 0;
     CORDB_ADDRESS endAddr = 0;
@@ -100,7 +100,7 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, int threadId, 
     stackFrame.clrAddr.ilOffset = ilOffset;
     stackFrame.clrAddr.nativeOffset = nOffset;
 
-    stackFrame.addr = FrameAddr(pFrame);
+    stackFrame.addr = GetFrameAddr(pFrame);
 
     TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
@@ -145,14 +145,6 @@ static uint64_t GetSP(CONTEXT *context)
 HRESULT UnwindNativeFrames(ICorDebugThread *pThread, uint64_t startValue, uint64_t endValue, std::vector<NativeFrame> &frames)
 {
     return S_OK;
-}
-
-static uint64_t GetFrameAddr(ICorDebugFrame *pFrame)
-{
-    CORDB_ADDRESS startAddr = 0;
-    CORDB_ADDRESS endAddr = 0;
-    pFrame->GetStackRange(&startAddr, &endAddr);
-    return startAddr;
 }
 
 typedef std::function<HRESULT(FrameType,ICorDebugFrame*,NativeFrame*,ICorDebugFunction*)> WalkFramesCallback;
@@ -419,7 +411,7 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame,
         {
             case FrameUnknown:
                 stackFrames.emplace_back(threadId, currentFrame, "?");
-                stackFrames.back().addr = FrameAddr(pFrame);
+                stackFrames.back().addr = GetFrameAddr(pFrame);
                 break;
             case FrameNative:
                 stackFrames.emplace_back(threadId, currentFrame, pNative->symbol);
@@ -429,7 +421,7 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame,
                 break;
             case FrameCLRNative:
                 stackFrames.emplace_back(threadId, currentFrame, "[Native Frame]");
-                stackFrames.back().addr = FrameAddr(pFrame);
+                stackFrames.back().addr = GetFrameAddr(pFrame);
                 break;
             case FrameCLRInternal:
                 {
@@ -441,7 +433,7 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame,
                     name += GetInternalTypeName(frameType);
                     name += "]";
                     stackFrames.emplace_back(threadId, currentFrame, name);
-                    stackFrames.back().addr = FrameAddr(pFrame);
+                    stackFrames.back().addr = GetFrameAddr(pFrame);
                 }
                 break;
             case FrameCLRManaged:
