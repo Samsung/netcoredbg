@@ -659,7 +659,6 @@ HRESULT Variables::Evaluate(
     }
 
     int typeId;
-    std::vector< ToRelease<ICorDebugValue> > marshalledValues;
 
     // Use Roslyn for expression evaluation
     if (!pResultValue)
@@ -687,10 +686,6 @@ HRESULT Variables::Evaluate(
                 {
                     found = true;
                     IfFailRet(MarshalValue(pValue, typeId, data));
-                    if (*typeId < 0)
-                    {
-                        marshalledValues.emplace_back(static_cast<ICorDebugValue*>(*data)); // FIXME: no exception safety
-                    }
                 }
 
                 return S_OK;
@@ -736,8 +731,6 @@ HRESULT Variables::Evaluate(
         {
             return false;
         }
-        if (*typeId < 0)
-            marshalledValues.emplace_back(static_cast<ICorDebugValue*>(*data));
 
         return true;
     }));
