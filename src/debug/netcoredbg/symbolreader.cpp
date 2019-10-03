@@ -28,7 +28,148 @@ static void RaiseException(DWORD dwExceptionCode,
                CONST ULONG_PTR *lpArguments)
 {
 }
+
+#define ULONG_ERROR     (0xffffffffUL)
+#define INTSAFE_E_ARITHMETIC_OVERFLOW       ((HRESULT)0x80070216L)  // 0x216 = 534 = ERROR_ARITHMETIC_OVERFLOW
+#define UInt32x32To64(a, b) ((unsigned __int64)((ULONG)(a)) * (unsigned __int64)((ULONG)(b)))
+#define WIN32_ALLOC_ALIGN (16 - 1)
+
+__inline HRESULT ULongLongToULong(IN ULONGLONG ullOperand, OUT ULONG* pulResult)
+{
+    HRESULT hr = INTSAFE_E_ARITHMETIC_OVERFLOW;
+    *pulResult = ULONG_ERROR;
+    
+    if (ullOperand <= ULONG_MAX)
+    {
+        *pulResult = (ULONG)ullOperand;
+        hr = S_OK;
+    }
+    
+    return hr;
+}
+
+__inline HRESULT ULongAdd(IN ULONG ulAugend, IN ULONG ulAddend, OUT ULONG* pulResult)
+{
+    HRESULT hr = INTSAFE_E_ARITHMETIC_OVERFLOW;
+    *pulResult = ULONG_ERROR;
+
+    if ((ulAugend + ulAddend) >= ulAugend)
+    {
+        *pulResult = (ulAugend + ulAddend);
+        hr = S_OK;
+    }
+    
+    return hr;
+}
+
+__inline HRESULT ULongMult(IN ULONG ulMultiplicand, IN ULONG ulMultiplier, OUT ULONG* pulResult)
+{
+    ULONGLONG ull64Result = UInt32x32To64(ulMultiplicand, ulMultiplier);
+    
+    return ULongLongToULong(ull64Result, pulResult);
+}
+
+inline HRESULT CbSysStringSize(ULONG cchSize, BOOL isByteLen, ULONG *result)
+{
+    if (result == NULL)
+        return E_INVALIDARG;
+
+    // +2 for the null terminator
+    // + DWORD_PTR to store the byte length of the string
+    int constant = sizeof(WCHAR) + sizeof(DWORD_PTR) + WIN32_ALLOC_ALIGN;
+
+    if (isByteLen)
+    {
+        if (SUCCEEDED(ULongAdd(constant, cchSize, result)))
+        {
+            *result = *result & ~WIN32_ALLOC_ALIGN;
+            return NOERROR;
+        }
+    }
+    else
+    {
+        ULONG temp = 0; // should not use in-place addition in ULongAdd
+        if (SUCCEEDED(ULongMult(cchSize, sizeof(WCHAR), &temp)) &
+            SUCCEEDED(ULongAdd(temp, constant, result)))
+        {
+            *result = *result & ~WIN32_ALLOC_ALIGN;
+            return NOERROR;
+        }
+    }
+    return INTSAFE_E_ARITHMETIC_OVERFLOW;
+}
+
+BSTR PAL_SysAllocStringLen(const OLECHAR *psz, UINT len)
+{
+    BSTR bstr;
+    DWORD cbTotal = 0;
+
+    if (FAILED(CbSysStringSize(len, FALSE, &cbTotal)))
+        return NULL;
+
+    bstr = (OLECHAR *)malloc(cbTotal);
+
+    if(bstr != NULL){
+
+#if defined(_WIN64)
+      // NOTE: There are some apps which peek back 4 bytes to look at the size of the BSTR. So, in case of 64-bit code,
+      // we need to ensure that the BSTR length can be found by looking one DWORD before the BSTR pointer. 
+      *(DWORD_PTR *)bstr = (DWORD_PTR) 0;
+      bstr = (BSTR) ((char *) bstr + sizeof (DWORD));
 #endif
+      *(DWORD FAR*)bstr = (DWORD)len * sizeof(OLECHAR);
+
+      bstr = (BSTR) ((char*) bstr + sizeof(DWORD));
+
+      if(psz != NULL){
+            memcpy(bstr, psz, len * sizeof(OLECHAR));
+      }
+
+      bstr[len] = '\0'; // always 0 terminate
+    }
+
+    return bstr;
+}
+
+void PAL_SysFreeString(BSTR bstr)
+{
+    if(bstr == NULL)
+      return;
+    free((BYTE *)bstr-sizeof(DWORD_PTR));    
+}
+
+unsigned int PAL_SysStringLen(BSTR bstr)
+{
+    if(bstr == NULL)
+      return 0;
+    return (unsigned int)((((DWORD FAR*)bstr)[-1]) / sizeof(OLECHAR));
+}
+
+LPVOID PAL_CoTaskMemAlloc(size_t size)
+{
+    return malloc(size);
+}
+
+void PAL_CoTaskMemFree(LPVOID pt)
+{
+    free(pt);
+}
+
+SysAllocStringLen_t SymbolReader::sysAllocStringLen = PAL_SysAllocStringLen;
+SysFreeString_t SymbolReader::sysFreeString = PAL_SysFreeString;
+SysStringLen_t SymbolReader::sysStringLen = PAL_SysStringLen;
+CoTaskMemAlloc_t SymbolReader::coTaskMemAlloc = PAL_CoTaskMemAlloc;
+CoTaskMemFree_t SymbolReader::coTaskMemFree = PAL_CoTaskMemFree;
+
+#else
+
+SysAllocStringLen_t SymbolReader::sysAllocStringLen = SysAllocStringLen;
+SysFreeString_t SymbolReader::sysFreeString = SysFreeString;
+SysStringLen_t SymbolReader::sysStringLen = SysStringLen;
+CoTaskMemAlloc_t SymbolReader::coTaskMemAlloc = CoTaskMemAlloc;
+CoTaskMemFree_t SymbolReader::coTaskMemFree = CoTaskMemFree;
+
+#endif // FEATURE_PAL
 
 std::string SymbolReader::coreClrPath;
 LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
@@ -41,12 +182,6 @@ GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
 ParseExpressionDelegate SymbolReader::parseExpressionDelegate = nullptr;
 EvalExpressionDelegate SymbolReader::evalExpressionDelegate = nullptr;
 RegisterGetChildDelegate SymbolReader::registerGetChildDelegate = nullptr;
-
-SysAllocStringLen_t SymbolReader::sysAllocStringLen;
-SysFreeString_t SymbolReader::sysFreeString;
-SysStringLen_t SymbolReader::sysStringLen;
-CoTaskMemAlloc_t SymbolReader::coTaskMemAlloc;
-CoTaskMemFree_t SymbolReader::coTaskMemFree;
 
 const int SymbolReader::HiddenLine = 0xfeefee;
 
@@ -170,50 +305,6 @@ HRESULT SymbolReader::PrepareSymbolReader()
     if (initializeCoreCLR == nullptr)
     {
         fprintf(stderr, "Error: coreclr_initialize not found\n");
-        return E_FAIL;
-    }
-
-#ifdef FEATURE_PAL
-    sysAllocStringLen = (SysAllocStringLen_t)DLSym(coreclrLib, "SysAllocStringLen");
-    sysFreeString = (SysFreeString_t)DLSym(coreclrLib, "SysFreeString");
-    sysStringLen = (SysStringLen_t)DLSym(coreclrLib, "SysStringLen");
-    coTaskMemAlloc = (CoTaskMemAlloc_t)DLSym(coreclrLib, "CoTaskMemAlloc");
-    coTaskMemFree = (CoTaskMemFree_t)DLSym(coreclrLib, "CoTaskMemFree");
-#else
-    sysAllocStringLen = SysAllocStringLen;
-    sysFreeString = SysFreeString;
-    sysStringLen = SysStringLen;
-    coTaskMemAlloc = CoTaskMemAlloc;
-    coTaskMemFree = CoTaskMemFree;
-#endif
-
-    if (sysAllocStringLen == nullptr)
-    {
-        fprintf(stderr, "Error: SysAllocStringLen not found\n");
-        return E_FAIL;
-    }
-
-    if (sysFreeString == nullptr)
-    {
-        fprintf(stderr, "Error: SysFreeString not found\n");
-        return E_FAIL;
-    }
-
-    if (sysStringLen == nullptr)
-    {
-        fprintf(stderr, "Error: SysStringLen not found\n");
-        return E_FAIL;
-    }
-
-    if (coTaskMemAlloc == nullptr)
-    {
-        fprintf(stderr, "Error: CoTaskMemAlloc not found\n");
-        return E_FAIL;
-    }
-
-    if (coTaskMemFree == nullptr)
-    {
-        fprintf(stderr, "Error: CoTaskMemFree not found\n");
         return E_FAIL;
     }
 
@@ -505,16 +596,12 @@ HRESULT SymbolReader::EvalExpression(const std::string &expr, std::string &resul
 PVOID SymbolReader::AllocBytes(size_t size)
 {
     PrepareSymbolReader();
-    if (coTaskMemAlloc == nullptr)
-        return nullptr;
     return coTaskMemAlloc(size);
 }
 
 PVOID SymbolReader::AllocString(const std::string &str)
 {
     PrepareSymbolReader();
-    if (sysAllocStringLen == nullptr)
-        return nullptr;
     auto wstr = to_utf16(str);
     if (wstr.size() > UINT_MAX)
         return nullptr;
