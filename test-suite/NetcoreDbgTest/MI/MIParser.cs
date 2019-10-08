@@ -28,6 +28,12 @@ namespace NetcoreDbgTestCore.MI
                 i++;
             }
 
+            // we still could get async record after result (for example "=library-loaded" or "=thread-created")
+            while (IsOutOfBandRecord(output[i])) {
+                outOfBandRecordList.Add(ParseOutOfBandRecord(output[i]));
+                i++;
+            }
+
             if (!IsEnd(output[i])) {
                 throw new MIParserException();
             }
