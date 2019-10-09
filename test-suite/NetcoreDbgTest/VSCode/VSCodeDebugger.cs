@@ -54,7 +54,6 @@ namespace NetcoreDbgTest.VSCode
         }
         public VSCodeResult Request(Request command, int timeout = -1)
         {
-            EventsAddedOnLastRequestPos = -1;
             string stringJSON = JsonConvert.SerializeObject(command,
                                                             Formatting.None,
                                                             new JsonSerializerSettings { 
@@ -80,22 +79,13 @@ namespace NetcoreDbgTest.VSCode
                     return new VSCodeResult((bool)GetResponsePropertyValue(line, "success"), line);
                 } else {
                     Logger.LogLine("<- (E) " + line);
-                    if (EventsAddedOnLastRequestPos == -1) {
-                        EventsAddedOnLastRequestPos = EventList.Count;
-                    }
-                    EventList.Add(line);
+                    EventQueue.Enqueue(line);
                 }
             }
         }
 
-        public string Receive(int timeout = -1)
+        void ReceiveEvents(int timeout = -1)
         {
-            if (EventsAddedOnLastRequestPos != -1 && EventsAddedOnLastRequestPos < EventList.Count) {
-                string line = EventList[EventsAddedOnLastRequestPos];
-                EventsAddedOnLastRequestPos++;
-                return line;
-            }
-
             while (true) {
                 string[] response = Debuggee.DebuggerClient.Receive(timeout);
                 if (response == null) {
@@ -104,18 +94,35 @@ namespace NetcoreDbgTest.VSCode
                 string line = response[0];
 
                 Logger.LogLine("<- (E) " + line);
-                EventList.Add(line);
+                EventQueue.Enqueue(line);
 
                 foreach (var Event in StopEvents) {
                     if (isResponseContainProperty(line, "event", Event)) {
-                        return line;
+                        return;
                     }
                 }
             }
         }
 
-        public List<string> EventList = new List<string>();
-        int EventsAddedOnLastRequestPos = -1;
+        public bool IsEventReceived(Func<string, bool> filter)
+        {
+            // check previously received events first
+            while (EventQueue.Count > 0) {
+                if (filter(EventQueue.Dequeue()))
+                    return true;
+            }
+
+            // receive new events and check them
+            ReceiveEvents();
+            while (EventQueue.Count > 0) {
+                if (filter(EventQueue.Dequeue()))
+                    return true;
+            }
+
+            return false;
+        }
+
+        Queue<string> EventQueue = new Queue<string>();
         string[] StopEvents = {"stopped",
                                "terminated"};
     }

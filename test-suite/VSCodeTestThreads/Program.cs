@@ -50,27 +50,47 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success);
         }
 
-        public static void WasEntryPointHit()
+        public static void WasEntryPointHitWithProperThreadID()
         {
-            string resJSON = VSCodeDebugger.Receive(-1);
-            Assert.True(VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
-                        && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "entry"));
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "entry")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
 
             threadId = -1;
-            foreach (var Event in VSCodeDebugger.EventList) {
-                if (VSCodeDebugger.isResponseContainProperty(Event, "event", "stopped")
-                    && VSCodeDebugger.isResponseContainProperty(Event, "reason", "entry")) {
-                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(Event, "threadId"));
-                    break;
-                }
-            }
+            if (!VSCodeDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+
             Assert.True(isThredInThreadsList(threadId));
         }
 
         public static void WasExit()
         {
-            string resJSON = VSCodeDebugger.Receive(-1);
-            Assert.True(VSCodeDebugger.isResponseContainProperty(resJSON, "event", "terminated"));
+            bool wasExited = false;
+            int ?exitCode = null;
+            bool wasTerminated = false;
+
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "exited")) {
+                    wasExited = true;
+                    ExitedEvent exitedEvent = JsonConvert.DeserializeObject<ExitedEvent>(resJSON);
+                    exitCode = exitedEvent.body.exitCode;
+                }
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "terminated")) {
+                    wasTerminated = true;
+                }
+                if (wasExited && exitCode == 0 && wasTerminated)
+                    return true;
+
+                return false;
+            };
+
+            if (!VSCodeDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
         public static void DebuggerExit()
@@ -104,19 +124,21 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success);
         }
 
-        public static void WasBreakpointHit(Breakpoint breakpoint)
+        public static void WasBreakpointHitWithProperThreadID(Breakpoint breakpoint)
         {
-            string resJSON = VSCodeDebugger.Receive(-1);
-            Assert.True(VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
-                        && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint"));
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
 
             threadId = -1;
-            foreach (var Event in VSCodeDebugger.EventList) {
-                if (VSCodeDebugger.isResponseContainProperty(Event, "event", "stopped")
-                    && VSCodeDebugger.isResponseContainProperty(Event, "reason", "breakpoint")) {
-                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(Event, "threadId"));
-                }
-            }
+            if (!VSCodeDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+
             Assert.True(isThredInThreadsList(threadId));
 
             StackTraceRequest stackTraceRequest = new StackTraceRequest();
@@ -191,14 +213,14 @@ namespace VSCodeTestThreads
                 Context.AddBreakpoint("bp");
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
-                Context.WasEntryPointHit();
+                Context.WasEntryPointHitWithProperThreadID();
                 Context.Continue();
             });
 
             Console.WriteLine("A breakpoint \"bp\" is set on this line"); Label.Breakpoint("bp");
 
             Label.Checkpoint("bp_test", "finish", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
+                Context.WasBreakpointHitWithProperThreadID(DebuggeeInfo.Breakpoints["bp"]);
                 Context.Continue();
             });
 

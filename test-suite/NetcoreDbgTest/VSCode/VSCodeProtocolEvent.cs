@@ -27,4 +27,12 @@ namespace NetcoreDbgTest.VSCode
         public string text;
         public bool ?allThreadsStopped;
     }
+
+    public class ExitedEvent : Event {
+        public ExitedEventBody body;
+    }
+
+    public class ExitedEventBody {
+        public int exitCode;
+    }
 }
