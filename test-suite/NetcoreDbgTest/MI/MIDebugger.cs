@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using NetcoreDbgTestCore;
 using NetcoreDbgTestCore.MI;
@@ -9,7 +10,6 @@ namespace NetcoreDbgTest.MI
         public MIResultRecord Request(string command, int timeout = -1)
         {
             MIResultRecord resultRecord = null;
-            EventsAddedOnLastRequest = false;
 
             Logger.LogLine("> " + command);
 
@@ -28,27 +28,28 @@ namespace NetcoreDbgTest.MI
                     Logger.LogLine("< " + line);
                 }
 
+                // we could get async record, in this case we could have two "(gdb)" prompts one by one
+                // NOTE in this case we have only one line response, that contain prompt only
+                if (MIParser.IsEnd(response[0]))
+                    continue;
+
                 MIOutput output = MIParser.ParseOutput(response);
 
                 if (output.ResultRecord != null) {
                     resultRecord = output.ResultRecord;
                     break;
                 } else {
-                    OutOfBandRecords.AddRange(output.OutOfBandRecords);
-                    EventsAddedOnLastRequest = true;
+                    foreach (var record in output.OutOfBandRecords) {
+                        EventQueue.Enqueue(record);
+                    }
                 }
             }
 
             return resultRecord;
         }
 
-        public MIOutOfBandRecord[] Receive(int timeout = -1)
+        void ReceiveEvents(int timeout = -1)
         {
-            if (EventsAddedOnLastRequest) {
-                EventsAddedOnLastRequest = false;
-                return OutOfBandRecords.ToArray();
-            }
-
             string[] response = Debuggee.DebuggerClient.Receive(timeout);
 
             if (response == null) {
@@ -66,13 +67,30 @@ namespace NetcoreDbgTest.MI
                 throw new MIParserException();
             }
 
-            OutOfBandRecords.AddRange(output.OutOfBandRecords);
-
-            return OutOfBandRecords.ToArray();
+            foreach (var record in output.OutOfBandRecords) {
+                EventQueue.Enqueue(record);
+            }
         }
 
-        List<MIOutOfBandRecord> OutOfBandRecords = new List<MIOutOfBandRecord>();
+        public bool IsEventReceived(Func<MIOutOfBandRecord, bool> filter)
+        {
+            // check previously received events first
+            while (EventQueue.Count > 0) {
+                if (filter(EventQueue.Dequeue()))
+                    return true;
+            }
+
+            // receive new events and check them
+            ReceiveEvents();
+            while (EventQueue.Count > 0) {
+                if (filter(EventQueue.Dequeue()))
+                    return true;
+            }
+
+            return false;
+        }
+
+        Queue<MIOutOfBandRecord> EventQueue = new Queue<MIOutOfBandRecord>();
         MIParser MIParser = new MIParser();
-        bool EventsAddedOnLastRequest = false;
     }
 }

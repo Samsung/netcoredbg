@@ -39,82 +39,88 @@ namespace NetcoreDbgTest.Script
 
         public static void WasEntryPointHit()
         {
-            var records = MIDebugger.Receive();
-
-            foreach (MIOutOfBandRecord record in records) {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
-                    continue;
+                    return false;
                 }
 
                 var output = ((MIAsyncRecord)record).Output;
                 var reason = (MIConst)output["reason"];
+
                 if (reason.CString != "entry-point-hit") {
-                    continue;
+                    return false;
                 }
 
                 var frame = (MITuple)(output["frame"]);
                 var func = (MIConst)(frame["func"]);
                 if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
-                    return;
+                    return true;
                 }
-            }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+                return false;
+            };
+
+            if (!MIDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
         public static string GetBreakpointHitId(Breakpoint bp)
         {
-            var records = MIDebugger.Receive();
+            string Result = "-1";
             var bpLine = ((LineBreakpoint)bp).NumLine.ToString();
 
-            foreach (MIOutOfBandRecord record in records) {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
-                    continue;
+                    return false;
                 }
 
                 var output = ((MIAsyncRecord)record).Output;
                 var reason = (MIConst)output["reason"];
                 if (reason.CString != "breakpoint-hit") {
-                    continue;
+                    return false;
                 }
 
                 var frame = (MITuple)(output["frame"]);
                 var line = (MIConst)(frame["line"]);
 
                 if (bpLine == line.CString) {
-                    return ((MIConst)output["bkptno"]).CString;
+                    Result = ((MIConst)output["bkptno"]).CString;
+                    return true;
                 }
-            }
 
-            return "-1";
+                return false;
+            };
+
+            MIDebugger.IsEventReceived(filter);
+
+            return Result;
         }
 
         public static void WasExit()
         {
-            var records = MIDebugger.Receive();
-
-            foreach (MIOutOfBandRecord record in records) {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
-                    continue;
+                    return false;
                 }
 
                 var output = ((MIAsyncRecord)record).Output;
                 var reason = (MIConst)output["reason"];
 
                 if (reason.CString != "exited") {
-                    continue;
+                    return false;
                 }
 
                 var exitCode = (MIConst)output["exit-code"];
 
                 if (exitCode.CString == "0") {
-                    return;
-                } else {
-                    throw new NetcoreDbgTestCore.ResultNotSuccessException();
+                    return true;
                 }
-            }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+                return false;
+            };
+
+            if (!MIDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
         public static void DebuggerExit()
@@ -122,7 +128,7 @@ namespace NetcoreDbgTest.Script
             Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
         }
 
-        public static bool IsStoppedEvent(MIOutOfBandRecord record)
+        static bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;

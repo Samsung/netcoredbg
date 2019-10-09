@@ -351,7 +351,7 @@ namespace NetcoreDbgTestCore.MI
             return response[i] == '^';
         }
 
-        private bool IsEnd(string response)
+        public bool IsEnd(string response)
         {
             return response == "(gdb)";
         }
