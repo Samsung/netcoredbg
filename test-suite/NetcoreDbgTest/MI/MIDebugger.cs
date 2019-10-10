@@ -35,13 +35,13 @@ namespace NetcoreDbgTest.MI
 
                 MIOutput output = MIParser.ParseOutput(response);
 
+                foreach (var record in output.OutOfBandRecords) {
+                    EventQueue.Enqueue(record);
+                }
+
                 if (output.ResultRecord != null) {
                     resultRecord = output.ResultRecord;
                     break;
-                } else {
-                    foreach (var record in output.OutOfBandRecords) {
-                        EventQueue.Enqueue(record);
-                    }
                 }
             }
 
