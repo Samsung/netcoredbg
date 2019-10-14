@@ -15,6 +15,7 @@
 #include "cputil.h"
 #include "symbolreader.h"
 
+using std::string;
 
 // From strike.cpp
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull)
@@ -62,7 +63,7 @@ static bool IsEnum(ICorDebugValue *pInputValue)
     ToRelease<ICorDebugValue> pValue;
     if (FAILED(DereferenceAndUnboxValue(pInputValue, &pValue, nullptr))) return false;
 
-    std::string baseTypeName;
+    string baseTypeName;
     ToRelease<ICorDebugValue2> pValue2;
     ToRelease<ICorDebugType> pType;
     ToRelease<ICorDebugType> pBaseType;
@@ -75,7 +76,7 @@ static bool IsEnum(ICorDebugValue *pInputValue)
     return baseTypeName == "System.Enum";
 }
 
-static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, std::string &output)
+static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, string &output)
 {
     HRESULT Status = S_OK;
 
@@ -283,7 +284,7 @@ static HRESULT GetDecimalFields(ICorDebugValue *pValue,
             IfFailRet(pValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue));
             IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, &pFieldVal));
 
-            std::string name = to_utf8(mdName /*, nameLen*/);
+            string name = to_utf8(mdName /*, nameLen*/);
 
             if (name == "hi")
             {
@@ -338,10 +339,10 @@ static void udivrem96(uint32_t *divident, uint32_t divisor, uint32_t &remainder)
     }
 }
 
-static std::string uint96_to_string(uint32_t *v)
+static string uint96_to_string(uint32_t *v)
 {
     static const char *digits = "0123456789";
-    std::string result;
+    string result;
     do {
         uint32_t rem;
         udivrem96(v, 10, rem);
@@ -355,7 +356,7 @@ static void PrintDecimal(
     unsigned int mid,
     unsigned int lo,
     unsigned int flags,
-    std::string &output)
+    string &output)
 {
     uint32_t v[3] = { lo, mid, hi };
 
@@ -386,7 +387,7 @@ static void PrintDecimal(
 }
 
 static HRESULT PrintDecimalValue(ICorDebugValue *pValue,
-                                 std::string &output)
+                                 string &output)
 {
     HRESULT Status = S_OK;
 
@@ -409,15 +410,15 @@ PACK_BEGIN struct Decimal {
     uint32_t mid;
 } PACK_END;
 
-static void PrintDecimalValue(const std::string &rawValue,
-                              std::string &output)
+static void PrintDecimalValue(const string &rawValue,
+                              string &output)
 {
     const Decimal *d = reinterpret_cast<const Decimal*>(&rawValue[0]);
     PrintDecimal(d->hi, d->mid, d->lo, d->flags, output);
 }
 
 static HRESULT PrintArrayValue(ICorDebugValue *pValue,
-                               std::string &output)
+                               string &output)
 {
     HRESULT Status = S_OK;
 
@@ -437,8 +438,8 @@ static HRESULT PrintArrayValue(ICorDebugValue *pValue,
     std::ostringstream ss;
     ss << "{";
 
-    std::string elementType;
-    std::string arrayType;
+    string elementType;
+    string arrayType;
 
     ToRelease<ICorDebugType> pFirstParameter;
     ToRelease<ICorDebugValue2> pValue2;
@@ -478,7 +479,7 @@ static HRESULT PrintArrayValue(ICorDebugValue *pValue,
     return S_OK;
 }
 
-static HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output)
+static HRESULT PrintStringValue(ICorDebugValue * pValue, string &output)
 {
     HRESULT Status;
 
@@ -502,7 +503,7 @@ static HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output)
     return S_OK;
 }
 
-void EscapeString(std::string &s, char q = '\"')
+void EscapeString(string &s, char q = '\"')
 {
     for (std::size_t i = 0; i < s.size(); ++i)
     {
@@ -535,7 +536,7 @@ void EscapeString(std::string &s, char q = '\"')
     }
 }
 
-HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape)
+HRESULT PrintValue(ICorDebugValue *pInputValue, string &output, bool escape)
 {
     HRESULT Status;
 
@@ -563,7 +564,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
     IfFailRet(pValue->GetType(&corElemType));
     if (corElemType == ELEMENT_TYPE_STRING)
     {
-        std::string raw_str;
+        string raw_str;
         IfFailRet(PrintStringValue(pValue, raw_str));
 
         if (!escape)
@@ -619,11 +620,11 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
     case ELEMENT_TYPE_VALUETYPE:
     case ELEMENT_TYPE_CLASS:
         {
-            std::string typeName;
+            string typeName;
             TypePrinter::GetTypeOfValue(pValue, typeName);
             if (typeName == "decimal") // TODO: implement mechanism for printing custom type values
             {
-                std::string val;
+                string val;
                 PrintDecimalValue(pValue, val);
                 ss << val;
             }
@@ -641,7 +642,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
     case ELEMENT_TYPE_CHAR:
         {
             WCHAR wc = * (WCHAR *) &(rgbValue[0]);
-            std::string printableVal = to_utf8(wc);
+            string printableVal = to_utf8(wc);
             if (!escape)
             {
                 output = printableVal;
@@ -714,7 +715,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
     return S_OK;
 }
 
-HRESULT PrintBasicValue(int typeId, const std::string &rawData, std::string &typeName, std::string &value)
+HRESULT PrintBasicValue(int typeId, const string &rawData, string &typeName, string &value)
 {
     std::ostringstream ss;
     switch(typeId)
@@ -742,7 +743,7 @@ HRESULT PrintBasicValue(int typeId, const std::string &rawData, std::string &typ
         case SymbolReader::TypeChar:
             {
                 WCHAR wc = * (WCHAR *) &(rawData[0]);
-                std::string printableVal = to_utf8(wc);
+                string printableVal = to_utf8(wc);
                 EscapeString(printableVal, '\'');
                 ss << (unsigned int)wc << " '" << printableVal << "'";
                 typeName = "char";
@@ -794,7 +795,7 @@ HRESULT PrintBasicValue(int typeId, const std::string &rawData, std::string &typ
             return S_OK;
         case SymbolReader::TypeString:
             {
-                std::string rawStr = rawData;
+                string rawStr = rawData;
                 EscapeString(rawStr, '"');
                 ss << "\"" << rawStr << "\"";
             }
@@ -822,6 +823,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
     ULONG32 cbSize;
     IfFailRet(Status = pValue->GetSize(&cbSize));
 
+    // TODO: potencially memory leaks..For example, SZARRAY
     ArrayHolder<BYTE> rgbValue = new (std::nothrow) BYTE[cbSize];
     if (rgbValue == nullptr)
     {
@@ -835,7 +837,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
 
     if (corElemType == ELEMENT_TYPE_STRING)
     {
-        std::string raw_str;
+        string raw_str;
         IfFailRet(PrintStringValue(pValue, raw_str));
 
         if (!raw_str.empty())
@@ -894,7 +896,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
     case ELEMENT_TYPE_VALUETYPE:
     case ELEMENT_TYPE_CLASS:
         {
-            std::string typeName;
+            string typeName;
             TypePrinter::GetTypeOfValue(pValue, typeName);
             if (typeName != "decimal")
             {
@@ -975,4 +977,103 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
     }
     memmove(*data, &(rgbValue[0]), cbSize);
     return S_OK;
+}
+
+HRESULT PrintStringField(ICorDebugValue *pValue, const WCHAR *fieldName, string &output, ICorDebugType *pType)
+{
+    output = "<unknown>";
+    HRESULT Status;
+
+    if (!pValue || !fieldName)
+        return E_FAIL;
+
+    if (!pType) {
+        ToRelease<ICorDebugValue2> pValue2;
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *)&pValue2));
+        IfFailRet(pValue2->GetExactType(&pType));
+    }
+
+    ToRelease<ICorDebugClass> pClass;
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pType->GetClass(&pClass));
+    IfFailRet(pClass->GetModule(&pModule));
+
+    mdTypeDef currentTypeDef;
+    IfFailRet(pClass->GetToken(&currentTypeDef));
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*)&pMD));
+
+    ULONG numMethods = 0;
+    HCORENUM fEnum = NULL;
+    mdFieldDef fieldDef = mdFieldDefNil;
+
+    // TODO: This string for new walking though the tree function
+    // pMD->EnumFields(&fEnum, currentTypeDef, rTokens, 2048, &numMethods);
+
+    numMethods = 0;
+    fEnum = NULL;
+    IfFailRet(pMD->EnumFieldsWithName(&fEnum, currentTypeDef, fieldName, &fieldDef, 1, &numMethods));
+    pMD->CloseEnum(fEnum);
+
+    if (numMethods == 1)
+    {
+        ULONG nameLen = 0;
+        DWORD fieldAttr = 0;
+        WCHAR mdName[mdNameLen] = { 0 };
+        PCCOR_SIGNATURE pSignatureBlob = nullptr;
+        ULONG sigBlobLength = 0;
+        UVCP_CONSTANT pRawValue = nullptr;
+        ULONG rawValueLength = 0;
+        if (SUCCEEDED(pMD->GetFieldProps(fieldDef,
+            nullptr,
+            mdName,
+            _countof(mdName),
+            &nameLen,
+            &fieldAttr,
+            &pSignatureBlob,
+            &sigBlobLength,
+            nullptr,
+            &pRawValue,
+            &rawValueLength)))
+        {
+            if (pValue != nullptr)
+            {
+                ToRelease<ICorDebugValue> pValueDeref;
+                if (SUCCEEDED(DereferenceAndUnboxValue(pValue, &pValueDeref, nullptr)))
+                {
+                    ToRelease<ICorDebugObjectValue> pObjValue;
+                    if (SUCCEEDED(pValueDeref->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*)&pObjValue)))
+                    {
+                        ToRelease<ICorDebugValue> pFieldVal;
+                        IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, &pFieldVal));
+                        // Print with any visible attributes. 
+						// Example for check private attribute: if ((fieldAttr & fdPrivate) && (fieldAttr & fdFamANDAssem))
+						ToRelease<ICorDebugValue> pValueDerefStr;
+						if (SUCCEEDED(DereferenceAndUnboxValue(pFieldVal, &pValueDerefStr, nullptr)))
+						{
+							IfFailRet(PrintValue(pValueDerefStr, output, true));
+							return S_OK;
+						}
+                    }
+                }
+            }
+        }
+    }
+
+    string baseTypeName;
+    ToRelease<ICorDebugType> pBaseType;
+    if (SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL &&
+        SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
+    {
+        if (baseTypeName == "System.Enum")
+            return E_FAIL;
+
+        if (baseTypeName != "System.Object" && baseTypeName != "System.ValueType")
+            return PrintStringField(pValue, fieldName, output, pBaseType);
+    }
+
+    return E_FAIL;
 }

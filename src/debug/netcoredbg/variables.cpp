@@ -127,7 +127,7 @@ HRESULT Variables::FetchFieldsAndProperties(
         if (currentIndex >= childEnd)
             return S_OK;
 
-        std::string className;
+        string className;
         if (pType)
             TypePrinter::GetTypeOfValue(pType, className);
 
@@ -313,116 +313,6 @@ static HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module) {
     ULONG nameLen;
     IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
     module = to_utf8(mdName);
-
-    return S_OK;
-}
-
-HRESULT Variables::GetExceptionInfoResponseDetailsMembers(
-    ICorDebugProcess *pProcess,
-    ICorDebugThread *pThread,
-    uint64_t frameId,
-    Variable &varRoot,
-    ExceptionDetails &details,
-    bool &isFoundInnerException,
-    vector<Member> &members)
-{
-    HRESULT Status;
-
-    details.evaluateName = varRoot.name;
-    details.typeName = varRoot.type;
-    details.fullTypeName = varRoot.type;
-
-    bool isMessage, isStackTrace, isInnerException;
-    for (auto &it : members)
-    {
-        isStackTrace = isInnerException = false;
-        if ( !(isMessage = (it.name == "Message")) &&
-             !(isStackTrace = (it.name == "StackTrace")) &&
-             !(isInnerException = (it.name == "InnerException")))
-            continue;
-
-        Variable var;
-        var.name = it.name;
-        FillValueAndType(it, var);
-
-        if (isMessage)
-        {
-            details.message = var.value;
-            continue;
-        }
-
-        if (isStackTrace)
-        {
-            details.stackTrace = var.value;
-            continue;
-        }
-
-        if (isInnerException)
-        {
-            vector<Member> mem;
-            if ((Status = GetICorDebugValueMembers(pProcess, pThread, frameId,
-                 it.value, false, mem)) != S_OK)
-                return Status;
-
-            if (!mem.empty())
-            {
-                isFoundInnerException = true;
-                details.innerException.emplace_back(ExceptionDetails());
-                bool dummy;
-                if ((Status = GetExceptionInfoResponseDetailsMembers(pProcess, pThread,
-                    frameId, var, details.innerException.back(), dummy, mem)) != S_OK)
-                {
-                    details.innerException.pop_back();
-                    return Status;
-                }
-            }
-        }
-    }
-
-    return S_OK;
-}
-
-HRESULT Variables::GetExceptionInfoResponseData(
-    ICorDebugProcess *pProcess,
-    int threadId,
-    const ExceptionBreakMode &mode,
-    ExceptionInfoResponse &exceptionInfoResponse)
-{
-    HRESULT Status;
-
-    uint64_t frameId = StackFrame(threadId, 0, "").id;
-    ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(threadId, &pThread));
-
-    Variable varException;
-    if (GetExceptionVariable(frameId, pThread, varException))
-        return E_FAIL;
-
-    vector<Member> members;
-    if ((Status = GetVariableMembers(pProcess, pThread, frameId, varException, members)) != S_OK)
-       return Status;
-
-    if (mode.OnlyUnhandled() || mode.UserUnhandled())
-    {
-        exceptionInfoResponse.description = "An unhandled exception of type '" + varException.type +
-            "' occurred in " + varException.module;
-    }
-    else
-    {
-        exceptionInfoResponse.description = "Exception thrown: '" + varException.type +
-            "' in " + varException.module;
-    }
-
-    exceptionInfoResponse.exceptionId = varException.type;
-    exceptionInfoResponse.breakMode = mode;
-
-    bool isFoundInnerException = false;
-    if ((Status = GetExceptionInfoResponseDetailsMembers(pProcess, pThread, frameId,
-            varException, exceptionInfoResponse.details, isFoundInnerException, members)) != S_OK)
-        return Status;
-
-    if (isFoundInnerException)
-        exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
 
     return S_OK;
 }

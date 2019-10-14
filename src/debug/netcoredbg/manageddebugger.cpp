@@ -10,6 +10,7 @@
 #include <chrono>
 #include <stdexcept>
 
+#include "valueprint.h"
 #include "symbolreader.h"
 #include "cputil.h"
 #include "platform.h"
@@ -46,14 +47,14 @@ struct dbgshim_t
         m_module(nullptr)
     {
 #ifdef DBGSHIM_RUNTIME_DIR
-        std::string libName(DBGSHIM_RUNTIME_DIR);
+        string libName(DBGSHIM_RUNTIME_DIR);
         libName += DIRECTORY_SEPARATOR_STR_A;
 #else
-        std::string exe = GetExeAbsPath();
+        string exe = GetExeAbsPath();
         std::size_t dirSepIndex = exe.rfind(DIRECTORY_SEPARATOR_STR_A);
-        if (dirSepIndex == std::string::npos)
+        if (dirSepIndex == string::npos)
             return;
-        std::string libName = exe.substr(0, dirSepIndex + 1);
+        string libName = exe.substr(0, dirSepIndex + 1);
 #endif
 
 #ifdef WIN32
@@ -240,8 +241,8 @@ int ManagedDebugger::GetLastStoppedThreadId()
 }
 
 static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
-                                std::string &excType,
-                                std::string &excModule)
+                                string &excType,
+                                string &excModule)
 {
     HRESULT Status;
 
@@ -278,11 +279,11 @@ class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallbac
     ManagedDebugger &m_debugger;
 public:
 
-        void HandleEvent(ICorDebugController *controller, const std::string &eventName)
+        void HandleEvent(ICorDebugController *controller, const string &eventName)
         {
             LogFuncEntry();
 
-            std::string text = "Event received: '" + eventName + "'\n";
+            string text = "Event received: '" + eventName + "'\n";
             m_debugger.m_protocol->EmitOutputEvent(OutputEvent(OutputConsole, text));
             controller->Continue(0);
         }
@@ -445,55 +446,81 @@ public:
             /* [in] */ BOOL unhandled)
         {
             LogFuncEntry();
+            // INFO: Exception event callbacks produce Stop process and managed threads in coreCLR
+            // After imit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
+            // For answer on ExceptionInfo are needed long FuncEval() with asynchronous EvalComplete event.
+            // Of course evaluations is not atomic for coreCLR. Before EvalComplete we can get a new
+            // ExceptionEvent if we allow to running of current thread.
+            //
+            // Current implementation stops all threads while EvalComplete waiting. But, unfortuantly,
+            // its not helps in any cases. Exceptions can be thows in the same time from some threads.
+            // And in this case threads thread suspend is not guaranteed, becase thread can stay in
+            // "GC unsafe mode" or "Optimized code". And also, same time exceptions puts in priority queue event,
+            // and all next events one by one will transport each exception.
+            // For "GC unsafe mode" or "Optimized code" we cannot invoke CreateEval() function.
 
-            string excType;
-            string excModule;
-            GetExceptionInfo(pThread, excType, excModule);
+            HRESULT Status = S_OK;
+            DWORD threadId = 0;
+            IfFailRet(pThread->GetID(&threadId));
+            string excType, excModule;
+            IfFailRet(GetExceptionInfo(pThread, excType, excModule));
 
-            if (unhandled || m_debugger.MatchExceptionBreakpoint(excType, ExceptionBreakCategory::CLR))
-            {
-                DWORD threadId = 0;
-                pThread->GetID(&threadId);
+            bool not_matched = !(unhandled || m_debugger.MatchExceptionBreakpoint(excType, ExceptionBreakCategory::CLR));
 
-                StackFrame stackFrame;
-                ToRelease<ICorDebugFrame> pFrame;
-                if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                    m_debugger.GetFrameLocation(pFrame, threadId, 0, stackFrame);
-
-                m_debugger.SetLastStoppedThread(pThread);
-
-                string details;
-                if (unhandled)
-                    details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
-                else
-                    details = "Exception thrown: '" + excType + "' in " + excModule;
-
-                ToRelease<ICorDebugValue> pExceptionValue;
-
-                auto emitFunc = [=](const string &message) {
-                    StoppedEvent event(StopException, threadId);
-                    event.text = excType;
-                    event.description = message.empty() ? details : message;
-                    event.frame = stackFrame;
-                    m_debugger.m_protocol->EmitStoppedEvent(event);
-                };
-
-                if (FAILED(pThread->GetCurrentException(&pExceptionValue)) ||
-                    FAILED(m_debugger.m_evaluator.ObjectToString(pThread, pExceptionValue, emitFunc)))
-                {
-                    emitFunc(details);
-                }
-
-            }
-            else
-            {
+            if (not_matched) {
                 string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
                 OutputEvent event(OutputConsole, text);
                 event.source = "target-exception";
                 m_debugger.m_protocol->EmitOutputEvent(event);
-                pAppDomain->Continue(0);
+                IfFailRet(pAppDomain->Continue(0));
+                return S_OK;
             }
 
+            StoppedEvent event(StopException, threadId);
+
+            string details;
+            if (unhandled) {
+                details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
+                std::lock_guard<std::mutex> lock(m_debugger.m_lastUnhandledExceptionThreadIdsMutex);
+                m_debugger.m_lastUnhandledExceptionThreadIds.insert(threadId);
+            }
+            else {
+                details = "Exception thrown: '" + excType + "' in " + excModule;
+            }
+
+            string message;
+            WCHAR fieldName[] = W("_message\0");
+            ToRelease<ICorDebugValue> pExceptionValue;
+            IfFailRet(pThread->GetCurrentException(&pExceptionValue));
+            IfFailRet(PrintStringField(pExceptionValue, fieldName, message));
+
+            StackFrame stackFrame;
+            ToRelease<ICorDebugFrame> pActiveFrame;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
+                m_debugger.GetFrameLocation(pActiveFrame, threadId, 0, stackFrame);
+
+            m_debugger.SetLastStoppedThread(pThread);
+
+            event.text = excType;
+            event.description = message.empty() ? details : message;
+            event.frame = stackFrame;
+
+            if (m_debugger.m_evaluator.IsEvalRunning() && !m_debugger.m_evaluator.is_empty_eval_queue()) {
+                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                ToRelease<ICorDebugThread> pThreadEval;
+                IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
+                IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
+                IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
+                IfFailRet(pAppDomain->Continue(0));
+                ToRelease<ICorDebugThread2> pThread2;
+                IfFailRet(pThread->QueryInterface(IID_ICorDebugThread2, (LPVOID *)&pThread2));
+                // Intercept exceptions from frame for resending. Its allow to avoid problem with
+                // wrong state:"GS unsafe" and "optimezed code" for evaluation of CallParametricFunc()
+                IfFailRet(pThread2->InterceptCurrentException(pActiveFrame));
+                 return S_OK;
+            }
+
+            m_debugger.Stop(threadId, event);
             return S_OK;
         }
 
@@ -504,7 +531,34 @@ public:
         {
             LogFuncEntry();
 
+            HRESULT Status = S_OK;
+
             m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
+
+            if (m_debugger.m_evaluator.is_empty_eval_queue())
+            {
+                pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
+            }
+            else
+            {
+                DWORD currentThreadId;
+                pThread->GetID(&currentThreadId);
+                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                if (evalThreadId == currentThreadId) {
+                    m_debugger.m_evaluator.pop_eval_queue();
+
+                    DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                    ToRelease<ICorDebugThread> pThreadEval;
+                    IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
+                    IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
+                    IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
+
+                    Logger::levelLog(LOG_INFO, "Complete eval threadid = '%d'\n", currentThreadId);
+                }
+                else {
+                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'\n", currentThreadId, evalThreadId);
+                }
+            }
             return S_OK;
         }
 
@@ -514,6 +568,13 @@ public:
             /* [in] */ ICorDebugEval *pEval)
         {
             LogFuncEntry();
+
+			// TODO: Need implementation
+            //
+            // This is callback EvalException invoked
+            // on evaluation interruption event. And, as you can understand
+            // evaluated results has inconsistent states. Notify is not
+            // enoth for this point.
 
             m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
@@ -534,9 +595,15 @@ public:
             LogFuncEntry();
 
             m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
+
+
+            while (!m_debugger.m_evaluator.is_empty_eval_queue())
+                m_debugger.m_evaluator.pop_eval_queue();
+
             m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(0));
             m_debugger.NotifyProcessExited();
             m_debugger.m_protocol->EmitTerminatedEvent();
+
             return S_OK;
         }
 
@@ -558,6 +625,8 @@ public:
             /* [in] */ ICorDebugThread *thread)
         {
             LogFuncEntry();
+
+            // TODO: clean evaluations and excpetions queues for current thread
 
             m_debugger.m_evaluator.NotifyEvalComplete(thread, nullptr);
             DWORD threadId = 0;
@@ -770,18 +839,6 @@ public:
             /* [in] */ DWORD dwFlags)
         {
             LogFuncEntry();
-          // TODO:
-          // const char *cbTypeName;
-          // switch(dwEventType)
-          // {
-          //     case DEBUG_EXCEPTION_FIRST_CHANCE: cbTypeName = "FIRST_CHANCE"; break;
-          //     case DEBUG_EXCEPTION_USER_FIRST_CHANCE: cbTypeName = "USER_FIRST_CHANCE"; break;
-          //     case DEBUG_EXCEPTION_CATCH_HANDLER_FOUND: cbTypeName = "CATCH_HANDLER_FOUND"; break;
-          //     case DEBUG_EXCEPTION_UNHANDLED: cbTypeName = "UNHANDLED"; break;
-          //     default: cbTypeName = "?"; break;
-          // }
-          // ManagedDebugger::Printf("*stopped,reason=\"exception-received2\",exception-stage=\"%s\"\n",
-          //     cbTypeName);
             return E_NOTIMPL;
         }
 
@@ -791,6 +848,8 @@ public:
             /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
             /* [in] */ DWORD dwFlags)
         {
+            // TODO: Need implementations.
+			//
             LogFuncEntry();
             return E_NOTIMPL;
         }
@@ -809,7 +868,7 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ ICorDebugMDA *pMDA)
         {
-            // TODO: MDA notification should be supported with exception breakpoint feature
+            // TODO: MDA notification should be supported with exception breakpoint feature (MDA enabled only under Microsoft Windows OS)
             // https://docs.microsoft.com/ru-ru/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback2-mdanotification-method
             // https://docs.microsoft.com/ru-ru/dotnet/framework/debug-trace-profile/diagnosing-errors-with-managed-debugging-assistants#enable-and-disable-mdas
             //
@@ -822,6 +881,7 @@ public:
 ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
     m_lastStoppedThreadId(-1),
+    m_stopCounter(0),
     m_startMethod(StartNone),
     m_stopAtEntry(false),
     m_isConfigurationDone(false),
@@ -882,7 +942,7 @@ HRESULT ManagedDebugger::Attach(int pid)
     return RunIfReady();
 }
 
-HRESULT ManagedDebugger::Launch(std::string fileExec, std::vector<std::string> execArgs, bool stopAtEntry)
+HRESULT ManagedDebugger::Launch(string fileExec, std::vector<string> execArgs, bool stopAtEntry)
 {
     LogFuncEntry();
 
@@ -993,23 +1053,92 @@ HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
 
     m_variables.Clear();
     Status = m_pProcess->Continue(0);
-    if (SUCCEEDED(Status))
-        m_protocol->EmitContinuedEvent();
+
+    if (SUCCEEDED(Status)) {
+        m_protocol->EmitContinuedEvent(threadId);
+        --m_stopCounter;
+    }
     return Status;
 }
 
-HRESULT ManagedDebugger::Continue()
+HRESULT ManagedDebugger::CompleteException()
+{
+    LogFuncEntry();
+
+    m_evaluator.pop_eval_queue();
+    //return m_pProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr);
+
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::Stop(int threadId, const StoppedEvent &event)
+{
+    LogFuncEntry();
+    HRESULT Status = S_OK;
+
+    while (m_stopCounter.load() > 0) {
+        m_protocol->EmitContinuedEvent(m_lastStoppedThreadId);
+        --m_stopCounter;
+    }
+    m_stopCounter.store(0);
+
+    // INFO: Double EmitStopEvent() produce blocked coreclr command reader
+    ++m_stopCounter;
+    m_protocol->EmitStoppedEvent(event);
+
+    return Status;
+}
+
+HRESULT ManagedDebugger::Continue(int threadId)
 {
     LogFuncEntry();
 
     if (!m_pProcess)
         return E_FAIL;
 
-    m_variables.Clear();
-    HRESULT Status = m_pProcess->Continue(0);
-    if (SUCCEEDED(Status))
-        m_protocol->EmitContinuedEvent();
-    return Status;
+    HRESULT res = S_OK;
+    if (!m_evaluator.IsEvalRunning() && m_evaluator.is_empty_eval_queue()) {
+        if ((res = m_pProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr)) != S_OK) {
+            // TODO: need function for printing coreCLR errors by error code
+            switch (res) {
+                case CORDBG_E_PROCESS_NOT_SYNCHRONIZED:
+                    Logger::levelLog(LOG_ERROR, "Setting thread state failed. Process not synchronized:'%0x'", res);
+                break;
+                case CORDBG_E_PROCESS_TERMINATED:
+                    Logger::levelLog(LOG_ERROR, "Setting thread state failed. Process was terminated:'%0x'", res);
+                break;
+                case CORDBG_E_OBJECT_NEUTERED:
+                    Logger::levelLog(LOG_ERROR, "Setting thread state failed. Object has been neutered(it's in a zombie state):'%0x'", res);
+                break;
+                default:
+                    Logger::levelLog(LOG_ERROR, "SetAllThreadsDebugState() %0x\n", res);
+                break;
+            }
+        }
+    }
+    if ((res = m_pProcess->Continue(0)) != S_OK) {
+        switch (res) {
+        case CORDBG_E_SUPERFLOUS_CONTINUE:
+            Logger::levelLog(LOG_ERROR, "Continue failed. Returned from a call to Continue that was not matched with a stopping event:'%0x'", res);
+            break;
+        case CORDBG_E_PROCESS_TERMINATED:
+            Logger::levelLog(LOG_ERROR, "Continue failed. Process was terminated:'%0x'", res);
+            break;
+        case CORDBG_E_OBJECT_NEUTERED:
+            Logger::levelLog(LOG_ERROR, "Continue failed. Object has been neutered(it's in a zombie state):'%0x'", res);
+            break;
+        default:
+            Logger::levelLog(LOG_ERROR, "Continue() %0x\n", res);
+            break;
+        }
+    }
+
+    if (SUCCEEDED(res)) {
+        m_protocol->EmitContinuedEvent(threadId);
+        --m_stopCounter;
+    }
+
+    return res;
 }
 
 HRESULT ManagedDebugger::Pause()
@@ -1188,16 +1317,16 @@ static HRESULT InternalEnumerateCLRs(
     return hr;
 }
 
-static std::string GetCLRPath(DWORD pid, int timeoutSec = 3)
+static string GetCLRPath(DWORD pid, int timeoutSec = 3)
 {
     HANDLE* pHandleArray;
     LPWSTR* pStringArray;
     DWORD dwArrayLength;
     const int tryCount = timeoutSec * 10; // 100ms interval between attempts
     if (FAILED(InternalEnumerateCLRs(pid, &pHandleArray, &pStringArray, &dwArrayLength, tryCount)) || dwArrayLength == 0)
-        return std::string();
+        return string();
 
-    std::string result = to_utf8(pStringArray[0]);
+    string result = to_utf8(pStringArray[0]);
 
     g_dbgshim.CloseCLREnumeration(pHandleArray, pStringArray, dwArrayLength);
 
@@ -1243,13 +1372,13 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     return S_OK;
 }
 
-static std::string EscapeShellArg(const std::string &arg)
+static string EscapeShellArg(const string &arg)
 {
-    std::string s(arg);
+    string s(arg);
 
-    for (std::string::size_type i = 0; i < s.size(); ++i)
+    for (string::size_type i = 0; i < s.size(); ++i)
     {
-        std::string::size_type count = 0;
+        string::size_type count = 0;
         char c = s.at(i);
         switch (c)
         {
@@ -1262,7 +1391,7 @@ static std::string EscapeShellArg(const std::string &arg)
     return s;
 }
 
-HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::string> execArgs)
+HRESULT ManagedDebugger::RunProcess(string fileExec, std::vector<string> execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
     HRESULT Status;
@@ -1271,7 +1400,7 @@ HRESULT ManagedDebugger::RunProcess(std::string fileExec, std::vector<std::strin
 
     std::ostringstream ss;
     ss << "\"" << fileExec << "\"";
-    for (const std::string &arg : execArgs)
+    for (const string &arg : execArgs)
         ss << " \"" << EscapeShellArg(arg) << "\"";
 
     m_startupReady = false;
@@ -1413,10 +1542,96 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
 {
     LogFuncEntry();
 
-    HRESULT Status;
-    ExceptionBreakMode mode;
-    IfFailRet(m_breakpoints.GetExceptionBreakMode(mode, "*"));
-    return m_variables.GetExceptionInfoResponseData(m_pProcess, threadId, mode, exceptionInfoResponse);
+    // Are needed to move next line to Exception() callback?
+    m_evaluator.push_eval_queue(threadId);
+
+    HRESULT res;
+    HRESULT Status = S_OK;
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
+
+    ToRelease<ICorDebugValue> pExceptionValue;
+    if ((res = pThread->GetCurrentException(&pExceptionValue)) != S_OK) {
+        Logger::levelLog(LOG_ERROR, "GetCurrentException() failed, %0x", res);
+        return res;
+    }
+
+    WCHAR fieldName[] = W("_message\0");
+    PrintStringField(pExceptionValue, fieldName, exceptionInfoResponse.description);
+
+    std::unique_lock<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
+    if (m_lastUnhandledExceptionThreadIds.find(threadId) != m_lastUnhandledExceptionThreadIds.end()) {
+        lock.unlock();
+        exceptionInfoResponse.breakMode.resetAll(); // Excplicit unhandled breakMode
+    }
+    else {
+        lock.unlock();
+        ExceptionBreakMode mode;
+        IfFailRet(m_breakpoints.GetExceptionBreakMode(mode, "*"));
+        exceptionInfoResponse.breakMode = mode;
+    }
+
+    uint64_t frameId = StackFrame(threadId, 0, "").id;
+    Variable varException;
+    IfFailRet(m_variables.GetExceptionVariable(frameId, pThread, varException));
+
+    if (exceptionInfoResponse.breakMode.OnlyUnhandled() || exceptionInfoResponse.breakMode.UserUnhandled())
+    {
+        exceptionInfoResponse.description = "An unhandled exception of type '" + varException.type +
+            "' occurred in " + varException.module;
+    }
+    else
+    {
+        exceptionInfoResponse.description = "Exception thrown: '" + varException.type +
+            "' in " + varException.module;
+    }
+
+    exceptionInfoResponse.exceptionId = varException.type;
+
+    exceptionInfoResponse.details.evaluateName = varException.name;
+    exceptionInfoResponse.details.typeName = varException.type;
+    exceptionInfoResponse.details.fullTypeName = varException.type;
+
+    bool hasInner = false;
+    ToRelease <ICorDebugValue> evalValue;
+    if (m_evaluator.getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue) != S_OK) {
+        exceptionInfoResponse.details.stackTrace = "<undefined>"; // Evaluating problem entire object
+    }
+    else {
+        PrintValue(evalValue, exceptionInfoResponse.details.stackTrace);
+        ToRelease <ICorDebugValue> evalValueOut;
+        BOOL isNotNull = TRUE;
+
+        ICorDebugValue *evalValueInner = pExceptionValue;
+        while (isNotNull) {
+            IfFailRet(m_evaluator.getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut));
+
+            string tmpstr;
+            PrintValue(evalValueOut, tmpstr);
+
+            if (tmpstr.compare("null") == 0) {
+                break;
+            }
+
+            ToRelease<ICorDebugValue> pValueTmp;
+
+            IfFailRet(DereferenceAndUnboxValue(evalValueOut, &pValueTmp, &isNotNull));
+            hasInner = true;
+            ExceptionDetails inner;
+            PrintStringField(evalValueOut, fieldName, inner.message);
+
+            IfFailRet(m_evaluator.getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp));
+            PrintValue(pValueTmp, inner.stackTrace);
+
+            exceptionInfoResponse.details.innerException.push_back(inner);
+            evalValueInner = evalValueOut;
+        }
+    }
+
+    if (hasInner)
+        exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
+
+    return S_OK;
 }
 
 // MI

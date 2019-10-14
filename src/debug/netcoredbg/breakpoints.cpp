@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <fstream>
+#include <algorithm>
 #include "typeprinter.h"
 #include "logger.h"
 #include "cputil.h"
@@ -119,6 +120,12 @@ HRESULT Breakpoints::HitManagedBreakpoint(Debugger *debugger,
     HRESULT Status;
 
     IfFailRet(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
+
+
+#ifdef WIN32
+    // case insensitive file name check for Windows
+    std::transform(sp.document.begin(), sp.document.end(), sp.document.begin(), ::toupper);
+ #endif
 
     auto breakpoints = m_breakpoints.find(sp.document);
     if (breakpoints == m_breakpoints.end())
@@ -491,6 +498,11 @@ HRESULT Breakpoints::SetBreakpoints(
     std::vector<Breakpoint> &breakpoints)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+
+#ifdef WIN32
+    // transform to upper case for insensitive file name check for Windows
+    std::transform(filename.begin(), filename.end(), filename.begin(), ::toupper);
+#endif
 
     if (srcBreakpoints.empty())
     {

@@ -46,7 +46,9 @@ public:
 
     virtual int GetLastStoppedThreadId() = 0;
 
-    virtual HRESULT Continue() = 0;
+    virtual HRESULT CompleteException() = 0;
+    virtual HRESULT Stop(int threadId, const StoppedEvent &event) = 0;
+    virtual HRESULT Continue(int threadId) = 0;
     virtual HRESULT Pause() = 0;
     virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
     virtual HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
@@ -78,7 +80,7 @@ public:
     virtual void EmitStoppedEvent(StoppedEvent event) = 0;
     virtual void EmitExitedEvent(ExitedEvent event) = 0;
     virtual void EmitTerminatedEvent() = 0;
-    virtual void EmitContinuedEvent() = 0;
+    virtual void EmitContinuedEvent(int threadId) = 0;
     virtual void EmitThreadEvent(ThreadEvent event) = 0;
     virtual void EmitModuleEvent(ModuleEvent event) = 0;
     virtual void EmitOutputEvent(OutputEvent event) = 0;

@@ -1366,7 +1366,6 @@ namespace SOS
                         }
                     }
                     return false;
-                    //errorText = Marshal.StringToBSTR(String.Format("{0}", returnValue));
                 }
             }
             catch(Exception e)

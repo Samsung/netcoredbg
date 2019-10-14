@@ -289,11 +289,11 @@ class ExceptionBreakMode
 private:
     enum Flag : int
     {
-        F_Unhandled = 0, // Always enabled for catch of System Exceptions.
-        F_Throw = 1, // All events raised by 'throw new' operator.
-        F_UserUnhandled, // Break on unhandled exception in user code.
+        F_Unhandled = 0,     // Always enabled for catch of System Exceptions.
+        F_Throw = 1,         // All events raised by 'throw new' operator.
+        F_UserUnhandled = 2, // Break on unhandled exception in user code.
 
-        COUNT // Flag enum element counter
+        COUNT = 3            // Flag enum element counter
     };
 
 public:
@@ -381,7 +381,6 @@ private:
         std::unordered_map<uint32_t, std::string> table;
         // For global filter (*) we need to know last id
         uint32_t current_asterix_id;
-        // vsdbg supports any clones of named exception filters, but
         // for customers its will to come some difficult for matching.
         // For netcoredbg approach based on single unique name for each
         // next of user exception.

@@ -15,6 +15,7 @@
 #include "typeprinter.h"
 #include "valueprint.h"
 
+using std::string;
 
 void Evaluator::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)
 {
@@ -50,27 +51,41 @@ bool Evaluator::IsEvalRunning()
     return !m_evalResults.empty();
 }
 
-std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > Evaluator::RunEval(
+std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > Evaluator::RunEval(
     ICorDebugThread *pThread,
     ICorDebugEval *pEval)
 {
-    std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > p;
+    std::promise<std::unique_ptr<ToRelease<ICorDebugValue> > > p;
     auto f = p.get_future();
+    if (!f.valid()) {
+        Logger::levelLog(LOG_ERROR, "get_future() returns not valid promise object");
+    }
 
+    HRESULT res;
     DWORD threadId = 0;
     pThread->GetID(&threadId);
 
     ToRelease<ICorDebugProcess> pProcess;
-    if (FAILED(pThread->GetProcess(&pProcess)))
+    res = pThread->GetProcess(&pProcess);
+    if (FAILED(res)) {
+        Logger::levelLog(LOG_ERROR, "GetProcess() failed, %0x", res);
         return f;
+    }
 
     std::lock_guard<std::mutex> lock(m_evalMutex);
-
     if (!m_evalResults.insert(std::make_pair(threadId, std::move(p))).second)
         return f; // Already running eval? The future will throw broken promise
 
-    if (FAILED(pProcess->Continue(0)))
+    ToRelease<ICorDebugAppDomain> pAppDomainLocal;
+    pThread->GetAppDomain(&pAppDomainLocal);
+    pAppDomainLocal->SetAllThreadsDebugState(THREAD_SUSPEND, pThread);
+    pThread->SetDebugState(THREAD_RUN);
+
+    res = pProcess->Continue(0);
+    if (FAILED(res)) {
+        Logger::levelLog(LOG_ERROR, "Continue() failed, %0x", res);
         m_evalResults.erase(threadId);
+    }
 
     return f;
 }
@@ -81,12 +96,19 @@ HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
 {
     try
     {
-        auto evalResult = RunEval(pThread, pEval).get();
+        auto f = RunEval(pThread, pEval);
+
+        if (!f.valid())
+            return E_FAIL;
+
+        auto evalResult = f.get();
+
         if (!ppEvalResult)
             return S_OK;
 
         if (!evalResult->GetPtr())
             return E_FAIL;
+
         *ppEvalResult = evalResult->Detach();
     }
     catch (const std::future_error&)
@@ -104,6 +126,7 @@ HRESULT Evaluator::EvalFunction(
     ICorDebugValue *pArgValue, // may be nullptr
     ICorDebugValue **ppEvalResult)
 {
+    LogFuncEntry();
     HRESULT Status = S_OK;
 
     ToRelease<ICorDebugEval> pEval;
@@ -125,17 +148,73 @@ HRESULT Evaluator::EvalFunction(
             }
         }
     }
+
     ToRelease<ICorDebugEval2> pEval2;
     IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
 
-    IfFailRet(pEval2->CallParameterizedFunction(
+    HRESULT res = pEval2->CallParameterizedFunction(
         pFunc,
         static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data(),
         pArgValue ? 1 : 0,
         pArgValue ? &pArgValue : nullptr
-    ));
+    );
 
+    switch (res) {
+        case CORDBG_E_ILLEGAL_IN_OPTIMIZED_CODE: {
+            Logger::log("ERROR: Can not evaluate in optimized code");
+            IfFailRet(res);
+        }
+        break;
+
+        case CORDBG_E_APPDOMAIN_MISMATCH: {
+            Logger::log("ERROR: Object is in wrong AppDomain");
+            IfFailRet(res);
+        }
+        break;
+
+        case CORDBG_E_FUNCTION_NOT_IL: {
+            Logger::log("ERROR: Function does not have IL code");
+            IfFailRet(res);
+        }
+        break;
+
+        case CORDBG_E_ILLEGAL_IN_STACK_OVERFLOW: {
+            Logger::log("ERROR: Can not evaluate after stack overflow");
+            IfFailRet(res);
+        }
+        break;
+
+        case CORDBG_E_FUNC_EVAL_BAD_START_POINT: {
+            Logger::log("ERROR: Func eval cannot work. Bad starting point");
+            IfFailRet(res);
+        }
+        break;
+
+        case CORDBG_E_ILLEGAL_AT_GC_UNSAFE_POINT: {
+            Logger::log("ERROR: Thread is in GC unsafe point");
+            // INFO: Skip this evaluations as unsafe state.
+            //  we can continue this thread for change state from unsafe to safe,
+            //  but after running thread we can get a new unhanded exception and
+            //  as a result in 50/50 terminated process.
+            IfFailRet(res);
+        }
+        break;
+
+        default:
+            IfFailRet(res);
+        break;
+    }
+
+
+    DWORD tid;
+    pThread->GetID(&tid);
+    push_eval_queue(tid);
+
+
+    // TODO: maybe in this point we can _restore_ thread state?
+    // fprintf(stderr, "After WaitEvalResult [EvalFunction]\n");
+    // And for "continue" we can save mask for threads?
     return WaitEvalResult(pThread, pEval, ppEvalResult);
 }
 
@@ -227,7 +306,7 @@ static HRESULT FindMethod(ICorDebugType *pType, WCHAR *methodName, ICorDebugFunc
     if (numMethods == 1)
         return pModule->GetFunctionFromToken(methodDef, ppFunc);
 
-    std::string baseTypeName;
+    string baseTypeName;
     ToRelease<ICorDebugType> pBaseType;
 
     if(SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL && SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
@@ -243,10 +322,32 @@ static HRESULT FindMethod(ICorDebugType *pType, WCHAR *methodName, ICorDebugFunc
     return E_FAIL;
 }
 
+HRESULT Evaluator::getObjectByFunction(
+    const string &func,
+    ICorDebugThread *pThread,
+    ICorDebugValue *pInValue,
+    ICorDebugValue **ppOutValue)
+{
+    HRESULT Status = S_OK;
+
+    ToRelease<ICorDebugValue2> pValue2;
+    ToRelease<ICorDebugType> pType;
+
+    IfFailRet(pInValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *)&pValue2));
+    IfFailRet(pValue2->GetExactType(&pType));
+    ToRelease<ICorDebugFunction> pFunc;
+
+    std::u16string u16string(func.begin(), func.end());
+    WCHAR* methodName = const_cast<char16_t*>(u16string.c_str());
+    IfFailRet(FindMethod(pType, methodName, &pFunc));
+
+    return EvalFunction(pThread, pFunc, pType, pInValue, ppOutValue);
+}
+
 HRESULT Evaluator::ObjectToString(
     ICorDebugThread *pThread,
     ICorDebugValue *pValue,
-    std::function<void(const std::string&)> cb
+    std::function<void(const string&)> cb
 )
 {
     HRESULT Status = S_OK;
@@ -263,8 +364,6 @@ HRESULT Evaluator::ObjectToString(
     ToRelease<ICorDebugFunction> pFunc;
     WCHAR methodName[] = W("ToString\0");
     IfFailRet(FindMethod(pType, methodName, &pFunc));
-
-    // Get function object by token and setup the call
 
     ToRelease<ICorDebugEval> pEval;
 
@@ -298,19 +397,32 @@ HRESULT Evaluator::ObjectToString(
 
     std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > evalResult = RunEval(pThread, pEval);
 
+    if (!evalResult.valid())
+	{
+        Logger::levelLog(LOG_ERROR, "Not valid future object");
+    }
+
     std::thread(std::bind([=](std::future< std::unique_ptr<ToRelease<ICorDebugValue>> >& f)
     {
-        std::string output;
+        string output;
         try
         {
             bool escape = false;
 
-            auto result = f.get();
-            if (result->GetPtr())
-                PrintValue(result->GetPtr(), output, escape);
+            if (f.valid())
+			{
+                auto result = f.get();
+                if (result->GetPtr())
+                    PrintValue(result->GetPtr(), output, escape);
+            }
+            else
+			{
+                Logger::levelLog(LOG_ERROR, "Not valid future object.");
+            }
         }
         catch (const std::future_error&)
         {
+			Logger::levelLog(LOG_ERROR, "Exception std::future_error");
         }
         cb(output);
     }, std::move(evalResult))).detach();
@@ -332,11 +444,11 @@ static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &d
     }
 }
 
-static std::string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vector<ULONG32> &base)
+static string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vector<ULONG32> &base)
 {
     const size_t ind_size = ind.size();
     if (ind_size < 1 || base.size() != ind_size)
-        return std::string();
+        return string();
 
     std::ostringstream ss;
     const char *sep = "";
@@ -398,7 +510,7 @@ HRESULT Evaluator::GetLiteralValue(
         case ELEMENT_TYPE_SZARRAY:
         {
             // Get type name from signature and get its ICorDebugType
-            std::string typeName;
+            string typeName;
             TypePrinter::NameForTypeSig(pSignatureBlob, pType, pMD, typeName);
             ToRelease<ICorDebugType> pElementType;
             IfFailRet(GetType(typeName, pThread, &pElementType));
@@ -433,7 +545,7 @@ HRESULT Evaluator::GetLiteralValue(
         case ELEMENT_TYPE_GENERICINST:
         {
             // Get type name from signature and get its ICorDebugType
-            std::string typeName;
+            string typeName;
             TypePrinter::NameForTypeSig(pSignatureBlob, pType, pMD, typeName);
             ToRelease<ICorDebugType> pValueType;
             IfFailRet(GetType(typeName, pThread, &pValueType));
@@ -478,6 +590,7 @@ HRESULT Evaluator::GetLiteralValue(
             ToRelease<ICorDebugEval2> pEval2;
             IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
             pEval2->NewStringWithLength((LPCWSTR)pRawValue, rawValueLength);
+
             IfFailRet(WaitEvalResult(pThread, pEval, ppLiteralValue));
             break;
         }
@@ -589,12 +702,12 @@ HRESULT Evaluator::WalkMembers(
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
-    std::string className;
+    string className;
     TypePrinter::GetTypeOfValue(pType, className);
     if (className == "decimal") // TODO: implement mechanism for walking over custom type fields
         return S_OK;
 
-    std::unordered_set<std::string> backedProperties;
+    std::unordered_set<string> backedProperties;
 
     ULONG numFields = 0;
     HCORENUM fEnum = NULL;
@@ -620,7 +733,7 @@ HRESULT Evaluator::WalkMembers(
                                          &pRawValue,
                                          &rawValueLength)))
         {
-            std::string name = to_utf8(mdName /*, nameLen*/);
+            string name = to_utf8(mdName /*, nameLen*/);
 
             bool is_static = (fieldAttr & fdStatic);
 
@@ -699,7 +812,7 @@ HRESULT Evaluator::WalkMembers(
             if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
                 continue;
 
-            std::string name = to_utf8(propertyName/*, propertyNameLen*/);
+            string name = to_utf8(propertyName/*, propertyNameLen*/);
 
             if (backedProperties.find(name) != backedProperties.end())
                 continue;
@@ -713,7 +826,7 @@ HRESULT Evaluator::WalkMembers(
     }
     pMD->CloseEnum(propEnum);
 
-    std::string baseTypeName;
+    string baseTypeName;
     ToRelease<ICorDebugType> pBaseType;
     if(SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL && SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
     {
@@ -738,19 +851,19 @@ HRESULT Evaluator::WalkMembers(
     return WalkMembers(pValue, pThread, pILFrame, nullptr, cb);
 }
 
-static bool has_prefix(const std::string &s, const std::string &prefix)
+static bool has_prefix(const string &s, const string &prefix)
 {
     return prefix.length() <= s.length() && std::equal(prefix.begin(), prefix.end(), s.begin());
 }
 
 HRESULT Evaluator::HandleSpecialLocalVar(
-    const std::string &localName,
+    const string &localName,
     ICorDebugValue *pLocalValue,
     ICorDebugILFrame *pILFrame,
-    std::unordered_set<std::string> &locals,
+    std::unordered_set<string> &locals,
     WalkStackVarsCallback cb)
 {
-    static const std::string captureName = "CS$<>";
+    static const string captureName = "CS$<>";
 
     HRESULT Status;
 
@@ -764,7 +877,7 @@ HRESULT Evaluator::HandleSpecialLocalVar(
         ICorDebugType *,
         ICorDebugValue *pValue,
         bool is_static,
-        const std::string &name)
+        const string &name)
     {
         if (is_static)
             return S_OK;
@@ -781,18 +894,18 @@ HRESULT Evaluator::HandleSpecialLocalVar(
 HRESULT Evaluator::HandleSpecialThisParam(
     ICorDebugValue *pThisValue,
     ICorDebugILFrame *pILFrame,
-    std::unordered_set<std::string> &locals,
+    std::unordered_set<string> &locals,
     WalkStackVarsCallback cb)
 {
-    static const std::string displayClass = "<>c__DisplayClass";
+    static const string displayClass = "<>c__DisplayClass";
 
     HRESULT Status;
 
-    std::string typeName;
+    string typeName;
     TypePrinter::GetTypeOfValue(pThisValue, typeName);
 
     std::size_t start = typeName.find_last_of('.');
-    if (start == std::string::npos)
+    if (start == string::npos)
         return S_FALSE;
 
     typeName = typeName.substr(start + 1);
@@ -807,7 +920,7 @@ HRESULT Evaluator::HandleSpecialThisParam(
         ICorDebugType *,
         ICorDebugValue *pValue,
         bool is_static,
-        const std::string &name)
+        const string &name)
     {
         HRESULT Status;
         if (is_static)
@@ -848,7 +961,7 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
     IfFailRet(pILFrame->EnumerateArguments(&pParamEnum));
     IfFailRet(pParamEnum->GetCount(&cParams));
 
-    std::unordered_set<std::string> locals;
+    std::unordered_set<string> locals;
 
     if (cParams > 0)
     {
@@ -859,7 +972,7 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
         {
             ULONG paramNameLen = 0;
             mdParamDef paramDef;
-            std::string paramName;
+            string paramName;
 
             bool thisParam = i == 0 && (methodAttr & mdStatic) == 0;
             if (thisParam)
@@ -916,7 +1029,7 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
     {
         for (ULONG i = 0; i < cLocals; i++)
         {
-            std::string paramName;
+            string paramName;
 
             ToRelease<ICorDebugValue> pValue;
             ULONG32 ilStart;

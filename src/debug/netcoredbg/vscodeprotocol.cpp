@@ -88,6 +88,11 @@ static json getVSCode(const ExceptionDetails &self) {
     details["fullTypeName"] = self.fullTypeName;
     details["evaluateName"] = self.evaluateName;
     details["stackTrace"] = self.stackTrace;
+    // vsdbg extention: "formattedDescription", "hresult", "source"
+    // Example:
+    // "formattedDescription":"**System.DivideByZeroException:** '00000:3'",
+    // "hresult":-2147352558,
+    // "source" : "ClassLibrary1"
 
     json arr = json::array();
     if (!self.innerException.empty()) {
@@ -100,6 +105,19 @@ static json getVSCode(const ExceptionDetails &self) {
     details["innerException"] = arr;
 
     return details;
+}
+
+void VSCodeProtocol::EmitContinuedEvent(int threadId)
+{
+    LogFuncEntry();
+
+    json body;
+
+    if (threadId != -1)
+        body["threadId"] = threadId;
+
+    body["allThreadsContinued"] = true;
+    EmitEvent("continued", body);
 }
 
 void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
@@ -285,15 +303,20 @@ void VSCodeProtocol::Cleanup()
 
 }
 
+static string VSCodeSeq(uint64_t id) {
+    return string("{\"seq\":" + std::to_string(id) + ",");
+}
+
 void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &body)
 {
     std::lock_guard<std::mutex> lock(m_outMutex);
     json response;
-    response["seq"] = m_seqCounter++;
     response["type"] = "event";
     response["event"] = name;
     response["body"] = body;
     std::string output = response.dump();
+    output = VSCodeSeq(m_seqCounter) + output.substr(1);
+    ++m_seqCounter;
 
     std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
     std::cout.flush();
@@ -373,10 +396,13 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             body["exceptionId"] = exceptionResponse.exceptionId;
             body["description"] = exceptionResponse.description;
             body["details"] = getVSCode(exceptionResponse.details);
-
+            // vsdbg extension
+            // body["code"] = 0;
+            // Complete exception event processing int this point
+            m_debugger->CompleteException();
             return S_OK;
         }
-
+        m_debugger->CompleteException();
         return E_FAIL;
     } },
     { "setBreakpoints", [this](const json &arguments, json &body){
@@ -445,7 +471,11 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return S_OK;
     } },
     { "continue", [this](const json &arguments, json &body){
-        return m_debugger->Continue();
+		body["allThreadsContinued"] = true;
+
+        const int threadId = arguments.at("threadId");
+        body["threadId"] = threadId;
+        return m_debugger->Continue(threadId);
     } },
     { "pause", [this](const json &arguments, json &body){
         return m_debugger->Pause();
@@ -500,7 +530,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             int threadId = m_debugger->GetLastStoppedThreadId();
             frameId = StackFrame(threadId, 0, "").id;
         }
-        else 
+        else
             frameId = frameIdIter.value();
 
         Variable variable;
@@ -668,11 +698,10 @@ void VSCodeProtocol::CommandLoop()
             std::lock_guard<std::mutex> lock(m_outMutex);
 
             json response;
-            response["seq"] = m_seqCounter++;
+
             response["type"] = "response";
             response["command"] = command;
-            response["request_seq"] = request.at("seq");
-
+			response["request_seq"] = request.at("seq");
             if (SUCCEEDED(Status))
             {
                 response["success"] = true;
@@ -693,6 +722,9 @@ void VSCodeProtocol::CommandLoop()
                 response["success"] = false;
             }
             std::string output = response.dump();
+            output = VSCodeSeq(m_seqCounter) + output.substr(1);
+            ++m_seqCounter;
+
             std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
             std::cout.flush();
             Log(LOG_RESPONSE, output);
@@ -735,7 +767,6 @@ void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
         case LogConsole:
         {
             json response;
-            response["seq"] = m_seqCounter++;
             response["type"] = "event";
             response["event"] = "output";
             response["body"] = json{
@@ -743,6 +774,8 @@ void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
                 {"output", prefix + text + "\n"}
             };
             std::string output = response.dump();
+            output = VSCodeSeq(m_seqCounter) + output.substr(1);
+            ++m_seqCounter;
             std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
             std::cout.flush();
             return;

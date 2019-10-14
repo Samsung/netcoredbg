@@ -779,7 +779,7 @@ void MIProtocol::EmitExitedEvent(ExitedEvent event)
     MIProtocol::Printf("(gdb)\n");
 }
 
-void MIProtocol::EmitContinuedEvent()
+void MIProtocol::EmitContinuedEvent(int threadId)
 {
     LogFuncEntry();
 }
@@ -867,7 +867,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     } },
     { "exec-continue", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
-        IfFailRet(m_debugger->Continue());
+        IfFailRet(m_debugger->Continue(-1));
         output = "^running";
         return S_OK;
     } },

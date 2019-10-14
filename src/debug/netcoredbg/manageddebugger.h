@@ -13,7 +13,8 @@
 #include <condition_variable>
 #include <future>
 
-
+#include <list>
+#include <set>
 
 enum ValueKind
 {
@@ -30,6 +31,33 @@ public:
     typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
     Modules &m_modules;
+
+    std::mutex m_evalQueueMutex;
+    std::list<DWORD> m_evalQueue;
+
+    bool is_empty_eval_queue() {
+        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
+        return m_evalQueue.empty();
+    }
+
+    void push_eval_queue(DWORD tid) {
+        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
+        m_evalQueue.push_back(tid);
+    }
+
+    DWORD front_eval_queue() {
+        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
+        if (!m_evalQueue.empty())
+            return m_evalQueue.front();
+        return 0;
+    }
+
+    void pop_eval_queue() {
+        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
+        if (!m_evalQueue.empty())
+            m_evalQueue.pop_front();
+    }
+
 private:
 
     ToRelease<ICorDebugFunction> m_pRunClassConstructor;
@@ -115,7 +143,6 @@ private:
         ICorDebugThread *pThread,
         std::vector< ToRelease<ICorDebugType> > &types);
 
-
     static HRESULT FindFunction(
         ICorDebugModule *pModule,
         const WCHAR *typeName,
@@ -145,11 +172,16 @@ public:
     // Should be called by ICorDebugManagedCallback
     void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
 
+    HRESULT getObjectByFunction(
+        const std::string &func,
+        ICorDebugThread *pThread,
+        ICorDebugValue *pInValue,
+        ICorDebugValue **ppOutValue);
+
     HRESULT ObjectToString(
         ICorDebugThread *pThread,
         ICorDebugValue *pValue,
-        std::function<void(const std::string&)> cb
-    );
+        std::function<void(const std::string&)> cb);
 
     HRESULT GetType(
         const std::string &typeName,
@@ -357,14 +389,6 @@ class Variables
 
     void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
 
-    HRESULT GetExceptionInfoResponseDetailsMembers(
-        ICorDebugProcess *pProcess,
-        ICorDebugThread *pThread,
-        uint64_t frameId,
-        Variable &var,
-        ExceptionDetails &details,
-        bool &isFoundInnerException,
-        std::vector<Member> &members);
 
     HRESULT GetICorDebugValueMembers(
         ICorDebugProcess *pProcess,
@@ -381,11 +405,13 @@ class Variables
         Variable &var,
         std::vector<Member> &members);
 
+public:
     HRESULT GetExceptionVariable(
         uint64_t frameId,
         ICorDebugThread *pThread,
         Variable &variable);
 
+private:
     HRESULT GetStackVariables(
         uint64_t frameId,
         ICorDebugThread *pThread,
@@ -482,7 +508,6 @@ public:
 
     void Clear() { m_variables.clear(); m_nextVariableReference = 1; }
 
-    HRESULT GetExceptionInfoResponseData(ICorDebugProcess *pProcess, int threadId, const ExceptionBreakMode &mode, ExceptionInfoResponse &exceptionInfoResponse);
 };
 
 class ManagedCallback;
@@ -508,7 +533,12 @@ private:
     std::mutex m_lastStoppedThreadIdMutex;
     int m_lastStoppedThreadId;
 
+    std::mutex m_lastUnhandledExceptionThreadIdsMutex;
+    std::set<int> m_lastUnhandledExceptionThreadIds;
+
     void SetLastStoppedThread(ICorDebugThread *pThread);
+
+    std::atomic_int m_stopCounter;
 
     enum StartMethod
     {
@@ -579,7 +609,9 @@ public:
 
     int GetLastStoppedThreadId() override;
 
-    HRESULT Continue() override;
+    HRESULT CompleteException() override;
+    HRESULT Stop(int threadId, const StoppedEvent &event) override;
+    HRESULT Continue(int threadId) override;
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
     HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;

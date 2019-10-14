@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
     IORedirectServer server(
         serverPort,
         [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
-        [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdErr, text)); }
+        [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); }
     );
 
     Logger::log("pidDebugee = " + std::to_string(pidDebuggee));
