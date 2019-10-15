@@ -1079,10 +1079,8 @@ HRESULT ManagedDebugger::Stop(int threadId, const StoppedEvent &event)
         m_protocol->EmitContinuedEvent(m_lastStoppedThreadId);
         --m_stopCounter;
     }
-    m_stopCounter.store(0);
-
     // INFO: Double EmitStopEvent() produce blocked coreclr command reader
-    ++m_stopCounter;
+    m_stopCounter.store(1); // store zero and increment
     m_protocol->EmitStoppedEvent(event);
 
     return Status;

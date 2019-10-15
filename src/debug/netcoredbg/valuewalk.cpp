@@ -278,7 +278,7 @@ HRESULT Evaluator::EvalObjectNoConstructor(
     return S_OK;
 }
 
-static HRESULT FindMethod(ICorDebugType *pType, WCHAR *methodName, ICorDebugFunction **ppFunc)
+static HRESULT FindMethod(ICorDebugType *pType, const WCHAR *methodName, ICorDebugFunction **ppFunc)
 {
     HRESULT Status;
 
@@ -337,14 +337,7 @@ HRESULT Evaluator::getObjectByFunction(
     IfFailRet(pValue2->GetExactType(&pType));
     ToRelease<ICorDebugFunction> pFunc;
 
-#ifdef WIN32
-    std::wstring wide_string = std::wstring(func.begin(), func.end());
-    WCHAR *methodName = const_cast<wchar_t*>(wide_string.c_str());
-#else
-    std::u16string u16string(func.begin(), func.end());
-    WCHAR* methodName = const_cast<char16_t*>(u16string.c_str());
-#endif // WIN32
-
+    const WCHAR* methodName = to_utf16(func).c_str();
     IfFailRet(FindMethod(pType, methodName, &pFunc));
 
     return EvalFunction(pThread, pFunc, pType, pInValue, ppOutValue);
