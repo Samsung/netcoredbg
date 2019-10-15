@@ -471,7 +471,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return S_OK;
     } },
     { "continue", [this](const json &arguments, json &body){
-		body["allThreadsContinued"] = true;
+        body["allThreadsContinued"] = true;
 
         const int threadId = arguments.at("threadId");
         body["threadId"] = threadId;
@@ -701,7 +701,7 @@ void VSCodeProtocol::CommandLoop()
 
             response["type"] = "response";
             response["command"] = command;
-			response["request_seq"] = request.at("seq");
+            response["request_seq"] = request.at("seq");
             if (SUCCEEDED(Status))
             {
                 response["success"] = true;

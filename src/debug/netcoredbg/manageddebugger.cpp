@@ -447,7 +447,7 @@ public:
         {
             LogFuncEntry();
             // INFO: Exception event callbacks produce Stop process and managed threads in coreCLR
-            // After imit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
+            // After emit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
             // For answer on ExceptionInfo are needed long FuncEval() with asynchronous EvalComplete event.
             // Of course evaluations is not atomic for coreCLR. Before EvalComplete we can get a new
             // ExceptionEvent if we allow to running of current thread.
@@ -569,7 +569,7 @@ public:
         {
             LogFuncEntry();
 
-			// TODO: Need implementation
+            // TODO: Need implementation
             //
             // This is callback EvalException invoked
             // on evaluation interruption event. And, as you can understand
@@ -849,7 +849,7 @@ public:
             /* [in] */ DWORD dwFlags)
         {
             // TODO: Need implementations.
-			//
+            //
             LogFuncEntry();
             return E_NOTIMPL;
         }
@@ -1066,7 +1066,6 @@ HRESULT ManagedDebugger::CompleteException()
     LogFuncEntry();
 
     m_evaluator.pop_eval_queue();
-    //return m_pProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr);
 
     return S_OK;
 }

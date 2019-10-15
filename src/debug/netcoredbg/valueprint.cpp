@@ -1050,13 +1050,13 @@ HRESULT PrintStringField(ICorDebugValue *pValue, const WCHAR *fieldName, string 
                         ToRelease<ICorDebugValue> pFieldVal;
                         IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, &pFieldVal));
                         // Print with any visible attributes. 
-						// Example for check private attribute: if ((fieldAttr & fdPrivate) && (fieldAttr & fdFamANDAssem))
-						ToRelease<ICorDebugValue> pValueDerefStr;
-						if (SUCCEEDED(DereferenceAndUnboxValue(pFieldVal, &pValueDerefStr, nullptr)))
-						{
-							IfFailRet(PrintValue(pValueDerefStr, output, true));
-							return S_OK;
-						}
+                        // Example for check private attribute: if ((fieldAttr & fdPrivate) && (fieldAttr & fdFamANDAssem))
+                        ToRelease<ICorDebugValue> pValueDerefStr;
+                        if (SUCCEEDED(DereferenceAndUnboxValue(pFieldVal, &pValueDerefStr, nullptr)))
+                        {
+                            IfFailRet(PrintValue(pValueDerefStr, output, true));
+                            return S_OK;
+                        }
                     }
                 }
             }

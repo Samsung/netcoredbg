@@ -398,7 +398,7 @@ HRESULT Evaluator::ObjectToString(
     std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > evalResult = RunEval(pThread, pEval);
 
     if (!evalResult.valid())
-	{
+    {
         Logger::levelLog(LOG_ERROR, "Not valid future object");
     }
 
@@ -410,19 +410,19 @@ HRESULT Evaluator::ObjectToString(
             bool escape = false;
 
             if (f.valid())
-			{
+            {
                 auto result = f.get();
                 if (result->GetPtr())
                     PrintValue(result->GetPtr(), output, escape);
             }
             else
-			{
+            {
                 Logger::levelLog(LOG_ERROR, "Not valid future object.");
             }
         }
         catch (const std::future_error&)
         {
-			Logger::levelLog(LOG_ERROR, "Exception std::future_error");
+            Logger::levelLog(LOG_ERROR, "Exception std::future_error");
         }
         cb(output);
     }, std::move(evalResult))).detach();

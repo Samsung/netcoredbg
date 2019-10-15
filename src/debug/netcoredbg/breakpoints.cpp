@@ -121,11 +121,12 @@ HRESULT Breakpoints::HitManagedBreakpoint(Debugger *debugger,
 
     IfFailRet(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
 
-
+#ifdef DEVEL
 #ifdef WIN32
     // case insensitive file name check for Windows
     std::transform(sp.document.begin(), sp.document.end(), sp.document.begin(), ::toupper);
- #endif
+#endif
+#endif // DEVEL
 
     auto breakpoints = m_breakpoints.find(sp.document);
     if (breakpoints == m_breakpoints.end())
@@ -499,10 +500,12 @@ HRESULT Breakpoints::SetBreakpoints(
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
+#ifdef DEVEL
 #ifdef WIN32
     // transform to upper case for insensitive file name check for Windows
     std::transform(filename.begin(), filename.end(), filename.begin(), ::toupper);
 #endif
+#endif // DEVEL
 
     if (srcBreakpoints.empty())
     {
