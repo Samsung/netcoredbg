@@ -337,8 +337,14 @@ HRESULT Evaluator::getObjectByFunction(
     IfFailRet(pValue2->GetExactType(&pType));
     ToRelease<ICorDebugFunction> pFunc;
 
+#ifdef WIN32
+    std::wstring wide_string = std::wstring(func.begin(), func.end());
+    WCHAR *methodName = const_cast<wchar_t*>(wide_string.c_str());
+#else
     std::u16string u16string(func.begin(), func.end());
     WCHAR* methodName = const_cast<char16_t*>(u16string.c_str());
+#endif // WIN32
+
     IfFailRet(FindMethod(pType, methodName, &pFunc));
 
     return EvalFunction(pThread, pFunc, pType, pInValue, ppOutValue);
