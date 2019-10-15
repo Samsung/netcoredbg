@@ -609,7 +609,6 @@ public:
 
     int GetLastStoppedThreadId() override;
 
-    HRESULT CompleteException() override;
     HRESULT Stop(int threadId, const StoppedEvent &event) override;
     HRESULT Continue(int threadId) override;
     HRESULT Pause() override;

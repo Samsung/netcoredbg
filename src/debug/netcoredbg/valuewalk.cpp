@@ -337,8 +337,8 @@ HRESULT Evaluator::getObjectByFunction(
     IfFailRet(pValue2->GetExactType(&pType));
     ToRelease<ICorDebugFunction> pFunc;
 
-    const WCHAR* methodName = to_utf16(func).c_str();
-    IfFailRet(FindMethod(pType, methodName, &pFunc));
+    auto methodName = to_utf16(func);
+    IfFailRet(FindMethod(pType, methodName.c_str(), &pFunc));
 
     return EvalFunction(pThread, pFunc, pType, pInValue, ppOutValue);
 }

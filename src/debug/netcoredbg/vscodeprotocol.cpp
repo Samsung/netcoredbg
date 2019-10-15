@@ -398,11 +398,8 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             body["details"] = getVSCode(exceptionResponse.details);
             // vsdbg extension
             // body["code"] = 0;
-            // Complete exception event processing int this point
-            m_debugger->CompleteException();
             return S_OK;
         }
-        m_debugger->CompleteException();
         return E_FAIL;
     } },
     { "setBreakpoints", [this](const json &arguments, json &body){

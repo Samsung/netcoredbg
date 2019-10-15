@@ -1061,15 +1061,6 @@ HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
     return Status;
 }
 
-HRESULT ManagedDebugger::CompleteException()
-{
-    LogFuncEntry();
-
-    m_evaluator.pop_eval_queue();
-
-    return S_OK;
-}
-
 HRESULT ManagedDebugger::Stop(int threadId, const StoppedEvent &event)
 {
     LogFuncEntry();
@@ -1542,19 +1533,16 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     // Are needed to move next line to Exception() callback?
     m_evaluator.push_eval_queue(threadId);
 
-    HRESULT res;
+    HRESULT res = E_FAIL;
     HRESULT Status = S_OK;
-    ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
-
+    bool hasInner = false;
+    Variable varException;
+    ToRelease <ICorDebugValue> evalValue;
     ToRelease<ICorDebugValue> pExceptionValue;
-    if ((res = pThread->GetCurrentException(&pExceptionValue)) != S_OK) {
-        Logger::levelLog(LOG_ERROR, "GetCurrentException() failed, %0x", res);
-        return res;
-    }
+    ToRelease<ICorDebugThread> pThread;
 
-    WCHAR fieldName[] = W("_message\0");
-    PrintStringField(pExceptionValue, fieldName, exceptionInfoResponse.description);
+    WCHAR message[] = W("_message\0");
+    uint64_t frameId = StackFrame(threadId, 0, "").id;
 
     std::unique_lock<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
     if (m_lastUnhandledExceptionThreadIds.find(threadId) != m_lastUnhandledExceptionThreadIds.end()) {
@@ -1564,21 +1552,31 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     else {
         lock.unlock();
         ExceptionBreakMode mode;
-        IfFailRet(m_breakpoints.GetExceptionBreakMode(mode, "*"));
+
+        if ((res = m_breakpoints.GetExceptionBreakMode(mode, "*")) && FAILED(res))
+            goto failed;
+
         exceptionInfoResponse.breakMode = mode;
     }
 
-    uint64_t frameId = StackFrame(threadId, 0, "").id;
-    Variable varException;
-    IfFailRet(m_variables.GetExceptionVariable(frameId, pThread, varException));
+    if ((res = m_pProcess->GetThread(threadId, &pThread)) && FAILED(res))
+        goto failed;
 
-    if (exceptionInfoResponse.breakMode.OnlyUnhandled() || exceptionInfoResponse.breakMode.UserUnhandled())
-    {
+    if ((res = pThread->GetCurrentException(&pExceptionValue)) && FAILED(res)) {
+        Logger::levelLog(LOG_ERROR, "GetCurrentException() failed, %0x", res);
+        goto failed;
+    }
+
+    PrintStringField(pExceptionValue, message, exceptionInfoResponse.description);
+
+    if ((res = m_variables.GetExceptionVariable(frameId, pThread, varException)) && FAILED(res))
+        goto failed;
+
+    if (exceptionInfoResponse.breakMode.OnlyUnhandled() || exceptionInfoResponse.breakMode.UserUnhandled()) {
         exceptionInfoResponse.description = "An unhandled exception of type '" + varException.type +
             "' occurred in " + varException.module;
     }
-    else
-    {
+    else {
         exceptionInfoResponse.description = "Exception thrown: '" + varException.type +
             "' in " + varException.module;
     }
@@ -1589,9 +1587,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     exceptionInfoResponse.details.typeName = varException.type;
     exceptionInfoResponse.details.fullTypeName = varException.type;
 
-    bool hasInner = false;
-    ToRelease <ICorDebugValue> evalValue;
-    if (m_evaluator.getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue) != S_OK) {
+    if (FAILED(m_evaluator.getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue))) {
         exceptionInfoResponse.details.stackTrace = "<undefined>"; // Evaluating problem entire object
     }
     else {
@@ -1601,23 +1597,27 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
 
         ICorDebugValue *evalValueInner = pExceptionValue;
         while (isNotNull) {
-            IfFailRet(m_evaluator.getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut));
+            if ((res = m_evaluator.getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut)) && FAILED(res))
+                goto failed;
 
             string tmpstr;
             PrintValue(evalValueOut, tmpstr);
 
-            if (tmpstr.compare("null") == 0) {
+            if (tmpstr.compare("null") == 0)
                 break;
-            }
 
             ToRelease<ICorDebugValue> pValueTmp;
 
-            IfFailRet(DereferenceAndUnboxValue(evalValueOut, &pValueTmp, &isNotNull));
+            if ((res = DereferenceAndUnboxValue(evalValueOut, &pValueTmp, &isNotNull)) && FAILED(res))
+                goto failed;
+
             hasInner = true;
             ExceptionDetails inner;
-            PrintStringField(evalValueOut, fieldName, inner.message);
+            PrintStringField(evalValueOut, message, inner.message);
 
-            IfFailRet(m_evaluator.getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp));
+            if ((res = m_evaluator.getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp)) && FAILED(res))
+                goto failed;
+
             PrintValue(pValueTmp, inner.stackTrace);
 
             exceptionInfoResponse.details.innerException.push_back(inner);
@@ -1628,7 +1628,13 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     if (hasInner)
         exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
 
+    m_evaluator.pop_eval_queue(); // CompleteException
     return S_OK;
+
+failed:
+    m_evaluator.pop_eval_queue(); // CompleteException
+    IfFailRet(res);
+    return res;
 }
 
 // MI

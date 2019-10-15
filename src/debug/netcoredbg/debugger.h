@@ -46,7 +46,6 @@ public:
 
     virtual int GetLastStoppedThreadId() = 0;
 
-    virtual HRESULT CompleteException() = 0;
     virtual HRESULT Stop(int threadId, const StoppedEvent &event) = 0;
     virtual HRESULT Continue(int threadId) = 0;
     virtual HRESULT Pause() = 0;
