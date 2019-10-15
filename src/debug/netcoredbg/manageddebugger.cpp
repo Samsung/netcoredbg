@@ -452,8 +452,8 @@ public:
             // Of course evaluations is not atomic for coreCLR. Before EvalComplete we can get a new
             // ExceptionEvent if we allow to running of current thread.
             //
-            // Current implementation stops all threads while EvalComplete waiting. But, unfortuantly,
-            // its not helps in any cases. Exceptions can be thows in the same time from some threads.
+            // Current implementation stops all threads while EvalComplete waiting. But, unfortunately,
+            // it's not helps in any cases. Exceptions can be throws in the same time from some threads.
             // And in this case threads thread suspend is not guaranteed, becase thread can stay in
             // "GC unsafe mode" or "Optimized code". And also, same time exceptions puts in priority queue event,
             // and all next events one by one will transport each exception.
@@ -515,7 +515,7 @@ public:
                 ToRelease<ICorDebugThread2> pThread2;
                 IfFailRet(pThread->QueryInterface(IID_ICorDebugThread2, (LPVOID *)&pThread2));
                 // Intercept exceptions from frame for resending. Its allow to avoid problem with
-                // wrong state:"GS unsafe" and "optimezed code" for evaluation of CallParametricFunc()
+                // wrong state:"GS unsafe" and "optimized code" for evaluation of CallParametricFunc()
                 IfFailRet(pThread2->InterceptCurrentException(pActiveFrame));
                  return S_OK;
             }
@@ -574,7 +574,7 @@ public:
             // This is callback EvalException invoked
             // on evaluation interruption event. And, as you can understand
             // evaluated results has inconsistent states. Notify is not
-            // enoth for this point.
+            // enough for this point.
 
             m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
@@ -626,7 +626,7 @@ public:
         {
             LogFuncEntry();
 
-            // TODO: clean evaluations and excpetions queues for current thread
+            // TODO: clean evaluations and exceptions queues for current thread
 
             m_debugger.m_evaluator.NotifyEvalComplete(thread, nullptr);
             DWORD threadId = 0;
@@ -1561,7 +1561,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     std::unique_lock<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
     if (m_lastUnhandledExceptionThreadIds.find(threadId) != m_lastUnhandledExceptionThreadIds.end()) {
         lock.unlock();
-        exceptionInfoResponse.breakMode.resetAll(); // Excplicit unhandled breakMode
+        exceptionInfoResponse.breakMode.resetAll(); // Explicit unhandled breakMode
     }
     else {
         lock.unlock();
