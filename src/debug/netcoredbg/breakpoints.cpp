@@ -733,11 +733,11 @@ HRESULT Breakpoints::GetExceptionBreakMode(ExceptionBreakMode &mode,
     return m_exceptionBreakpoints.GetExceptionBreakMode(mode, name);
 }
 
-bool Breakpoints::MatchExceptionBreakpoint(const string &name,
+bool Breakpoints::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const string &name,
     const ExceptionBreakCategory category)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
-    return m_exceptionBreakpoints.Match(name, category);
+    return m_exceptionBreakpoints.Match(dwEventType, name, category);
 }
 
 HRESULT ExceptionBreakpointStorage::Insert(uint32_t id,
@@ -775,29 +775,38 @@ HRESULT ExceptionBreakpointStorage::Delete(uint32_t id) {
     return S_OK;
 }
 
-bool ExceptionBreakpointStorage::Match(const string &exceptionName,
+bool ExceptionBreakpointStorage::Match(int dwEventType, const string &exceptionName,
     const ExceptionBreakCategory category) const
 {
+    // INFO: #pragma once - its a reason for this constants
+    const int FIRST_CHANCE = 1;
+    const int USER_FIRST_CHANCE = 2;
+    const int CATCH_HANDLER_FOUND = 3;
+    const int UNHANDLED = 4;
+
+    bool unsupported = (dwEventType == FIRST_CHANCE || dwEventType == USER_FIRST_CHANCE);
+    if (unsupported)
+        return false;
+
     // Try to match exactly by name after check global name "*"
     // ExceptionBreakMode can be specialized by explicit filter.
     ExceptionBreakMode mode;
     GetExceptionBreakMode(mode, "*");
     GetExceptionBreakMode(mode, exceptionName);
-    if (category == ExceptionBreakCategory::ANY ||
-        category == mode.category)
-    {
-        if (mode.BothUnhandledAndUserUnhandled())
-        {
-            const string SystemPrefix = "System.";
-            if (exceptionName.compare(0, SystemPrefix.size(), SystemPrefix) == 0)
-            {
+    if (category == ExceptionBreakCategory::ANY || category == mode.category) {
+        if (dwEventType == CATCH_HANDLER_FOUND) {
+            if (mode.AnyUser()) {
                 // Expected user-applications exceptions from throw(), but get
                 // explicit/implicit exception from `System.' clases.
-                return false;
+                const string SystemPrefix = "System.";
+                if (exceptionName.compare(0, SystemPrefix.size(), SystemPrefix) != 0)
+                    return true;
             }
         }
-
-        return mode.Any();
+        if (dwEventType == UNHANDLED) {
+            if (mode.Unhandled())
+                return true;
+        }
     }
 
     return false;

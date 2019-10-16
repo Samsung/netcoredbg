@@ -1162,10 +1162,11 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         }
 
         if (args.at(i).compare("throw+user-unhandled") == 0) {
-            filterValue.setAll();
+            filterValue.setThrow();
+            filterValue.setUserUnhandled();
         }
 
-        if (!filterValue.Any()) {
+        if (!filterValue.AnyUser()) {
             output = "Command requires only:'unhandled','user-unhandled','throw','throw+user-unhandled' arguments as an exception stages";
             return E_FAIL;
         }

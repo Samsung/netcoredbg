@@ -298,12 +298,17 @@ private:
 
 public:
     std::bitset<Flag::COUNT> flags;
-
     ExceptionBreakCategory category;
 
-    ExceptionBreakMode() : category(ExceptionBreakCategory::CLR) {
+private:
+    void resetUnhandled() {
+        flags.reset(Flag::F_Unhandled);
+    }
+    void setUnhandled() {
         flags.set(Flag::F_Unhandled);
     }
+
+public:
 
     bool Unhandled() const {
         return flags.test(Flag::F_Unhandled);
@@ -337,6 +342,7 @@ public:
     void setAll() {
         // setUnhandled() not supported
         // its looks as a problem with unconsistent state
+        //setUnhandled();
         setThrow();
         setUserUnhandled();
     }
@@ -344,6 +350,7 @@ public:
     void resetAll() {
         // resetUnhandled() not supported
         // its looks as a problem with unconsistent state
+        //resetUnhandled();
         resetThrow();
         resetUserUnhandled();
     }
@@ -358,7 +365,7 @@ public:
     }
 
     // Logical extentions for freindly using of class
-    bool Any() const {
+    bool AnyUser() const {
         return Throw() || UserUnhandled();
     }
 
@@ -366,10 +373,9 @@ public:
         return Unhandled() && !Throw() && !UserUnhandled();
     }
 
-    bool BothUnhandledAndUserUnhandled() const {
-        return Unhandled() && !Throw() && UserUnhandled();
+    ExceptionBreakMode() : category(ExceptionBreakCategory::CLR) {
+        setUnhandled();
     }
-
 };
 
 struct ExceptionBreakpointStorage
@@ -393,7 +399,7 @@ private:
 public:
     HRESULT Insert(uint32_t id, const ExceptionBreakMode &mode, const std::string &name);
     HRESULT Delete(uint32_t id);
-    bool Match(const std::string &exceptionName, const ExceptionBreakCategory category) const;
+    bool Match(int dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category) const;
     HRESULT GetExceptionBreakMode(ExceptionBreakMode &out, const std::string &name) const;
 
     ExceptionBreakpointStorage() = default;

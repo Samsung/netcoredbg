@@ -375,7 +375,6 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         uint32_t id;
         m_debugger->InsertExceptionBreakpoint(mode, globalExceptionBreakpoint, id);
 
-        //
         // TODO:
         // - implement options support. options not supported in
         // current vscode 1.31.1 with C# plugin 1.17.1

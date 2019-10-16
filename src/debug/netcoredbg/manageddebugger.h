@@ -339,7 +339,7 @@ public:
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output);
     HRESULT DeleteExceptionBreakpoint(const uint32_t id);
     HRESULT GetExceptionBreakMode(ExceptionBreakMode &mode, const std::string &name);
-    bool MatchExceptionBreakpoint(const std::string &exceptionName, const ExceptionBreakCategory category);
+    bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 };
 
 class Variables
@@ -627,5 +627,5 @@ public:
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
 private:
-    bool MatchExceptionBreakpoint(const std::string &exceptionName, const ExceptionBreakCategory category);
+    bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 };

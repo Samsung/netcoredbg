@@ -445,83 +445,9 @@ public:
             /* [in] */ ICorDebugThread *pThread,
             /* [in] */ BOOL unhandled)
         {
+            // Obsolete callback
             LogFuncEntry();
-            // INFO: Exception event callbacks produce Stop process and managed threads in coreCLR
-            // After emit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
-            // For answer on ExceptionInfo are needed long FuncEval() with asynchronous EvalComplete event.
-            // Of course evaluations is not atomic for coreCLR. Before EvalComplete we can get a new
-            // ExceptionEvent if we allow to running of current thread.
-            //
-            // Current implementation stops all threads while EvalComplete waiting. But, unfortunately,
-            // it's not helps in any cases. Exceptions can be throws in the same time from some threads.
-            // And in this case threads thread suspend is not guaranteed, becase thread can stay in
-            // "GC unsafe mode" or "Optimized code". And also, same time exceptions puts in priority queue event,
-            // and all next events one by one will transport each exception.
-            // For "GC unsafe mode" or "Optimized code" we cannot invoke CreateEval() function.
-
-            HRESULT Status = S_OK;
-            DWORD threadId = 0;
-            IfFailRet(pThread->GetID(&threadId));
-            string excType, excModule;
-            IfFailRet(GetExceptionInfo(pThread, excType, excModule));
-
-            bool not_matched = !(unhandled || m_debugger.MatchExceptionBreakpoint(excType, ExceptionBreakCategory::CLR));
-
-            if (not_matched) {
-                string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
-                OutputEvent event(OutputConsole, text);
-                event.source = "target-exception";
-                m_debugger.m_protocol->EmitOutputEvent(event);
-                IfFailRet(pAppDomain->Continue(0));
-                return S_OK;
-            }
-
-            StoppedEvent event(StopException, threadId);
-
-            string details;
-            if (unhandled) {
-                details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
-                std::lock_guard<std::mutex> lock(m_debugger.m_lastUnhandledExceptionThreadIdsMutex);
-                m_debugger.m_lastUnhandledExceptionThreadIds.insert(threadId);
-            }
-            else {
-                details = "Exception thrown: '" + excType + "' in " + excModule;
-            }
-
-            string message;
-            WCHAR fieldName[] = W("_message\0");
-            ToRelease<ICorDebugValue> pExceptionValue;
-            IfFailRet(pThread->GetCurrentException(&pExceptionValue));
-            IfFailRet(PrintStringField(pExceptionValue, fieldName, message));
-
-            StackFrame stackFrame;
-            ToRelease<ICorDebugFrame> pActiveFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
-                m_debugger.GetFrameLocation(pActiveFrame, threadId, 0, stackFrame);
-
-            m_debugger.SetLastStoppedThread(pThread);
-
-            event.text = excType;
-            event.description = message.empty() ? details : message;
-            event.frame = stackFrame;
-
-            if (m_debugger.m_evaluator.IsEvalRunning() && !m_debugger.m_evaluator.is_empty_eval_queue()) {
-                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
-                ToRelease<ICorDebugThread> pThreadEval;
-                IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
-                IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
-                IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
-                IfFailRet(pAppDomain->Continue(0));
-                ToRelease<ICorDebugThread2> pThread2;
-                IfFailRet(pThread->QueryInterface(IID_ICorDebugThread2, (LPVOID *)&pThread2));
-                // Intercept exceptions from frame for resending. Its allow to avoid problem with
-                // wrong state:"GS unsafe" and "optimized code" for evaluation of CallParametricFunc()
-                IfFailRet(pThread2->InterceptCurrentException(pActiveFrame));
-                 return S_OK;
-            }
-
-            m_debugger.Stop(threadId, event);
-            return S_OK;
+            return E_NOTIMPL;
         }
 
         virtual HRESULT STDMETHODCALLTYPE EvalComplete(
@@ -571,10 +497,8 @@ public:
 
             // TODO: Need implementation
             //
-            // This is callback EvalException invoked
-            // on evaluation interruption event. And, as you can understand
-            // evaluated results has inconsistent states. Notify is not
-            // enough for this point.
+            // This is callback EvalException invoked on evaluation interruption event.
+            // And, evaluated results has inconsistent states. Notify is not enough for this point.
 
             m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
             return S_OK;
@@ -839,7 +763,86 @@ public:
             /* [in] */ DWORD dwFlags)
         {
             LogFuncEntry();
-            return E_NOTIMPL;
+
+            // INFO: Exception event callbacks produce Stop process and managed threads in coreCLR
+            // After emit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
+            // For answer on ExceptionInfo are needed long FuncEval() with asynchronous EvalComplete event.
+            // Of course evaluations is not atomic for coreCLR. Before EvalComplete we can get a new
+            // ExceptionEvent if we allow to running of current thread.
+            //
+            // Current implementation stops all threads while EvalComplete waiting. But, unfortunately,
+            // it's not helps in any cases. Exceptions can be throws in the same time from some threads.
+            // And in this case threads thread suspend is not guaranteed, becase thread can stay in
+            // "GC unsafe mode" or "Optimized code". And also, same time exceptions puts in priority queue event,
+            // and all next events one by one will transport each exception.
+            // For "GC unsafe mode" or "Optimized code" we cannot invoke CreateEval() function.
+
+            HRESULT Status = S_OK;
+            DWORD threadId = 0;
+            IfFailRet(pThread->GetID(&threadId));
+            string excType, excModule;
+            IfFailRet(GetExceptionInfo(pThread, excType, excModule));
+
+            ExceptionBreakMode mode;
+            m_debugger.m_breakpoints.GetExceptionBreakMode(mode, "*");
+            bool unhandled = (dwEventType == DEBUG_EXCEPTION_UNHANDLED && mode.Unhandled());
+            bool not_matched = !(unhandled || m_debugger.MatchExceptionBreakpoint(dwEventType, excType, ExceptionBreakCategory::CLR));
+
+            if (not_matched) {
+                string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
+                OutputEvent event(OutputConsole, text);
+                event.source = "target-exception";
+                m_debugger.m_protocol->EmitOutputEvent(event);
+                IfFailRet(pAppDomain->Continue(0));
+                return S_OK;
+            }
+
+            StoppedEvent event(StopException, threadId);
+
+            string details;
+            if (unhandled) {
+                details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
+                std::lock_guard<std::mutex> lock(m_debugger.m_lastUnhandledExceptionThreadIdsMutex);
+                m_debugger.m_lastUnhandledExceptionThreadIds.insert(threadId);
+            }
+            else {
+                details = "Exception thrown: '" + excType + "' in " + excModule;
+            }
+
+            string message;
+            WCHAR fieldName[] = W("_message\0");
+            ToRelease<ICorDebugValue> pExceptionValue;
+            IfFailRet(pThread->GetCurrentException(&pExceptionValue));
+            IfFailRet(PrintStringField(pExceptionValue, fieldName, message));
+
+            StackFrame stackFrame;
+            ToRelease<ICorDebugFrame> pActiveFrame;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
+                m_debugger.GetFrameLocation(pActiveFrame, threadId, 0, stackFrame);
+
+            m_debugger.SetLastStoppedThread(pThread);
+
+            event.text = excType;
+            event.description = message.empty() ? details : message;
+            event.frame = stackFrame;
+
+            if (m_debugger.m_evaluator.IsEvalRunning() && !m_debugger.m_evaluator.is_empty_eval_queue()) {
+                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                ToRelease<ICorDebugThread> pThreadEval;
+                IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
+                IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
+                IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
+                IfFailRet(pAppDomain->Continue(0));
+                ToRelease<ICorDebugThread2> pThread2;
+                IfFailRet(pThread->QueryInterface(IID_ICorDebugThread2, (LPVOID *)&pThread2));
+                // Intercept exceptions from frame for resending. Its allow to avoid problem with
+                // wrong state:"GS unsafe" and "optimized code" for evaluation of CallParametricFunc()
+                IfFailRet(pThread2->InterceptCurrentException(pActiveFrame));
+                return S_OK;
+            }
+
+            m_debugger.Stop(threadId, event);
+            return S_OK;
         }
 
         virtual HRESULT STDMETHODCALLTYPE ExceptionUnwind(
@@ -1547,7 +1550,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     std::unique_lock<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
     if (m_lastUnhandledExceptionThreadIds.find(threadId) != m_lastUnhandledExceptionThreadIds.end()) {
         lock.unlock();
-        exceptionInfoResponse.breakMode.resetAll(); // Explicit unhandled breakMode
+        exceptionInfoResponse.breakMode.resetAll();
     }
     else {
         lock.unlock();
@@ -1653,9 +1656,9 @@ HRESULT ManagedDebugger::DeleteExceptionBreakpoint(const uint32_t id)
 }
 
 // MI and VSCode
-bool ManagedDebugger::MatchExceptionBreakpoint(const string &exceptionName,
+bool ManagedDebugger::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const string &exceptionName,
     const ExceptionBreakCategory category)
 {
     LogFuncEntry();
-    return m_breakpoints.MatchExceptionBreakpoint(exceptionName, category);
+    return m_breakpoints.MatchExceptionBreakpoint(dwEventType, exceptionName, category);
 }
