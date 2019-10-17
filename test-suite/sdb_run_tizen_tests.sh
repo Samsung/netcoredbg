@@ -1,8 +1,12 @@
 #!/bin/bash
 
+# This script tests:
+# - tpk applications installation with and without NI generation (test debugger's pdb search routine)
+# - launch_app work with debugger (in this way MSVS plugin work with debugger)
+
 print_help()
 {
-    echo "Usage: sdb_run_tests.sh [OPTION]... [TEST NAME]..."
+    echo "Usage: sdb_run_tizen_tests.sh [OPTION]..."
     echo "Run functional tests on Tizen target device."
     echo ""
     echo "  -s, --sdb         sdb binary, \"sdb\" by default"
@@ -10,37 +14,16 @@ print_help()
     echo "  -d, --dotnet      dotnet binary, \"dotnet\" by default"
     echo "      --repeat      repeat tests, \"1\" by default"
     echo "  -g, --gbsroot     path to GBS root folder, \"\$HOME/GBS-ROOT\" by default"
-    echo "  -p, --tools_path  path to tools dir on target,"
-    echo "                    \"/home/owner/share/tmp/sdk_tools\" by default"
     echo "  -r, --rpm         path to netcordbg rmp file"
     echo "      --help        display this help and exit"
 }
 
+# DO NOT CHANGE
+# we use first test control program for both tests, since we need NI generation in second test
+# make sure, that you have all sources synchronized
 ALL_TEST_NAMES=(
-    "MIExampleTest"
-    "MITestBreakpoint"
-    "MITestExpression"
-    "MITestSetValue"
-    "MITestStepping"
-    "MITestVarObject"
-    "MITestException"
-    "MITestLambda"
-    "MITestEnv"
-    "MITestGDB"
-    "MITestExecFinish"
-    "MITestExecAbort"
-    "MITestExecInt"
-    "MITestHandshake"
-    "MITestExceptionBreakpoint"
-    "VSCodeExampleTest"
-    "VSCodeTestBreakpoint"
-    "VSCodeTestFuncBreak"
-    "VSCodeTestPause"
-    "VSCodeTestDisconnect"
-    "VSCodeTestThreads"
-    "VSCodeTestVariables"
-    "VSCodeTestEvaluate"
-    "VSCodeTestStepping"
+    "TestApp1"
+    "TestApp2"
 )
 
 SDB=${SDB:-sdb}
@@ -48,7 +31,8 @@ PORT=${PORT:-4712}
 DOTNET=${DOTNET:-dotnet}
 REPEAT=${REPEAT:-1}
 GBSROOT=${GBSROOT:-$HOME/GBS-ROOT}
-TOOLS_ABS_PATH=${TOOLS_ABS_PATH:-/home/owner/share/tmp/sdk_tools}
+# launch_app have hardcoded path
+TOOLS_ABS_PATH=/home/owner/share/tmp/sdk_tools
 SCRIPTDIR=$(dirname $(readlink -f $0))
 
 for i in "$@"
@@ -74,10 +58,6 @@ case $i in
     GBSROOT="${i#*=}"
     shift
     ;;
-    -p=*|--tools_path=*)
-    TOOLS_ABS_PATH="${i#*=}"
-    shift
-    ;;
     -r=*|--rpm=*)
     RPMFILE="${i#*=}"
     shift
@@ -87,16 +67,11 @@ case $i in
     exit 0
     ;;
     *)
-        TEST_NAMES="$TEST_NAMES *"
+    echo "Error: unknown option detected"
+    exit 1
     ;;
 esac
 done
-
-TEST_NAMES="$@"
-
-if [[ -z $TEST_NAMES ]]; then
-    TEST_NAMES="${ALL_TEST_NAMES[@]}"
-fi
 
 if [[ -z $RPMFILE ]]; then
     # Detect target arch
@@ -147,45 +122,21 @@ test_fail=0
 test_list=""
 
 for i in $(eval echo {1..$REPEAT}); do
-# Build, push and run tests
-for TEST_NAME in $TEST_NAMES; do
+# Build, install and run tests
+for TEST_NAME in ${ALL_TEST_NAMES[@]}; do
     HOSTTESTDIR=$SCRIPTDIR/$TEST_NAME
     $DOTNET build $HOSTTESTDIR
-    $SDB push $HOSTTESTDIR/bin/Debug/netcoreapp2.1/$TEST_NAME.{dll,pdb} $REMOTETESTDIR
+    $SDB install $HOSTTESTDIR/bin/Debug/netcoreapp2.1/org.tizen.example.$TEST_NAME-1.0.0.tpk
+ 
+    $SDB shell launch_app org.tizen.example.$TEST_NAME  __AUL_SDK__ NETCOREDBG __DLP_DEBUG_ARG__ --server=4711,--
 
-    SOURCE_FILES=$(find $HOSTTESTDIR \! -path "$HOSTTESTDIR/obj/*" -type f -name "*.cs" -printf '%p;')
-
-    if  [[ $TEST_NAME == VSCode* ]] ;
-    then
-        PROTO="vscode"
-
-        # change $HOME to $REMOTETESTDIR in order to prevent /root/nohup.out creation
-        $SDB root on
-        $SDB shell HOME=$REMOTETESTDIR nohup $NETCOREDBG --server --interpreter=$PROTO -- \
-             /usr/bin/dotnet-launcher $REMOTETESTDIR/$TEST_NAME.dll
-        $SDB root off
-
-        $DOTNET run --project TestRunner -- \
-            --tcp localhost $PORT \
-            --proto $PROTO \
-            --test $TEST_NAME \
-            --sources $SOURCE_FILES
-    else
-        PROTO="mi"
-
-        # change $HOME to /tmp in order to prevent /root/nohup.out creation
-        $SDB root on
-        $SDB shell HOME=$REMOTETESTDIR nohup $NETCOREDBG --server --interpreter=$PROTO
-        $SDB root off
-
-        $DOTNET run --project TestRunner -- \
-            --tcp localhost $PORT \
-            --dotnet /usr/bin/dotnet-launcher \
-            --proto $PROTO \
-            --test $TEST_NAME \
-            --sources "$SOURCE_FILES" \
-            --assembly $REMOTETESTDIR/$TEST_NAME.dll
-    fi
+    # DO NOT CHANGE
+    # we use first test control program for both tests, since we need NI generation in second test
+    # make sure, that you have all sources synchronized
+    dotnet run --project TestRunner -- \
+        --tcp localhost $PORT \
+        --test $TEST_NAME \
+        --sources "TestApp1/Program.cs" 
 
     if [ "$?" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
@@ -194,6 +145,8 @@ for TEST_NAME in $TEST_NAMES; do
         test_pass=$(($test_pass + 1))
         test_list="$test_list$TEST_NAME ... passed\n"
     fi
+
+    $SDB shell pkgcmd -u -n org.tizen.example.$TEST_NAME
 done
 done # REPEAT
 

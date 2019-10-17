@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns="http://tizen.org/ns/packages" api-version="5" package="org.tizen.example.TestApp2" version="1.0.0">
+  <profile name="common" />
+  <service-application appid="org.tizen.example.TestApp2"
+					exec="TestApp2.dll"
+					type="dotnet"
+					multiple="false"
+					taskmanage="false"
+					nodisplay="true">
+    <label>TestApp2</label>
+    <metadata key="http://tizen.org/metadata/prefer_dotnet_aot" value="true" />
+  </service-application>
+</manifest>
