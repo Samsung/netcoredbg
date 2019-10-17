@@ -374,7 +374,7 @@ public:
     }
 
     ExceptionBreakMode() : category(ExceptionBreakCategory::CLR) {
-        setUnhandled();
+        flags.set(Flag::F_Unhandled);
     }
 };
 

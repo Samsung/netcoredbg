@@ -261,7 +261,7 @@ Assert.Equal(Lines["PIT_STOP_B"], r.Find("frame").FindInt("line"));
 Send(String.Format("38-break-exception-delete {0}", be10));
 r = Expect("38^done");
 
-//////// Expected result => Raised EXCEPTION_C, EXCEPTION_D, EXCEPTION_E and exit after unhandled EXCEPTION_E.
+//////// Expected result => Raised EXCEPTION_C, EXCEPTION_D, EXCEPTION_E and exit after third unhandled exception.
 //////// "State: !Thow() && UserUnhandled()";
 //////// "name := AppException";
 
@@ -286,12 +286,6 @@ Assert.Equal("exception-received", r.FindString("reason"));
 Assert.Equal(Lines["EXCEPTION_D"], r.Find("frame").FindInt("line"));
 
 Send("43-exec-continue");
-
-r = Expect("*stopped");
-Assert.Equal("exception-received", r.FindString("reason"));
-Assert.Equal(Lines["EXCEPTION_E"], r.Find("frame").FindInt("line"));
-
-Send("44-exec-continue");
 
 r = Expect("*stopped");
 Assert.Equal("exception-received", r.FindString("reason"));

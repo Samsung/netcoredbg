@@ -795,13 +795,15 @@ bool ExceptionBreakpointStorage::Match(int dwEventType, const string &exceptionN
     GetExceptionBreakMode(mode, exceptionName);
     if (category == ExceptionBreakCategory::ANY || category == mode.category) {
         if (dwEventType == CATCH_HANDLER_FOUND) {
-            if (mode.AnyUser()) {
+            if (mode.UserUnhandled()) {
                 // Expected user-applications exceptions from throw(), but get
                 // explicit/implicit exception from `System.' clases.
                 const string SystemPrefix = "System.";
                 if (exceptionName.compare(0, SystemPrefix.size(), SystemPrefix) != 0)
                     return true;
             }
+            if (mode.Throw())
+                return true;
         }
         if (dwEventType == UNHANDLED) {
             if (mode.Unhandled())
