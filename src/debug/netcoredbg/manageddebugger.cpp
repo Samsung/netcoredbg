@@ -479,10 +479,10 @@ public:
                     IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
                     IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
 
-                    Logger::levelLog(LOG_INFO, "Complete eval threadid = '%d'\n", currentThreadId);
+                    Logger::levelLog(LOG_INFO, "Complete eval threadid = '%d'", currentThreadId);
                 }
                 else {
-                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'\n", currentThreadId, evalThreadId);
+                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", currentThreadId, evalThreadId);
                 }
             }
             return S_OK;
@@ -851,9 +851,12 @@ public:
             /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
             /* [in] */ DWORD dwFlags)
         {
-            // TODO: Need implementations.
-            //
-            LogFuncEntry();
+            HRESULT Status;
+            DWORD threadId = 0;
+            IfFailRet(pThread->GetID(&threadId));
+            // We produce DEBUG_EXCEPTION_INTERCEPTED from Exception() callback.
+            // TODO: we should waiting this unwinding on exit().
+            Logger::levelLog(LOG_INFO, "ExceptionUnwind:threadId:%d,dwEventType:%d,dwFlags:%d", threadId, dwEventType, dwFlags);
             return E_NOTIMPL;
         }
 
@@ -1102,7 +1105,7 @@ HRESULT ManagedDebugger::Continue(int threadId)
                     Logger::levelLog(LOG_ERROR, "Setting thread state failed. Object has been neutered(it's in a zombie state):'%0x'", res);
                 break;
                 default:
-                    Logger::levelLog(LOG_ERROR, "SetAllThreadsDebugState() %0x\n", res);
+                    Logger::levelLog(LOG_ERROR, "SetAllThreadsDebugState() %0x", res);
                 break;
             }
         }
@@ -1119,7 +1122,7 @@ HRESULT ManagedDebugger::Continue(int threadId)
             Logger::levelLog(LOG_ERROR, "Continue failed. Object has been neutered(it's in a zombie state):'%0x'", res);
             break;
         default:
-            Logger::levelLog(LOG_ERROR, "Continue() %0x\n", res);
+            Logger::levelLog(LOG_ERROR, "Continue() %0x", res);
             break;
         }
     }
