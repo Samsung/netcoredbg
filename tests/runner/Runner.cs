@@ -40,6 +40,9 @@ namespace Runner
         public void ExceptionBreakpointTest() => ExecuteTest();
 
         [Fact]
+        public void ExceptionBreakpointMultiThreadsTest() => ExecuteTest();
+
+        [Fact]
         public void SetValuesTest() => ExecuteTest();
 
         [Fact]
