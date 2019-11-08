@@ -1,5 +1,7 @@
 using System.Net.Sockets;
 using System.Text;
+using System.IO;
+using System.Collections.Generic;
 
 namespace NetcoreDbgTestCore
 {
@@ -11,6 +13,8 @@ namespace NetcoreDbgTestCore
             {
                 client = new TcpClient(addr, port);
                 stream = client.GetStream();
+                DebuggerInput = new StreamWriter(stream);
+                DebuggerOutput = new StreamReader(stream);
                 PendingOutput = "";
             }
 
@@ -24,7 +28,8 @@ namespace NetcoreDbgTestCore
 
             public override bool Send(string cmd)
             {
-                SendCommandLine(cmd);
+                DebuggerInput.WriteLine(cmd);
+                DebuggerInput.Flush();
 
                 return true;
             }
@@ -36,72 +41,38 @@ namespace NetcoreDbgTestCore
 
             public override void Close()
             {
+                DebuggerInput.Close();
+                DebuggerOutput.Close();
                 stream.Close();
                 client.Close();
             }
 
-            void SendCommandLine(string str)
-            {
-                byte[] bytes = Encoding.ASCII.GetBytes(str + "\n");
-                stream.Write(bytes, 0, bytes.Length);
-            }
-
             string[] ReceiveOutputLines(int timeout)
             {
-                int lenOfGdb = "(gdb)".Length;
-                var sb = new StringBuilder(PendingOutput);
-                int indexOfGdb = PendingOutput.IndexOf("(gdb)");
+                var output = new List<string>();
+                stream.ReadTimeout = timeout;
 
-                while (indexOfGdb == -1) {
-                    string availableData = LoadAvailableData(timeout);
+                while (true) {
+                    string InputString = DebuggerOutput.ReadLine();
 
-                    if (availableData == null) {
+                    if (InputString == null) {
                         return null;
                     }
 
-                    sb.Append(availableData);
-                    PendingOutput = sb.ToString();
-                    indexOfGdb = PendingOutput.IndexOf("(gdb)");
+                    output.Add(InputString);
+
+                    if (InputString == "(gdb)") {
+                        break;
+                    }
                 }
 
-                var packedOutputLines = PendingOutput.Substring(0, indexOfGdb + lenOfGdb);
-                PendingOutput = PendingOutput.Substring(indexOfGdb + lenOfGdb + 1);
-
-                return packedOutputLines.TrimEnd('\r', '\n').Split("\n");
-            }
-
-            string LoadAvailableData(int timeout)
-            {
-                byte[] recvBuffer = new byte[64];
-                StringBuilder sb = new StringBuilder();
-                int recvCount = 0;
-                string response;
-
-                stream.ReadTimeout = timeout;
-
-                try {
-                    do {
-                        int readCount = stream.Read(recvBuffer, 0, recvBuffer.Length);
-                        response = Encoding.UTF8.GetString(recvBuffer, 0, readCount);
-                        sb.Append(response);
-                        recvCount += readCount;
-                    } while (stream.DataAvailable);
-                }
-
-                catch {
-                }
-
-                stream.ReadTimeout = -1;
-
-                if (recvCount == 0) {
-                    return null;
-                }
-
-                return sb.ToString();
+                return output.ToArray();
             }
 
             TcpClient client;
             NetworkStream stream;
+            StreamWriter DebuggerInput;
+            StreamReader DebuggerOutput;
             string PendingOutput;
         }
     }
