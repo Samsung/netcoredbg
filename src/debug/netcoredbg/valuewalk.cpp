@@ -163,31 +163,31 @@ HRESULT Evaluator::EvalFunction(
     switch (res) {
         case CORDBG_E_ILLEGAL_IN_OPTIMIZED_CODE: {
             Logger::log("ERROR: Can not evaluate in optimized code");
-            IfFailRet(res);
+            return res;
         }
         break;
 
         case CORDBG_E_APPDOMAIN_MISMATCH: {
             Logger::log("ERROR: Object is in wrong AppDomain");
-            IfFailRet(res);
+            return res;
         }
         break;
 
         case CORDBG_E_FUNCTION_NOT_IL: {
             Logger::log("ERROR: Function does not have IL code");
-            IfFailRet(res);
+            return res;
         }
         break;
 
         case CORDBG_E_ILLEGAL_IN_STACK_OVERFLOW: {
             Logger::log("ERROR: Can not evaluate after stack overflow");
-            IfFailRet(res);
+            return res;
         }
         break;
 
         case CORDBG_E_FUNC_EVAL_BAD_START_POINT: {
             Logger::log("ERROR: Func eval cannot work. Bad starting point");
-            IfFailRet(res);
+            return res;
         }
         break;
 
@@ -197,7 +197,7 @@ HRESULT Evaluator::EvalFunction(
             //  we can continue this thread for change state from unsafe to safe,
             //  but after running thread we can get a new unhanded exception and
             //  as a result in 50/50 terminated process.
-            IfFailRet(res);
+            return res;
         }
         break;
 

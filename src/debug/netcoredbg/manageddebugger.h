@@ -608,8 +608,6 @@ public:
     HRESULT Disconnect(DisconnectAction action = DisconnectDefault) override;
 
     int GetLastStoppedThreadId() override;
-
-    HRESULT Stop(int threadId, const StoppedEvent &event) override;
     HRESULT Continue(int threadId) override;
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
@@ -627,5 +625,6 @@ public:
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
 private:
+    HRESULT Stop(int threadId, const StoppedEvent &event) override;
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 };
