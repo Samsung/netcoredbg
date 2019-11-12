@@ -625,6 +625,6 @@ public:
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
 private:
-    HRESULT Stop(int threadId, const StoppedEvent &event) override;
+    HRESULT Stop(int threadId, const StoppedEvent &event);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 };
