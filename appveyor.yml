@@ -5,7 +5,7 @@ environment:
   RELEASE_BRANCH: master
   RELEASE_REPO: Samsung/netcoredbg
   GITHUB_API_KEY:
-    secure: MK8IauVT12d9kr6r2oxHhSyUxV7gGL4xk8Dkf0/5LxdxbyIlAEwYlAgJuN7G6e5Z
+    secure: xo2QfdJ8hUxbek9peb3Pi/7cO9aEvg+CHlnmyVNz5szTsg3reQH0YqXKM4oMT3Xh
 
 branches:
   except:
