@@ -1,0 +1,832 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{float}
+\usepackage{multicol}
+\usepackage{xurl}
+\usepackage{xltabular}
+\usepackage{tabularx}
+\usepackage{longtable}
+
+% Images
+\usepackage{graphicx}
+\def\imgscale{0.20}
+
+% Tables
+\usepackage{array}
+\renewcommand{\arraystretch}{2}
+
+% Index Module
+\usepackage{imakeidx}
+\makeindex[intoc,title=Index of classes]
+\makeindex[intoc,name=notion,title=Index of notions]
+
+% Fonts And Paragraph Styles
+\usepackage[a4paper, total={7.3in, 10.1in}]{geometry}
+\setlength\parindent{0pt}
+\setlength\parskip{1em}
+\renewcommand*{\familydefault}{\sfdefault}
+\usepackage[T1]{fontenc}
+\usepackage[default]{sourcesanspro}
+\usepackage{sfmath}
+\clubpenalty=10000
+\widowpenalty=10000
+\usepackage{dingbat}
+
+% No-Line-Break Sections That Hold The Listings Together
+\newenvironment{nobr}{\begin{minipage}{\textwidth}\setlength\parskip{1em}
+}{\end{minipage}\ignorespacesafterend}
+
+% Fancy Enumerations
+\usepackage{enumitem}
+\setlist{topsep=-3pt}
+
+% Colorful Section Styles
+\setcounter{section}{-1}
+\usepackage[usenames,dvipsnames]{xcolor}
+\definecolor{Section}{RGB}{0, 64, 128}
+\definecolor{SectionNumber}{RGB}{255, 255, 255}
+\usepackage{titlesec}
+\usepackage{needspace}
+\titleformat{\section}
+  {\nopagebreak\parskip0.2em\color{Section}\titlerule\normalfont\Large\bfseries}
+  {\parindent-2em\fcolorbox{Section}{Section}{\color{SectionNumber}\quad\thesection.\quad}}
+  {1em}{}
+\titleformat{\subsection}
+  {\nopagebreak\parskip0.2em\color{Section}\titlerule\normalfont\large\bfseries}
+  {\fcolorbox{Section}{Section}{\color{SectionNumber}\ \ \thesubsection.\ \ }\nopagebreak}
+  {1em}{}
+\titleformat{\subsubsection}
+  {\nopagebreak\parskip0.2em\color{Section}\titlerule\normalfont\bfseries}
+  {\fcolorbox{Section}{Section}{\color{SectionNumber}\thesubsubsection.}\nopagebreak}
+  {1em}{}
+
+% Fancy Listings
+\usepackage{listings}
+\definecolor{InlineListing}{RGB}{0, 64, 128}
+\lstset{basicstyle=\ttfamily\color{InlineListing}}
+\definecolor{Command}{RGB}{0, 0, 0}
+\definecolor{CommandOutput}{RGB}{128, 128, 128}
+\definecolor{Console}{RGB}{240, 240, 240}
+\definecolor{Executable}{RGB}{0, 96, 0}
+\definecolor{Prompt}{RGB}{0, 64, 128}
+\definecolor{Rule}{RGB}{192, 192, 192}
+\lstdefinestyle{commandline}{
+  aboveskip=1.0em,
+  backgroundcolor=\color{Console},
+  basicstyle=\ttfamily\color{Prompt}\footnotesize,
+  belowskip=0.0em,
+  breaklines=true,
+  captionpos=b,
+  emptylines=1,
+  frame=single,
+  moredelim=**[is][\color{Command}]{@}{@},
+  moredelim=**[is][\color{Executable}]{@@}{@@},
+  moredelim=**[is][\color{CommandOutput}]{@@@}{@@@},
+  rulecolor=\color{Rule},
+  xleftmargin=1.9em,
+  xrightmargin=0.3em,
+}
+\definecolor{Background}{RGB}{240, 240, 240}
+\definecolor{Code}{RGB}{0, 0, 0}
+\definecolor{Comment}{RGB}{0, 128, 128}
+\definecolor{Keyword}{RGB}{0, 0, 128}
+\definecolor{String}{RGB}{192, 0, 192}
+\lstdefinestyle{cplusplus}{
+  aboveskip=1.5em,
+  backgroundcolor=\color{Background},
+  basicstyle=\ttfamily\color{Code}\footnotesize,
+  belowskip=0.0em,
+  breaklines=true,
+  captionpos=b,
+  commentstyle=\color{Comment},
+  emptylines=1,
+  frame=single,
+  keywordstyle=\color{Keyword},
+  language=C++,
+  numbers=left,
+  rulecolor=\color{Rule},
+  showstringspaces=false,
+  stringstyle=\color{String},
+  xleftmargin=1.9em,
+  xrightmargin=0.3em,
+}
+%--------------------------------------------JSON-----------------------------------------------------
+% json highlight colors
+\usepackage{xcolor}
+\definecolor{Background}{RGB}{240, 240, 240}
+\colorlet{punct}{red!60!black}
+\definecolor{delim}{RGB}{20,105,176}
+\colorlet{numb}{magenta!60!black}
+\lstdefinelanguage{json}{
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\bfseries,
+    stringstyle=\ttfamily\color{BurntOrange},
+    backgroundcolor=\color{Background},
+    %%linewidth=\textwidth,captionpos=b
+    %numbers=left, stepnumber=5, numbersep=10pt
+    captionpos=b,
+    aboveskip=1.5em,
+    belowskip=0.0em,
+    emptylines=1,
+    numbers=left,
+    breaklines=true,
+    showstringspaces=false,
+    frame=single,
+    tabsize=2,
+    xleftmargin=1.9em,
+    xrightmargin=0.3em,
+    literate=
+     *{0}{{{\color{numb}0}}}{1}
+      {1}{{{\color{numb}1}}}{1}
+      {2}{{{\color{numb}2}}}{1}
+      {3}{{{\color{numb}3}}}{1}
+      {4}{{{\color{numb}4}}}{1}
+      {5}{{{\color{numb}5}}}{1}
+      {6}{{{\color{numb}6}}}{1}
+      {7}{{{\color{numb}7}}}{1}
+      {8}{{{\color{numb}8}}}{1}
+      {9}{{{\color{numb}9}}}{1}
+      {:}{{{\color{punct}{:}}}}{1}
+      {,}{{{\color{punct}{,}}}}{1}
+      {\{}{{{\color{delim}{\{}}}}{1}
+      {\}}{{{\color{delim}{\}}}}}{1}
+      {[}{{{\color{delim}{[}}}}{1}
+      {]}{{{\color{delim}{]}}}}{1},
+}
+
+% Hyper Reference Styles
+\definecolor{Url}{RGB}{0, 64, 128}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks,
+    linkcolor={Url},
+    citecolor={Url},
+    urlcolor={Url}
+}
+
+% Fancy Table Of Contents
+\usepackage{tocloft}
+\renewcommand\cftbeforesecskip{10pt}
+\renewcommand\cftbeforesubsecskip{0pt}
+\renewcommand\cftsubsecafterpnum{\vskip0pt}
+
+\begin{document}
+
+\begin{center}
+\hrule\bigskip\bigskip
+{\Huge\textsc{Samsung NetcoreDBG\ \ C\#\ \ debugger}}
+\bigskip
+
+{\Large A\ \ Debugger \ \ Developer's\ \ Guide}
+\bigskip
+
+{Rev. --- \today}
+\bigskip\bigskip\hrule
+
+\end{center}
+
+\newpage
+\tableofcontents
+
+\newpage
+\section{Introduction to the Samsung NetcoreDBG C\# Debugger}\label{sec:intro}
+
+The Samsung NetcoreDBG debugger is an open source tool for debugging C\# Microsoft DotNet applications. Microsoft provides its own \emph{proprietary debugger}\index[notion]{Microsoft debugger|textbf} (VSDBG)\index[notion]{VSDBG|see{Microsoft debugger}} with the following limitations: provided only binary files, protected from using any other way across VSCode IDE or Microsoft Visual Studio. This project has been started as an alternative debugger for Samsung Tizen applications and can be used for some other tools and operating systems. NetcoreDBG can be built for Microsoft Windows, Linux, Tizen, MacOS. NETCoreDBG supports VSCode Debug Adapter and MI protocol. We have plans to implement gdb-like command line interface as well. The Main goal of the project - to develop the debugger with all CoreCLR provided debug features. This document describes the current status of implementation features and usage details.
+
+NetcoreDBG is an easy-to-use tool --- this guide should be able to help you.
+
+\newpage
+\subsection{FAQ: a quick guide through the guide}
+
+\begin{nobr}
+\begin{itemize}
+\item[\textbf{Q:}] \emph{Why do we need another debugger for Microsoft .NET C\# languages?}
+\item[\textbf{A:}] The Microsoft's vsdbg debugger is a commercial product with proprietary source code. In particular, vsdbg needs a special crypto handshake on startup, and can be used from VSCode IDE only. From the other hand vsdbg doesn't support ARM architecture. NetcoreDBG is an open source project for using widely with any IDE and any platform and architecture.
+\end{itemize}
+\medskip
+\end{nobr}
+
+\begin{nobr}
+\begin{itemize}
+\item[\textbf{Q:}] \emph{What platforms and architectures are supported?}
+\item[\textbf{A:}] Platforms: Windows 10 x64, Mac OS, Linux, Tizen and other platforms, which has compatibilities with .NET 2.1,2.2,2.2.105,3.0. Architectures: x86-32, x86-64, armv7l.
+\end{itemize}
+\medskip
+\end{nobr}
+
+\begin{nobr}
+\begin{itemize}
+\item[\textbf{Q:}] \emph{Do you provide features to debug native code?}
+\item[\textbf{A:}] No. Our experimental code for mixing lldb and NetcoreDBG works unstable and has not been merged to upstream yet. Now we have some ideas how to fix it properly. It is really difficult and interesting task.
+\end{itemize}
+\medskip
+\end{nobr}
+
+\begin{nobr}
+\begin{itemize}
+\item[\textbf{Q:}] \emph{What development plans do you have?}
+\item[\textbf{A:}] We are going to implement safety evaluation features to improve multithreading mode and we have plans to support C\# object's properties in the nearest future.
+\end{itemize}
+\medskip
+\end{nobr}
+
+\newpage
+\subsection{How to build NetcoreDBG from the source code?}
+Switch to netcoredbg directory, create build directory and switch into it:
+
+\begin{lstlisting}[style=commandline,numbers=none]
+mkdir build
+cd build
+\end{lstlisting}
+
+Proceed to build with cmake.
+Necessary dependencies (CoreCLR sources and .NET SDK binaries) are going to be downloaded during CMake configure step. It is possible to override them with CMake options -CORECLR\_DIR=<path-to-coreclr> and -DDOTNET\_DIR=<path-to-dotnet-sdk>.
+
+\textbf{Ubuntu:}
+\begin{lstlisting}[style=commandline,numbers=none]
+CC=clang CXX=clang++ cmake .. -DCMAKE_INSTALL_PREFIX=$PWD/../bin
+\end{lstlisting}
+
+\textbf{MacOS:}
+\begin{lstlisting}[style=commandline,numbers=none]
+cmake .. -DCMAKE_INSTALL_PREFIX=$PWD/../bin
+\end{lstlisting}
+
+\textbf{Windows:}
+\begin{lstlisting}[style=commandline,numbers=none]
+cmake .. -G "Visual Studio 15 2017 Win64" -DCMAKE_INSTALL_PREFIX="$pwd\..\bin"
+\end{lstlisting}
+
+\textbf{Compile and install:}
+\begin{lstlisting}[style=commandline,numbers=none]
+cmake --build . --target install
+\end{lstlisting}
+
+\subsection{Command line interface}
+The above commands create bin directory with netcoredbg binary and additional libraries. Now running the debugger with --help option should look like this:
+\begin{lstlisting}[style=commandline,numbers=none]
+$ ../bin/netcoredbg --help
+.NET Core debugger
+
+Options:
+--attach <process-id>       Attach the debugger to the specified process id.
+--interpreter=mi            Puts the debugger into MI mode.
+--interpreter=vscode        Puts the debugger into VS Code Debugger mode.
+--engineLogging[=<path>]    Enable logging to VsDbg-UI or file.
+                            Only supported by the VsCode interpreter.
+--server[=port_num]         Start the debugger listening for requests on the
+                            specified TCP/IP port instead of stdin/out.
+                            If port is not specified, TCP 4711 will be used.
+\end{lstlisting}
+
+\subsection{How to use with IDE}
+Supported Microsoft VSCode IDE and Microsoft Visual Studio 2017 (and 2019) with Samsung Tizen Plugin.
+
+\newpage
+\section{Debugger features}\label{sec:features}
+NetcoreDBG is a project based on our work reengineering of Microsoft CoreCLR. ARM is not the priority platform for Microsoft CoreCLR and their proprietary VSCode debugger. As a result, Samsung contributes fixes and performance patches for ARM CoreCLR and develop flexible opensouce debugger from scratch. This section describes the current state of the project and our development plans. We try to prepare descriptions for architecture and main features behavior. The Debugger features have more interesting implementation and unique ideas too. Lets look under the hood.
+
+GDB/MI is a line-based machine oriented text interface to GDB. This chapter is a specification of the GDB/MI interface.
+
+\begin{xltabular}{\textwidth}{|l|X|c|c|} \hline
+&\lstinline|Feature|&\lstinline|VSCode|&\lstinline|GDB/MI|\\ \hline
+1&Load binary file&\checkmark&\checkmark\\ \hline
+2&Attach/detach to running process&\checkmark&\checkmark\\ \hline
+3&Run/Pause/Continue/Break process&\checkmark&\checkmark\\ \hline
+4&Step in/out&\checkmark&\checkmark\\ \hline
+5&Step over&\checkmark&\checkmark\\ \hline
+6&Display build-in types&NA&NA\\ \hline
+7&Modify basic values (int, float, string)&\checkmark&\checkmark\\ \hline
+8&Line breakpoint&\checkmark&\checkmark\\ \hline
+9&Function breakpoint&\checkmark&\checkmark\\ \hline
+10&Exception breakpoint&\checkmark&\checkmark\\ \hline
+11&Exception breakpoint&\checkmark&\\ \hline
+12&Conditional breakpoint (depends on C\# expression)&&\\ \hline
+13&C\# expression&partial&partial\\ \hline
+13&Call stack operations&\checkmark&\checkmark\\ \hline
+14&Call stack operations&\checkmark&\checkmark\\ \hline
+15&Capture stdout/stderr of launched application&\checkmark&\checkmark\\ \hline
+16&Operate along with .NET Core profiler&NA&NA\\ \hline
+17&Debug core dump file&partial&partial\\ \hline
+18&Parameter "Just my code"&\checkmark&\checkmark\\ \hline
+19&Threads info&&\\ \hline
+20&Modules info&&\\ \hline
+21&Process info&???&???\\ \hline
+22&Tasks operations&&\\ \hline
+23&CPU registers info&&\\ \hline
+24&Modify user-space process memory&&\\ \hline
+25&Show disassembly code&&\\ \hline
+26&Follow to forked/created process&???&???\\ \hline
+27&Tracepoint commands&&\\ \hline
+28&Memory operations&&\\ \hline
+29&Misc operations&&\\ \hline
+\caption{Debug features}\label{tab:debug_features}
+\end{xltabular}
+
+\subsection{Attach/detach to running process}
+This feature allows loading and setting arguments for executable file with managed code for running and debugging.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&file-exec-and-symbols <fname>&file&\\ \hline
+2&exec-arguments [args...]&set args&\\ \hline
+3&exec-run [opts...]&run&\\ \hline
+4&environment-cd dir&cd&\\ \hline
+5&environment-directory [-r] [dir...]&dir&\checkmark\\ \hline
+6&environment-path [-r] [dir...]&path&\checkmark\\ \hline
+7&environment-pwd&pwd&\checkmark\\ \hline
+8&file-exec-file fname&exec-file&\checkmark\\ \hline
+9&file-list-exec-source-file&info source&\checkmark\\ \hline
+10&file-list-exec-source-files&info sources&\checkmark\\ \hline
+11&file-list-shared-libraries [regex]&info shared&\checkmark\\ \hline
+12&file-symbol-file fname&symbol-file&\checkmark\\ \hline
+13&symbol-list-lines fname&&\checkmark\\ \hline
+14&catch-load [-t] [-d] regexp&catch load&\checkmark\\ \hline
+15&catch-unload [-t] [-d] regexp&catch unload&\checkmark\\ \hline
+\caption{MI load commands}\label{tab:mi_load_cmds}
+\end{xltabular}
+
+\subsection{Attach/detach to running process}
+These features allows attaching and detaching debugger to/from running C\# process. Attaching allows to enable a list of breakpoints on startup. Detaching continues execution flow of the process.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&target-attach (pid | gid | file)&attach&\\ \hline
+2&target-detach [pid | gid]&detach&\\ \hline
+3&target-disconnect&disconnect&\checkmark\\ \hline
+4&target-download&load&\checkmark\\ \hline
+5&target-flash-erase&flash-erase&\checkmark\\ \hline
+6&target-select type [args...]&target&\checkmark\\ \hline
+7&target-file-put host-file targ-file&remote put&\checkmark\\ \hline
+8&target-file-get targ-file host-file&remote get&\checkmark\\ \hline
+9&target-file-delete fname&remote delete&\checkmark\\ \hline
+10&info-gdb-mi-command&cmdname&\checkmark\\ \hline
+11&list-features&&\checkmark\\ \hline
+12&list-target-features&&\checkmark\\ \hline
+\caption{MI exec attach commands}\label{tab:mi_attach_cmds}
+\end{xltabular}
+
+\subsection{Run/Pause/Continue/Break process}
+These features allows basic process operations: run, pause, continue and break.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&exec-finish&finish&\\ \hline
+2&exec-interrupt [opts...]&interrupt&\\ \hline
+3&gdb-exit&quit&\\ \hline
+4&exec-continue [opts...]&continue&\\ \hline
+\caption{MI exec run/pause/continue/break commands}\label{tab:mi_rpcb_cmds}
+\end{xltabular}
+
+\subsection{Step in/out}
+"Step in" allows execution of a single line source code. In the case of a function call, execution stops at the first line inside the called function. "Step out" allows continuing execution until return from the function call.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&exec-step&step&\\ \hline
+2&exec-step-instruction&stepi&\checkmark\\ \hline
+3&exec-jump loc&jump&\checkmark\\ \hline
+4&exec-return&return&\checkmark\\ \hline
+5&exec-until [loc]&until&\checkmark\\ \hline
+6&exec-abort&&\checkmark\\ \hline
+\caption{MI exec in/out commands}\label{tab:mi_execinout_cmds}
+\end{xltabular}
+
+\subsection{Step over}
+These features allows to continue execution until the next line of source code. In the case of a function call execution will not stop inside the function body, but continues until return from the function.
+
+\begin{frame}
+{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Limitations: Not supported: set and continue from any code positions.}}}
+\end{frame}
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&exec-next&next&\\ \hline
+2&exec-next-instruction&nexti&\checkmark\\ \hline
+\caption{MI exec commands}\label{tab:mi_exec_cmds}
+\end{xltabular}
+
+\subsection{Display built-in types}
+These features allows showing built-in types of objects and types. Please, find the table with the built-in types: \url{https://docs.microsoft.com/ru-ru/dotnet/csharp/language-reference/keywords/built-in-types-table}.
+
+\subsection{Modify basic values (int, float, string)}
+These feature allows modifying and creating objects of built-in types.
+
+\begin{xltabular}{\textwidth}{|l|X|X|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&gdb-set name=val&set&\\ \hline
+2&var-assign name expr&&\\ \hline
+3&var-create {name | -} {frame | * | @} expr&&\\ \hline
+4&var-delete [-c] name&&\\ \hline
+5&var-list-children [print] name [from to]&&\\ \hline
+6&var-show-attributes name&&\\ \hline
+7&interpreter-exec interp "command"&&\\ \hline
+8&var-set-format name fmt-spec&&\checkmark\\ \hline
+9&var-show-format name&&\checkmark\\ \hline
+10&var-info-num-children name&&\checkmark\\ \hline
+11&var-info-type name&&\checkmark\\ \hline
+12&var-info-expression name&&\checkmark\\ \hline
+13&var-info-path-expression name&&\checkmark\\ \hline
+14&var-evaluate-expression [-f fmt-spec] name&&\checkmark\\ \hline
+15&var-update [print] {name | *}&&\checkmark\\ \hline
+16&var-set-frozen name flag&&\checkmark\\ \hline
+17&var-set-update-range name from to&&\checkmark\\ \hline
+18&var-set-visualizer name vis&(python)&\checkmark\\ \hline
+19&enable-pretty-printing&&\checkmark\\ \hline
+\caption{MI modify value commands}\label{tab:mi_modify_cmds}
+\end{xltabular}
+
+\subsection{Breakpoint operations}
+Breakpoint is the basic idea of debugging. Implementation of this features are mean that we can support a many functions, like this: \textbf{'insert'}, \textbf{'delete'}, \textbf{'enable'}, \textbf{'disable'}, setting by conditions and some other. The next table consists commands for supporting this feature.
+
+\begin{xltabular}{\textwidth}{|l|X|X|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&break-insert [-opts] [loc] -t (temp), -h (hw), -f (pending), -d (disabled), -a (tracepoint), -c expr (condition), -i count (ign.count), -p thread-id&break, tbreak, hbreak, thbreak&\\ \hline
+2&break-delete (breakpoint)+&delete&\\ \hline
+3&break-condition number expr&condition&\\ \hline
+4&break-exception-insert [--mda] throw+user-unhandled&catch throw <exceptname>, catch catch <exceptname>&\\ \hline
+5&dprintf-insert [-opts] [loc] [fmt] [args...]&dprintf -t, -f, -d, -c expr, -i count, -p thread-id&\checkmark\\ \hline
+6&break-after number count&ignore&\checkmark\\ \hline
+7&break-commands number [command1 ... commandN]&commands&\checkmark\\ \hline
+8&break-disable (breakpoint)+&disable&\checkmark\\ \hline
+9&break-enable (breakpoint)+&enable&\checkmark\\ \hline
+10&break-info breakpoint&info break breakpoint&\checkmark\\ \hline
+11&break-list&info break&\checkmark\\ \hline
+12&break-passcount tracepoint-number passcount&watch, awatch, rwatch&\checkmark\\ \hline
+13&break-watch [-a | -r]&watch, awatch, rwatch&\checkmark\\ \hline
+\caption{MI breakpoint commands}\label{tab:mi_brekpoint_cmds}
+\end{xltabular}
+
+\subsection{Line breakpoint}
+These features allows setting a breakpoint by source line number through \textbf{'break-insert'} command (see \ref{tab:mi_brekpoint_cmds}).
+
+\subsection{Entry breakpoint}
+These features allows setting entry breakpoint before first line of Main functions. This is options is available from VScode config only:
+\begin{lstlisting}[style=cplusplus,numbers=none]
+"version": "0.2.0",
+"configurations": [
+{
+    "stopAtEntry": true
+}]
+\end{lstlisting}
+
+\subsection{Function breakpoint}
+These features allows setting breakpoint by function signature name. Function notation are useful as alternative variant for setting breakpoint, for example with using wildcard in name or in cases when source code is not readily available. Please look at the post about using function breakpoint in IDE \url{https://devblogs.microsoft.com/devops/function-breakpoints/}.
+
+\subsection{Exception breakpoint}
+Exception breakpoint feature it is mechanism of C\# debugger which immediately should break of execution (process or thread) before start of rewinding exception stack. Each stopped place should looks like breakpoint for user. Unfortunately, the Microsoft debugger does not provide of specifications for self-protocols (GDB/MI and VSCode). Moreover, for this case the current documents exists requirements given by some preliminary reverse engineering investigations. In addition, we has requirements to keep the same behavior for this feature with Microsoft vsdbg tool after complete implementation in NetcoreDBG.
+
+\begin{nobr}
+\subsubsection{Limitations}
+\begin{itemize}
+ \item[---] Need for supported only CLR exceptions. MDA does not supported on the Tizen/Linux platforms,
+ \item[---] For multithread managed code has a dead lock problem if several thread produced in one time exception breakpoint events. These problems expect some improvements in evaluation mechanism for keep in stop all managed threads before complete Exception Event,
+ \item[---] VSCode not supported options (structre ExceptionBreakpointStorage) because current version of vsdbg ("C\# plugin of 1.17.1" version for "VSCode IDE 1.31.1") not supported this feature.
+\end{itemize}
+\end{nobr}
+
+\subsubsection{Requirements}
+Next details given for "C\# plugin of 1.17.1" version for "VSCode IDE 1.31.1". By default, exception breakpoints disabled. Both protocols should processed by the same engine. It means that the data after parsing and loading should putted in the same processing point. Next section contains the VSCode and MI specification details needed for implementation.
+The table below to get a big view for the main difference between two protocols implementation in vsdbg. MI implemented as simple breakpoint with insert and delete. VScode has ability for set group or subtree for filtering exceptions but this feature still not implemented in vsdbg 1.17.1. Insert or delete not supported for VSCode. Exception breakpoint can raised by any threads from managed code.
+
+\begin{xltabular}{\textwidth}{|l|X|X|X|} \hline
+&\textbf{VSDBG features}&\lstinline|VSCode|&\lstinline|MI|\\ \hline
+1&Insert&&\checkmark\\ \hline
+2&Delete&&\checkmark\\ \hline
+3&InnerException&\checkmark&\checkmark\\ \hline
+4&Group (options)&&\\ \hline
+5&Name&\checkmark&\checkmark\\ \hline
+\caption{Main difference between protocols implementation in vsdbg}\label{tab:vsdbg_diffs}
+\end{xltabular}
+
+Next paragraph contains the details for VSCode.
+
+\subsubsection{VSCode format}
+VSCode format shared for free using only in json format \url{ https://github.com/Microsoft/vscode-debugadapter-node/blob/master/debugProtocol.json} without any details about policy of processing requests, responses and events. Please look at the json subset below. These structures shown the data model for VSCode protocols.
+
+\begin{lstlisting}[language=json,title=\lstinline|Code fragment from debugProtocol.json|,firstnumber=1]
+"ExceptionInfoResponse": {
+ "allOf": [ { "$ref": "#/definitions/Response" }, {
+  "type": "object",
+  "description": "Response to 'exceptionInfo' request.",
+  "properties": {
+   "body": {
+    "type": "object",
+    "properties": {
+     "exceptionId": {
+      "type": "string",
+      "description": "ID of the exception that was thrown." },
+     "description": {
+      "type": "string",
+      "description": "Descriptive text for the exception provided by the debug adapter." },
+     "breakMode": {
+      "$ref": "#/definitions/ExceptionBreakMode",
+      "description": "Mode that caused the exception notification to be raised." },
+     "details": {
+      "$ref": "#/definitions/ExceptionDetails",
+      "description": "Detailed information about the exception." }},
+    "required": [ "exceptionId", "breakMode" ] }},
+  "required": [ "body" ] }] 
+},
+
+"ExceptionBreakpointsFilter": {
+   "type": "object",
+   "description": "An ExceptionBreakpointsFilter is shown in the UI as an option for configuring how exceptions are dealt with.",
+   "properties": {
+    "filter": {
+     "type": "string",
+     "description": "The internal ID of the filter. This value is passed to the setExceptionBreakpoints request."},
+    "label": {
+     "type": "string",
+     "description": "The name of the filter. This will be shown in the UI." },
+    "default": {
+     "type": "boolean",
+     "description": "Initial value of the filter. If not specified a value 'false' is assumed."  } },
+   "required": [ "filter", "label" ] 
+},
+
+"ExceptionDetails":  {
+"type": "object",
+"description": "Detailed information about an exception that has occurred.",
+"properties": {
+"message": {
+ "type": "string",
+ "description": "Message contained in the exception."},
+"typeName": {
+ "type": "string",
+ "description": "Short type name of the exception object."},
+"fullTypeName": {
+ "type": "string",
+ "description": "Fully-qualified type name of the exception object."},
+"evaluateName": {
+ "type": "string",
+ "description": "Optional expression that can be evaluated in the current scope to obtain the exception object."},
+"stackTrace": {
+ "type": "string",
+ "description": "Stack trace at the time the exception was thrown."
+},
+
+"innerException": {
+ "type": "array",
+ "items": {
+  "$ref": "#/definitions/ExceptionDetails" },
+ "description": "Details of the exception contained by this exception, if any."}}},
+ "ExceptionBreakMode": {
+"type": "string",
+"description": "This enumeration defines all possible conditions when a thrown exception should result in a break.\nnever: never breaks,\nalways: always breaks,\nunhandled: breaks when excpetion unhandled,\nuserUnhandled: breaks if the exception is not handled by user code.",
+"enum": [ "never", "always", "unhandled", "userUnhandled" ]
+}
+\end{lstlisting}
+
+ExceptionInfoRequest, ExceptionInfoResponse structures already supported in NetcoreDBG side.
+
+\subsubsection{MI format}
+MI should have the same semantic behavior for processing exception breakpoint (see table 1). Current chapter provide all necessary information for implementation processing exception breakpoints by MI. This chapter uses the following notation:
+\begin{enumerate}
+ \item \textbf{'|'} --- separates two alternatives,
+ \item \textbf{'something'} --- indicates that something is optional: it may or may not be given,
+ \item \textbf{'(group)* .'} --- means that group inside the parentheses may repeat zero or more times with space separator,
+ \item \textbf{'(group)+'} --- means that group inside the parentheses may repeat one or more times with space separator,
+ \item \textbf{'<string>'} --- means a notable string, but not any fixed keyword.
+\end{enumerate}
+
+\subsubsection{MI exception breakpoint commands}
+This section documents MI commands for manipulations exception breakpoints.
+
+\begin{nobr}
+\subsubsection{The break-exception-insert command}
+\textbf{Synopsis:}
+\begin{lstlisting}[style=cplusplus,numbers=none]
+-break-exception-insert [--mda] unhandled|user-unhandled|throw|throw+user-unhandled (<name_list>|*)+
+\end{lstlisting}
+\end{nobr}
+
+This command add a virtual breakpoint, which automatically setups by exception event and stop execution before start of unwinding exception stack.
+
+First argument \textbf{[--mda]} --- its optional argument for set filter especially for Managed Debugging Assistants (MDA) feature. Current feature it not fully tested. Moreover, not supported for Tizen/Linux platforms. For empty this arguments will be managed CLR exception only. (See \url{https://docs.microsoft.com/ru-ru/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback2-mdanotification-method}, \url{https://docs.microsoft.com/ru-ru/dotnet/framework/debug-trace-profile/diagnosing-errors-with-managed-debugging-assistants#enable-and-disable-mdas)}.
+
+Second argument sets filter for source of produced Exception. Where values uses as follow:
+\begin{enumerate}
+ \item \textbf{'unhandled'} --- system unhandled exception. This value always is on. User cannot change 2this value by any ways. Command interfaces provide this value for backward compatibilities with vsdbg debugger. For this case, exception breakpoint generated and we have StopAllThread state in NetcoreDBG before stack unwinding,
+ \item \textbf{'user-unhandled'} --- unhandled exception of user type. This exception can only produce by user class usually inherited from System.Exception class,
+ \item \textbf{'throw'} --- \sloppy{any unhandled exceptions activated by explicit throw() call. For example, if set only \textbf{'throw'} filter than will be catches only \textbf{'System.*'} exceptions. In addition, any \textbf{'user-unhandled'} exceptions will be ignored. If you want to catch unhandled exceptions with user type than use keyword \textbf{'throw+user-unhandled'},}
+ \item \textbf{'throw+user-unhandled'} --- its value are needed for setting both previous filter via single command,
+ \item \textbf{'<string>'} --- means a notable string, but not any fixed keyword.
+\end{enumerate}
+
+\sloppy{Third argument sets filter for exception class name. Value \textbf{'*'} means that name of exception are ignored. \textbf{'<name\_list>'} --- it is a lists of exception names. Expected full class name. For example \textbf{'System.Exception.UserClass'}. The \textbf{'name\_list'} can not be empty. Second call of \textbf{'-break-exception-insert'} with the same exception name rewrite previous filter for that name. If we want to delete filter please use \textbf{'-break-exception-delete'} command.}
+
+All created exception breakpoints processed for each unhandled exception.
+
+\begin{nobr}
+\begin{lstlisting}[style=cplusplus,title=\lstinline|Example|,numbers=none]
+(gdb)
+-break-exception-insert throw+user-unhandled A B C
+^done,bkpt=[{number="1"},{number="2"},{number="3"}]
+(gdb)
+\end{lstlisting}
+\end{nobr}
+
+\subsubsection{The break-exception-delete command}
+
+\textbf{Synopsis:}
+
+\begin{nobr}
+\begin{lstlisting}[style=cplusplus,numbers=none]
+-break-exception-delete (<exception_breakpoint_indexes>)+
+\end{lstlisting}
+\end{nobr}
+
+This command delete of virtual breakpoints by index. Indexes it is a positive integers. Not any differences between deleting by single index or by list. 
+
+\begin{nobr}
+\begin{lstlisting}[style=cplusplus,title=\lstinline|Example|,numbers=none]
+(gdb)
+-break-exception-delete 3 2 1
+^done
+(gdb)
+\end{lstlisting}
+\end{nobr}
+
+Links:
+\begin{enumerate}
+ \item \url{https://sourceware.org/gdb/onlinedocs/gdb/GDB_002fMI.html#GDB_002fMI}
+ \item \url{https://raw.githubusercontent.com/gregg-miskelly/MIEngine/f5f22f53908644aacffdc3f843fba20b639d07bb/src/MICore/MICommandFactory.cs}
+ \item \url{https://github.com/OmniSharp/omnisharp-vscode/files/626936/vscodelog.txt}
+ \item \url{https://docs.microsoft.com/ru-ru/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback2-mdanotification-method}
+ \item \url{https://docs.microsoft.com/ru-ru/dotnet/framework/debug-trace-profile/diagnosing-errors-with-managed-debugging-assistants#enable-and-disable-mdas}
+ \item \url{https://github.com/Microsoft/vscode-debugadapter-node/blob/master/debugProtocol.json}
+\end{enumerate}
+
+\subsection{Conditional breakpoint (depends on C\# expression)}
+
+These features allows setting breakpoint by one of several conditionals. \url{https://www.c-sharpco\\
+rner.com/UploadFile/b1df45/conditional-breakpoints-in-C-Sharp/}
+
+\begin{frame}
+{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Not implemented}}}
+\end{frame}
+
+\subsection{C\# expression}
+
+These features allows evaluating expressions and functions.
+
+\begin{frame}
+{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Limitations: Need implement function evaluations without \\
+ side-effect witch producing the managed process are continuing.}}}
+\end{frame}
+
+\subsection{Call stack operations}
+These features allows showing and moving by call stack of one thread.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&stack-list-frames backtrace&where&\\ \hline
+2&stack-list-variables&print&\\ \hline
+3&stack-select-frame \# frame&&\checkmark\\ \hline
+4&enable-frame-filters&(python)&\checkmark\\ \hline
+5&stack-info-frame info frame, frame&&\checkmark\\ \hline
+6&stack-info-depth [max]&&\checkmark\\ \hline
+7&stack-list-arguments print (0, 1, 2)&&\checkmark\\ \hline
+8&stack-list-locals print info locals&&\checkmark\\ \hline
+\caption{MI call stack commands}\label{tab:mi_callstack_cmds}
+\end{xltabular}
+
+\subsection{Capture stdout/stderr of launched application}
+These features allows capturing any managed application output to 'stdout' and 'stderr' descriptors and redirecting it to debugger output.
+
+\begin{frame}
+{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Check processing for Trace.Write(), Debug.Write() messages.}}}
+\end{frame}
+
+\subsection{Operate along with .NET Core profiler}
+These features allows...
+
+\begin{frame}
+{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+...}}}
+\end{frame}
+
+\subsection{Debug core dump file}
+These features allows reading core dump file generated by CoreCLR for C\# process. Dump of dead processes provide data for inspect stack trace.
+
+\textbf{Limitations:}
+\begin{itemize}
+ \item[---] Not available evaluation,
+ \item[---] Not available object properties,
+ \item[---] Complex object members has limitations during watching.
+\end{itemize}
+
+\begin{frame}
+{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Need list of commands and examples.}}}
+\end{frame}
+
+\subsection{Parameter "Just my code"}
+These features allows skipping system code and exceptions from debug.
+
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Need test for checking all sensitive commands.}}}\end{frame}
+
+\subsection{Threads info}
+These features allows get info for threads.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&thread-info [tid]&info threads&\\ \hline
+2&thread-list-ids&&\checkmark\\ \hline
+3&thread-select tid thread&&\checkmark\\ \hline
+4&list-thread-groups [args...]&&\checkmark\\ \hline
+\caption{MI thread commands}\label{tab:mi_thread_cmds}
+\end{xltabular}
+
+\subsection{Tracepoint commands}
+Table \ref{tab:mi_trace_cmds} shows trace control commands, provided by MI protocol.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&trace-find mode [args...] tfind&&\checkmark\\ \hline
+2&trace-define-variable name [val] tvariable&&\checkmark\\ \hline
+3&trace-frame-collected [args...]&&\checkmark\\ \hline
+4&trace-list-variables tvariables&&\checkmark\\ \hline
+5&trace-save [-r] [-ctf] fname tsave&&\checkmark\\ \hline
+6&trace-start&&\checkmark\\ \hline
+7&trace-status tstatus&&\checkmark\\ \hline
+8&trace-stop tstop&&\checkmark\\ \hline
+\caption{MI trace commands}\label{tab:mi_trace_cmds}
+\end{xltabular}
+
+\subsection{Memory operations}
+Table \ref{tab:mi_memory_cmds} shows memory control commands, provided by MI protocol.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&data-disassemble [opts] mode disassemble&&\checkmark\\ \hline
+2&data-evaluate-expression expr print, output, call&&\checkmark\\ \hline
+3&data-list-changed-registers&&\checkmark\\ \hline
+4&data-list-register-names [\#...]&&\checkmark\\ \hline
+5&data-list-register-values fmt [\#...] info registers&&\checkmark\\ \hline
+6&data-read-memory [-o offs] addr wfmt wsize rows cols [asc] x (gdb)&&\checkmark\\ \hline
+7&data-read-memory-bytes [-o offs] addr count x&&\checkmark\\ \hline
+8&data-write-memory-bytes addr hexstring [count]&&\checkmark\\ \hline
+\caption{MI memory commands}\label{tab:mi_memory_cmds}
+\end{xltabular}
+
+\subsection{Misc operations}
+Table \ref{tab:mi_misc_cmds} shows misc commands, provided by MI protocol.
+
+\begin{xltabular}{\textwidth}{|l|X|l|c|} \hline
+&\lstinline|MI|&\lstinline|GDB alternative|&\begin{frame}{\bfseries\colorbox{yellow}{NOT SUPPORTED}} \end{frame}\\ \hline
+1&gdb-show name show&&\checkmark\\ \hline
+2&gdb-version&&\checkmark\\ \hline
+3&info-os&&\checkmark\\ \hline
+4&add-inferior&&\checkmark\\ \hline
+5&inferior-tty-set fname&&\checkmark\\ \hline
+6&inferior-tty-show&&\checkmark\\ \hline
+7&enable-timings [yes | no]&&\checkmark\\ \hline
+\caption{MI misc commands}\label{tab:mi_misc_cmds}
+\end{xltabular}
+
+\subsection{Modules info}
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Add descriptions...}}}\end{frame}
+
+\subsection{Process info}
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Add descriptions...}}}\end{frame}
+\subsection{Tasks operations}
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Add descriptions...}}}\end{frame}
+
+\subsection{CPU register info}
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Add descriptions...}}}\end{frame}
+
+\subsection{Modify user-space process memory}
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Add descriptions...}}}\end{frame}
+
+\subsection{Show disassembly code}
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Add descriptions...}}}\end{frame}
+
+\subsection{Follow to forked/created process}
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Add descriptions...}}}\end{frame}
+
+\begin{frame}{\bfseries\colorbox{yellow}{\parbox{12cm}{TODO: \\
+Additionally, can be added the next info and details:
+All possible proposals and improvements:
+VScode supporting:
+vsdbg features and details:
+any other details and descriptions...}}}\end{frame}
+
+\printindex[notion]
+\printindex
+
+\end{document}
