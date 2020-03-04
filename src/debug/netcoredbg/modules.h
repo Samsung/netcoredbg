@@ -33,7 +33,6 @@ class Modules
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
 
-    static bool ShouldLoadSymbolsForModule(const std::string &moduleName);
     static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
     static HRESULT ResolveMethodInModule(
         ICorDebugModule *pModule,
@@ -94,7 +93,8 @@ public:
 
     HRESULT TryLoadModuleSymbols(
         ICorDebugModule *pModule,
-        Module &module);
+        Module &module,
+        bool needJMC);
 
     void CleanupAllModules();
 

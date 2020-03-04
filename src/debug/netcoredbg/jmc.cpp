@@ -71,14 +71,6 @@ static const std::unordered_set<std::string> g_operatorMethodNames
     "op_DivisionAssignment"            // /=
 };
 
-bool Modules::ShouldLoadSymbolsForModule(const std::string &moduleName)
-{
-    std::string name = GetFileName(moduleName);
-    if (name.find("System.") == 0 || name.find("SOS.") == 0)
-        return false;
-    return true;
-}
-
 static bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const std::string &attrName)
 {
     bool found = false;

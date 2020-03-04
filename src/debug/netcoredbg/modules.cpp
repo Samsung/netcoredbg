@@ -438,7 +438,8 @@ HRESULT Modules::GetModuleId(ICorDebugModule *pModule, std::string &id)
 
 HRESULT Modules::TryLoadModuleSymbols(
     ICorDebugModule *pModule,
-    Module &module
+    Module &module,
+    bool needJMC
 )
 {
     HRESULT Status;
@@ -453,23 +454,24 @@ HRESULT Modules::TryLoadModuleSymbols(
 
     std::unique_ptr<SymbolReader> symbolReader(new SymbolReader());
 
-    if (ShouldLoadSymbolsForModule(module.path))
-    {
-        symbolReader->LoadSymbols(pMDImport, pModule);
-        module.symbolStatus = symbolReader->SymbolsLoaded() ? SymbolsLoaded : SymbolsNotFound;
-    }
-    else
-    {
-        module.symbolStatus = SymbolsSkipped;
-    }
+    symbolReader->LoadSymbols(pMDImport, pModule);
+    module.symbolStatus = symbolReader->SymbolsLoaded() ? SymbolsLoaded : SymbolsNotFound;
 
-    // JMC stuff
-    ToRelease<ICorDebugModule2> pModule2;
-    if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
+    if (needJMC && module.symbolStatus == SymbolsLoaded)
     {
-        pModule2->SetJMCStatus(module.symbolStatus == SymbolsLoaded, 0, nullptr);
-        if (module.symbolStatus == SymbolsLoaded)
+        // https://docs.microsoft.com/en-us/visualstudio/debugger/just-my-code
+        // The .NET debugger considers optimized binaries and non-loaded .pdb files to be non-user code.
+        // Three compiler attributes also affect what the .NET debugger considers to be user code:
+        // * DebuggerNonUserCodeAttribute tells the debugger that the code it's applied to isn't user code.
+        // * DebuggerHiddenAttribute hides the code from the debugger, even if Just My Code is turned off.
+        // * DebuggerStepThroughAttribute tells the debugger to step through the code it's applied to, rather than step into the code.
+        // The .NET debugger considers all other code to be user code.
+        ToRelease<ICorDebugModule2> pModule2;
+        if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
+        {
+            pModule2->SetJMCStatus(true, 0, nullptr);
             SetJMCFromAttributes(pModule, symbolReader.get());
+        }
     }
 
     IfFailRet(GetModuleId(pModule, module.id));

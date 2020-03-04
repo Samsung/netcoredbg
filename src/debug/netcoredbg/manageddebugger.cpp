@@ -568,7 +568,7 @@ public:
 
             Module module;
 
-            m_debugger.m_modules.TryLoadModuleSymbols(pModule, module);
+            m_debugger.m_modules.TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode());
             m_debugger.m_protocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
 
             if (module.symbolStatus == SymbolsLoaded)
