@@ -183,6 +183,7 @@ namespace SOS
         /// <param name="loadedPeSize">loaded PE image size</param>
         /// <param name="inMemoryPdbAddress">in memory PDB address or zero</param>
         /// <param name="inMemoryPdbSize">in memory PDB size</param>
+        /// <param name="readMemory">read memory callback</param>
         /// <returns>Symbol reader handle or zero if error</returns>
         internal static IntPtr LoadSymbolsForModule([MarshalAs(UnmanagedType.LPWStr)] string assemblyPath, bool isFileLayout, ulong loadedPeAddress, int loadedPeSize, 
             ulong inMemoryPdbAddress, int inMemoryPdbSize, ReadMemoryDelegate readMemory)
