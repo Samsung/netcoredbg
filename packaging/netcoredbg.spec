@@ -11,6 +11,11 @@ AutoReqProv: no
 
 ExcludeArch: aarch64
 
+# Accelerate clang
+%ifarch %{arm}
+BuildRequires: clang-accel-armv7l-cross-arm
+%endif
+
 BuildRequires: cmake
 BuildRequires: clang >= 3.8
 BuildRequires: clang-devel >= 3.8
