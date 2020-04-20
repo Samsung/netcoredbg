@@ -162,7 +162,7 @@ for TEST_NAME in $TEST_NAMES; do
         # change $HOME to $REMOTETESTDIR in order to prevent /root/nohup.out creation
         $SDB root on
         $SDB shell HOME=$REMOTETESTDIR nohup $NETCOREDBG --server --interpreter=$PROTO -- \
-             /usr/bin/dotnet-launcher $REMOTETESTDIR/$TEST_NAME.dll
+             /usr/bin/dotnet $REMOTETESTDIR/$TEST_NAME.dll
         $SDB root off
 
         $DOTNET run --project TestRunner -- \
@@ -180,7 +180,7 @@ for TEST_NAME in $TEST_NAMES; do
 
         $DOTNET run --project TestRunner -- \
             --tcp localhost $PORT \
-            --dotnet /usr/bin/dotnet-launcher \
+            --dotnet /usr/bin/dotnet \
             --proto $PROTO \
             --test $TEST_NAME \
             --sources "$SOURCE_FILES" \
