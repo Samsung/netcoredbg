@@ -588,7 +588,7 @@ HRESULT Evaluator::GetLiteralValue(
         {
             ToRelease<ICorDebugEval2> pEval2;
             IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-            pEval2->NewStringWithLength((LPCWSTR)pRawValue, rawValueLength);
+            IfFailRet(pEval2->NewStringWithLength((LPCWSTR)pRawValue, rawValueLength));
 
             IfFailRet(WaitEvalResult(pThread, pEval, ppLiteralValue));
             break;
