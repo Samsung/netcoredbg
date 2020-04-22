@@ -51,6 +51,8 @@ foreach ($TEST_NAME in $TEST_NAMES) {
 
     sdb push $TEST_NAME\bin\Debug\netcoreapp2.1\$TEST_NAME.dll /tmp/
     sdb push $TEST_NAME\bin\Debug\netcoreapp2.1\$TEST_NAME.pdb /tmp/
+    sdb shell chsmack -a User::App::Shared /tmp/$TEST_NAME.dll
+    sdb shell chsmack -a User::App::Shared /tmp/$TEST_NAME.pdb
 
     $SOURCE_FILE_LIST = (Get-ChildItem -Path $TEST_NAME -Recurse *.cs |
         ? { $_.FullName -inotmatch "$TEST_NAME\\obj" }).Name
@@ -65,7 +67,7 @@ foreach ($TEST_NAME in $TEST_NAMES) {
 
         # change $HOME to /tmp in order to prevent /root/nohup.out creation
         sdb shell HOME=/tmp nohup $NETCOREDBG --server --interpreter=$PROTO -- `
-            /usr/bin/dotnet-launcher /tmp/$TEST_NAME.dll
+            /usr/bin/dotnet /tmp/$TEST_NAME.dll
 
         dotnet run --project TestRunner -- `
             --tcp localhost 4712 `
@@ -80,7 +82,7 @@ foreach ($TEST_NAME in $TEST_NAMES) {
 
         dotnet run --project TestRunner -- `
             --tcp localhost 4712 `
-            --dotnet /usr/bin/dotnet-launcher `
+            --dotnet /usr/bin/dotnet `
             --proto $PROTO `
             --test $TEST_NAME `
             --sources $SOURCE_FILES `
