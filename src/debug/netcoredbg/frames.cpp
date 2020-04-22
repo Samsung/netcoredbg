@@ -26,6 +26,7 @@ HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &th
     ToRelease<ICorDebugThreadEnum> pThreads;
     IfFailRet(controller->EnumerateThreads(&pThreads));
 
+    const std::string threadName = "<No name>";
     ICorDebugThread *handle = nullptr;
     ULONG fetched = 0;
 
@@ -42,18 +43,9 @@ HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &th
         BOOL running = FALSE;
         IfFailRet(pProcess->IsRunning(&running));
 
-        CorDebugUserState corUserState;
-        IfFailRet(pThread->GetUserState(&corUserState));
+        // Baground threads also included. GetUserState() not available for running thread.
+        threads.emplace_back(threadId, threadName, running);
 
-        if (!(corUserState & USER_BACKGROUND)) {
-            std::string name = "<No name>";
-            // TODO: Need label for Main Thread. This is bad approach.
-            // Because not garantee the thread sequences.
-            //if (threads.empty()) {
-              //  name = "Main Thread";
-            //}
-            threads.emplace_back(threadId, name, running);
-        }
         fetched = 0;
         handle = nullptr;
     }
