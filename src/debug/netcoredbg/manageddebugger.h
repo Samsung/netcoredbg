@@ -178,11 +178,6 @@ public:
         ICorDebugValue *pInValue,
         ICorDebugValue **ppOutValue);
 
-    HRESULT ObjectToString(
-        ICorDebugThread *pThread,
-        ICorDebugValue *pValue,
-        std::function<void(const std::string&)> cb);
-
     HRESULT GetType(
         const std::string &typeName,
         ICorDebugThread *pThread,
@@ -388,22 +383,6 @@ class Variables
     uint32_t m_nextVariableReference;
 
     void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
-
-
-    HRESULT GetICorDebugValueMembers(
-        ICorDebugProcess *pProcess,
-        ICorDebugThread *pThread,
-        uint64_t frameId,
-        ICorDebugValue *value,
-        bool fetchOnlyStatic,
-        std::vector<Member> &members);
-
-    HRESULT GetVariableMembers(
-        ICorDebugProcess *pProcess,
-        ICorDebugThread *pThread,
-        uint64_t frameId,
-        Variable &var,
-        std::vector<Member> &members);
 
 public:
     HRESULT GetExceptionVariable(

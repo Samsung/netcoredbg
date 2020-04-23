@@ -234,62 +234,6 @@ void Variables::AddVariableReference(Variable &variable, uint64_t frameId, ICorD
     m_variables.emplace(std::make_pair(variable.variablesReference, std::move(variableReference)));
 }
 
-HRESULT Variables::GetICorDebugValueMembers(
-    ICorDebugProcess *pProcess,
-    ICorDebugThread *pThread,
-    uint64_t frameId,
-    ICorDebugValue *value,
-    bool fetchOnlyStatic,
-    vector<Member> &members)
-{
-    if (pProcess == nullptr || pThread == nullptr || value == nullptr)
-        return E_FAIL;
-
-    HRESULT Status;
-
-    StackFrame stackFrame(frameId);
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
-
-    ToRelease<ICorDebugILFrame> pILFrame;
-    if (pFrame)
-        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*)&pILFrame));
-
-    bool hasStaticMembers = false;
-    IfFailRet(FetchFieldsAndProperties(value,
-        pThread,
-        pILFrame,
-        members,
-        fetchOnlyStatic,
-        hasStaticMembers,
-        0,
-        INT_MAX));
-
-    return S_OK;
-}
-
-HRESULT Variables::GetVariableMembers(
-    ICorDebugProcess *pProcess,
-    ICorDebugThread *pThread,
-    uint64_t frameId,
-    Variable &var,
-    vector<Member> &members)
-{
-    if (pProcess == nullptr || pThread == nullptr)
-        return E_FAIL;
-
-    VariableReference &ref = m_variables.at(var.variablesReference);
-    if (ref.IsScope())
-        return E_INVALIDARG;
-
-    if (!ref.value)
-        return E_FAIL;
-
-    bool fetchOnlyStatic = ref.valueKind == ValueIsClass;
-    return GetICorDebugValueMembers(pProcess, pThread, frameId, ref.value,
-        fetchOnlyStatic, members);
-}
-
 static HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module) {
     HRESULT Status;
     ToRelease<ICorDebugFrame> pFrame;
