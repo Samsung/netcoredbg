@@ -11,6 +11,17 @@ namespace NetcoreDbgTest.Script
 {
     public static class Context
     {
+        // https://docs.microsoft.com/en-us/visualstudio/extensibility/debugger/reference/evalflags
+        public enum enum_EVALFLAGS {
+            EVAL_RETURNVALUE = 0x0002,
+            EVAL_NOSIDEEFFECTS = 0x0004,
+            EVAL_ALLOWBPS = 0x0008,
+            EVAL_ALLOWERRORREPORT = 0x0010,
+            EVAL_FUNCTION_AS_ADDRESS = 0x0040,
+            EVAL_NOFUNCEVAL = 0x0080,
+            EVAL_NOEVENTS = 0x1000
+        }
+
         public static void InsertBreakpoint(Breakpoint bp, int token)
         {
             Assert.Equal(MIResultClass.Done,
@@ -38,16 +49,18 @@ namespace NetcoreDbgTest.Script
             Assert.Equal(val, ((MIConst)res["value"]).CString);
         }
 
-        public static string GetChildValue(string variable, int childIndex)
+        public static string GetChildValue(string variable, int childIndex, bool setEvalFlags, enum_EVALFLAGS evalFlags)
         {
             var res = MIDebugger.Request("-var-create - * " +
-                                         "\"" + variable + "\"", 2000);
+                                         "\"" + variable + "\"" +
+                                         (setEvalFlags ? (" --evalFlags " + (int)evalFlags) : "" ),
+                                         2000);
             Assert.Equal(MIResultClass.Done, res.Class);
 
             string struct2 = ((MIConst)res["name"]).CString;
 
             res = MIDebugger.Request("-var-list-children --simple-values " +
-                                         "\"" + struct2 + "\"");
+                                     "\"" + struct2 + "\"");
             Assert.Equal(MIResultClass.Done, res.Class);
 
             var children = (MIList)res["children"];
@@ -194,6 +207,17 @@ namespace MITestSetValue
         }
     }
 
+    public struct TestStruct3
+    {
+        public int val1
+        {
+            get
+            {
+                return 777; 
+            }
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -211,9 +235,10 @@ namespace MITestSetValue
 
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK1"], 4);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK2"], 5);
+                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK3"], 6);
 
                 Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("6-exec-continue").Class);
+                             Context.MIDebugger.Request("7-exec-continue").Class);
             });
 
             TestStruct2 ts = new TestStruct2(1, 5, 10);
@@ -258,10 +283,10 @@ namespace MITestSetValue
 
             int dummy2 = 2;                                     Label.Breakpoint("BREAK2");
 
-            Label.Checkpoint("test_var", "finish", () => {
+            Label.Checkpoint("test_var", "test_eval_flags", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK2"]);
 
-                Assert.Equal("666", Context.GetChildValue("ts.struct2", 0));
+                Assert.Equal("666", Context.GetChildValue("ts.struct2", 0, false, 0));
                 Context.CreateAndCompareVar("testBool", "true");
                 Context.CreateAndCompareVar("testChar", "97 'a'");
                 Context.CreateAndCompareVar("testByte", "200");
@@ -277,6 +302,22 @@ namespace MITestSetValue
 
                 Assert.Equal(MIResultClass.Running,
                              Context.MIDebugger.Request("49-exec-continue").Class);
+            });
+
+            TestStruct3 ts3 = new TestStruct3();
+
+            int dummy3 = 3;                                     Label.Breakpoint("BREAK3");
+
+            Label.Checkpoint("test_eval_flags", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK3"]);
+
+                Context.CreateAndAssignVar("ts3.val1", "666");
+                Assert.Equal("777", Context.GetChildValue("ts3", 0, false, 0));
+                Context.enum_EVALFLAGS evalFlags = Context.enum_EVALFLAGS.EVAL_NOFUNCEVAL;
+                Assert.Equal("<error>", Context.GetChildValue("ts3", 0, true, evalFlags));
+
+                Assert.Equal(MIResultClass.Running,
+                             Context.MIDebugger.Request("-exec-continue").Class);
             });
 
             Label.Checkpoint("finish", "", () => {
