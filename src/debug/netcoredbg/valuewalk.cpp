@@ -124,11 +124,15 @@ HRESULT Evaluator::EvalFunction(
     ICorDebugFunction *pFunc,
     ICorDebugType *pType, // may be nullptr
     ICorDebugValue *pArgValue, // may be nullptr
-    ICorDebugValue **ppEvalResult)
+    ICorDebugValue **ppEvalResult,
+    int evalFlags)
 {
     LogFuncEntry();
-    HRESULT Status = S_OK;
 
+    if (evalFlags & EVAL_NOFUNCEVAL)
+        return S_OK;
+
+    HRESULT Status = S_OK;
     ToRelease<ICorDebugEval> pEval;
 
     IfFailRet(pThread->CreateEval(&pEval));
@@ -222,6 +226,7 @@ HRESULT Evaluator::EvalObjectNoConstructor(
     ICorDebugThread *pThread,
     ICorDebugType *pType,
     ICorDebugValue **ppEvalResult,
+    int evalFlags,
     bool suppressFinalize)
 {
     HRESULT Status = S_OK;
@@ -272,7 +277,7 @@ HRESULT Evaluator::EvalObjectNoConstructor(
         if (!m_pSuppressFinalize)
             return E_FAIL;
 
-        IfFailRet(EvalFunction(pThread, m_pSuppressFinalize, nullptr, *ppEvalResult, nullptr /* void method */));
+        IfFailRet(EvalFunction(pThread, m_pSuppressFinalize, nullptr, *ppEvalResult, nullptr /* void method */, evalFlags));
     }
 
     return S_OK;
@@ -326,7 +331,8 @@ HRESULT Evaluator::getObjectByFunction(
     const string &func,
     ICorDebugThread *pThread,
     ICorDebugValue *pInValue,
-    ICorDebugValue **ppOutValue)
+    ICorDebugValue **ppOutValue,
+    int evalFlags)
 {
     HRESULT Status = S_OK;
 
@@ -340,7 +346,7 @@ HRESULT Evaluator::getObjectByFunction(
     auto methodName = to_utf16(func);
     IfFailRet(FindMethod(pType, methodName.c_str(), &pFunc));
 
-    return EvalFunction(pThread, pFunc, pType, pInValue, ppOutValue);
+    return EvalFunction(pThread, pFunc, pType, pInValue, ppOutValue, evalFlags);
 }
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)

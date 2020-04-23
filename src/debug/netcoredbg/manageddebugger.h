@@ -71,20 +71,23 @@ private:
                          ICorDebugILFrame *pILFrame,
                          const std::string &methodClass,
                          const std::vector<std::string> &parts,
-                         ICorDebugValue **ppResult);
+                         ICorDebugValue **ppResult,
+                         int evalFlags);
     HRESULT FollowFields(ICorDebugThread *pThread,
                          ICorDebugILFrame *pILFrame,
                          ICorDebugValue *pValue,
                          ValueKind valueKind,
                          const std::vector<std::string> &parts,
                          int nextPart,
-                         ICorDebugValue **ppResult);
+                         ICorDebugValue **ppResult,
+                         int evalFlags);
     HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
                                        ICorDebugILFrame *pILFrame,
                                        ICorDebugValue *pInputValue,
                                        ValueKind valueKind,
                                        const std::string &name,
-                                       ICorDebugValue **ppResultValue);
+                                       ICorDebugValue **ppResultValue,
+                                       int evalFlags);
 
     HRESULT WaitEvalResult(ICorDebugThread *pThread,
                            ICorDebugEval *pEval,
@@ -94,6 +97,7 @@ private:
         ICorDebugThread *pThread,
         ICorDebugType *pType,
         ICorDebugValue **ppEvalResult,
+        int evalFlags,
         bool suppressFinalize = true);
 
     std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
@@ -153,19 +157,21 @@ public:
 
     Evaluator(Modules &modules) : m_modules(modules) {}
 
-    HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue);
+    HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue, int evalFlags);
 
     HRESULT EvalFunction(
         ICorDebugThread *pThread,
         ICorDebugFunction *pFunc,
         ICorDebugType *pType, // may be nullptr
         ICorDebugValue *pArgValue, // may be nullptr
-        ICorDebugValue **ppEvalResult);
+        ICorDebugValue **ppEvalResult,
+        int evalFlags);
 
     HRESULT EvalExpr(ICorDebugThread *pThread,
                      ICorDebugFrame *pFrame,
                      const std::string &expression,
-                     ICorDebugValue **ppResult);
+                     ICorDebugValue **ppResult,
+                     int evalFlags);
 
     bool IsEvalRunning();
 
@@ -176,7 +182,8 @@ public:
         const std::string &func,
         ICorDebugThread *pThread,
         ICorDebugValue *pInValue,
-        ICorDebugValue **ppOutValue);
+        ICorDebugValue **ppOutValue,
+        int evalFlags);
 
     HRESULT GetType(
         const std::string &typeName,
@@ -344,6 +351,7 @@ class Variables
         uint32_t variablesReference; // key
         int namedVariables;
         int indexedVariables;
+        int evalFlags;
 
         std::string evaluateName;
 
@@ -355,6 +363,7 @@ class Variables
             variablesReference(variable.variablesReference),
             namedVariables(variable.namedVariables),
             indexedVariables(variable.indexedVariables),
+            evalFlags(variable.evalFlags),
             evaluateName(variable.evaluateName),
             valueKind(valueKind),
             value(std::move(value)),
@@ -417,7 +426,8 @@ private:
         bool fetchOnlyStatic,
         bool &hasStaticMembers,
         int childStart,
-        int childEnd);
+        int childEnd,
+        int evalFlags);
 
     HRESULT GetNumChild(
         ICorDebugValue *pValue,
@@ -475,14 +485,20 @@ public:
         uint64_t frameId,
         std::string &output);
 
-    HRESULT GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes);
+    HRESULT GetScopes(ICorDebugProcess *pProcess,
+        uint64_t frameId,
+        std::vector<Scope> &scopes);
 
-    HRESULT Evaluate(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression, Variable &variable, std::string &output);
+    HRESULT Evaluate(ICorDebugProcess *pProcess,
+        uint64_t frameId,
+        const std::string &expression,
+        Variable &variable,
+        std::string &output);
 
     HRESULT GetValueByExpression(
         ICorDebugProcess *pProcess,
         uint64_t frameId,
-        const std::string &expression,
+        const Variable &variable,
         ICorDebugValue **ppResult);
 
     void Clear() { m_variables.clear(); m_nextVariableReference = 1; }
@@ -599,7 +615,7 @@ public:
     int GetNamedVariables(uint32_t variablesReference) override;
     HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output) override;
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
-    HRESULT SetVariableByExpression(uint64_t frameId, const std::string &expression, const std::string &value, std::string &output) override;
+    HRESULT SetVariableByExpression(uint64_t frameId, const Variable &variable, const std::string &value, std::string &output) override;
     HRESULT GetExceptionInfoResponse(int threadId, ExceptionInfoResponse &exceptionResponse) override;
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;

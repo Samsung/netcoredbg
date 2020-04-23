@@ -228,6 +228,19 @@ struct VariablePresentationHint
     std::string visibility;
 };
 
+// https://docs.microsoft.com/en-us/visualstudio/extensibility/debugger/reference/evalflags
+enum enum_EVALFLAGS {
+    EVAL_RETURNVALUE = 0x0002,
+    EVAL_NOSIDEEFFECTS = 0x0004,
+    EVAL_ALLOWBPS = 0x0008,
+    EVAL_ALLOWERRORREPORT = 0x0010,
+    EVAL_FUNCTION_AS_ADDRESS = 0x0040,
+    EVAL_NOFUNCEVAL = 0x0080,
+    EVAL_NOEVENTS = 0x1000
+};
+
+#define defaultEvalFlags 0
+
 struct Variable
 {
     std::string name;
@@ -239,8 +252,9 @@ struct Variable
     uint32_t variablesReference;
     int namedVariables;
     int indexedVariables;
+    int evalFlags;
 
-    Variable() : variablesReference(0), namedVariables(0), indexedVariables(0) {}
+    Variable(int flags = defaultEvalFlags) : variablesReference(0), namedVariables(0), indexedVariables(0), evalFlags(flags) {}
 };
 
 enum VariablesFilter

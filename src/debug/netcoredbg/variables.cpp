@@ -96,7 +96,8 @@ HRESULT Variables::FetchFieldsAndProperties(
     bool fetchOnlyStatic,
     bool &hasStaticMembers,
     int childStart,
-    int childEnd)
+    int childEnd,
+    int evalFlags)
 {
     hasStaticMembers = false;
     HRESULT Status;
@@ -137,7 +138,7 @@ HRESULT Variables::FetchFieldsAndProperties(
         {
             ToRelease<ICorDebugFunction> pFunc;
             if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
-                m_evaluator.EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResultValue);
+                m_evaluator.EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResultValue, evalFlags);
         }
         else
         {
@@ -420,13 +421,14 @@ HRESULT Variables::GetChildren(
                                        ref.valueKind == ValueIsClass,
                                        hasStaticMembers,
                                        start,
-                                       count == 0 ? INT_MAX : start + count));
+                                       count == 0 ? INT_MAX : start + count,
+                                       ref.evalFlags));
 
     FixupInheritedFieldNames(members);
 
     for (auto &it : members)
     {
-        Variable var;
+        Variable var(ref.evalFlags);
         var.name = it.name;
         bool isIndex = !it.name.empty() && it.name.at(0) == '[';
         if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
@@ -441,9 +443,9 @@ HRESULT Variables::GetChildren(
         bool staticsInRange = start < ref.namedVariables && (count == 0 || start + count >= ref.namedVariables);
         if (staticsInRange)
         {
-            m_evaluator.RunClassConstructor(pThread, ref.value);
+            m_evaluator.RunClassConstructor(pThread, ref.value, ref.evalFlags);
 
-            Variable var;
+            Variable var(ref.evalFlags);
             var.name = "Static members";
             TypePrinter::GetTypeOfValue(ref.value, var.evaluateName); // do not expose type for this fake variable
             AddVariableReference(var, ref.frameId, ref.value, ValueIsClass);
@@ -489,7 +491,7 @@ HRESULT Variables::Evaluate(
     if (std::regex_match(expression, re))
     {
         // Use simple name parser
-        IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue));
+        IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags));
     }
 
     int typeId;
@@ -549,7 +551,8 @@ HRESULT Variables::Evaluate(
                                         fetchOnlyStatic,
                                         hasStaticMembers,
                                         0,
-                                        INT_MAX)))
+                                        INT_MAX,
+                                        variable.evalFlags)))
             return false;
 
         FixupInheritedFieldNames(members);
@@ -699,18 +702,18 @@ HRESULT Variables::SetChild(
 
 HRESULT ManagedDebugger::SetVariableByExpression(
     uint64_t frameId,
-    const std::string &expression,
+    const Variable &variable,
     const std::string &value,
     std::string &output)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pResultValue;
 
-    IfFailRet(m_variables.GetValueByExpression(m_pProcess, frameId, expression, &pResultValue));
+    IfFailRet(m_variables.GetValueByExpression(m_pProcess, frameId, variable, &pResultValue));
     return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
 }
 
-HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t frameId, const std::string &expression,
+HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t frameId, const Variable &variable,
                                         ICorDebugValue **ppResult)
 {
     if (pProcess == nullptr)
@@ -724,7 +727,7 @@ HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t fra
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
-    return m_evaluator.EvalExpr(pThread, pFrame, expression, ppResult);
+    return m_evaluator.EvalExpr(pThread, pFrame, variable.evaluateName, ppResult, variable.evalFlags);
 }
 
 HRESULT Variables::SetVariable(

@@ -58,7 +58,7 @@ public:
     virtual int GetNamedVariables(uint32_t variablesReference) = 0;
     virtual HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output) = 0;
     virtual HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) = 0;
-    virtual HRESULT SetVariableByExpression(uint64_t frameId, const std::string &name, const std::string &value, std::string &output) = 0;
+    virtual HRESULT SetVariableByExpression(uint64_t frameId, const Variable &variable, const std::string &value, std::string &output) = 0;
     virtual HRESULT GetExceptionInfoResponse(int threadId, ExceptionInfoResponse &exceptionResponse) = 0;
     virtual HRESULT DeleteExceptionBreakpoint(const uint32_t id) = 0;
     virtual HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string& names, uint32_t &id) = 0;

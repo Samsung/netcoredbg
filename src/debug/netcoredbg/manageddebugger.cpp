@@ -1593,7 +1593,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     exceptionInfoResponse.details.typeName = varException.type;
     exceptionInfoResponse.details.fullTypeName = varException.type;
 
-    if (FAILED(m_evaluator.getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue))) {
+    if (FAILED(m_evaluator.getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue, defaultEvalFlags))) {
         exceptionInfoResponse.details.stackTrace = "<undefined>"; // Evaluating problem entire object
     }
     else {
@@ -1603,7 +1603,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
 
         ICorDebugValue *evalValueInner = pExceptionValue;
         while (isNotNull) {
-            if ((res = m_evaluator.getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut)) && FAILED(res))
+            if ((res = m_evaluator.getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut, defaultEvalFlags)) && FAILED(res))
                 goto failed;
 
             string tmpstr;
@@ -1621,7 +1621,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
             ExceptionDetails inner;
             PrintStringField(evalValueOut, message, inner.message);
 
-            if ((res = m_evaluator.getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp)) && FAILED(res))
+            if ((res = m_evaluator.getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp, defaultEvalFlags)) && FAILED(res))
                 goto failed;
 
             PrintValue(pValueTmp, inner.stackTrace);

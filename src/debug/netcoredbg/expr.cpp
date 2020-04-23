@@ -47,7 +47,8 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
                                               ICorDebugValue *pInputValue,
                                               ValueKind valueKind,
                                               const std::string &name,
-                                              ICorDebugValue **ppResultValue)
+                                              ICorDebugValue **ppResultValue,
+                                              int evalFlags)
 {
     HRESULT Status;
 
@@ -107,7 +108,7 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
         {
             ToRelease<ICorDebugFunction> pFunc;
             if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
-                EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResult);
+                EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResult, evalFlags);
         }
         else
         {
@@ -168,7 +169,7 @@ HRESULT Evaluator::FindFunction(ICorDebugModule *pModule,
     return pModule->GetFunctionFromToken(methodDef, ppFunction);
 }
 
-HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue)
+HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue, int evalFlags)
 {
     HRESULT Status;
 
@@ -208,14 +209,14 @@ HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue 
         IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
         IfFailRet(pValue2->GetExactType(&pType));
 
-        EvalObjectNoConstructor(pThread, pType, &pNewValue);
+        EvalObjectNoConstructor(pThread, pType, &pNewValue, evalFlags);
     }
 
     ToRelease<ICorDebugValue> pRuntimeHandleValue;
-    IfFailRet(EvalFunction(pThread, m_pGetTypeHandle, nullptr, pNewValue ? pNewValue.GetPtr() : pValue, &pRuntimeHandleValue));
+    IfFailRet(EvalFunction(pThread, m_pGetTypeHandle, nullptr, pNewValue ? pNewValue.GetPtr() : pValue, &pRuntimeHandleValue, evalFlags));
 
     ToRelease<ICorDebugValue> pResultValue;
-    IfFailRet(EvalFunction(pThread, m_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue));
+    IfFailRet(EvalFunction(pThread, m_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue, evalFlags));
 
     return S_OK;
 }
@@ -234,7 +235,8 @@ HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
                                 ValueKind valueKind,
                                 const std::vector<std::string> &parts,
                                 int nextPart,
-                                ICorDebugValue **ppResult)
+                                ICorDebugValue **ppResult,
+                                int evalFlags)
 {
     HRESULT Status;
 
@@ -246,9 +248,9 @@ HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
     for (int i = nextPart; i < (int)parts.size(); i++)
     {
         ToRelease<ICorDebugValue> pClassValue(std::move(pResultValue));
-        RunClassConstructor(pThread, pClassValue);
+        RunClassConstructor(pThread, pClassValue, evalFlags);
         IfFailRet(GetFieldOrPropertyWithName(
-            pThread, pILFrame, pClassValue, valueKind, parts[i], &pResultValue));
+            pThread, pILFrame, pClassValue, valueKind, parts[i], &pResultValue, evalFlags));
         valueKind = ValueIsVariable; // we can only follow through instance fields
     }
 
@@ -582,7 +584,8 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
                                 ICorDebugILFrame *pILFrame,
                                 const std::string &methodClass,
                                 const std::vector<std::string> &parts,
-                                ICorDebugValue **ppResult)
+                                ICorDebugValue **ppResult,
+                                int evalFlags)
 {
     HRESULT Status;
 
@@ -602,9 +605,9 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
             break;
 
         ToRelease<ICorDebugValue> pTypeValue;
-        IfFailRet(EvalObjectNoConstructor(pThread, pType, &pTypeValue));
+        IfFailRet(EvalObjectNoConstructor(pThread, pType, &pTypeValue, evalFlags));
 
-        if (SUCCEEDED(FollowFields(pThread, pILFrame, pTypeValue, ValueIsClass, parts, 0, ppResult)))
+        if (SUCCEEDED(FollowFields(pThread, pILFrame, pTypeValue, ValueIsClass, parts, 0, ppResult, evalFlags)))
             return S_OK;
 
         classParts.pop_back();
@@ -616,7 +619,8 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
 HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
                             ICorDebugFrame *pFrame,
                             const std::string &expression,
-                            ICorDebugValue **ppResult)
+                            ICorDebugValue **ppResult,
+                            int evalFlags)
 {
     HRESULT Status;
 
@@ -669,7 +673,7 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
 
     if (!pResultValue && pThisValue) // check this.*
     {
-        if (SUCCEEDED(FollowFields(pThread, pILFrame, pThisValue, ValueIsVariable, parts, nextPart, &pResultValue)))
+        if (SUCCEEDED(FollowFields(pThread, pILFrame, pThisValue, ValueIsVariable, parts, nextPart, &pResultValue, evalFlags)))
         {
             *ppResult = pResultValue.Detach();
             return S_OK;
@@ -678,7 +682,7 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
 
     if (!pResultValue) // check statics in nested classes
     {
-        if (SUCCEEDED(FollowNested(pThread, pILFrame, methodClass, parts, &pResultValue)))
+        if (SUCCEEDED(FollowNested(pThread, pILFrame, methodClass, parts, &pResultValue, evalFlags)))
         {
             *ppResult = pResultValue.Detach();
             return S_OK;
@@ -700,11 +704,11 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
     {
         ToRelease<ICorDebugType> pType;
         IfFailRet(FindType(parts, nextPart, pThread, nullptr, &pType));
-        IfFailRet(EvalObjectNoConstructor(pThread, pType, &pResultValue));
+        IfFailRet(EvalObjectNoConstructor(pThread, pType, &pResultValue, evalFlags));
         valueKind = ValueIsClass;
     }
 
-    IfFailRet(FollowFields(pThread, pILFrame, pResultValue, valueKind, parts, nextPart, &pResultValue));
+    IfFailRet(FollowFields(pThread, pILFrame, pResultValue, valueKind, parts, nextPart, &pResultValue, evalFlags));
 
     *ppResult = pResultValue.Detach();
 

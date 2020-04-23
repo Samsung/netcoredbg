@@ -430,13 +430,13 @@ void MIProtocol::PrintNewVar(std::string varobjName, Variable &v, int threadId, 
     PrintVar(varobjName, v, threadId, print_values, output);
 }
 
-HRESULT MIProtocol::CreateVar(int threadId, int level, const std::string &varobjName, const std::string &expression, std::string &output)
+HRESULT MIProtocol::CreateVar(int threadId, int level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output)
 {
     HRESULT Status;
 
     uint64_t frameId = StackFrame(threadId, level, "").id;
 
-    Variable variable;
+    Variable variable(evalFlags);
     IfFailRet(m_debugger->Evaluate(frameId, expression, variable, output));
 
     int print_values = 1;
@@ -1019,13 +1019,14 @@ HRESULT MIProtocol::HandleCommand(std::string command,
 
         int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
         int level = GetIntArg(args, "--frame", 0);
+        int evalFlags = GetIntArg(args, "--evalFlags", 0);
 
         std::string varName = args.at(0);
         std::string varExpr = args.at(1);
         if (varExpr == "*" && args.size() >= 3)
             varExpr = args.at(2);
 
-        return CreateVar(threadId, level, varName, varExpr, output);
+        return CreateVar(threadId, level, evalFlags, varName, varExpr, output);
     }},
     { "var-list-children", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         std::vector<std::string> args = args_orig;
@@ -1239,8 +1240,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         Variable variable;
         IfFailRet(FindVar(varName, variable));
 
-
-        IfFailRet(m_debugger->SetVariableByExpression(frameId, variable.evaluateName, varExpr, output));
+        IfFailRet(m_debugger->SetVariableByExpression(frameId, variable, varExpr, output));
 
         output = "value=\"" + MIProtocol::EscapeMIValue(output) + "\"";
 

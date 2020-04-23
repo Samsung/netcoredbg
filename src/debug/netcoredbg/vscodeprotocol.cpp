@@ -529,6 +529,9 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         else
             frameId = frameIdIter.value();
 
+        // NOTE
+        // VSCode don't support evaluation flags, we can't disable implicit function calls during evaluation.
+        // https://github.com/OmniSharp/omnisharp-vscode/issues/3173
         Variable variable;
         std::string output;
         Status = m_debugger->Evaluate(frameId, expression, variable, output);

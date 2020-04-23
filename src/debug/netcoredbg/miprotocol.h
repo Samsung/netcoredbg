@@ -66,7 +66,7 @@ private:
                         Debugger::StepType stepType);
     HRESULT PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame);
     HRESULT PrintVariables(const std::vector<Variable> &variables, std::string &output);
-    HRESULT CreateVar(int threadId, int level, const std::string &varobjName, const std::string &expression, std::string &output);
+    HRESULT CreateVar(int threadId, int level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output);
     HRESULT DeleteVar(const std::string &varobjName);
     HRESULT FindVar(const std::string &varobjName, Variable &variable);
     void PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output);
