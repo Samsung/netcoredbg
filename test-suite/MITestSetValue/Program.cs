@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Diagnostics;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
@@ -218,6 +219,35 @@ namespace MITestSetValue
         }
     }
 
+    public struct TestStruct4
+    {
+        [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+        public int val1
+        {
+            get
+            {
+                return 666; 
+            }
+        }
+
+        [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        public int val2
+        {
+            get
+            {
+                return 777; 
+            }
+        }
+
+        public int val3
+        {
+            get
+            {
+                return 888; 
+            }
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -236,9 +266,10 @@ namespace MITestSetValue
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK1"], 4);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK2"], 5);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK3"], 6);
+                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK4"], 7);
 
                 Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("7-exec-continue").Class);
+                             Context.MIDebugger.Request("8-exec-continue").Class);
             });
 
             TestStruct2 ts = new TestStruct2(1, 5, 10);
@@ -308,13 +339,27 @@ namespace MITestSetValue
 
             int dummy3 = 3;                                     Label.Breakpoint("BREAK3");
 
-            Label.Checkpoint("test_eval_flags", "finish", () => {
+            Label.Checkpoint("test_eval_flags", "test_debugger_browsable_state", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK3"]);
 
                 Context.CreateAndAssignVar("ts3.val1", "666");
                 Assert.Equal("777", Context.GetChildValue("ts3", 0, false, 0));
                 Context.enum_EVALFLAGS evalFlags = Context.enum_EVALFLAGS.EVAL_NOFUNCEVAL;
                 Assert.Equal("<error>", Context.GetChildValue("ts3", 0, true, evalFlags));
+
+                Assert.Equal(MIResultClass.Running,
+                             Context.MIDebugger.Request("-exec-continue").Class);
+            });
+
+            TestStruct4 ts4 = new TestStruct4();
+
+            int dummy4 = 4;                                     Label.Breakpoint("BREAK4");
+
+            Label.Checkpoint("test_debugger_browsable_state", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK4"]);
+
+                Assert.Equal("666", Context.GetChildValue("ts4", 0, false, 0));
+                Assert.Equal("888", Context.GetChildValue("ts4", 1, false, 0));
 
                 Assert.Equal(MIResultClass.Running,
                              Context.MIDebugger.Request("-exec-continue").Class);

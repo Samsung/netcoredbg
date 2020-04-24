@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
@@ -223,6 +224,24 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static int GetChildVariablesReference(int VariablesReference, string VariableName)
+        {
+            VariablesRequest variablesRequest = new VariablesRequest();
+            variablesRequest.arguments.variablesReference = VariablesReference;
+            var ret = VSCodeDebugger.Request(variablesRequest);
+            Assert.True(ret.Success);
+
+            VariablesResponse variablesResponse =
+                JsonConvert.DeserializeObject<VariablesResponse>(ret.ResponseStr);
+
+            foreach (var Variable in variablesResponse.body.variables) {
+                if (Variable.name == VariableName)
+                    return Variable.variablesReference;
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
         public static void EvalVariable(int variablesReference, string Type, string Name, string Value)
         {
             VariablesRequest variablesRequest = new VariablesRequest();
@@ -240,6 +259,28 @@ namespace NetcoreDbgTest.Script
                     return;
                 }
             }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
+        public static void EvalVariableByIndex(int variablesReference, string Type, int Index, string Value)
+        {
+            VariablesRequest variablesRequest = new VariablesRequest();
+            variablesRequest.arguments.variablesReference = variablesReference;
+            var ret = VSCodeDebugger.Request(variablesRequest);
+            Assert.True(ret.Success);
+
+            VariablesResponse variablesResponse =
+                JsonConvert.DeserializeObject<VariablesResponse>(ret.ResponseStr);
+
+            if (Index < variablesResponse.body.variables.Count) {
+                var Variable = variablesResponse.body.variables[Index];
+                Assert.True(Type == Variable.type
+                            && Value == Variable.value);
+                return;
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
         public static VSCodeResult SetVariable(int variablesReference, string Name, string Value)
@@ -276,6 +317,7 @@ namespace VSCodeTestVariables
             Label.Checkpoint("init", "bp_test", () => {
                 Context.PrepareStart();
                 Context.AddBreakpoint("bp");
+                Context.AddBreakpoint("bp2");
                 Context.AddBreakpoint("bp_func");
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
@@ -292,9 +334,9 @@ namespace VSCodeTestVariables
             Label.Checkpoint("bp_test", "bp_func_test", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp"]);
-                Context.CheckVariablesCount(frameId, "Locals", 3);
+                Context.CheckVariablesCount(frameId, "Locals", 4);
                 int variablesReference = Context.GetVariablesReference(frameId, "Locals");
-                Context.EvalVariable(variablesReference, "string[]", "arg" , "{string[0]}");
+                Context.EvalVariable(variablesReference, "string[]", "args" , "{string[0]}");
                 Context.EvalVariable(variablesReference, "int", "i", "2");
                 Context.EvalVariable(variablesReference, "string", "test_string", "\"test\"");
 
@@ -310,6 +352,24 @@ namespace VSCodeTestVariables
 
             TestFunction(10);
 
+            TestStruct4 ts4 = new TestStruct4();
+
+            i++;                                                           Label.Breakpoint("bp2");
+
+            Label.Checkpoint("test_debugger_browsable_state", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp2"]);
+                Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp2"]);
+
+                int variablesReference_Locals = Context.GetVariablesReference(frameId, "Locals");
+                int variablesReference_ts4 = Context.GetChildVariablesReference(variablesReference_Locals, "ts4");
+                Context.EvalVariable(variablesReference_ts4, "int", "val1", "666");
+                Context.EvalVariable(variablesReference_ts4, "int", "val3", "888");
+                Context.EvalVariableByIndex(variablesReference_ts4, "int", 0, "666");
+                Context.EvalVariableByIndex(variablesReference_ts4, "int", 1, "888");
+
+                Context.Continue();
+            });
+
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
                 Context.DebuggerExit();
@@ -321,7 +381,7 @@ namespace VSCodeTestVariables
             int f = 5;
             Console.WriteLine("f = " + f.ToString());                     Label.Breakpoint("bp_func");
 
-            Label.Checkpoint("bp_func_test", "finish", () => {
+            Label.Checkpoint("bp_func_test", "test_debugger_browsable_state", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp_func"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp_func"]);
                 Context.CheckVariablesCount(frameId, "Locals", 2);
@@ -330,6 +390,35 @@ namespace VSCodeTestVariables
                 Context.EvalVariable(variablesReference, "int", "f", "5");
                 Context.Continue();
             });
+        }
+
+        public struct TestStruct4
+        {
+            [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+            public int val1
+            {
+                get
+                {
+                    return 666; 
+                }
+            }
+
+            [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.Never)]
+            public int val2
+            {
+                get
+                {
+                    return 777; 
+                }
+            }
+
+            public int val3
+            {
+                get
+                {
+                    return 888; 
+                }
+            }
         }
     }
 }
