@@ -12,6 +12,7 @@
 #include "miprotocol.h"
 #include "vscodeprotocol.h"
 #include "logger.h"
+#include "version.h"
 
 static const uint16_t DEFAULT_SERVER_PORT = 4711;
 
@@ -30,7 +31,8 @@ static void print_help()
         "                                      specified TCP/IP port instead of stdin/out. If port is not specified\n"
         "                                      TCP %i will be used.\n"
         "--log[=<type>]                        Enable logging. Supported logging to file and to dlog (only for Tizen)\n"
-        "                                      File log by default. File is created in 'current' folder.\n",
+        "                                      File log by default. File is created in 'current' folder.\n"
+        "--version                             Displays the current version.\n",
         (int)DEFAULT_SERVER_PORT
     );
 }
@@ -96,6 +98,14 @@ int main(int argc, char *argv[])
         else if (strcmp(argv[i], "--help") == 0)
         {
             print_help();
+            return EXIT_SUCCESS;
+        }
+        else if (strcmp(argv[i], "--version") == 0)
+        {
+            fprintf(stdout, "NET Core debugger %s\n", __VERSION);
+            fprintf(stdout, "\nCopyright (c) 2020 Samsung Electronics Co., LTD\n");
+            fprintf(stdout, "Distributed under the MIT License.\n");
+            fprintf(stdout, "See the LICENSE file in the project root for more information.\n");
             return EXIT_SUCCESS;
         }
         else if (strcmp(argv[i], "--log") == 0)
