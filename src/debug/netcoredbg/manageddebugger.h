@@ -586,6 +586,8 @@ private:
 
     HRESULT RunIfReady();
 
+    HRESULT SetEnableCustomNotification(BOOL fEnable);
+
 public:
     ManagedDebugger();
     ~ManagedDebugger() override;

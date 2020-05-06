@@ -273,7 +273,7 @@ static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
     return S_OK;
 }
 
-class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2
+class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2, ICorDebugManagedCallback3
 {
     ULONG m_refCount;
     ManagedDebugger &m_debugger;
@@ -306,6 +306,12 @@ public:
             else if(riid == __uuidof(ICorDebugManagedCallback2))
             {
                 *ppInterface = static_cast<ICorDebugManagedCallback2*>(this);
+                AddRef();
+                return S_OK;
+            }
+            else if(riid == __uuidof(ICorDebugManagedCallback3))
+            {
+                *ppInterface = static_cast<ICorDebugManagedCallback3*>(this);
                 AddRef();
                 return S_OK;
             }
@@ -578,6 +584,10 @@ public:
                 for (const BreakpointEvent &event : events)
                     m_debugger.m_protocol->EmitBreakpointEvent(event);
             }
+
+            // enable Debugger.NotifyOfCrossThreadDependency after System.Private.CoreLib.dll loaded (trigger for 1 time call only)
+            if (module.name == "System.Private.CoreLib.dll")
+                m_debugger.SetEnableCustomNotification(TRUE);
 
             pAppDomain->Continue(0);
             return S_OK;
@@ -879,6 +889,16 @@ public:
             // https://docs.microsoft.com/ru-ru/dotnet/framework/debug-trace-profile/diagnosing-errors-with-managed-debugging-assistants#enable-and-disable-mdas
             //
 
+            LogFuncEntry();
+            return E_NOTIMPL;
+        }
+
+        // ICorDebugManagedCallback3
+
+        virtual HRESULT STDMETHODCALLTYPE CustomNotification(
+            /* [in] */ ICorDebugThread *pThread,  
+            /* [in] */ ICorDebugAppDomain *pAppDomain)
+        {
             LogFuncEntry();
             return E_NOTIMPL;
         }
@@ -1664,4 +1684,38 @@ bool ManagedDebugger::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwE
 {
     LogFuncEntry();
     return m_breakpoints.MatchExceptionBreakpoint(dwEventType, exceptionName, category);
+}
+
+HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
+{
+    HRESULT Status = S_OK;
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(m_modules.GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+
+    ToRelease<IUnknown> pMDUnknown;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    // in order to make code simple and clear, we don't check enclosing classes with recursion here
+    // since we know behaviour for sure, just find "System.Diagnostics.Debugger" first
+    mdTypeDef typeDefParent = mdTypeDefNil;
+    static const WCHAR strParentTypeDef[] = W("System.Diagnostics.Debugger");
+    IfFailRet(pMD->FindTypeDefByName(strParentTypeDef, mdTypeDefNil, &typeDefParent));
+
+    mdTypeDef typeDef = mdTypeDefNil;
+    static const WCHAR strTypeDef[] = W("CrossThreadDependencyNotification");
+    IfFailRet(pMD->FindTypeDefByName(strTypeDef, typeDefParent, &typeDef));
+
+    ToRelease<ICorDebugClass> pClass;
+    IfFailRet(pModule->GetClassFromToken(typeDef, &pClass));
+
+    ToRelease<ICorDebugProcess> pProcess;
+    IfFailRet(pModule->GetProcess(&pProcess));
+
+    ToRelease<ICorDebugProcess3> pProcess3;
+    IfFailRet(pProcess->QueryInterface(IID_ICorDebugProcess3, (LPVOID*) &pProcess3));
+    return pProcess3->SetEnableCustomNotification(pClass, fEnable);
 }
