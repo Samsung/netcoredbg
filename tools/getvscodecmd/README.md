@@ -3,7 +3,7 @@
 Debugger side are sensitive from some values of temporary objects in the vscode protocol. But, for some developers scenarios it can by useful. Also, debugger behavior can be unstable for this manner. But, for my workflow the script allowed me reproduce issue in debugger. Lets, look the usage example:
 ```
 $ get-vscodecmd.py vscode_output > cmd
-$ dos2unix cmd
+$ unix2dos cmd
 
 $ netcoredbg --interpreter=vscode --engineLogging=/tmp < cmd
 ```

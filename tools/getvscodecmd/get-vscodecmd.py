@@ -3,8 +3,9 @@ import re, sys, os
 
 '''
 Example of using script:
-    1) Put vscode debug console output and run `./get-vscodecmd.py vscode.out > cmd.out`
-    2) Run `dos2unix cmd.out`
+    $ get-vscodecmd.py vscode_output > cmd
+    $ unix2dos cmd
+    $ netcoredbg --interpreter=vscode --engineLogging=/tmp < cmd
 '''
 
 def do(f):
@@ -18,3 +19,4 @@ def do(f):
 
 if __name__ == "__main__":
     do(sys.argv[1])
+
