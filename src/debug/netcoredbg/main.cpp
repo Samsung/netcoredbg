@@ -14,6 +14,8 @@
 #include "logger.h"
 #include "version.h"
 
+#include "buildinfo.cpp"
+
 static const uint16_t DEFAULT_SERVER_PORT = 4711;
 
 static void print_help()
@@ -22,6 +24,7 @@ static void print_help()
         ".NET Core debugger\n"
         "\n"
         "Options:\n"
+        "--buildinfo                           Print build info.\n"
         "--attach <process-id>                 Attach the debugger to the specified process id.\n"
         "--interpreter=mi                      Puts the debugger into MI mode.\n"
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
@@ -34,6 +37,49 @@ static void print_help()
         "                                      File log by default. File is created in 'current' folder.\n"
         "--version                             Displays the current version.\n",
         (int)DEFAULT_SERVER_PORT
+    );
+}
+
+static void print_buildinfo()
+{
+    fprintf(stdout, ".NET Core debugger\n");
+
+    fprintf(stdout,
+        "\n"
+        "    Build info:\n"
+        "      Build date:  %s\n"
+        "      Target OS:   %s\n"
+        "      Target arch: %s\n"
+        , BUILDINFO::BUILD_NETCOREDBG_DATE.c_str()
+        , BUILDINFO::CMAKE_SYSTEM_NAME.c_str()
+        , BUILDINFO::CLR_CMAKE_TARGET_ARCH.c_str()
+    );
+
+    fprintf(stdout,
+        "\n"
+        "    NetcoreDBG HEAD commit info:\n"
+        "      Hash:    %s\n"
+        "      Date:    %s\n"
+        "      Subject: %s\n"
+        "      Refs:    %s\n"
+        , BUILDINFO::BUILD_NETCOREDBG_GIT_HEAD.c_str()
+        , BUILDINFO::BUILD_NETCOREDBG_GIT_DATE.c_str()
+        , BUILDINFO::BUILD_NETCOREDBG_GIT_SUBJECT.c_str()
+        , BUILDINFO::BUILD_NETCOREDBG_GIT_REFSPEC.c_str()
+    );
+
+    fprintf(stdout,
+        "\n"
+        "    CoreCLR HEAD commit info:\n"
+        "      Hash:    %s\n"
+        "      Date:    %s\n"
+        "      Subject: %s\n"
+        "      Refs:    %s\n"
+        "\n"
+        , BUILDINFO::BUILD_CORECLR_GIT_HEAD.c_str()
+        , BUILDINFO::BUILD_CORECLR_GIT_DATE.c_str()
+        , BUILDINFO::BUILD_CORECLR_GIT_SUBJECT.c_str()
+        , BUILDINFO::BUILD_CORECLR_GIT_REFSPEC.c_str()
     );
 }
 
@@ -98,6 +144,11 @@ int main(int argc, char *argv[])
         else if (strcmp(argv[i], "--help") == 0)
         {
             print_help();
+            return EXIT_SUCCESS;
+        }
+        else if (strcmp(argv[i], "--buildinfo") == 0)
+        {
+            print_buildinfo();
             return EXIT_SUCCESS;
         }
         else if (strcmp(argv[i], "--version") == 0)

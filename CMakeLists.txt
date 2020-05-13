@@ -50,3 +50,46 @@ if (NOT "${DOTNET_DIR}" STREQUAL "")
 endif()
 
 add_subdirectory(src/debug/netcoredbg)
+
+include(getgitrevisiondescription.cmake)
+
+function(get_git_head_revision_dir _refspecvar _hashvar _dir)
+    set(BACKUPDIR "${CMAKE_CURRENT_SOURCE_DIR}")
+    set(CMAKE_CURRENT_SOURCE_DIR "${BACKUPDIR}${_dir}")
+    get_git_head_revision(refspecvar hashvar)
+    set(CMAKE_CURRENT_SOURCE_DIR "${BACKUPDIR}")
+    set(${_refspecvar} "${refspecvar}" PARENT_SCOPE)
+    set(${_hashvar} "${hashvar}" PARENT_SCOPE)
+endfunction()
+
+function(get_git_subject_date_revision _subjectvar _datevar)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --format=%ad --date=local
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE datevar
+        ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --format=%s
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE subjectvar
+        ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    set(${_subjectvar} "${subjectvar}" PARENT_SCOPE)
+    set(${_datevar} "${datevar}" PARENT_SCOPE)
+endfunction()
+
+function(get_git_subject_date_revision_dir _subjectvar _datevar _dir)
+    set(BACKUPDIR "${CMAKE_SOURCE_DIR}")
+    set(CMAKE_SOURCE_DIR "${BACKUPDIR}${_dir}")
+    get_git_subject_date_revision(subjectvar datevar)
+    set(CMAKE_SOURCE_DIR "${BACKUPDIR}")
+    set(${_subjectvar} "${subjectvar}" PARENT_SCOPE)
+    set(${_datevar} "${datevar}" PARENT_SCOPE)
+endfunction()
+
+get_git_head_revision(BUILD_NETCOREDBG_GIT_REFSPEC BUILD_NETCOREDBG_GIT_HEAD)
+get_git_head_revision_dir(BUILD_CORECLR_GIT_REFSPEC BUILD_CORECLR_GIT_HEAD "/.coreclr")
+
+get_git_subject_date_revision(BUILD_NETCOREDBG_GIT_SUBJECT BUILD_NETCOREDBG_GIT_DATE)
+get_git_subject_date_revision_dir(BUILD_CORECLR_GIT_SUBJECT BUILD_CORECLR_GIT_DATE "/.coreclr")
+
+execute_process(COMMAND date OUTPUT_VARIABLE BUILD_NETCOREDBG_DATE
+  ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/debug/netcoredbg/buildinfo.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/src/debug/netcoredbg/buildinfo.cpp" @ONLY)

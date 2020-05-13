@@ -50,7 +50,9 @@ set(netcoredbg_SRC
     cputil.cpp
     expr.cpp
     valuewrite.cpp
-    logger.cpp)
+    logger.cpp
+    buildinfo.cpp
+	)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
