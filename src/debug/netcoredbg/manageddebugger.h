@@ -64,8 +64,30 @@ private:
     ToRelease<ICorDebugFunction> m_pGetTypeHandle;
     ToRelease<ICorDebugFunction> m_pSuppressFinalize;
 
+    struct evalResult_t {
+        evalResult_t() = delete;
+        evalResult_t(ICorDebugEval *pEval_, const std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > &promiseValue_) = delete;
+        evalResult_t(const evalResult_t &B) = delete;
+        evalResult_t& operator = (const evalResult_t &B) = delete;
+        evalResult_t& operator = (evalResult_t &&B) = delete;
+
+        evalResult_t(ICorDebugEval *pEval_, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > &&promiseValue_) :
+            pEval(pEval_),
+            promiseValue(std::move(promiseValue_))
+        {}
+        evalResult_t(evalResult_t &&B) :
+            pEval(B.pEval),
+            promiseValue(std::move(B.promiseValue))
+        {}
+
+        ~evalResult_t() = default;
+
+        ICorDebugEval *pEval;
+        std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > promiseValue;
+    };
+
     std::mutex m_evalMutex;
-    std::unordered_map< DWORD, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > > m_evalResults;
+    std::unordered_map< DWORD, evalResult_t > m_evalResults;
 
     HRESULT FollowNested(ICorDebugThread *pThread,
                          ICorDebugILFrame *pILFrame,
@@ -174,6 +196,7 @@ public:
                      int evalFlags);
 
     bool IsEvalRunning();
+    ICorDebugEval *FindEvalForThread(ICorDebugThread *pThread);
 
     // Should be called by ICorDebugManagedCallback
     void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);

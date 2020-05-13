@@ -40,7 +40,8 @@ void Evaluator::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEva
     if (it == m_evalResults.end())
         return;
 
-    it->second.set_value(std::move(ppEvalResult));
+    it->second.pEval = pEval;
+    it->second.promiseValue.set_value(std::move(ppEvalResult));
 
     m_evalResults.erase(it);
 }
@@ -73,7 +74,7 @@ std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > Evaluator::RunEval(
     }
 
     std::lock_guard<std::mutex> lock(m_evalMutex);
-    if (!m_evalResults.insert(std::make_pair(threadId, std::move(p))).second)
+    if (!m_evalResults.insert(std::make_pair(threadId, evalResult_t{pEval, std::move(p)})).second)
         return f; // Already running eval? The future will throw broken promise
 
     ToRelease<ICorDebugAppDomain> pAppDomainLocal;
@@ -88,6 +89,19 @@ std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > Evaluator::RunEval(
     }
 
     return f;
+}
+
+ICorDebugEval *Evaluator::FindEvalForThread(ICorDebugThread *pThread)
+{
+    DWORD threadId = 0;
+    if (FAILED(pThread->GetID(&threadId)))
+        return nullptr;
+
+    auto it = m_evalResults.find(threadId);
+    if (it == m_evalResults.end())
+        return nullptr;
+
+    return it->second.pEval;
 }
 
 HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,

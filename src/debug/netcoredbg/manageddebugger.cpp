@@ -900,7 +900,23 @@ public:
             /* [in] */ ICorDebugAppDomain *pAppDomain)
         {
             LogFuncEntry();
-            return E_NOTIMPL;
+
+            HRESULT Status = S_OK;
+
+            if (m_debugger.m_evaluator.IsEvalRunning())
+            {
+                // NOTE
+                // All CoreCLR releases at least till version 3.1.3, don't have proper x86 implementation for ICorDebugEval::Abort().
+                // This issue looks like CoreCLR terminate managed process execution instead of abort evaluation.
+
+                ICorDebugEval *threadEval = m_debugger.m_evaluator.FindEvalForThread(pThread);
+                if (threadEval != nullptr) {
+                    IfFailRet(threadEval->Abort());
+                }
+            }
+
+            IfFailRet(pAppDomain->Continue(false));
+            return S_OK;
         }
 };
 
