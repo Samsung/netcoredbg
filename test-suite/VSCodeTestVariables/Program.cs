@@ -318,6 +318,7 @@ namespace VSCodeTestVariables
                 Context.PrepareStart();
                 Context.AddBreakpoint("bp");
                 Context.AddBreakpoint("bp2");
+                Context.AddBreakpoint("bp3");
                 Context.AddBreakpoint("bp_func");
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
@@ -334,7 +335,7 @@ namespace VSCodeTestVariables
             Label.Checkpoint("bp_test", "bp_func_test", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp"]);
-                Context.CheckVariablesCount(frameId, "Locals", 4);
+                Context.CheckVariablesCount(frameId, "Locals", 5);
                 int variablesReference = Context.GetVariablesReference(frameId, "Locals");
                 Context.EvalVariable(variablesReference, "string[]", "args" , "{string[0]}");
                 Context.EvalVariable(variablesReference, "int", "i", "2");
@@ -356,7 +357,7 @@ namespace VSCodeTestVariables
 
             i++;                                                           Label.Breakpoint("bp2");
 
-            Label.Checkpoint("test_debugger_browsable_state", "finish", () => {
+            Label.Checkpoint("test_debugger_browsable_state", "test_NotifyOfCrossThreadDependency", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp2"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp2"]);
 
@@ -366,6 +367,34 @@ namespace VSCodeTestVariables
                 Context.EvalVariable(variablesReference_ts4, "int", "val3", "888");
                 Context.EvalVariableByIndex(variablesReference_ts4, "int", 0, "666");
                 Context.EvalVariableByIndex(variablesReference_ts4, "int", 1, "888");
+
+                Context.Continue();
+            });
+
+            TestStruct5 ts5 = new TestStruct5();
+
+            // part of NotifyOfCrossThreadDependency test, no active evaluation here for sure
+            System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+
+            i++;                                                            Label.Breakpoint("bp3");
+
+            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp3"]);
+                Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp3"]);
+
+                int variablesReference_Locals = Context.GetVariablesReference(frameId, "Locals");
+                int variablesReference_ts5 = Context.GetChildVariablesReference(variablesReference_Locals, "ts5");
+                Context.EvalVariable(variablesReference_ts5, "int", "val1", "111");
+                Context.EvalVariable(variablesReference_ts5, "", "val2", "<error>");
+                Context.EvalVariable(variablesReference_ts5, "string", "val3", "\"text_333\"");
+                Context.EvalVariable(variablesReference_ts5, "", "val4", "<error>");
+                Context.EvalVariable(variablesReference_ts5, "float", "val5", "555.5");
+
+                Context.EvalVariableByIndex(variablesReference_ts5, "int", 0, "111");
+                Context.EvalVariableByIndex(variablesReference_ts5, "", 1, "<error>");
+                Context.EvalVariableByIndex(variablesReference_ts5, "string", 2, "\"text_333\"");
+                Context.EvalVariableByIndex(variablesReference_ts5, "", 3, "<error>");
+                Context.EvalVariableByIndex(variablesReference_ts5, "float", 4, "555.5");
 
                 Context.Continue();
             });
@@ -417,6 +446,51 @@ namespace VSCodeTestVariables
                 get
                 {
                     return 888; 
+                }
+            }
+        }
+
+        public struct TestStruct5
+        {
+            public int val1
+            {
+                get
+                {
+                    return 111; 
+                }
+            }
+
+            public int val2
+            {
+                get
+                {
+                    System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+                    return 222; 
+                }
+            }
+
+            public string val3
+            {
+                get
+                {
+                    return "text_333"; 
+                }
+            }
+
+            public float val4
+            {
+                get
+                {
+                    System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+                    return 444.4f; 
+                }
+            }
+
+            public float val5
+            {
+                get
+                {
+                    return 555.5f; 
                 }
             }
         }

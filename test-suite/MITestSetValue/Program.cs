@@ -248,6 +248,51 @@ namespace MITestSetValue
         }
     }
 
+    public struct TestStruct5
+    {
+        public int val1
+        {
+            get
+            {
+                return 111; 
+            }
+        }
+
+        public int val2
+        {
+            get
+            {
+                System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+                return 222; 
+            }
+        }
+
+        public string val3
+        {
+            get
+            {
+                return "text_333"; 
+            }
+        }
+
+        public float val4
+        {
+            get
+            {
+                System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+                return 444.4f; 
+            }
+        }
+
+        public float val5
+        {
+            get
+            {
+                return 555.5f; 
+            }
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -267,9 +312,10 @@ namespace MITestSetValue
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK2"], 5);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK3"], 6);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK4"], 7);
+                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK5"], 8);
 
                 Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("8-exec-continue").Class);
+                             Context.MIDebugger.Request("9-exec-continue").Class);
             });
 
             TestStruct2 ts = new TestStruct2(1, 5, 10);
@@ -355,11 +401,31 @@ namespace MITestSetValue
 
             int dummy4 = 4;                                     Label.Breakpoint("BREAK4");
 
-            Label.Checkpoint("test_debugger_browsable_state", "finish", () => {
+            Label.Checkpoint("test_debugger_browsable_state", "test_NotifyOfCrossThreadDependency", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK4"]);
 
                 Assert.Equal("666", Context.GetChildValue("ts4", 0, false, 0));
                 Assert.Equal("888", Context.GetChildValue("ts4", 1, false, 0));
+
+                Assert.Equal(MIResultClass.Running,
+                             Context.MIDebugger.Request("-exec-continue").Class);
+            });
+
+            TestStruct5 ts5 = new TestStruct5();
+
+            // part of NotifyOfCrossThreadDependency test, no active evaluation here for sure
+            System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+
+            int dummy5 = 5;                                     Label.Breakpoint("BREAK5");
+
+            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK5"]);
+
+                Assert.Equal("111", Context.GetChildValue("ts5", 0, false, 0));
+                Assert.Equal("<error>", Context.GetChildValue("ts5", 1, false, 0));
+                Assert.Equal("\\\"text_333\\\"", Context.GetChildValue("ts5", 2, false, 0));
+                Assert.Equal("<error>", Context.GetChildValue("ts5", 3, false, 0));
+                Assert.Equal("555.5", Context.GetChildValue("ts5", 4, false, 0));
 
                 Assert.Equal(MIResultClass.Running,
                              Context.MIDebugger.Request("-exec-continue").Class);
