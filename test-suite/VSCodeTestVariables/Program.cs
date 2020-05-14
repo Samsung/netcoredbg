@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
@@ -319,6 +320,7 @@ namespace VSCodeTestVariables
                 Context.AddBreakpoint("bp");
                 Context.AddBreakpoint("bp2");
                 Context.AddBreakpoint("bp3");
+                Context.AddBreakpoint("bp4");
                 Context.AddBreakpoint("bp_func");
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
@@ -335,7 +337,7 @@ namespace VSCodeTestVariables
             Label.Checkpoint("bp_test", "bp_func_test", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp"]);
-                Context.CheckVariablesCount(frameId, "Locals", 5);
+                Context.CheckVariablesCount(frameId, "Locals", 6);
                 int variablesReference = Context.GetVariablesReference(frameId, "Locals");
                 Context.EvalVariable(variablesReference, "string[]", "args" , "{string[0]}");
                 Context.EvalVariable(variablesReference, "int", "i", "2");
@@ -378,7 +380,7 @@ namespace VSCodeTestVariables
 
             i++;                                                            Label.Breakpoint("bp3");
 
-            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "finish", () => {
+            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "test_eval_timeout", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp3"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp3"]);
 
@@ -395,6 +397,40 @@ namespace VSCodeTestVariables
                 Context.EvalVariableByIndex(variablesReference_ts5, "string", 2, "\"text_333\"");
                 Context.EvalVariableByIndex(variablesReference_ts5, "", 3, "<error>");
                 Context.EvalVariableByIndex(variablesReference_ts5, "float", 4, "555.5");
+
+                Context.Continue();
+            });
+
+            TestStruct6 ts6 = new TestStruct6();
+
+            i++;                                                            Label.Breakpoint("bp4");
+
+            Label.Checkpoint("test_eval_timeout", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp4"]);
+                Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp4"]);
+
+                int variablesReference_Locals = Context.GetVariablesReference(frameId, "Locals");
+                int variablesReference_ts6 = Context.GetChildVariablesReference(variablesReference_Locals, "ts6");
+
+                var task = System.Threading.Tasks.Task.Run(() => 
+                {
+                    Context.EvalVariable(variablesReference_ts6, "int", "val1", "123");
+                    Context.EvalVariable(variablesReference_ts6, "", "val2", "<error>");
+                    Context.EvalVariable(variablesReference_ts6, "string", "val3", "\"text_123\"");
+                });
+                // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve)
+                if (!task.Wait(TimeSpan.FromSeconds(20)))
+                    throw new NetcoreDbgTestCore.DebuggerTimedOut();
+
+                task = System.Threading.Tasks.Task.Run(() => 
+                {
+                    Context.EvalVariableByIndex(variablesReference_ts6, "int", 0, "123");
+                    Context.EvalVariableByIndex(variablesReference_ts6, "", 1, "<error>");
+                    Context.EvalVariableByIndex(variablesReference_ts6, "string", 2, "\"text_123\"");
+                });
+                // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve)
+                if (!task.Wait(TimeSpan.FromSeconds(20)))
+                    throw new NetcoreDbgTestCore.DebuggerTimedOut();
 
                 Context.Continue();
             });
@@ -491,6 +527,34 @@ namespace VSCodeTestVariables
                 get
                 {
                     return 555.5f; 
+                }
+            }
+        }
+
+        public struct TestStruct6
+        {
+            public int val1
+            {
+                get
+                {
+                    return 123; 
+                }
+            }
+
+            public int val2
+            {
+                get
+                {
+                    System.Threading.Thread.Sleep(5000000);
+                    return 999; 
+                }
+            }
+
+            public string val3
+            {
+                get
+                {
+                    return "text_123"; 
                 }
             }
         }

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Diagnostics;
+using System.Threading;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
@@ -293,6 +294,34 @@ namespace MITestSetValue
         }
     }
 
+    public struct TestStruct6
+    {
+        public int val1
+        {
+            get
+            {
+                return 123; 
+            }
+        }
+
+        public int val2
+        {
+            get
+            {
+                System.Threading.Thread.Sleep(5000000);
+                return 999; 
+            }
+        }
+
+        public string val3
+        {
+            get
+            {
+                return "text_123"; 
+            }
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -313,9 +342,10 @@ namespace MITestSetValue
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK3"], 6);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK4"], 7);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK5"], 8);
+                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK6"], 9);
 
                 Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("9-exec-continue").Class);
+                             Context.MIDebugger.Request("10-exec-continue").Class);
             });
 
             TestStruct2 ts = new TestStruct2(1, 5, 10);
@@ -418,7 +448,7 @@ namespace MITestSetValue
 
             int dummy5 = 5;                                     Label.Breakpoint("BREAK5");
 
-            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "finish", () => {
+            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "test_eval_timeout", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK5"]);
 
                 Assert.Equal("111", Context.GetChildValue("ts5", 0, false, 0));
@@ -426,6 +456,27 @@ namespace MITestSetValue
                 Assert.Equal("\\\"text_333\\\"", Context.GetChildValue("ts5", 2, false, 0));
                 Assert.Equal("<error>", Context.GetChildValue("ts5", 3, false, 0));
                 Assert.Equal("555.5", Context.GetChildValue("ts5", 4, false, 0));
+
+                Assert.Equal(MIResultClass.Running,
+                             Context.MIDebugger.Request("-exec-continue").Class);
+            });
+
+            TestStruct6 ts6 = new TestStruct6();
+
+            int dummy6 = 6;                                     Label.Breakpoint("BREAK6");
+
+            Label.Checkpoint("test_eval_timeout", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK6"]);
+
+                var task = System.Threading.Tasks.Task.Run(() => 
+                {
+                    Assert.Equal("123", Context.GetChildValue("ts6", 0, false, 0));
+                    Assert.Equal("<error>", Context.GetChildValue("ts6", 1, false, 0));
+                    Assert.Equal("\\\"text_123\\\"", Context.GetChildValue("ts6", 2, false, 0));
+                });
+                // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve)
+                if (!task.Wait(TimeSpan.FromSeconds(20)))
+                    throw new NetcoreDbgTestCore.DebuggerTimedOut();
 
                 Assert.Equal(MIResultClass.Running,
                              Context.MIDebugger.Request("-exec-continue").Class);

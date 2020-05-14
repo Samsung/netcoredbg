@@ -11,4 +11,8 @@ namespace NetcoreDbgTestCore
     public class DebuggerNotResponsesException : Exception
     {
     }
+
+    public class DebuggerTimedOut : Exception
+    {
+    }
 }
