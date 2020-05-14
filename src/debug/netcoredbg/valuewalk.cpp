@@ -115,6 +115,33 @@ HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
         if (!f.valid())
             return E_FAIL;
 
+        // NOTE
+        // MSVS 2017 debugger and newer use config file
+        // C:\Program Files (x86)\Microsoft Visual Studio\YYYY\VERSION\Common7\IDE\Profiles\CSharp.vssettings
+        // by default NormalEvalTimeout is 5000 milliseconds
+        //
+        // TODO add timeout configuration feature (care about VSCode, MSVS with Tizen plugin, standalone usage)
+
+        std::future_status timeoutStatus = f.wait_for(std::chrono::milliseconds(5000));
+        if (timeoutStatus == std::future_status::timeout)
+        {
+            Logger::levelLog(LOG_WARN, "Evaluation timed out.");
+
+            // NOTE
+            // Call ICorDebugEval::Abort() and ICorDebugEval2::RudeAbort() during process execution is allowed, we are safe here.
+            // 
+            // All CoreCLR releases at least till version 3.1.3, don't have proper x86 implementation for ICorDebugEval::Abort().
+            // This issue looks like CoreCLR terminate managed process execution instead of abort evaluation.
+
+            if (FAILED(pEval->Abort()))
+            {
+                HRESULT Status = S_OK;
+                ToRelease<ICorDebugEval2> pEval2;
+                IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+                IfFailRet(pEval2->RudeAbort());
+            }
+        }
+
         auto evalResult = f.get();
 
         if (!ppEvalResult)
