@@ -501,12 +501,44 @@ public:
         {
             LogFuncEntry();
 
+            HRESULT Status = S_OK;
+
             // TODO: Need implementation
             //
             // This is callback EvalException invoked on evaluation interruption event.
             // And, evaluated results has inconsistent states. Notify is not enough for this point.
 
             m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
+
+            // NOTE
+            // In case of unhandled exception inside implicit function call (for example, getter),
+            // ICorDebugManagedCallback::EvalException() is exit point for eval routine, make sure,
+            // that proper threads states are setted up.
+            if (m_debugger.m_evaluator.is_empty_eval_queue())
+            {
+                pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
+            }
+            else
+            {
+                DWORD currentThreadId;
+                pThread->GetID(&currentThreadId);
+                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                if (evalThreadId == currentThreadId) {
+                    m_debugger.m_evaluator.pop_eval_queue();
+
+                    DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                    ToRelease<ICorDebugThread> pThreadEval;
+                    IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
+                    IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
+                    IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
+
+                    Logger::levelLog(LOG_INFO, "Eval exception, threadid = '%d'", currentThreadId);
+                }
+                else {
+                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", currentThreadId, evalThreadId);
+                }
+            }
+
             return S_OK;
         }
 
@@ -777,6 +809,14 @@ public:
             /* [in] */ DWORD dwFlags)
         {
             LogFuncEntry();
+
+            // In case we inside evaluation (exception during implicit function execution), make sure we continue process execution.
+            // This is internal CoreCLR routine, should not be interrupted by debugger. CoreCLR will care about exception in this case
+            // and provide exception data as evaluation result in case of unhandled exception.
+            if (m_debugger.m_evaluator.IsEvalRunning() && m_debugger.m_evaluator.FindEvalForThread(pThread))
+            {
+                return pAppDomain->Continue(0);
+            }
 
             // INFO: Exception event callbacks produce Stop process and managed threads in coreCLR
             // After emit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
