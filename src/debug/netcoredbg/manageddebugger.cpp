@@ -524,8 +524,12 @@ public:
         {
             LogFuncEntry();
 
-            m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
+            if (m_debugger.m_evaluator.IsEvalRunning())
+            {
+                Logger::levelLog(LOG_WARN, "The target process exited while evaluating the function.");
+            }
 
+            m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
 
             while (!m_debugger.m_evaluator.is_empty_eval_queue())
                 m_debugger.m_evaluator.pop_eval_queue();
