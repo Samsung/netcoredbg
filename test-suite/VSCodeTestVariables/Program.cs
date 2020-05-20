@@ -321,6 +321,7 @@ namespace VSCodeTestVariables
                 Context.AddBreakpoint("bp2");
                 Context.AddBreakpoint("bp3");
                 Context.AddBreakpoint("bp4");
+                Context.AddBreakpoint("bp5");
                 Context.AddBreakpoint("bp_func");
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
@@ -337,7 +338,7 @@ namespace VSCodeTestVariables
             Label.Checkpoint("bp_test", "bp_func_test", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp"]);
-                Context.CheckVariablesCount(frameId, "Locals", 6);
+                Context.CheckVariablesCount(frameId, "Locals", 7);
                 int variablesReference = Context.GetVariablesReference(frameId, "Locals");
                 Context.EvalVariable(variablesReference, "string[]", "args" , "{string[0]}");
                 Context.EvalVariable(variablesReference, "int", "i", "2");
@@ -405,7 +406,7 @@ namespace VSCodeTestVariables
 
             i++;                                                            Label.Breakpoint("bp4");
 
-            Label.Checkpoint("test_eval_timeout", "finish", () => {
+            Label.Checkpoint("test_eval_timeout", "test_eval_exception", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp4"]);
                 Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp4"]);
 
@@ -431,6 +432,30 @@ namespace VSCodeTestVariables
                 // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve)
                 if (!task.Wait(TimeSpan.FromSeconds(20)))
                     throw new NetcoreDbgTestCore.DebuggerTimedOut();
+
+                Context.Continue();
+            });
+
+            TestStruct7 ts7 = new TestStruct7();
+
+            i++;                                                            Label.Breakpoint("bp5");
+
+            Label.Checkpoint("test_eval_exception", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp5"]);
+                Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp5"]);
+
+                int variablesReference_Locals = Context.GetVariablesReference(frameId, "Locals");
+                int variablesReference_ts7 = Context.GetChildVariablesReference(variablesReference_Locals, "ts7");
+
+                Context.EvalVariable(variablesReference_ts7, "int", "val1", "567");
+                Context.EvalVariable(variablesReference_ts7, "int", "val2", "777");
+                Context.EvalVariable(variablesReference_ts7, "System.DivideByZeroException", "val3", "{System.DivideByZeroException}");
+                Context.EvalVariable(variablesReference_ts7, "string", "val4", "\"text_567\"");
+
+                Context.EvalVariableByIndex(variablesReference_ts7, "int", 0, "567");
+                Context.EvalVariableByIndex(variablesReference_ts7, "int", 1, "777");
+                Context.EvalVariableByIndex(variablesReference_ts7, "System.DivideByZeroException", 2, "{System.DivideByZeroException}");
+                Context.EvalVariableByIndex(variablesReference_ts7, "string", 3, "\"text_567\"");
 
                 Context.Continue();
             });
@@ -555,6 +580,49 @@ namespace VSCodeTestVariables
                 get
                 {
                     return "text_123"; 
+                }
+            }
+        }
+
+        public struct TestStruct7
+        {
+            public int val1
+            {
+                get
+                {
+                    return 567; 
+                }
+            }
+
+            public int val2
+            {
+                get
+                {
+                    try {
+                        throw new System.DivideByZeroException();
+                    }
+                    catch
+                    {
+                        return 777; 
+                    }
+                    return 888; 
+                }
+            }
+
+            public int val3
+            {
+                get
+                {
+                    throw new System.DivideByZeroException();
+                    return 777; 
+                }
+            }
+
+            public string val4
+            {
+                get
+                {
+                    return "text_567"; 
                 }
             }
         }

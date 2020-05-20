@@ -322,6 +322,49 @@ namespace MITestSetValue
         }
     }
 
+    public struct TestStruct7
+    {
+        public int val1
+        {
+            get
+            {
+                return 567; 
+            }
+        }
+
+        public int val2
+        {
+            get
+            {
+                try {
+                    throw new System.DivideByZeroException();
+                }
+                catch
+                {
+                    return 777; 
+                }
+                return 888; 
+            }
+        }
+
+        public int val3
+        {
+            get
+            {
+                throw new System.DivideByZeroException();
+                return 777; 
+            }
+        }
+
+        public string val4
+        {
+            get
+            {
+                return "text_567"; 
+            }
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -343,9 +386,10 @@ namespace MITestSetValue
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK4"], 7);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK5"], 8);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK6"], 9);
+                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK7"], 10);
 
                 Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("10-exec-continue").Class);
+                             Context.MIDebugger.Request("11-exec-continue").Class);
             });
 
             TestStruct2 ts = new TestStruct2(1, 5, 10);
@@ -465,7 +509,7 @@ namespace MITestSetValue
 
             int dummy6 = 6;                                     Label.Breakpoint("BREAK6");
 
-            Label.Checkpoint("test_eval_timeout", "finish", () => {
+            Label.Checkpoint("test_eval_timeout", "test_eval_with_exception", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK6"]);
 
                 var task = System.Threading.Tasks.Task.Run(() => 
@@ -477,6 +521,22 @@ namespace MITestSetValue
                 // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve)
                 if (!task.Wait(TimeSpan.FromSeconds(20)))
                     throw new NetcoreDbgTestCore.DebuggerTimedOut();
+
+                Assert.Equal(MIResultClass.Running,
+                             Context.MIDebugger.Request("-exec-continue").Class);
+            });
+
+            TestStruct7 ts7 = new TestStruct7();
+
+            int dummy7 = 7;                                     Label.Breakpoint("BREAK7");
+
+            Label.Checkpoint("test_eval_with_exception", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK7"]);
+
+                Assert.Equal("567", Context.GetChildValue("ts7", 0, false, 0));
+                Assert.Equal("777", Context.GetChildValue("ts7", 1, false, 0));
+                Assert.Equal("{System.DivideByZeroException}", Context.GetChildValue("ts7", 2, false, 0));
+                Assert.Equal("\\\"text_567\\\"", Context.GetChildValue("ts7", 3, false, 0));
 
                 Assert.Equal(MIResultClass.Running,
                              Context.MIDebugger.Request("-exec-continue").Class);
