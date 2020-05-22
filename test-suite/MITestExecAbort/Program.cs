@@ -91,7 +91,6 @@ namespace MITestExecAbort
             Label.Checkpoint("init", "", () => {
                 Context.Prepare();
                 Context.WasEntryPointHit();
-                Context.Continue();
 
                 Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("-thread-info").Class);
 

@@ -474,7 +474,7 @@ namespace MITestExceptionBreakpoint
 
             // "State: !Thow() && UserUnhandled()";
             // "name := AppException";
-            // Expected result => Raised EXCEPTION_C, EXCEPTION_D, EXCEPTION_E and exit after unhandled EXCEPTION_E.
+            // Expected result => Raised EXCEPTION_C, EXCEPTION_D and exit after unhandled EXCEPTION_E.
             Label.Checkpoint("bp_test9", "finish", () => {
                 Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["PIT_STOP_B"]);
 
@@ -490,8 +490,6 @@ namespace MITestExceptionBreakpoint
                 Context.WasExceptionBreakpointHit(DebuggeeInfo.Breakpoints["EXCEPTION_C"]);
                 Context.Continue();
                 Context.WasExceptionBreakpointHit(DebuggeeInfo.Breakpoints["EXCEPTION_D"]);
-                Context.Continue();
-                Context.WasExceptionBreakpointHit(DebuggeeInfo.Breakpoints["EXCEPTION_E"]);
                 Context.Continue();
                 Context.WasExceptionBreakpointHit(DebuggeeInfo.Breakpoints["EXCEPTION_E"]);
 
