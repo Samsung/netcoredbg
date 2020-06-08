@@ -56,13 +56,13 @@ static HRESULT IsSameFunctionBreakpoint(
 }
 
 Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
-    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), breakpoint(nullptr), enabled(true), times(0)
+    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), iCorBreakpoint(nullptr), enabled(true), times(0)
 {}
 
 Breakpoints::ManagedBreakpoint::~ManagedBreakpoint()
 {
-    if (breakpoint)
-        breakpoint->Activate(0);
+    if (iCorBreakpoint)
+        iCorBreakpoint->Activate(0);
 }
 
 void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
@@ -309,7 +309,7 @@ HRESULT Breakpoints::ResolveBreakpointInModule(ICorDebugModule *pModule, Managed
     bp.methodToken = methodToken;
     bp.ilOffset = ilOffset;
     bp.fullname = fullname;
-    bp.breakpoint = pBreakpoint.Detach();
+    bp.iCorBreakpoint = pBreakpoint.Detach();
 
     return S_OK;
 }
@@ -477,7 +477,7 @@ HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
     bp.methodToken = methodToken;
     bp.ilOffset = ilOffset;
     bp.fullname = fullname;
-    bp.breakpoint = pBreakpoint.Detach();
+    bp.iCorBreakpoint = pBreakpoint.Detach();
 
     return S_OK;
 }

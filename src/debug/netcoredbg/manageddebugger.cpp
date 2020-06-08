@@ -479,7 +479,7 @@ public:
                 if (evalThreadId == currentThreadId) {
                     m_debugger.m_evaluator.pop_eval_queue();
 
-                    DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                    evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                     ToRelease<ICorDebugThread> pThreadEval;
                     IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
                     IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
@@ -526,7 +526,7 @@ public:
                 if (evalThreadId == currentThreadId) {
                     m_debugger.m_evaluator.pop_eval_queue();
 
-                    DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                    evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                     ToRelease<ICorDebugThread> pThreadEval;
                     IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
                     IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));

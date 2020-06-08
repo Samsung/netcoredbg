@@ -206,6 +206,7 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
     IfFailRet(pThread3->CreateStackWalk(&pStackWalk));
 
     std::vector< ToRelease<ICorDebugFrame> > iFrameCache;
+    std::vector<NativeFrame> nFrames;
 
     static const ULONG32 ctxFlags = CONTEXT_CONTROL | CONTEXT_INTEGER;
     CONTEXT ctxUnmanagedChain;
@@ -280,7 +281,6 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
         }
 
         // Check if we have native frames to unwind
-        std::vector<NativeFrame> nFrames;
         if (ctxUnmanagedChainValid)
             IfFailRet(UnwindNativeFrames(pThread, GetSP(&ctxUnmanagedChain), pEndVal, nFrames));
         IfFailRet(StitchInternalFrames(pThread, iFrameCache, nFrames, cb));
@@ -312,16 +312,15 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
         // If the first frame is either internal or native then we might be in a call to unmanaged code
         if (level == 0)
         {
-            std::vector<NativeFrame> nFrames;
             IfFailRet(UnwindNativeFrames(pThread, 0, GetFrameAddr(pFrame), nFrames));
             IfFailRet(StitchInternalFrames(pThread, {}, nFrames, cb));
+            nFrames.clear();
         }
         IfFailRet(cb(frameType, pFrame, nullptr, nullptr));
     }
 
     // We may have native frames at the end of the stack
     uint64_t pEndVal = std::numeric_limits<uint64_t>::max();
-    std::vector<NativeFrame> nFrames;
     if (ctxUnmanagedChainValid)
         IfFailRet(UnwindNativeFrames(pThread, GetSP(&ctxUnmanagedChain), pEndVal, nFrames));
     IfFailRet(StitchInternalFrames(pThread, iFrameCache, nFrames, cb));
@@ -432,10 +431,10 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame,
                 {
                     ToRelease<ICorDebugInternalFrame> pInternalFrame;
                     IfFailRet(pFrame->QueryInterface(IID_ICorDebugInternalFrame, (LPVOID*) &pInternalFrame));
-                    CorDebugInternalFrameType frameType;
-                    IfFailRet(pInternalFrame->GetFrameType(&frameType));
+                    CorDebugInternalFrameType corFrameType;
+                    IfFailRet(pInternalFrame->GetFrameType(&corFrameType));
                     std::string name = "[";
-                    name += GetInternalTypeName(frameType);
+                    name += GetInternalTypeName(corFrameType);
                     name += "]";
                     stackFrames.emplace_back(threadId, currentFrame, name);
                     stackFrames.back().addr = GetFrameAddr(pFrame);

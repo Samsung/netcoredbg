@@ -343,11 +343,11 @@ static HRESULT FindMethod(ICorDebugType *pType, const WCHAR *methodName, ICorDeb
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
     ULONG numMethods = 0;
-    HCORENUM fEnum = NULL;
+    HCORENUM hEnum = NULL;
     mdMethodDef methodDef = mdMethodDefNil;
 
-    pMD->EnumMethodsWithName(&fEnum, currentTypeDef, methodName, &methodDef, 1, &numMethods);
-    pMD->CloseEnum(fEnum);
+    pMD->EnumMethodsWithName(&hEnum, currentTypeDef, methodName, &methodDef, 1, &numMethods);
+    pMD->CloseEnum(hEnum);
 
     if (numMethods == 1)
         return pModule->GetFunctionFromToken(methodDef, ppFunc);
@@ -670,9 +670,9 @@ HRESULT Evaluator::WalkMembers(
     std::unordered_set<string> backedProperties;
 
     ULONG numFields = 0;
-    HCORENUM fEnum = NULL;
+    HCORENUM hEnum = NULL;
     mdFieldDef fieldDef;
-    while(SUCCEEDED(pMD->EnumFields(&fEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
+    while(SUCCEEDED(pMD->EnumFields(&hEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
     {
         ULONG nameLen = 0;
         DWORD fieldAttr = 0;
@@ -701,8 +701,12 @@ HRESULT Evaluator::WalkMembers(
 
             if(fieldAttr & fdLiteral)
             {
-                IfFailRet(GetLiteralValue(
-                    pThread, pType, pModule, pSignatureBlob, sigBlobLength, pRawValue, rawValueLength, &pFieldVal));
+                Status = GetLiteralValue(pThread, pType, pModule, pSignatureBlob, sigBlobLength, pRawValue, rawValueLength, &pFieldVal);
+                if (FAILED(Status))
+                {
+                    pMD->CloseEnum(hEnum);
+                    return Status;
+                }
             }
             else if (fieldAttr & fdStatic)
             {
@@ -734,10 +738,15 @@ HRESULT Evaluator::WalkMembers(
 
             if (isNull && !is_static)
                 continue;
-            IfFailRet(cb(mdMethodDefNil, pModule, pType, pFieldVal, is_static, name));
+            Status = cb(mdMethodDefNil, pModule, pType, pFieldVal, is_static, name);
+            if (FAILED(Status))
+            {
+                pMD->CloseEnum(hEnum);
+                return Status;
+            }
         }
     }
-    pMD->CloseEnum(fEnum);
+    pMD->CloseEnum(hEnum);
 
     mdProperty propertyDef;
     ULONG numProperties = 0;
@@ -796,9 +805,9 @@ HRESULT Evaluator::WalkMembers(
             bool debuggerBrowsableState_Never = false;
 
             ULONG numAttributes = 0;
-            HCORENUM fEnum = NULL;
+            hEnum = NULL;
             mdCustomAttribute attr;
-            while(SUCCEEDED(pMD->EnumCustomAttributes(&fEnum, propertyDef, 0, &attr, 1, &numAttributes)) && numAttributes != 0)
+            while(SUCCEEDED(pMD->EnumCustomAttributes(&hEnum, propertyDef, 0, &attr, 1, &numAttributes)) && numAttributes != 0)
             {
                 mdToken ptkObj = mdTokenNil;
                 mdToken ptkType = mdTokenNil;
@@ -825,7 +834,7 @@ HRESULT Evaluator::WalkMembers(
                     break;
                 }
             }
-            pMD->CloseEnum(fEnum);
+            pMD->CloseEnum(hEnum);
 
             if (debuggerBrowsableState_Never)
               continue;

@@ -600,7 +600,7 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
     while (!classParts.empty())
     {
         ToRelease<ICorDebugType> pEnclosingType(std::move(pType));
-        int nextClassPart = 0;
+        nextClassPart = 0;
         if (FAILED(FindType(classParts, nextClassPart, pThread, pModule, &pType)))
             break;
 

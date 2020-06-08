@@ -238,7 +238,7 @@ class Breakpoints
         ULONG32 ilOffset;
         std::string fullname;
         int linenum;
-        ToRelease<ICorDebugBreakpoint> breakpoint;
+        ToRelease<ICorDebugBreakpoint> iCorBreakpoint;
         bool enabled;
         ULONG32 times;
         std::string condition;

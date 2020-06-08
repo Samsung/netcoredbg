@@ -647,7 +647,6 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
         case ELEMENT_TYPE_GENERICINST :
             {
                 //typePtr = NameForTypeSig(typePtr, args, pImport, out, appendix);
-                mdTypeDef tk;
                 CorElementType underlyingType;
                 typePtr += CorSigUncompressElementType(typePtr, &underlyingType);
                 typePtr += CorSigUncompressToken(typePtr, &tk);
