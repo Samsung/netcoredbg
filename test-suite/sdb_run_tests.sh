@@ -156,7 +156,7 @@ for i in $(eval echo {1..$REPEAT}); do
 for TEST_NAME in $TEST_NAMES; do
     HOSTTESTDIR=$SCRIPTDIR/$TEST_NAME
     $DOTNET build $HOSTTESTDIR
-    $SDB push $HOSTTESTDIR/bin/Debug/netcoreapp2.1/$TEST_NAME.{dll,pdb} $REMOTETESTDIR
+    $SDB push $HOSTTESTDIR/bin/Debug/netcoreapp3.1/$TEST_NAME.{dll,pdb} $REMOTETESTDIR
 
     SOURCE_FILES=$(find $HOSTTESTDIR \! -path "$HOSTTESTDIR/obj/*" -type f -name "*.cs" -printf '%p;')
 

@@ -50,8 +50,8 @@ $test_list = ""
 foreach ($TEST_NAME in $TEST_NAMES) {
     dotnet build $TEST_NAME
 
-    sdb push $TEST_NAME\bin\Debug\netcoreapp2.1\$TEST_NAME.dll /tmp/
-    sdb push $TEST_NAME\bin\Debug\netcoreapp2.1\$TEST_NAME.pdb /tmp/
+    sdb push $TEST_NAME\bin\Debug\netcoreapp3.1\$TEST_NAME.dll /tmp/
+    sdb push $TEST_NAME\bin\Debug\netcoreapp3.1\$TEST_NAME.pdb /tmp/
     sdb shell chsmack -a User::App::Shared /tmp/$TEST_NAME.dll
     sdb shell chsmack -a User::App::Shared /tmp/$TEST_NAME.pdb
 

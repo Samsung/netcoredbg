@@ -67,7 +67,7 @@ foreach ($TEST_NAME in $TEST_NAMES) {
         --proto $PROTO `
         --test $TEST_NAME `
         --sources $SOURCE_FILES `
-        --assembly $TEST_NAME/bin/Debug/netcoreapp2.1/$TEST_NAME.dll
+        --assembly $TEST_NAME/bin/Debug/netcoreapp3.1/$TEST_NAME.dll
 
 
     if($?)

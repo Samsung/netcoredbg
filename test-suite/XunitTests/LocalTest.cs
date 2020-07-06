@@ -61,7 +61,7 @@ namespace XUnitTests
             Env.SourceFilesPath = Env.SourceFilesPath.Remove(Env.SourceFilesPath.Length - 1);
 
             Env.TargetAssemblyPath = Path.Combine(testSuiteRoot,
-                testCaseName + "/bin/Debug/netcoreapp2.1/",
+                testCaseName + "/bin/Debug/netcoreapp3.1/",
                 testCaseName + ".dll");
             string fullDebuggerPath = Path.GetFullPath(Path.Combine(testSuiteRoot, DebuggerPath));
 

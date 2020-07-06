@@ -26,7 +26,7 @@ or you can build solution which consists of TestRunner and all tests:
 
 - push dll and pdb files into target /tmp/ disrectory:
 ```
-    $ sdb push MIExampleTest/bin/Debug/netcoreapp2.1/MIExampleTest{pdb,dll} /tmp/
+    $ sdb push MIExampleTest/bin/Debug/netcoreapp3.1/MIExampleTest{pdb,dll} /tmp/
 ```
 
 - change smack permissions:
@@ -98,7 +98,7 @@ to make all necessary steps.
 
 - create new project in test-suite folder:
 ```
-    $ dotnet new console -o NewTest
+    $ dotnet new console -o NewTest --framework netcoreapp3.1
 ```
 
 - add reference to NetcoreDbgTest library:
