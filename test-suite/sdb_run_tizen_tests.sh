@@ -76,7 +76,11 @@ done
 if [[ -z $RPMFILE ]]; then
     # Detect target arch
     if   $SDB shell lscpu | grep -q armv7l;  then ARCH=armv7l;
-    elif $SDB shell lscpu | grep -q aarch64; then ARCH=armv7l;
+    elif $SDB shell lscpu | grep -q aarch64; then
+        # https://superuser.com/questions/791506/how-to-determine-if-a-linux-binary-file-is-32-bit-or-64-bit
+        # The 5th byte of a Linux binary executable file is 1 for a 32 bit executable, 2 for a 64 bit executable.
+        if [ $($SDB shell od -An -t x1 -j 4 -N 1 /bin/od | grep "02") ]; then ARCH=aarch64;
+        else ARCH=armv7l; fi
     elif $SDB shell lscpu | grep -q i686;    then ARCH=i686;
     else echo "Unknown target architecture"; exit 1; fi
 

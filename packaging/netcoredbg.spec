@@ -8,12 +8,12 @@ Source0:   netcoredbg.tar.gz
 Source1001: netcoredbg.manifest
 AutoReqProv: no
 
-
-ExcludeArch: aarch64
-
 # Accelerate clang
-%ifarch %{arm}
+%ifarch armv7l
 BuildRequires: clang-accel-armv7l-cross-arm
+%endif
+%ifarch aarch64
+BuildRequires: clang-accel-aarch64-cross-aarch64
 %endif
 
 BuildRequires: cmake
