@@ -49,6 +49,7 @@ if (NOT "${DOTNET_DIR}" STREQUAL "")
     endif()
 endif()
 
+add_subdirectory(third_party/linenoise-ng)
 add_subdirectory(src/debug/netcoredbg)
 
 include(getgitrevisiondescription.cmake)
