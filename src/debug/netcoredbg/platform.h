@@ -3,9 +3,10 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
-#include <string>
 #include <iostream>
 #include <functional>
+#include <string>
+#include <map>
 
 #include <palclr.h>
 
@@ -21,6 +22,8 @@ void UnsetCoreCLREnv();
 std::string GetTempFolder();
 std::string GetBasename(const std::string &path);
 bool IsFullPath(const std::string &path);
+char** GetSystemEnvironment();
+int GetSystemEnvironmentAsMap(std::map<std::string, std::string> &out);
 
 class IORedirectServerHandles;
 

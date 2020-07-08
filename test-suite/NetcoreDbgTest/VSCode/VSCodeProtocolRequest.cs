@@ -50,6 +50,7 @@ namespace NetcoreDbgTest.VSCode
         public string program;
         public List<string> args;
         public string cwd;
+        public Dictionary<string, string> env;
         public string console;
         public bool stopAtEntry;
         public string internalConsoleOptions;

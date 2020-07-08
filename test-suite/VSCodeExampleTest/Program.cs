@@ -35,8 +35,7 @@ namespace NetcoreDbgTest.Script
             launchRequest.arguments.type = "coreclr";
             launchRequest.arguments.preLaunchTask = "build";
             launchRequest.arguments.program = DebuggeeInfo.TargetAssemblyPath;
-            // NOTE this code works only with one source file
-            launchRequest.arguments.cwd = Directory.GetParent(DebuggeeInfo.SourceFilesPath).FullName;
+            launchRequest.arguments.cwd = "";
             launchRequest.arguments.console = "internalConsole";
             launchRequest.arguments.stopAtEntry = true;
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";

@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
@@ -12,7 +15,7 @@ namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void Prepare()
+        public static void PrepareStart()
         {
             InitializeRequest initializeRequest = new InitializeRequest();
             initializeRequest.arguments.clientID = "vscode";
@@ -28,34 +31,30 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(initializeRequest).Success);
 
             LaunchRequest launchRequest = new LaunchRequest();
-            launchRequest.arguments.name = ".NET Core Launch (console) with pipeline";
+            launchRequest.arguments.name = ".NET Core Launch (web)";
             launchRequest.arguments.type = "coreclr";
             launchRequest.arguments.preLaunchTask = "build";
-            launchRequest.arguments.program = DebuggeeInfo.TargetAssemblyPath;
-            launchRequest.arguments.cwd = "";
+
+            launchRequest.arguments.program = Path.GetFileName(DebuggeeInfo.TargetAssemblyPath);
+            string targetAssemblyPath = Path.GetFileName(DebuggeeInfo.TargetAssemblyPath);
+            int subLength = DebuggeeInfo.TargetAssemblyPath.Length - targetAssemblyPath.Length;
+            string dllPath = DebuggeeInfo.TargetAssemblyPath.Substring(0, subLength);
+            launchRequest.arguments.cwd = dllPath;
+
+            launchRequest.arguments.env = new Dictionary<string, string>();
+            launchRequest.arguments.env.Add("ASPNETCORE_ENVIRONMENT", VALUE_A);
+            launchRequest.arguments.env.Add("ASPNETCORE_URLS", VALUE_B);
             launchRequest.arguments.console = "internalConsole";
             launchRequest.arguments.stopAtEntry = true;
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";
             launchRequest.arguments.__sessionId = Guid.NewGuid().ToString();
             Assert.True(VSCodeDebugger.Request(launchRequest).Success);
-
-            ConfigurationDoneRequest configurationDoneRequest = new ConfigurationDoneRequest();
-            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success);
         }
 
-        public static void WasEntryPointHit()
+        public static void PrepareEnd()
         {
-            Func<string, bool> filter = (resJSON) => {
-                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
-                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "entry")) {
-                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
-                    return true;
-                }
-                return false;
-            };
-
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            ConfigurationDoneRequest configurationDoneRequest = new ConfigurationDoneRequest();
+            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success);
         }
 
         public static void WasExit()
@@ -91,25 +90,12 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(disconnectRequest).Success);
         }
 
-        public static void Continue()
-        {
-            ContinueRequest continueRequest = new ContinueRequest();
-            continueRequest.arguments.threadId = threadId;
-            Assert.True(VSCodeDebugger.Request(continueRequest).Success);
-        }
-
-        public static void Pause()
-        {
-            PauseRequest pauseRequest = new PauseRequest();
-            pauseRequest.arguments.threadId = threadId;
-            Assert.True(VSCodeDebugger.Request(pauseRequest).Success);
-        }
-
-        public static void WasPaused()
+        public static void WasEntryPointHit()
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
-                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "pause")) {
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "entry")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
                     return true;
                 }
                 return false;
@@ -119,36 +105,52 @@ namespace NetcoreDbgTest.Script
                 throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void Continue()
+        {
+            ContinueRequest continueRequest = new ContinueRequest();
+            continueRequest.arguments.threadId = threadId;
+            Assert.True(VSCodeDebugger.Request(continueRequest).Success);
+        }
+
         static VSCodeDebugger VSCodeDebugger = new VSCodeDebugger();
         static int threadId = -1;
+
+        public const string VALUE_A = "Development";
+        public const string VALUE_B = "https://localhost:25001";
     }
 }
 
-namespace VSCodeTestPause
+namespace VSCodeTestEnv
 {
     class Program
     {
-        static void Main(string[] args)
+        public static void Main(string[] args)
         {
-            Label.Checkpoint("init", "pause_test", () => {
-                Context.Prepare();
+            Label.Checkpoint("init", "finish", () => {
+                Context.PrepareStart();
+                Context.PrepareEnd();
                 Context.WasEntryPointHit();
                 Context.Continue();
-
-                Context.Pause();
             });
 
-            System.Threading.Thread.Sleep(3000);
+            // Begin user code
+            user_code();
+            // End user code
 
-            Label.Checkpoint("pause_test", "finish", () => {
-                Context.WasPaused();
-                Context.Continue();
-            });
-
-            Label.Checkpoint("finish", "", () => {;
+            Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
                 Context.DebuggerExit();
             });
+        }
+
+        public static void user_code()
+        {
+            var read_a = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            var read_b = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+
+            // xunit Asserts() has a wrong behavior under Tizen devices
+            if (!String.Equals(Context.VALUE_A, read_a) || !String.Equals(Context.VALUE_B, read_b))
+                throw new NotImplementedException("TEST FAILED");
         }
     }
 }

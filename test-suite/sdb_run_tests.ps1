@@ -27,6 +27,7 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestVariables"
     "VSCodeTestEvaluate"
     "VSCodeTestStepping"
+    "VSCodeTestEnv"
 )
 
 $TEST_NAMES = $args
@@ -73,7 +74,8 @@ foreach ($TEST_NAME in $TEST_NAMES) {
             --tcp localhost 4712 `
             --proto $PROTO `
             --test $TEST_NAME `
-            --sources $SOURCE_FILES
+            --sources $SOURCE_FILES `
+            --assembly /tmp/$TEST_NAME.dll
     } else {
         $PROTO = "mi"
 

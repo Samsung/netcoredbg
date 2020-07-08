@@ -41,6 +41,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestVariables"
     "VSCodeTestEvaluate"
     "VSCodeTestStepping"
+    "VSCodeTestEnv"
 )
 
 SDB=${SDB:-sdb}
@@ -169,7 +170,8 @@ for TEST_NAME in $TEST_NAMES; do
             --tcp localhost $PORT \
             --proto $PROTO \
             --test $TEST_NAME \
-            --sources $SOURCE_FILES
+            --sources $SOURCE_FILES \
+            --assembly $REMOTETESTDIR/$TEST_NAME.dll
     else
         PROTO="mi"
 

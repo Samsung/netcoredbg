@@ -2,12 +2,17 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "vscodeprotocol.h"
-
 #include <iostream>
+#include <string>
+#include <vector>
 #include <unordered_map>
+#include <map>
+
+#include <exception>
 
 #include <winerror.h>
+
+#include "vscodeprotocol.h"
 
 #include "torelease.h"
 #include "cputil.h"
@@ -15,6 +20,7 @@
 
 using std::string;
 using std::vector;
+using std::map;
 using std::min;
 
 // for convenience
@@ -415,14 +421,23 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         return S_OK;
     } },
-    { "launch", [this](const json &arguments, json &body){
-        if (!m_fileExec.empty())
-        {
-            return m_debugger->Launch(m_fileExec, m_execArgs, arguments.value("stopAtEntry", false));
+    {"launch", [this](const json &arguments, json &body) {
+        const string cwd = arguments.at("cwd").get<string>();
+        map<string, string> env;
+        try {
+            env = arguments.at("env").get<map<string, string> >();
         }
-        std::vector<std::string> args = arguments.value("args", std::vector<std::string>());
+        catch (std::exception &ex) {
+            Logger::levelLog(LOG_INFO, "'%s'", ex.what());
+            // If we catch inconsistent state on the interrupted reading
+            env.clear();
+        }
+        if (!m_fileExec.empty()) {
+            return m_debugger->Launch(m_fileExec, m_execArgs, env, cwd, arguments.value("stopAtEntry", false));
+        }
+        vector<string> args = arguments.value("args", vector<string>());
         args.insert(args.begin(), arguments.at("program").get<std::string>());
-        return m_debugger->Launch("dotnet", args, arguments.value("stopAtEntry", false));
+        return m_debugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
     } },
     { "threads", [this](const json &arguments, json &body){
         HRESULT Status;

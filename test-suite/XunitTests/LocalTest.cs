@@ -44,6 +44,7 @@ namespace XUnitTests
         [InlineData("VSCodeTestVariables", "Program.cs")]
         [InlineData("VSCodeTestEvaluate", "Program.cs")]
         [InlineData("VSCodeTestStepping", "Program.cs")]
+        [InlineData("VSCodeTestEnv", "Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             string testSuiteRoot = Path.GetFullPath(

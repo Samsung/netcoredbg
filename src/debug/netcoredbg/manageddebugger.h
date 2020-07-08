@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <map>
 #include <condition_variable>
 #include <future>
 
@@ -567,6 +568,8 @@ private:
     } m_startMethod;
     std::string m_execPath;
     std::vector<std::string> m_execArgs;
+    std::string m_cwd;
+    std::map<std::string, std::string> m_env;
     bool m_stopAtEntry;
     bool m_isConfigurationDone;
 
@@ -625,7 +628,8 @@ public:
 
     HRESULT Initialize() override;
     HRESULT Attach(int pid) override;
-    HRESULT Launch(std::string fileExec, std::vector<std::string> execArgs, bool stopAtEntry = false) override;
+    HRESULT Launch(const std::string &fileExec, const std::vector<std::string> &execArgs, const std::map<std::string, std::string> &env,
+        const std::string &cwd, bool stopAtEntry = false) override;
     HRESULT ConfigurationDone() override;
 
     HRESULT Disconnect(DisconnectAction action = DisconnectDefault) override;

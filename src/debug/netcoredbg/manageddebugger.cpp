@@ -2,13 +2,18 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "manageddebugger.h"
-
 #include <sstream>
 #include <mutex>
 #include <memory>
 #include <chrono>
 #include <stdexcept>
+#include <vector>
+#include <map>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#include "manageddebugger.h"
 
 #include "valueprint.h"
 #include "symbolreader.h"
@@ -19,6 +24,8 @@
 #include "logger.h"
 
 using std::string;
+using std::vector;
+using std::map;
 
 // From dbgshim.h
 struct dbgshim_t
@@ -1068,7 +1075,7 @@ HRESULT ManagedDebugger::Attach(int pid)
     return RunIfReady();
 }
 
-HRESULT ManagedDebugger::Launch(string fileExec, std::vector<string> execArgs, bool stopAtEntry)
+HRESULT ManagedDebugger::Launch(const string &fileExec, const vector<string> &execArgs, const map<string, string> &env, const string &cwd, bool stopAtEntry)
 {
     LogFuncEntry();
 
@@ -1076,6 +1083,8 @@ HRESULT ManagedDebugger::Launch(string fileExec, std::vector<string> execArgs, b
     m_execPath = fileExec;
     m_execArgs = execArgs;
     m_stopAtEntry = stopAtEntry;
+    m_cwd = cwd;
+    m_env = env;
     m_breakpoints.SetStopAtEntry(m_stopAtEntry);
     return RunIfReady();
 }
@@ -1515,6 +1524,19 @@ static string EscapeShellArg(const string &arg)
     return s;
 }
 
+static bool IsDirExists(const char* const path)
+{
+    struct stat info;
+
+    if (stat(path, &info) != 0)
+        return false;
+
+    if (!(info.st_mode & S_IFDIR))
+        return false;
+
+    return true;
+}
+
 HRESULT ManagedDebugger::RunProcess(string fileExec, std::vector<string> execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
@@ -1532,10 +1554,38 @@ HRESULT ManagedDebugger::RunProcess(string fileExec, std::vector<string> execArg
 
     HANDLE resumeHandle; // Fake thread handle for the process resume
 
+    vector<char> outEnv;
+    if (!m_env.empty()) {
+        // We need to append the environ values with keeping the current process environment block.
+        // It works equal for any platrorms in coreclr CreateProcessW(), but not critical for Linux.
+        map<string, string> envMap;
+        if (GetSystemEnvironmentAsMap(envMap) != -1) {
+            auto it = m_env.begin();
+            auto end = m_env.end();
+            // Override the system value (PATHs appending needs a complex implementation)
+            while (it != end) {
+                envMap[it->first] = it->second;
+                ++it;
+            }
+            for (const auto &pair : envMap) {
+                outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
+                outEnv.push_back('=');
+                outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
+                outEnv.push_back('\0');
+            }
+            outEnv.push_back('\0');
+        }
+    }
+
+    // cwd in launch.json set working directory for debugger https://code.visualstudio.com/docs/python/debugging#_cwd
+    if (!m_cwd.empty())
+        if (!IsDirExists(m_cwd.c_str()) || !SetWorkDir(m_cwd))
+            m_cwd.clear();
+
     IfFailRet(g_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
                                      /* Suspend process */ TRUE,
-                                     /* Current environment */ NULL,
-                                     /* Current working directory */ NULL,
+                                     outEnv.empty() ? NULL : &outEnv[0],
+                                     m_cwd.empty() ? NULL : reinterpret_cast<LPCWSTR>(to_utf16(m_cwd).c_str()),
                                      &m_processId, &resumeHandle));
 
     IfFailRet(g_dbgshim.RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));

@@ -19,6 +19,7 @@
 #include <fstream>
 #include <thread>
 #include <algorithm>
+#include <map>
 
 #ifdef FEATURE_PAL
 #include <dirent.h>
@@ -40,6 +41,9 @@
 #include <windows.h>
 #include <winsock2.h>
 #endif
+
+using std::string;
+using std::map;
 
 unsigned long OSPageSize()
 {
@@ -844,6 +848,38 @@ bool IsFullPath(const std::string &path)
     return true;
 }
 
+char** GetSystemEnvironment()
+{
+    char** sysEnviron;
+
+#if __APPLE__
+    sysEnviron = *(_NSGetEnviron());
+#else   // __APPLE__
+    extern char** environ;
+    sysEnviron = environ;
+#endif  // __APPLE__
+
+    return sysEnviron;
+}
+
+int GetSystemEnvironmentAsMap(map<string, string>& outMap) {
+    char*const*const pEnv = GetSystemEnvironment();
+
+    if (pEnv == nullptr)
+        return -1;
+
+    int counter = 0;
+    while (pEnv[counter] != nullptr) {
+        const string env = pEnv[counter];
+        size_t pos = env.find_first_of("=");
+        if (pos != string::npos && pos != 0) {
+            outMap.emplace(env.substr(0, pos), env.substr(pos+1));
+        }
+        ++counter;
+    }
+
+    return 0;
+}
 
 IORedirectServer::operator bool() const
 {

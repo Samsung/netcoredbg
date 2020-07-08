@@ -42,6 +42,7 @@
     <ProjectReference Include="..\VSCodeTestVariables\VSCodeTestVariables.csproj" />
     <ProjectReference Include="..\VSCodeTestEvaluate\VSCodeTestEvaluate.csproj" />
     <ProjectReference Include="..\VSCodeTestStepping\VSCodeTestStepping.csproj" />
+    <ProjectReference Include="..\VSCodeTestEnv\VSCodeTestEnv.csproj" />
   </ItemGroup>
 
 </Project>

@@ -27,6 +27,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestVariables"
     "VSCodeTestEvaluate"
     "VSCodeTestStepping"
+    "VSCodeTestEnv"
 )
 
 TEST_NAMES="$@"
