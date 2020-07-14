@@ -35,15 +35,16 @@ namespace NetcoreDbgTest.Script
             launchRequest.arguments.type = "coreclr";
             launchRequest.arguments.preLaunchTask = "build";
 
-            launchRequest.arguments.program = Path.GetFileName(DebuggeeInfo.TargetAssemblyPath);
-            string targetAssemblyPath = Path.GetFileName(DebuggeeInfo.TargetAssemblyPath);
-            int subLength = DebuggeeInfo.TargetAssemblyPath.Length - targetAssemblyPath.Length;
-            string dllPath = DebuggeeInfo.TargetAssemblyPath.Substring(0, subLength);
+            string AbsolutePathToAssembly = Path.GetFullPath(DebuggeeInfo.TargetAssemblyPath);
+            launchRequest.arguments.program = Path.GetFileName(AbsolutePathToAssembly);
+            string targetAssemblyPath = Path.GetFileName(AbsolutePathToAssembly);
+            int subLength = AbsolutePathToAssembly.Length - targetAssemblyPath.Length;
+            string dllPath = AbsolutePathToAssembly.Substring(0, subLength);
             launchRequest.arguments.cwd = dllPath;
 
             launchRequest.arguments.env = new Dictionary<string, string>();
-            launchRequest.arguments.env.Add("ASPNETCORE_ENVIRONMENT", VALUE_A);
-            launchRequest.arguments.env.Add("ASPNETCORE_URLS", VALUE_B);
+            launchRequest.arguments.env.Add("ASPNETCORE_ENVIRONMENT", "Development");
+            launchRequest.arguments.env.Add("ASPNETCORE_URLS", "https://localhost:25001");
             launchRequest.arguments.console = "internalConsole";
             launchRequest.arguments.stopAtEntry = true;
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";
@@ -90,6 +91,133 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(disconnectRequest).Success);
         }
 
+        public static void AddBreakpoint(string bpName, string Condition = null)
+        {
+            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, bp.Type);
+            var lbp = (LineBreakpoint)bp;
+
+            BreakpointSourceName = lbp.FileName;
+            BreakpointList.Add(new SourceBreakpoint(lbp.NumLine, Condition));
+            BreakpointLines.Add(lbp.NumLine);
+        }
+
+        public static void SetBreakpoints()
+        {
+            SetBreakpointsRequest setBreakpointsRequest = new SetBreakpointsRequest();
+            setBreakpointsRequest.arguments.source.name = BreakpointSourceName;
+            // NOTE this code works only with one source file
+            setBreakpointsRequest.arguments.source.path = DebuggeeInfo.SourceFilesPath;
+            setBreakpointsRequest.arguments.lines.AddRange(BreakpointLines);
+            setBreakpointsRequest.arguments.breakpoints.AddRange(BreakpointList);
+            setBreakpointsRequest.arguments.sourceModified = false;
+            Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success);
+        }
+
+        public static void WasBreakpointHit(Breakpoint breakpoint)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
+
+            if (!VSCodeDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success);
+
+            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            var lbp = (LineBreakpoint)breakpoint;
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+
+            foreach (var Frame in stackTraceResponse.body.stackFrames) {
+                if (Frame.line == lbp.NumLine
+                    && Frame.source.name == lbp.FileName
+                    // NOTE this code works only with one source file
+                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    return;
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
+        public static Int64 DetectFrameId(Breakpoint breakpoint)
+        {
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success);
+
+            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            var lbp = (LineBreakpoint)breakpoint;
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+
+            foreach (var Frame in stackTraceResponse.body.stackFrames) {
+                if (Frame.line == lbp.NumLine
+                    && Frame.source.name == lbp.FileName
+                    // NOTE this code works only with one source file
+                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    return Frame.id;
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
+        public static int GetVariablesReference(Int64 frameId, string ScopeName)
+        {
+            ScopesRequest scopesRequest = new ScopesRequest();
+            scopesRequest.arguments.frameId = frameId;
+            var ret = VSCodeDebugger.Request(scopesRequest);
+            Assert.True(ret.Success);
+
+            ScopesResponse scopesResponse =
+                JsonConvert.DeserializeObject<ScopesResponse>(ret.ResponseStr);
+
+            foreach (var Scope in scopesResponse.body.scopes) {
+                if (Scope.name == ScopeName) {
+                    return Scope.variablesReference == null ? 0 : (int)Scope.variablesReference;
+                }
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
+        public static void EvalVariable(int variablesReference, string Type, string Name, string Value)
+        {
+            VariablesRequest variablesRequest = new VariablesRequest();
+            variablesRequest.arguments.variablesReference = variablesReference;
+            var ret = VSCodeDebugger.Request(variablesRequest);
+            Assert.True(ret.Success);
+
+            VariablesResponse variablesResponse =
+                JsonConvert.DeserializeObject<VariablesResponse>(ret.ResponseStr);
+
+            foreach (var Variable in variablesResponse.body.variables) {
+                if (Variable.name == Name) {
+                    Assert.True(Type == Variable.type
+                                && Value == Variable.value);
+                    return;
+                }
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
         public static void WasEntryPointHit()
         {
             Func<string, bool> filter = (resJSON) => {
@@ -114,9 +242,9 @@ namespace NetcoreDbgTest.Script
 
         static VSCodeDebugger VSCodeDebugger = new VSCodeDebugger();
         static int threadId = -1;
-
-        public const string VALUE_A = "Development";
-        public const string VALUE_B = "https://localhost:25001";
+        public static string BreakpointSourceName;
+        public static List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
+        public static List<int> BreakpointLines = new List<int>();
     }
 }
 
@@ -126,31 +254,36 @@ namespace VSCodeTestEnv
     {
         public static void Main(string[] args)
         {
-            Label.Checkpoint("init", "finish", () => {
+            Label.Checkpoint("init", "env_test", () => {
                 Context.PrepareStart();
+                Context.AddBreakpoint("bp");
+                Context.SetBreakpoints();
                 Context.PrepareEnd();
                 Context.WasEntryPointHit();
                 Context.Continue();
             });
 
-            // Begin user code
-            user_code();
-            // End user code
+            string EnvA = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            string EnvB = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+
+            Console.WriteLine("Env A = " + EnvA + " Env B = " + EnvB); Label.Breakpoint("bp");
+
+            Label.Checkpoint("env_test", "finish", () => {
+                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
+                Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp"]);
+
+                int variablesReference_Locals = Context.GetVariablesReference(frameId, "Locals");
+                int variablesReference = Context.GetVariablesReference(frameId, "Locals");
+                Context.EvalVariable(variablesReference, "string", "EnvA", "\"Development\"");
+                Context.EvalVariable(variablesReference, "string", "EnvB", "\"https://localhost:25001\"");
+
+                Context.Continue();
+            });
 
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
                 Context.DebuggerExit();
             });
-        }
-
-        public static void user_code()
-        {
-            var read_a = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            var read_b = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
-
-            // xunit Asserts() has a wrong behavior under Tizen devices
-            if (!String.Equals(Context.VALUE_A, read_a) || !String.Equals(Context.VALUE_B, read_b))
-                throw new NotImplementedException("TEST FAILED");
         }
     }
 }

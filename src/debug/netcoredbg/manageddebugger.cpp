@@ -1574,6 +1574,13 @@ HRESULT ManagedDebugger::RunProcess(string fileExec, std::vector<string> execArg
                 outEnv.push_back('\0');
             }
             outEnv.push_back('\0');
+        } else {
+            for (const auto &pair : m_env) {
+                outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
+                outEnv.push_back('=');
+                outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
+                outEnv.push_back('\0');
+            }
         }
     }
 
