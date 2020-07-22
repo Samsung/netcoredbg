@@ -13,10 +13,8 @@
 #include "iprotocol.h"
 
 
-class MIProtocol : public IProtocol
+class CLIProtocol : public IProtocol
 {
-    static std::mutex m_outMutex;
-
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
@@ -24,21 +22,15 @@ class MIProtocol : public IProtocol
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
     std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
+    std::string prompt;
+    std::string history;
+    pthread_t tid;
 
-    static std::string EscapeMIValue(const std::string &str);
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
-    static void PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output);
-#ifdef _MSC_VER
-    static void Printf(_Printf_format_string_ const char *fmt, ...);
-#else
-    static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
-#endif
-
-    static bool IsEditable(const std::string &type);
 
 public:
 
-    MIProtocol() : IProtocol(), m_varCounter(0) {}
+    CLIProtocol() : IProtocol(), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(".history") {}
     void EmitInitializedEvent() override {}
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
@@ -58,6 +50,18 @@ public:
     }
 
 private:
+    HRESULT doBacktrace(const std::vector<std::string> &args, std::string &output);
+    HRESULT doBreak(const std::vector<std::string> &args, std::string &output);
+    HRESULT doContinue(const std::vector<std::string> &, std::string &output);
+    HRESULT doDelete(const std::vector<std::string> &args, std::string &);
+    HRESULT doFile(const std::vector<std::string> &args, std::string &);
+    HRESULT doFinish(const std::vector<std::string> &args, std::string &output);
+    HRESULT doHelp(const std::vector<std::string> &args, std::string &output);
+    HRESULT doNext(const std::vector<std::string> &args, std::string &output);
+    HRESULT doQuit(const std::vector<std::string> &, std::string &);
+    HRESULT doRun(const std::vector<std::string> &args, std::string &output);
+    HRESULT doStep(const std::vector<std::string> &args, std::string &output);
+    HRESULT doSetArgs(const std::vector<std::string> &args, std::string &output);
     HRESULT HandleCommand(std::string command,
                           const std::vector<std::string> &args,
                           std::string &output);
@@ -66,21 +70,10 @@ private:
                         std::string &output,
                         Debugger::StepType stepType);
     HRESULT PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame);
-    HRESULT PrintVariables(const std::vector<Variable> &variables, std::string &output);
-    HRESULT CreateVar(int threadId, int level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output);
-    HRESULT DeleteVar(const std::string &varobjName);
-    HRESULT FindVar(const std::string &varobjName, Variable &variable);
-    void PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output);
-    void PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output);
-    HRESULT ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
-    HRESULT SetBreakpointCondition(uint32_t id, const std::string &condition);
-    HRESULT SetFunctionBreakpointCondition(uint32_t id, const std::string &condition);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
-    HRESULT InsertExceptionBreakpoints(const ExceptionBreakMode &mode, const std::vector<std::string>& names, std::string &output);
-    HRESULT DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids, std::string &output);
-    bool MIProtocol::ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
+    bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
 };

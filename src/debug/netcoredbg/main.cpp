@@ -8,9 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <unistd.h>
+
 #include "manageddebugger.h"
 #include "miprotocol.h"
 #include "vscodeprotocol.h"
+#include "cliprotocol.h"
 #include "logger.h"
 #include "version.h"
 
@@ -26,6 +29,7 @@ static void print_help()
         "Options:\n"
         "--buildinfo                           Print build info.\n"
         "--attach <process-id>                 Attach the debugger to the specified process id.\n"
+        "--interpreter=cli                     Runs the debugger with Command Line Interface. \n"
         "--interpreter=mi                      Puts the debugger into MI mode.\n"
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
         "--engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.\n"
@@ -90,7 +94,8 @@ int main(int argc, char *argv[])
     enum InterpreterType
     {
         InterpreterMI,
-        InterpreterVSCode
+        InterpreterVSCode,
+        InterpreterCLI
     } interpreterType = InterpreterMI;
 
     bool engineLogging = false;
@@ -128,6 +133,11 @@ int main(int argc, char *argv[])
         else if (strcmp(argv[i], "--interpreter=vscode") == 0)
         {
             interpreterType = InterpreterVSCode;
+            continue;
+        }
+        else if (strcmp(argv[i], "--interpreter=cli") == 0)
+        {
+            interpreterType = InterpreterCLI;
             continue;
         }
         else if (strcmp(argv[i], "--engineLogging") == 0)
@@ -250,15 +260,36 @@ int main(int argc, char *argv[])
                 vsCodeProtocol->OverrideLaunchCommand(execFile, execArgs);
             break;
         }
+        case InterpreterCLI:
+        {
+            Logger::log("InterpreterCLI selected");
+            if (engineLogging)
+            {
+                fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
+                Logger::log("Error: Engine logging is only supported in VsCode interpreter mode.");
+                return EXIT_FAILURE;
+            }
+            CLIProtocol *cliProtocol = new CLIProtocol();
+            protocol.reset(cliProtocol);
+            cliProtocol->SetDebugger(&debugger);
+            Logger::log("SetDebugger for InterpreterCLI");
+            if (!execFile.empty())
+                cliProtocol->SetLaunchCommand(execFile, execArgs);
+            break;
+        }
     }
 
     debugger.SetProtocol(protocol.get());
 
-    IORedirectServer server(
-        serverPort,
-        [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
-        [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); }
-    );
+    IORedirectServer* server = NULL;
+    if (interpreterType != InterpreterCLI)
+    {
+        server = new IORedirectServer (
+            serverPort,
+            [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
+            [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); }
+        );
+    }
 
     Logger::log("pidDebugee = " + std::to_string(pidDebuggee));
     if (pidDebuggee != 0)
@@ -274,6 +305,9 @@ int main(int argc, char *argv[])
     }
 
     protocol->CommandLoop();
+
+    if (server)
+        delete server;
 
     return EXIT_SUCCESS;
 }

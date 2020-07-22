@@ -1367,11 +1367,11 @@ static char32_t readUnicodeCharacter(void) {
   while (true) {
     char8_t c;
 
-    /* Continue reading if interrupted by signal. */
+    /* do not Continue reading if interrupted by signal. */
     ssize_t nread;
-    do {
+//    do {
       nread = read(0, &c, 1);
-    } while ((nread == -1) && (errno == EINTR));
+//    } while ((nread == -1) && (errno == EINTR));
 
     if (nread <= 0) return 0;
     if (c <= 0x7F) {  // short circuit ASCII
@@ -2551,7 +2551,6 @@ int InputBuffer::getInputLine(PromptBase& pi) {
           keyType = 2;
         }
       }
-
 #ifndef _WIN32
       if (c == 0 && gotResize) {
         // caught a window resize event

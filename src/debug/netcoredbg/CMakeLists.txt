@@ -52,6 +52,9 @@ set(netcoredbg_SRC
     valuewrite.cpp
     logger.cpp
     buildinfo.cpp
+    cliprotocol.cpp
+    iprotocol.cpp
+    tokenizer.cpp
 	)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -65,7 +68,7 @@ add_executable(netcoredbg ${netcoredbg_SRC})
 if (WIN32)
     target_link_libraries(netcoredbg corguids wsock32 ws2_32)
 else()
-    target_link_libraries(netcoredbg corguids dl pthread)
+    target_link_libraries(netcoredbg corguids dl pthread linenoise)
 endif()
 
 if (CLR_CMAKE_TARGET_TIZEN_LINUX)

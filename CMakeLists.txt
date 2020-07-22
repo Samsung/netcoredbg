@@ -3,8 +3,8 @@ project(netcoredbg)
 
 set(CORECLR_DIR "" CACHE FILEPATH "Path to CoreCLR source directory")
 set(DOTNET_DIR "" CACHE FILEPATH "Path to .NET SDK directory")
-set(CORECLR_BRANCH "release/2.1" CACHE STRING "CoreCLR source branch")
-set(DOTNET_CHANNEL "2.1" CACHE STRING ".NET SDK channel")
+set(CORECLR_BRANCH "release/3.1" CACHE STRING "CoreCLR source branch")
+set(DOTNET_CHANNEL "3.1" CACHE STRING ".NET SDK channel")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
 set(DBGSHIM_RUNTIME_DIR "" CACHE FILEPATH "Path to dbgshim library directory (at runtime)")
 
