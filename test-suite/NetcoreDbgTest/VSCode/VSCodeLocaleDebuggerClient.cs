@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Threading;
+using System.Text;
 
 using NetcoreDbgTestCore;
 
@@ -28,7 +29,9 @@ namespace NetcoreDbgTestCore.VSCode
 
         public override bool Send(string command)
         {
-            DebuggerInput.Write(CONTENT_LENGTH + command.Length.ToString() + TWO_CRLF + command);
+            byte[] bytes = Encoding.UTF8.GetBytes(command);
+            string commandSize = bytes.Length.ToString();
+            DebuggerInput.Write(CONTENT_LENGTH + commandSize + TWO_CRLF + command);
             DebuggerInput.Flush();
 
             return true;
@@ -52,15 +55,12 @@ namespace NetcoreDbgTestCore.VSCode
         string ReadData()
         {
             string header = "";
+            byte[] recvBuffer = new byte[1];
 
             while (true) {
                 // Read until "\r\n\r\n"
-                int res = DebuggerOutput.Read();
-                if (res < 0) {
-                    return null;
-                }
-
-                header += (char)res;
+                int readCount = DebuggerOutput.BaseStream.Read(recvBuffer, 0, recvBuffer.Length);
+                header += Encoding.ASCII.GetString(recvBuffer, 0, readCount);
 
                 if (header.Length < TWO_CRLF.Length) {
                     continue;
@@ -78,24 +78,27 @@ namespace NetcoreDbgTestCore.VSCode
 
                 int contentLength = Int32.Parse(header.Substring(lengthIndex + CONTENT_LENGTH.Length));
 
-                char[] buffer = new char[contentLength + 1];
-                buffer[contentLength] = '\0';
+                byte[] buffer = new byte[contentLength + 1];
+                buffer[contentLength] = 0;
                 int buffer_i = 0;
                 while (buffer_i < contentLength) {
                     int count = 0;
                     try {
-                        count = DebuggerOutput.Read(buffer, buffer_i, contentLength - buffer_i);
+                        count = DebuggerOutput.BaseStream.Read(buffer, buffer_i, contentLength - buffer_i);
                     }
-                    catch (IOException) {
+                    catch (SystemException ex) when (ex is InvalidOperationException ||
+                                                     ex is IOException ||
+                                                     ex is ObjectDisposedException) {
                         return null;
                     }
                     buffer_i += count;
                 }
 
-                return new string(buffer);
+                return Encoding.UTF8.GetString(buffer);
             }
             // unreachable
         }
+
         void ReaderThread()
         {
             while (true) {

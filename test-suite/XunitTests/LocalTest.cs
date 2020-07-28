@@ -35,6 +35,7 @@ namespace XUnitTests
         [InlineData("MITestTarget", "Program.cs")]
         [InlineData("MITestExceptionBreakpoint", "Program.cs")]
         [InlineData("MITestExitCode", "Program.cs")]
+        [InlineData("MITestEvalNotEnglish", "Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestFuncBreak", "Program.cs")]
@@ -47,6 +48,7 @@ namespace XUnitTests
         [InlineData("VSCodeTestStepping", "Program.cs")]
         [InlineData("VSCodeTestEnv", "Program.cs")]
         [InlineData("VSCodeTestExitCode", "Program.cs")]
+        [InlineData("VSCodeTestEvalNotEnglish", "Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             string testSuiteRoot = Path.GetFullPath(

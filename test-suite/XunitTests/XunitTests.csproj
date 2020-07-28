@@ -32,6 +32,7 @@
     <ProjectReference Include="..\MITestHandshake\MITestHandshake.csproj" />
     <ProjectReference Include="..\MITestTarget\MITestTarget.csproj" />
     <ProjectReference Include="..\MITestExceptionBreakpoint\MITestExceptionBreakpoint.csproj" />
+    <ProjectReference Include="..\MITestEvalNotEnglish\MITestEvalNotEnglish.csproj" />
     <ProjectReference Include="..\VSCodeExampleTest\VSCodeExampleTest.csproj" />
     <ProjectReference Include="..\VSCodeTestBreakpoint\VSCodeTestBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeTestFuncBreak\VSCodeTestFuncBreak.csproj" />
@@ -43,6 +44,7 @@
     <ProjectReference Include="..\VSCodeTestEvaluate\VSCodeTestEvaluate.csproj" />
     <ProjectReference Include="..\VSCodeTestStepping\VSCodeTestStepping.csproj" />
     <ProjectReference Include="..\VSCodeTestEnv\VSCodeTestEnv.csproj" />
+    <ProjectReference Include="..\VSCodeTestEvalNotEnglish\VSCodeTestEvalNotEnglish.csproj" />
   </ItemGroup>
 
 </Project>

@@ -18,6 +18,7 @@ ALL_TEST_NAMES=(
     "MITestTarget"
     "MITestExceptionBreakpoint"
     "MITestExitCode"
+    "MITestEvalNotEnglish"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -30,6 +31,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestStepping"
     "VSCodeTestEnv"
     "VSCodeTestExitCode"
+    "VSCodeTestEvalNotEnglish"
 )
 
 TEST_NAMES="$@"

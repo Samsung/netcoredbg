@@ -23,7 +23,9 @@ namespace NetcoreDbgTestCore
 
             public override bool Send(string cmd)
             {
-                SendCommandLine(CONTENT_LENGTH + cmd.Length.ToString() + TWO_CRLF + cmd);
+                byte[] bytes = Encoding.UTF8.GetBytes(cmd);
+                string cmdSize = bytes.Length.ToString();
+                SendCommandLine(CONTENT_LENGTH + cmdSize + TWO_CRLF + cmd);
 
                 return true;
             }

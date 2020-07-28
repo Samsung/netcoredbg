@@ -189,6 +189,15 @@ namespace MITestVarObject
                 Assert.Equal("0.17", ((MIConst)createShortZeroDecResult["value"]).CString);
 
 
+                var notDeclaredVariable =
+                    Context.MIDebugger.Request(String.Format("-var-create - * \"{0}\"", "not_declared_variable"));
+                Assert.Equal(MIResultClass.Error, notDeclaredVariable.Class);
+
+                notDeclaredVariable =
+                    Context.MIDebugger.Request(String.Format("-var-create - * \"{0}\"", "not_declared_variable + 1"));
+                Assert.Equal(MIResultClass.Error, notDeclaredVariable.Class);
+
+
                 var attrDResult = Context.MIDebugger.Request("9-var-show-attributes " + d_varName);
                 Assert.Equal(MIResultClass.Done, attrDResult.Class);
                 Assert.Equal("editable", ((MIConst)attrDResult["status"]).CString);
