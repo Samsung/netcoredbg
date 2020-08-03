@@ -322,17 +322,35 @@ void Breakpoints::SetStopAtEntry(bool stopAtEntry)
 
 static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
 {
-    std::ifstream f(path, std::ifstream::binary);
+    class scope_guard
+    {
+    private:
+        FILE **ppFile_;
 
-    if (!f)
+    public:
+        scope_guard(FILE **ppFile) : ppFile_(ppFile) {}
+        ~scope_guard() {if (*ppFile_) fclose(*ppFile_);}
+    };
+
+    FILE *pFile = nullptr;
+    scope_guard file(&pFile);
+
+#ifdef WIN32
+    if (_wfopen_s(&pFile, to_utf16(path).c_str(), L"rb") != 0)
+        return mdMethodDefNil;
+#else
+    pFile = fopen(path.c_str(), "rb");
+#endif // WIN32
+
+    if (!pFile)
         return mdMethodDefNil;
 
     IMAGE_DOS_HEADER dosHeader;
     IMAGE_NT_HEADERS32 ntHeaders;
 
-    if (!f.read((char*)&dosHeader, sizeof(dosHeader))) return mdMethodDefNil;
-    if (!f.seekg(VAL32(dosHeader.e_lfanew), f.beg)) return mdMethodDefNil;
-    if (!f.read((char*)&ntHeaders, sizeof(ntHeaders))) return mdMethodDefNil;
+    if (fread(&dosHeader, sizeof(dosHeader), 1, pFile) != 1) return mdMethodDefNil;
+    if (fseek(pFile, VAL32(dosHeader.e_lfanew), SEEK_SET) != 0) return mdMethodDefNil;
+    if (fread(&ntHeaders, sizeof(ntHeaders), 1, pFile) != 1) return mdMethodDefNil;
 
     ULONG corRVA = 0;
     if (ntHeaders.OptionalHeader.Magic == VAL16(IMAGE_NT_OPTIONAL_HDR32_MAGIC))
@@ -342,8 +360,8 @@ static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
     else
     {
         IMAGE_NT_HEADERS64 ntHeaders64;
-        if (!f.seekg(VAL32(dosHeader.e_lfanew), f.beg)) return mdMethodDefNil;
-        if (!f.read((char*)&ntHeaders64, sizeof(ntHeaders64))) return mdMethodDefNil;
+        if (fseek(pFile, VAL32(dosHeader.e_lfanew), SEEK_SET) != 0) return mdMethodDefNil;
+        if (fread(&ntHeaders64, sizeof(ntHeaders64), 1, pFile) != 1) return mdMethodDefNil;
         corRVA = VAL32(ntHeaders64.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COMHEADER].VirtualAddress);
     }
 
@@ -353,13 +371,13 @@ static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
         + sizeof(ntHeaders.FileHeader)
         + VAL16(ntHeaders.FileHeader.SizeOfOptionalHeader);
 
-    if (!f.seekg(pos, f.beg)) return mdMethodDefNil;
+    if (fseek(pFile, pos, SEEK_SET) != 0) return mdMethodDefNil;
 
     for (int i = 0; i < VAL16(ntHeaders.FileHeader.NumberOfSections); i++)
     {
         IMAGE_SECTION_HEADER sectionHeader;
 
-        if (!f.read((char*)&sectionHeader, sizeof(sectionHeader))) return mdMethodDefNil;
+        if (fread(&sectionHeader, sizeof(sectionHeader), 1, pFile) != 1) return mdMethodDefNil;
 
         if (corRVA >= VAL32(sectionHeader.VirtualAddress) &&
             corRVA < VAL32(sectionHeader.VirtualAddress) + VAL32(sectionHeader.SizeOfRawData))
@@ -367,8 +385,8 @@ static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
             ULONG offset = (corRVA - VAL32(sectionHeader.VirtualAddress)) + VAL32(sectionHeader.PointerToRawData);
 
             IMAGE_COR20_HEADER corHeader;
-            if (!f.seekg(offset, f.beg)) return mdMethodDefNil;
-            if (!f.read((char*)&corHeader, sizeof(corHeader))) return mdMethodDefNil;
+            if (fseek(pFile, offset, SEEK_SET) != 0) return mdMethodDefNil;
+            if (fread(&corHeader, sizeof(corHeader), 1, pFile) != 1) return mdMethodDefNil;
 
             if (VAL32(corHeader.Flags) & COMIMAGE_FLAGS_NATIVE_ENTRYPOINT)
                 return mdMethodDefNil;
