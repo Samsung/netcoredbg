@@ -254,10 +254,11 @@ namespace SOS
                 // If incoming filePath is not a full path, then check file names only
                 Func<string, bool> FileNameMatches;
                 string fileName = GetFileName(filePath);
+                bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
                 if (fileName == filePath)
-                    FileNameMatches = s => GetFileName(s).Equals(fileName, StringComparison.OrdinalIgnoreCase);
+                    FileNameMatches = s => GetFileName(s).Equals(fileName, isWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
                 else
-                    FileNameMatches = s => s.Equals(filePath, StringComparison.OrdinalIgnoreCase);
+                    FileNameMatches = s => s.Equals(filePath, isWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
                 foreach (MethodDebugInformationHandle methodDebugInformationHandle in reader.MethodDebugInformation)
                 {
