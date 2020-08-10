@@ -176,7 +176,6 @@ HRESULT Modules::GetLocationInAny(
     ULONG linenum,
     ULONG32 &ilOffset,
     mdMethodDef &methodToken,
-    std::string &fullname,
     ICorDebugModule **ppModule)
 {
     HRESULT Status;
@@ -196,8 +195,6 @@ HRESULT Modules::GetLocationInAny(
         if (FAILED(GetSequencePointByILOffset(mdInfo.symbols.get(), methodToken, ilOffset, &resolvedSequencePoint)))
             continue;
 
-        fullname = resolvedSequencePoint.document;
-
         mdInfo.module->AddRef();
         *ppModule = mdInfo.module.GetPtr();
         return S_OK;
@@ -210,8 +207,7 @@ HRESULT Modules::GetLocationInModule(
     std::string filename,
     ULONG linenum,
     ULONG32 &ilOffset,
-    mdMethodDef &methodToken,
-    std::string &fullname)
+    mdMethodDef &methodToken)
 {
     HRESULT Status;
 
@@ -229,8 +225,6 @@ HRESULT Modules::GetLocationInModule(
 
     SequencePoint resolvedSequencePoint;
     IfFailRet(GetSequencePointByILOffset(info_pair->second.symbols.get(), methodToken, ilOffset, &resolvedSequencePoint));
-
-    fullname = resolvedSequencePoint.document;
 
     return S_OK;
 }
@@ -474,6 +468,9 @@ HRESULT Modules::TryLoadModuleSymbols(
         }
     }
 
+    if (module.symbolStatus == SymbolsLoaded)
+        IfFailRet(Modules::FillSourcesCodeLinesForModule(pMDImport, symbolReader.get()));
+
     IfFailRet(GetModuleId(pModule, module.id));
 
     CORDB_ADDRESS baseAddress;
@@ -578,5 +575,81 @@ HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> 
         ModuleInfo &mdInfo = info_pair.second;
         IfFailRet(cb(mdInfo.module));
     }
+    return S_OK;
+}
+
+HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, SymbolReader *symbolReader)
+{
+    HRESULT Status;
+    ULONG numTypedefs = 0;
+    HCORENUM fEnum = NULL;
+    mdTypeDef typeDef;
+    while(SUCCEEDED(pMDImport->EnumTypeDefs(&fEnum, &typeDef, 1, &numTypedefs)) && numTypedefs != 0)
+    {
+        ULONG numMethods = 0;
+        HCORENUM fEnum = NULL;
+        mdMethodDef methodDef;
+        while(SUCCEEDED(pMDImport->EnumMethods(&fEnum, typeDef, &methodDef, 1, &numMethods)) && numMethods != 0)
+        {
+            std::vector<SymbolReader::SequencePoint> points;
+            if (FAILED(symbolReader->GetSequencePoints(methodDef, points)))
+                continue;
+
+            for (auto &point : points)
+            {
+                if (point.startLine == SymbolReader::HiddenLine)
+                    continue;
+
+                std::string fullPath = to_utf8(point.document);
+
+#ifdef WIN32
+                IfFailRet(SymbolReader::StringToUpper(fullPath));
+#endif
+
+                auto &codeLinesFullPath = m_sourcesCodeLines[fullPath];
+                for (int i = point.startLine; i <= point.endLine; i++)
+                    codeLinesFullPath[i] = point.startLine;
+
+                // TODO care about files with same name but with different paths
+                m_sourcesFullPaths[GetFileName(fullPath)] = fullPath;
+            }
+        }
+        pMDImport->CloseEnum(fEnum);
+    }
+    pMDImport->CloseEnum(fEnum);
+
+    return S_OK;
+}
+
+HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int32_t &linenum)
+{
+#ifdef WIN32
+    HRESULT Status;
+    IfFailRet(SymbolReader::StringToUpper(filename));
+#endif
+
+    auto searchByFullPath = m_sourcesCodeLines.find(filename);
+    if (searchByFullPath == m_sourcesCodeLines.end())
+    {
+        // TODO care about files with same name but with different paths, care about files with relative paths
+        auto searchByFileName = m_sourcesFullPaths.find(GetFileName(filename));
+        if (searchByFileName == m_sourcesFullPaths.end())
+            return E_FAIL;
+
+        filename = searchByFileName->second;
+
+        searchByFullPath = m_sourcesCodeLines.find(filename);
+        if (searchByFullPath == m_sourcesCodeLines.end())
+            return E_FAIL;
+    }
+
+    auto &codeLines = searchByFullPath->second;
+
+    auto resolvedLine = codeLines.lower_bound(linenum);
+    if (resolvedLine == codeLines.end())
+        return E_FAIL;
+
+    linenum = resolvedLine->second;
+
     return S_OK;
 }

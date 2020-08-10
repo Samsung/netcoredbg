@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <unordered_map>
+#include <map>
 #include <mutex>
 #include <memory>
 
@@ -40,6 +41,10 @@ class Modules
         ResolveFunctionBreakpointCallback cb);
     static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName);
 
+    std::unordered_map<std::string, std::map<int32_t, int32_t>> m_sourcesCodeLines;
+    std::unordered_map<std::string, std::string> m_sourcesFullPaths;
+    HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, SymbolReader *symbolReader);
+
 public:
     struct SequencePoint {
         int32_t startLine;
@@ -65,15 +70,13 @@ public:
         std::string filename,
         ULONG linenum,
         ULONG32 &ilOffset,
-        mdMethodDef &methodToken,
-        std::string &fullname);
+        mdMethodDef &methodToken);
 
     HRESULT GetLocationInAny(
         std::string filename,
         ULONG linenum,
         ULONG32 &ilOffset,
         mdMethodDef &methodToken,
-        std::string &fullname,
         ICorDebugModule **ppModule);
 
     HRESULT ResolveFunctionInAny(
@@ -115,4 +118,6 @@ public:
         SequencePoint *sequencePoint);
 
     HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
+
+    HRESULT ResolveBreakpointFileAndLine(std::string &filename, int32_t &linenum);
 };
