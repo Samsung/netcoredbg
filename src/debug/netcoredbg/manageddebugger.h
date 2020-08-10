@@ -239,6 +239,7 @@ class Breakpoints
         ULONG32 ilOffset;
         std::string fullname;
         int linenum;
+        int initial_linenum;
         ToRelease<ICorDebugBreakpoint> iCorBreakpoint;
         bool enabled;
         ULONG32 times;
@@ -297,10 +298,23 @@ class Breakpoints
         ManagedFunctionBreakpoint(const ManagedFunctionBreakpoint &that) = delete;
     };
 
+    struct SourceBreakpointMapping
+    {
+        SourceBreakpoint breakpoint;
+        uint32_t id = 0;
+        std::string resolved_fullname; // if string is empty - no resolved breakpoint available in m_resolvedBreakpoints
+        int resolved_linenum = 0;
+
+        SourceBreakpointMapping() : breakpoint(0, ""), id(0), resolved_fullname(), resolved_linenum(0) {}
+        ~SourceBreakpointMapping() = default;
+    };
+
     Modules &m_modules;
     uint32_t m_nextBreakpointId;
     std::mutex m_breakpointsMutex;
-    std::unordered_map<std::string, std::unordered_map<int, ManagedBreakpoint> > m_breakpoints;
+    std::unordered_map<std::string, std::unordered_map<int, std::list<ManagedBreakpoint> > > m_srcResolvedBreakpoints;
+    std::unordered_map<std::string, std::list<SourceBreakpointMapping> > m_srcInitialBreakpoints;
+
     std::unordered_map<std::string, ManagedFunctionBreakpoint > m_funcBreakpoints;
     ExceptionBreakpointStorage m_exceptionBreakpoints;
 
@@ -314,6 +328,7 @@ class Breakpoints
     mdMethodDef m_entryPoint;
     ToRelease<ICorDebugFunctionBreakpoint> m_entryBreakpoint;
 
+    void EnableOneICorBreakpointForLine(std::list<ManagedBreakpoint> &bList);
     HRESULT TrySetupEntryBreakpoint(ICorDebugModule *pModule);
     bool HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
 
