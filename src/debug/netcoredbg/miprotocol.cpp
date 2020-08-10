@@ -545,10 +545,10 @@ HRESULT MIProtocol::SetBreakpoint(
 
     for (const Breakpoint& b : breakpoints)
     {
-        if (b.line != linenum)
+        if (b.initial_line != linenum)
             continue;
 
-        breakpointsInSource.insert(std::make_pair(b.id, SourceBreakpoint{ b.line, b.condition }));
+        breakpointsInSource.insert(std::make_pair(b.id, SourceBreakpoint{ b.initial_line, b.condition }));
         breakpoint = b;
         return S_OK;
     }
