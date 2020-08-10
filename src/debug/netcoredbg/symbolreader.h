@@ -29,6 +29,7 @@ typedef  BOOL (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int
 typedef  BOOL (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int*, int*, PVOID*);
 typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int *, PVOID*);
 typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
+typedef  void (*StringToUpperDelegate)(const WCHAR*, BSTR*);
 
 typedef BSTR (*SysAllocStringLen_t)(const OLECHAR*, UINT);
 typedef void (*SysFreeString_t)(BSTR);
@@ -55,6 +56,7 @@ private:
     static ParseExpressionDelegate parseExpressionDelegate;
     static EvalExpressionDelegate evalExpressionDelegate;
     static RegisterGetChildDelegate registerGetChildDelegate;
+    static StringToUpperDelegate stringToUpperDelegate;
 
     static SysAllocStringLen_t sysAllocStringLen;
     static SysFreeString_t sysFreeString;
@@ -144,4 +146,5 @@ public:
     static HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
     static PVOID AllocBytes(size_t size);
     static PVOID AllocString(const std::string &str);
+    static HRESULT StringToUpper(std::string &String);
 };

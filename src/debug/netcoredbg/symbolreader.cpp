@@ -182,6 +182,7 @@ GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
 ParseExpressionDelegate SymbolReader::parseExpressionDelegate = nullptr;
 EvalExpressionDelegate SymbolReader::evalExpressionDelegate = nullptr;
 RegisterGetChildDelegate SymbolReader::registerGetChildDelegate = nullptr;
+StringToUpperDelegate SymbolReader::stringToUpperDelegate = nullptr;
 
 const int SymbolReader::HiddenLine = 0xfeefee;
 
@@ -375,6 +376,7 @@ HRESULT SymbolReader::PrepareSymbolReader()
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ParseExpression", (void **)&parseExpressionDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "EvalExpression", (void **)&evalExpressionDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "RegisterGetChild", (void **)&registerGetChildDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "StringToUpper", (void **)&stringToUpperDelegate));
     if (!registerGetChildDelegate(GetChildProxy::GetChild))
         return E_FAIL;
 
@@ -610,4 +612,23 @@ PVOID SymbolReader::AllocString(const std::string &str)
         return nullptr;
     memmove(bstr, wstr.data(), wstr.size() * sizeof(decltype(wstr[0])));
     return bstr;
+}
+
+HRESULT SymbolReader::StringToUpper(std::string &String)
+{
+    PrepareSymbolReader();
+
+    if (stringToUpperDelegate == nullptr)
+        return E_FAIL;
+
+    BSTR wString;
+    stringToUpperDelegate(to_utf16(String).c_str(), &wString);
+
+    if (!wString)
+        return E_FAIL;
+
+    String = to_utf8(wString);
+    sysFreeString(wString);
+
+    return S_OK;
 }

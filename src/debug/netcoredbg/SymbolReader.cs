@@ -1427,5 +1427,10 @@ namespace SOS
             MarshalValue(value, out size, out data);
             return true;
         }
+
+        internal static void StringToUpper([MarshalAs(UnmanagedType.LPWStr)] string srcString, out IntPtr dstString)
+        {
+            dstString = Marshal.StringToBSTR(srcString.ToUpper());
+        }
     }
 }
