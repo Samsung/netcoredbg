@@ -10,6 +10,7 @@
 #include <functional>
 #include <unordered_map>
 #include <map>
+#include <list>
 #include <mutex>
 #include <memory>
 
@@ -41,9 +42,14 @@ class Modules
         ResolveFunctionBreakpointCallback cb);
     static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName);
 
-    std::unordered_map<std::string, std::map<int32_t, int32_t>> m_sourcesCodeLines;
-    std::unordered_map<std::string, std::string> m_sourcesFullPaths;
+    // map of source full path to all sequence point's startLine and endLine in this source file,
+    // need it in order to resolve requested breakpoint line number to proper line number related to executable code
+    std::unordered_map<std::string, std::map<int32_t, int32_t> > m_sourcesCodeLines;
+    // map of source file name to list of source full paths from loaded assemblies,
+    // need it order to resolve source full path by requested breakpoint relative source path
+    std::unordered_map<std::string, std::list<std::string> > m_sourcesFullPaths;
     HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, SymbolReader *symbolReader);
+    HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename);
 
 public:
     struct SequencePoint {
@@ -119,5 +125,5 @@ public:
 
     HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
 
-    HRESULT ResolveBreakpointFileAndLine(std::string &filename, int32_t &linenum);
+    HRESULT ResolveBreakpointFileAndLine(std::string &filename, int &linenum);
 };

@@ -610,8 +610,7 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Symbo
                 for (int i = point.startLine; i <= point.endLine; i++)
                     codeLinesFullPath[i] = point.startLine;
 
-                // TODO care about files with same name but with different paths
-                m_sourcesFullPaths[GetFileName(fullPath)] = fullPath;
+                m_sourcesFullPaths[GetFileName(fullPath)].push_back(std::move(fullPath));
             }
         }
         pMDImport->CloseEnum(fEnum);
@@ -621,22 +620,119 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Symbo
     return S_OK;
 }
 
-HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int32_t &linenum)
+HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
 {
-#ifdef WIN32
+    auto searchByFileName = m_sourcesFullPaths.find(GetFileName(filename));
+    if (searchByFileName == m_sourcesFullPaths.end())
+        return E_FAIL;
+
+    std::list<std::string> &possiblePaths = searchByFileName->second;
+    std::string result = filename;
+
+    // Care about all "./" and "../" first.
+    std::list<std::string> pathDirs;
+    std::size_t i;
+    while ((i = result.find_first_of("/\\")) != std::string::npos)
+    {
+        std::string pathElement = result.substr(0, i);
+        if (pathElement == "..")
+        {
+            if (!pathDirs.empty())
+                pathDirs.pop_front();
+        }
+        else if (pathElement != ".")
+            pathDirs.push_front(pathElement);
+
+        result = result.substr(i + 1);
+    }
+    for (const auto &dir : pathDirs)
+    {
+        result = dir + '/' + result;
+    }
+
+    // The problem is - we could have several assemblies that could have same source file name with different path's root.
+    // We don't really have a lot of options here, so, we assume, that all possible sources paths have same root and just find the shortest.
+    if (result == GetFileName(result))
+    {
+        result = possiblePaths.front();
+        for (const auto& path : possiblePaths)
+        {
+            if (result.length() > path.length())
+                result = path;
+        }
+
+        filename = result;
+        return S_OK;
+    }
+
+    std::list<std::string> possibleResults;
+    for (auto &path : possiblePaths)
+    {
+        if (result.size() > path.size())
+            continue;
+
+        // Note, since assemblies could be built in different OSes, we could have different delimiters in source files paths.
+        auto BinaryPredicate = [](const char& a, const char& b)
+        {
+            if ((a == '/' || a == '\\') && (b == '/' || b == '\\')) return true;
+            return a == b;
+        };
+
+        // since C++17
+        //if (std::equal(result.begin(), result.end(), path.end() - result.size(), BinaryPredicate))
+        //    possibleResults.push_back(path);
+        std::string::iterator first1 = result.begin();
+        std::string::iterator last1 = result.end();
+        std::string::iterator first2 = path.end() - result.size();
+        auto equal = [&]()
+        {
+            for (; first1 != last1; ++first1, ++first2)
+            {
+                if (!BinaryPredicate(*first1, *first2))
+                    return false;
+            }
+            return true;
+        };
+        if (equal())
+            possibleResults.push_back(path);
+    }
+    // The problem is - we could have several assemblies that could have sources with same relative paths with different path's root.
+    // We don't really have a lot of options here, so, we assume, that all possible sources paths have same root and just find the shortest.
+    if (!possibleResults.empty())
+    {
+        filename = possibleResults.front();
+        for (const auto& path : possibleResults)
+        {
+            if (filename.length() > path.length())
+                filename = path;
+        }
+        return S_OK;
+    }
+
+    return E_FAIL;
+}
+
+HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenum)
+{
     HRESULT Status;
+#ifdef WIN32
     IfFailRet(SymbolReader::StringToUpper(filename));
 #endif
 
     auto searchByFullPath = m_sourcesCodeLines.find(filename);
     if (searchByFullPath == m_sourcesCodeLines.end())
     {
-        // TODO care about files with same name but with different paths, care about files with relative paths
-        auto searchByFileName = m_sourcesFullPaths.find(GetFileName(filename));
-        if (searchByFileName == m_sourcesFullPaths.end())
+        // Check for absolute path.
+#ifdef WIN32
+        if (filename[1] == ':' && (filename[2] == '/' || filename[2] == '\\'))
+#else
+        if (filename[0] == '/')
+#endif
+        {
             return E_FAIL;
+        }
 
-        filename = searchByFileName->second;
+        IfFailRet(ResolveRelativeSourceFileName(filename));
 
         searchByFullPath = m_sourcesCodeLines.find(filename);
         if (searchByFullPath == m_sourcesCodeLines.end())
