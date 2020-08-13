@@ -24,13 +24,21 @@ class CLIProtocol : public IProtocol
     std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
     std::string prompt;
     std::string history;
+    std::string redOn;
+    std::string colorOff;
+#ifndef WIN32
     pthread_t tid;
-
+#endif
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
 
 public:
 
-    CLIProtocol() : IProtocol(), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(".history") {}
+    CLIProtocol() : IProtocol(), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(".history"),
+#ifndef WIN32
+                                 redOn("\033[1;31m"), colorOff("\033[0m") {}
+#else
+                                 redOn(""), colorOff("") {}
+#endif                                
     void EmitInitializedEvent() override {}
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;

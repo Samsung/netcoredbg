@@ -14,8 +14,6 @@
 #include <iostream>
 #include <iomanip>
 #include <csignal>
-#include <unistd.h>
-#include <sys/syscall.h>
 
 #include "logger.h"
 #include "tokenizer.h"
@@ -294,8 +292,9 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
         default:
             return;
     }
-
+#ifndef WIN32
     pthread_kill(tid, SIGWINCH);
+#endif
 }
 
 void CLIProtocol::EmitExitedEvent(ExitedEvent event)
@@ -303,7 +302,9 @@ void CLIProtocol::EmitExitedEvent(ExitedEvent event)
     LogFuncEntry();
 
     printf("\nstopped, reason: exited, exit-code: %i\n", event.exitCode);
+#ifndef WIN32
     pthread_kill(tid, SIGWINCH);
+#endif
 }
 
 void CLIProtocol::EmitContinuedEvent(int threadId)
@@ -578,9 +579,9 @@ void CLIProtocol::CommandLoop()
 {
     std::string token;
     std::string input;
-
+#ifndef WIN32
     tid = pthread_self();
-
+#endif
     linenoiseInstallWindowChangeHandler();
     linenoiseHistoryLoad(history.c_str());
 
@@ -600,7 +601,9 @@ void CLIProtocol::CommandLoop()
         std::string command;
         if (!ParseLine(input, token, command, args))
         {
-            printf("%s \x1b[1;31mFailed to parse input\n\x1b[0m", token.c_str());
+            printf("%s", redOn.c_str());
+            printf("%s Failed to parse input\n", token.c_str());
+            printf("%s", colorOff.c_str());
             continue;
         }
 
@@ -626,11 +629,15 @@ void CLIProtocol::CommandLoop()
         {
             if (output.empty())
             {
-                printf("%s \x1b[1;31mError: 0x%08x\n\x1b[0m", token.c_str(), hr);
+                printf("%s", redOn.c_str());
+                printf("%s Error: 0x%08x\n", token.c_str(), hr);
+                printf("%s", colorOff.c_str());
             }
             else
             {
-                printf("%s \x1b[1;31m%s\n\x1b[0m", token.c_str(), output.c_str());
+                printf("%s", redOn.c_str());
+                printf("%s %s\n", token.c_str(), output.c_str());
+                printf("%s", colorOff.c_str());
             }
         }
         linenoiseHistoryAdd(cmdline.get());

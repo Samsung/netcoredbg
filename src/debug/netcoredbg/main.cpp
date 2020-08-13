@@ -8,8 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <unistd.h>
-
 #include "manageddebugger.h"
 #include "miprotocol.h"
 #include "vscodeprotocol.h"

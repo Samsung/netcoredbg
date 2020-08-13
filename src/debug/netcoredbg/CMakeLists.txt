@@ -31,6 +31,7 @@ include_directories(${CORECLR_DIR}/src/coreclr/hosts/inc)
 # Build native part of the debugger
 
 include_directories(${PROJECT_SOURCE_DIR}/third_party)
+include_directories(${PROJECT_SOURCE_DIR}/third_party/linenoise-ng/include)
 
 set(netcoredbg_SRC
     main.cpp
@@ -66,7 +67,7 @@ endif()
 add_executable(netcoredbg ${netcoredbg_SRC})
 
 if (WIN32)
-    target_link_libraries(netcoredbg corguids wsock32 ws2_32)
+    target_link_libraries(netcoredbg corguids wsock32 ws2_32 linenoise)
 else()
     target_link_libraries(netcoredbg corguids dl pthread linenoise)
 endif()
