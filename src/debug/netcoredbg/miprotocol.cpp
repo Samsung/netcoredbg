@@ -639,13 +639,20 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
     for (auto &breakpointsIter : m_breakpoints)
     {
+        std::size_t initialSize = breakpointsIter.second.size();
         std::vector<SourceBreakpoint> remainingBreakpoints;
-        for (auto it : breakpointsIter.second)
+        for (auto it = breakpointsIter.second.begin(); it != breakpointsIter.second.end();)
         {
-            if (ids.find(it.first) == ids.end())
-                remainingBreakpoints.push_back(it.second);
+            if (ids.find(it->first) == ids.end())
+            {
+                remainingBreakpoints.push_back(it->second);
+                ++it;
+            }
+            else
+                it = breakpointsIter.second.erase(it);
         }
-        if (remainingBreakpoints.size() == breakpointsIter.second.size())
+
+        if (initialSize == breakpointsIter.second.size())
             continue;
 
         std::string filename = breakpointsIter.first;
@@ -657,14 +664,20 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 
 void MIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
+    std::size_t initialSize = m_funcBreakpoints.size();
     std::vector<FunctionBreakpoint> remainingFuncBreakpoints;
-    for (auto &fb : m_funcBreakpoints)
+    for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
     {
-        if (ids.find(fb.first) == ids.end())
-            remainingFuncBreakpoints.push_back(fb.second);
+        if (ids.find(it->first) == ids.end())
+        {
+            remainingFuncBreakpoints.push_back(it->second);
+            ++it;
+        }
+        else
+            it = m_funcBreakpoints.erase(it);
     }
 
-    if (remainingFuncBreakpoints.size() == m_funcBreakpoints.size())
+    if (initialSize == m_funcBreakpoints.size())
         return;
 
     std::vector<Breakpoint> tmpBreakpoints;
