@@ -35,6 +35,7 @@ ALL_TEST_NAMES=(
     "MITestExitCode"
     "MITestEvalNotEnglish"
     "MITest中文目录"
+    "MITestSrcBreakpointResolve"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"

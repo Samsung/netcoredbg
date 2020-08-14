@@ -21,6 +21,7 @@ $ALL_TEST_NAMES = @(
     "MITestExitCode"
     "MITestEvalNotEnglish"
     "MITest中文目录"
+    "MITestSrcBreakpointResolve"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -58,12 +59,11 @@ $test_list = ""
 foreach ($TEST_NAME in $TEST_NAMES) {
     dotnet build $TEST_NAME
 
-    $SOURCE_FILE_LIST = (Get-ChildItem -Path $TEST_NAME -Recurse *.cs |
-        ? { $_.FullName -inotmatch "$TEST_NAME\\obj" }).Name
+    $SOURCE_FILE_LIST = (Get-ChildItem -Path "$TEST_NAME" -Recurse -Filter *.cs | Where {$_.FullName -notlike "*\obj\*"} | Resolve-path -relative).Substring(2)
 
     $SOURCE_FILES = ""
     foreach ($SOURCE_FILE in $SOURCE_FILE_LIST) {
-        $SOURCE_FILES += $TEST_NAME + "/" + $SOURCE_FILE + ";"
+        $SOURCE_FILES += $SOURCE_FILE + ";"
     }
 
     $PROTO = "mi"

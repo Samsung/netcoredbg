@@ -37,6 +37,7 @@ namespace XUnitTests
         [InlineData("MITestExitCode", "Program.cs")]
         [InlineData("MITestEvalNotEnglish", "Program.cs")]
         [InlineData("MITest中文目录", "中文文件名.cs")]
+        [InlineData("MITestSrcBreakpointResolve", "Program.cs;folder/Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestFuncBreak", "Program.cs")]
