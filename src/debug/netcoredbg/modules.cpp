@@ -603,12 +603,14 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Symbo
                 std::string fullPath = to_utf8(point.document);
 
 #ifdef WIN32
+                std::string initialFullPath = fullPath;
                 IfFailRet(SymbolReader::StringToUpper(fullPath));
+                m_sourceCaseSensitiveFullPaths[fullPath] = initialFullPath;
 #endif
 
                 auto &codeLinesFullPath = m_sourcesCodeLines[fullPath];
                 for (int i = point.startLine; i <= point.endLine; i++)
-                    codeLinesFullPath[i] = point.startLine;
+                    codeLinesFullPath[i] = std::make_tuple(point.startLine, point.endLine);
 
                 m_sourcesFullPaths[GetFileName(fullPath)].push_back(std::move(fullPath));
             }
@@ -712,7 +714,7 @@ HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
     return E_FAIL;
 }
 
-HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenum)
+HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenum, int &endLine)
 {
     HRESULT Status;
 #ifdef WIN32
@@ -739,13 +741,22 @@ HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenu
             return E_FAIL;
     }
 
+#ifdef WIN32
+    // get proper case sensitive full path from module
+    auto searchCaseSensitiveFullPath = m_sourceCaseSensitiveFullPaths.find(filename);
+    if (searchCaseSensitiveFullPath == m_sourceCaseSensitiveFullPaths.end())
+        return E_FAIL;
+    filename = searchCaseSensitiveFullPath->second;
+#endif
+
     auto &codeLines = searchByFullPath->second;
 
     auto resolvedLine = codeLines.lower_bound(linenum);
     if (resolvedLine == codeLines.end())
         return E_FAIL;
 
-    linenum = resolvedLine->second;
+    linenum = std::get<0>(resolvedLine->second);
+    endLine = std::get<1>(resolvedLine->second);
 
     return S_OK;
 }

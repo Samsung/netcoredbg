@@ -38,6 +38,11 @@ void to_json(json &j, const Breakpoint &b) {
         {"line",     b.line},
         {"verified", b.verified},
         {"message",  b.message}};
+    if (b.verified) {
+        j["endLine"] = b.endLine;
+        if (!b.source.IsNull())
+            j["source"] = b.source;
+    }
 }
 
 void to_json(json &j, const StackFrame &f) {

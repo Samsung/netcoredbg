@@ -44,12 +44,16 @@ class Modules
 
     // map of source full path to all sequence point's startLine and endLine in this source file,
     // need it in order to resolve requested breakpoint line number to proper line number related to executable code
-    std::unordered_map<std::string, std::map<int32_t, int32_t> > m_sourcesCodeLines;
+    std::unordered_map<std::string, std::map<int32_t, std::tuple<int32_t, int32_t> > > m_sourcesCodeLines;
     // map of source file name to list of source full paths from loaded assemblies,
     // need it order to resolve source full path by requested breakpoint relative source path
     std::unordered_map<std::string, std::list<std::string> > m_sourcesFullPaths;
     HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, SymbolReader *symbolReader);
     HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename);
+#ifdef WIN32
+    // all internal breakpoint routine are case sensitive, proper source full name for Windows must be used (same as in module)
+    std::unordered_map<std::string, std::string> m_sourceCaseSensitiveFullPaths;
+#endif
 
 public:
     struct SequencePoint {
@@ -125,5 +129,5 @@ public:
 
     HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
 
-    HRESULT ResolveBreakpointFileAndLine(std::string &filename, int &linenum);
+    HRESULT ResolveBreakpointFileAndLine(std::string &filename, int &linenum, int &endLine);
 };

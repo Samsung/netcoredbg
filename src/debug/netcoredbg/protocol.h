@@ -79,6 +79,7 @@ struct Breakpoint
     std::string message;
     Source source;
     int line;
+    int endLine;
 
     uint32_t hitCount; // exposed for MI protocol
     std::string condition;

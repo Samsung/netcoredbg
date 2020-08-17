@@ -57,7 +57,7 @@ static HRESULT IsSameFunctionBreakpoint(
 }
 
 Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
-    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), iCorBreakpoint(nullptr), enabled(true), times(0)
+    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), endLine(0), iCorBreakpoint(nullptr), enabled(true), times(0)
 {}
 
 Breakpoints::ManagedBreakpoint::~ManagedBreakpoint()
@@ -73,6 +73,7 @@ void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
     breakpoint.condition = this->condition;
     breakpoint.source = Source(this->fullname);
     breakpoint.line = this->linenum;
+    breakpoint.endLine = this->endLine;
     breakpoint.hitCount = this->times;
 }
 
@@ -121,10 +122,6 @@ HRESULT Breakpoints::HitManagedBreakpoint(Debugger *debugger,
     HRESULT Status;
 
     IfFailRet(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
-
-#ifdef WIN32
-    IfFailRet(SymbolReader::StringToUpper(sp.document));
-#endif
 
     auto breakpoints = m_srcResolvedBreakpoints.find(sp.document);
     if (breakpoints == m_srcResolvedBreakpoints.end())
@@ -286,8 +283,9 @@ HRESULT Breakpoints::ResolveBreakpointInModule(ICorDebugModule *pModule, Managed
     ULONG32 ilOffset;
     std::string fullname = bp.fullname;
     int linenum = bp.linenum;
+    int endLine = bp.endLine;
 
-    IfFailRet(m_modules.ResolveBreakpointFileAndLine(fullname, linenum));
+    IfFailRet(m_modules.ResolveBreakpointFileAndLine(fullname, linenum, endLine));
 
     IfFailRet(m_modules.GetLocationInModule(
         pModule,
@@ -309,6 +307,7 @@ HRESULT Breakpoints::ResolveBreakpointInModule(ICorDebugModule *pModule, Managed
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
     bp.linenum = linenum;
+    bp.endLine = endLine;
     bp.modAddress = modAddress;
     bp.methodToken = methodToken;
     bp.ilOffset = ilOffset;
@@ -454,6 +453,7 @@ void Breakpoints::TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::
             bp.id = initialBreakpoint.id;
             bp.fullname = initialBreakpoints.first;
             bp.linenum = initialBreakpoint.breakpoint.line;
+            bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
 
             if (SUCCEEDED(ResolveBreakpointInModule(pModule, bp)))
@@ -497,8 +497,9 @@ HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
     ULONG32 ilOffset;
     std::string fullname = bp.fullname;
     int linenum = bp.linenum;
+    int endLine = bp.endLine;
 
-    IfFailRet(m_modules.ResolveBreakpointFileAndLine(fullname, linenum));
+    IfFailRet(m_modules.ResolveBreakpointFileAndLine(fullname, linenum, endLine));
 
     ToRelease<ICorDebugModule> pModule;
 
@@ -522,6 +523,7 @@ HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
     bp.linenum = linenum;
+    bp.endLine = endLine;
     bp.modAddress = modAddress;
     bp.methodToken = methodToken;
     bp.ilOffset = ilOffset;
@@ -639,6 +641,7 @@ HRESULT Breakpoints::SetBreakpoints(
             bp.id = initialBreakpoint.id;
             bp.fullname = filename;
             bp.linenum = line;
+            bp.endLine = line;
             bp.condition = initialBreakpoint.breakpoint.condition;
 
             if (pProcess && SUCCEEDED(ResolveBreakpoint(bp)))
@@ -650,7 +653,13 @@ HRESULT Breakpoints::SetBreakpoints(
                 EnableOneICorBreakpointForLine(m_srcResolvedBreakpoints[initialBreakpoint.resolved_fullname][initialBreakpoint.resolved_linenum]);
             }
             else
+            {
                 bp.ToBreakpoint(breakpoint);
+                if (!pProcess)
+                    breakpoint.message = "The breakpoint is pending and will be resolved when debugging starts.";
+                else
+                    breakpoint.message = "The breakpoint will not currently be hit. No symbols have been loaded for this document.";
+            }
 
             breakpointsInSource.insert(breakpointsInSource.begin(), std::move(initialBreakpoint));
         }
@@ -687,8 +696,13 @@ HRESULT Breakpoints::SetBreakpoints(
                 bp.id = initialBreakpoint.id;
                 bp.fullname = filename;
                 bp.linenum = line;
+                bp.endLine = line;
                 bp.condition = initialBreakpoint.breakpoint.condition;
                 bp.ToBreakpoint(breakpoint);
+                if (!pProcess)
+                    breakpoint.message = "The breakpoint is pending and will be resolved when debugging starts.";
+                else
+                    breakpoint.message = "The breakpoint will not currently be hit. No symbols have been loaded for this document.";
             }
         }
 
