@@ -79,7 +79,6 @@ struct Breakpoint
     std::string message;
     Source source;
     int line;
-    int initial_line;
 
     uint32_t hitCount; // exposed for MI protocol
     std::string condition;
@@ -87,7 +86,7 @@ struct Breakpoint
     std::string funcname;
     std::string params;
 
-    Breakpoint() : id(0), verified(false), line(0), initial_line(0), hitCount(0) {}
+    Breakpoint() : id(0), verified(false), line(0), hitCount(0) {}
 };
 
 enum SymbolStatus

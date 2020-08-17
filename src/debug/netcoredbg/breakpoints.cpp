@@ -57,7 +57,7 @@ static HRESULT IsSameFunctionBreakpoint(
 }
 
 Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
-    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), initial_linenum(0), iCorBreakpoint(nullptr), enabled(true), times(0)
+    id(0), modAddress(0), methodToken(0), ilOffset(0), linenum(0), iCorBreakpoint(nullptr), enabled(true), times(0)
 {}
 
 Breakpoints::ManagedBreakpoint::~ManagedBreakpoint()
@@ -73,7 +73,6 @@ void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
     breakpoint.condition = this->condition;
     breakpoint.source = Source(this->fullname);
     breakpoint.line = this->linenum;
-    breakpoint.initial_line = this->initial_linenum;
     breakpoint.hitCount = this->times;
 }
 
@@ -455,7 +454,6 @@ void Breakpoints::TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::
             bp.id = initialBreakpoint.id;
             bp.fullname = initialBreakpoints.first;
             bp.linenum = initialBreakpoint.breakpoint.line;
-            bp.initial_linenum = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
 
             if (SUCCEEDED(ResolveBreakpointInModule(pModule, bp)))
@@ -622,6 +620,7 @@ HRESULT Breakpoints::SetBreakpoints(
     }
 
     // Export breakpoints
+    // Note, VSCode and MI/GDB protocols requires, that "breakpoints" and "srcBreakpoints" must have same indexes for same breakpoints.
 
     for (const auto &sb : srcBreakpoints)
     {
@@ -640,7 +639,6 @@ HRESULT Breakpoints::SetBreakpoints(
             bp.id = initialBreakpoint.id;
             bp.fullname = filename;
             bp.linenum = line;
-            bp.initial_linenum = line;
             bp.condition = initialBreakpoint.breakpoint.condition;
 
             if (pProcess && SUCCEEDED(ResolveBreakpoint(bp)))
@@ -797,6 +795,8 @@ HRESULT Breakpoints::SetFunctionBreakpoints(
 
 
     // Export function breakpoints
+    // Note, VSCode and MI/GDB protocols requires, that "breakpoints" and "funcBreakpoints" must have same indexes for same breakpoints.
+
     for (const auto &fb : funcBreakpoints)
     {
         std::string fullFuncName("");

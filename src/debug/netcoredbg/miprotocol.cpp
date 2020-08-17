@@ -534,26 +534,17 @@ HRESULT MIProtocol::SetBreakpoint(
     auto &breakpointsInSource = m_breakpoints[filename];
     std::vector<SourceBreakpoint> srcBreakpoints;
     for (auto it : breakpointsInSource)
-    {
         srcBreakpoints.push_back(it.second);
-    }
 
     srcBreakpoints.emplace_back(linenum, condition);
 
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_debugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
 
-    for (const Breakpoint& b : breakpoints)
-    {
-        if (b.initial_line != linenum)
-            continue;
-
-        breakpointsInSource.insert(std::make_pair(b.id, SourceBreakpoint{ b.initial_line, b.condition }));
-        breakpoint = b;
-        return S_OK;
-    }
-
-    return E_FAIL;
+    // Note, SetBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "srcBreakpoints".
+    breakpoint = breakpoints.back();
+    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(srcBreakpoints.back())));
+    return S_OK;
 }
 
 HRESULT MIProtocol::SetFunctionBreakpoint(
@@ -564,8 +555,8 @@ HRESULT MIProtocol::SetFunctionBreakpoint(
     Breakpoint &breakpoint)
 {
     HRESULT Status;
-    std::vector<FunctionBreakpoint> funcBreakpoints;
 
+    std::vector<FunctionBreakpoint> funcBreakpoints;
     for (const auto &it : m_funcBreakpoints)
         funcBreakpoints.push_back(it.second);
 
@@ -574,18 +565,10 @@ HRESULT MIProtocol::SetFunctionBreakpoint(
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
 
-    for (const Breakpoint& b : breakpoints)
-    {
-        if (b.funcname != funcname)
-            continue;
-
-        m_funcBreakpoints.insert(std::make_pair(b.id, FunctionBreakpoint{ b.module, b.funcname,
-                                                                          b.params, b.condition }));
-        breakpoint = b;
-        return S_OK;
-    }
-
-    return E_FAIL;
+    // Note, SetFunctionBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
+    breakpoint = breakpoints.back();
+    m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
+    return S_OK;
 }
 
 HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condition)
