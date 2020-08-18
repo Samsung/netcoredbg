@@ -116,7 +116,7 @@ namespace NetcoreDbgTest.VSCode
     public class SetBreakpointsArguments {
         public Source source = new Source();
         public List<SourceBreakpoint> breakpoints = new List<SourceBreakpoint>();
-        public List<int> lines = new List<int>();
+        public List<int> lines = new List<int>(); // Deprecated: The code locations of the breakpoints. netcoredbg don't support it.
         public bool ?sourceModified;
     }
 

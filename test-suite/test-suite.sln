@@ -61,23 +61,19 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestExceptionBreakpoint",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestEnv", "VSCodeTestEnv\VSCodeTestEnv.csproj", "{7555F581-C632-4490-A0E4-E4F1539E9209}"
 EndProject
-<<<<<<< HEAD
-<<<<<<< HEAD
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestExitCode", "MITestExitCode\MITestExitCode.csproj", "{9308CF34-12C5-4D5B-A318-00AD7AC1907A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestExitCode", "VSCodeTestExitCode\VSCodeTestExitCode.csproj", "{045EE2A3-F595-4D40-8E1A-734CA9CEB10C}"
-=======
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestEvalNotEnglish", "MITestEvalNotEnglish\MITestEvalNotEnglish.csproj", "{76D789CF-9499-4A12-9128-7378592B7BDC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestEvalNotEnglish", "VSCodeTestEvalNotEnglish\VSCodeTestEvalNotEnglish.csproj", "{5FE6BDFF-AD0E-4E1C-A596-6D583D0777BC}"
->>>>>>> Add MI/GDB and VSCode tests for non-English var evaluation.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITest中文目录", "MITest中文目录\MITest中文目录.csproj", "{6B76C4A1-D871-4A78-B284-FE8E2FCBA10D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTest中文目录", "VSCodeTest中文目录\VSCodeTest中文目录.csproj", "{56BFF745-3A77-44BF-B068-3E13901295A1}"
-=======
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestSrcBreakpointResolve", "MITestSrcBreakpointResolve\MITestSrcBreakpointResolve.csproj", "{81372498-2551-49D6-8A36-4F57C4985E5E}"
->>>>>>> Add MI/GDB test for breakpoint source file name and line resolve.
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestSrcBreakpointResolve", "VSCodeTestSrcBreakpointResolve\VSCodeTestSrcBreakpointResolve.csproj", "{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -524,5 +520,17 @@ Global
 		{81372498-2551-49D6-8A36-4F57C4985E5E}.Release|x64.Build.0 = Release|Any CPU
 		{81372498-2551-49D6-8A36-4F57C4985E5E}.Release|x86.ActiveCfg = Release|Any CPU
 		{81372498-2551-49D6-8A36-4F57C4985E5E}.Release|x86.Build.0 = Release|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Debug|x64.Build.0 = Debug|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Debug|x86.Build.0 = Debug|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|x64.ActiveCfg = Release|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|x64.Build.0 = Release|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|x86.ActiveCfg = Release|Any CPU
+		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

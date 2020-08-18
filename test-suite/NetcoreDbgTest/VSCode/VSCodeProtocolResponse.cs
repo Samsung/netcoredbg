@@ -114,4 +114,25 @@ namespace NetcoreDbgTest.VSCode
         public int ?namedVariables;
         public int ?indexedVariables;
     };
+
+	public class Breakpoint {
+		public int ?id;
+		public bool verified;
+		public string message;
+		public Source source;
+		public int ?line;
+		public int ?column;
+		public int ?endLine;
+		public int ?endColumn;
+		public string instructionReference;
+		public int ?offset;
+	};
+
+    public class SetBreakpointsResponseBody {
+        public List<Breakpoint> breakpoints;
+    };
+
+	public class SetBreakpointsResponse : Response {
+		public SetBreakpointsResponseBody body;
+	}
 }

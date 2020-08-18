@@ -50,6 +50,7 @@
     <ProjectReference Include="..\VSCodeTestExitCode\VSCodeTestExitCode.csproj" />
     <ProjectReference Include="..\VSCodeTestEvalNotEnglish\VSCodeTestEvalNotEnglish.csproj" />
     <ProjectReference Include="..\VSCodeTest中文目录\VSCodeTest中文目录.csproj" />
+    <ProjectReference Include="..\VSCodeTestSrcBreakpointResolve\VSCodeTestSrcBreakpointResolve.csproj" />
   </ItemGroup>
 
 </Project>

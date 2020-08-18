@@ -153,6 +153,7 @@ namespace NetcoreDbgTestCore
                 "System.IO.FileSystem.dll",
                 "System.Diagnostics.Process.dll",
                 "System.ComponentModel.Primitives.dll",
+                "System.Runtime.InteropServices.RuntimeInformation.dll",
                 "netstandard.dll",
             };
 

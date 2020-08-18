@@ -36,6 +36,7 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestExitCode"
     "VSCodeTestEvalNotEnglish"
     "VSCodeTest中文目录"
+    "VSCodeTestSrcBreakpointResolve"
 )
 
 $TEST_NAMES = $args

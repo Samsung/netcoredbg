@@ -52,6 +52,7 @@ namespace XUnitTests
         [InlineData("VSCodeTestExitCode", "Program.cs")]
         [InlineData("VSCodeTestEvalNotEnglish", "Program.cs")]
         [InlineData("VSCodeTest中文目录", "中文文件名.cs")]
+        [InlineData("VSCodeTestSrcBreakpointResolve", "Program.cs;folder/Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             string testSuiteRoot = Path.GetFullPath(

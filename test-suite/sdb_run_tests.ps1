@@ -35,6 +35,7 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestEnv"
     "VSCodeTestExitCode"
     "VSCodeTestEvalNotEnglish"
+    "VSCodeTestSrcBreakpointResolve"
 )
 
 # Skipped tests:
