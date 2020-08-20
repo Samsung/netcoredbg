@@ -33,6 +33,8 @@ ALL_TEST_NAMES=(
     "MITestHandshake"
     "MITestExceptionBreakpoint"
     "MITestExitCode"
+    "MITestEvalNotEnglish"
+    "MITest中文目录"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -44,6 +46,8 @@ ALL_TEST_NAMES=(
     "VSCodeTestStepping"
     "VSCodeTestEnv"
     "VSCodeTestExitCode"
+    "VSCodeTestEvalNotEnglish"
+    "VSCodeTest中文目录"
 )
 
 SDB=${SDB:-sdb}

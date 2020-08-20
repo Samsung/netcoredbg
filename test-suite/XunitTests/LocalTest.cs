@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Xunit;
 
@@ -35,6 +35,8 @@ namespace XUnitTests
         [InlineData("MITestTarget", "Program.cs")]
         [InlineData("MITestExceptionBreakpoint", "Program.cs")]
         [InlineData("MITestExitCode", "Program.cs")]
+        [InlineData("MITestEvalNotEnglish", "Program.cs")]
+        [InlineData("MITest中文目录", "中文文件名.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestFuncBreak", "Program.cs")]
@@ -47,6 +49,8 @@ namespace XUnitTests
         [InlineData("VSCodeTestStepping", "Program.cs")]
         [InlineData("VSCodeTestEnv", "Program.cs")]
         [InlineData("VSCodeTestExitCode", "Program.cs")]
+        [InlineData("VSCodeTestEvalNotEnglish", "Program.cs")]
+        [InlineData("VSCodeTest中文目录", "中文文件名.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             string testSuiteRoot = Path.GetFullPath(

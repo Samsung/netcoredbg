@@ -203,6 +203,15 @@ namespace NetcoreDbgTest.Script
             return evaluateResponse.body.result;
         }
 
+        public static void CalcExpressionWithNotDeclared(Int64 ?frameId, string Expression)
+        {
+            EvaluateRequest evaluateRequest = new EvaluateRequest();
+            evaluateRequest.arguments.expression = Expression;
+            evaluateRequest.arguments.frameId = frameId;
+            var ret = VSCodeDebugger.Request(evaluateRequest);
+            Assert.False(ret.Success);
+        }
+
         static VSCodeDebugger VSCodeDebugger = new VSCodeDebugger();
         static int threadId = -1;
         public static string BreakpointSourceName;
@@ -242,6 +251,9 @@ namespace VSCodeTestEvaluate
                 Assert.Equal("21", Context.CalcExpression(null, "a + b"));
                 Assert.Equal("22", Context.CalcExpression(frameId, "tc.a + b"));
                 Assert.Equal("\"string1string2\"", Context.CalcExpression(frameId, "str1 + str2"));
+
+                Context.CalcExpressionWithNotDeclared(frameId, "not_declared_variable");
+                Context.CalcExpressionWithNotDeclared(frameId, "not_declared_variable + 1");
 
                 Context.Continue();
             });

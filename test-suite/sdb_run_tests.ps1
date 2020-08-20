@@ -1,5 +1,7 @@
-# Please prepare sdb target with netcoredbg before start
+﻿# Making Windows PowerShell console window Unicode (UTF-8) aware.
+$OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding
 
+# Please prepare sdb target with netcoredbg before start
 $NETCOREDBG = "/home/owner/share/tmp/sdk_tools/netcoredbg/netcoredbg"
 
 $ALL_TEST_NAMES = @(
@@ -19,6 +21,7 @@ $ALL_TEST_NAMES = @(
     "MITestHandshake"
     "MITestExceptionBreakpoint"
     "MITestExitCode"
+    "MITestEvalNotEnglish"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -30,7 +33,11 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestStepping"
     "VSCodeTestEnv"
     "VSCodeTestExitCode"
+    "VSCodeTestEvalNotEnglish"
 )
+
+# Skipped tests:
+# MITest中文目录 and VSCodeTest中文目录 - sdb related issue with non-English assembly/pdb name during 'push'
 
 $TEST_NAMES = $args
 

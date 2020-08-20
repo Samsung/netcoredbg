@@ -1,3 +1,6 @@
+﻿# Making Windows PowerShell console window Unicode (UTF-8) aware.
+$OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding
+
 $ALL_TEST_NAMES = @(
     "MIExampleTest"
     "MITestBreakpoint"
@@ -16,6 +19,8 @@ $ALL_TEST_NAMES = @(
     "MITestTarget"
     "MITestExceptionBreakpoint"
     "MITestExitCode"
+    "MITestEvalNotEnglish"
+    "MITest中文目录"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -28,6 +33,8 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestStepping"
     "VSCodeTestEnv"
     "VSCodeTestExitCode"
+    "VSCodeTestEvalNotEnglish"
+    "VSCodeTest中文目录"
 )
 
 $TEST_NAMES = $args
