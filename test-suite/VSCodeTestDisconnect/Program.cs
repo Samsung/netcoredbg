@@ -107,7 +107,8 @@ namespace NetcoreDbgTest.Script
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "terminated")) {
                     wasTerminated = true;
                 }
-                if (wasExited && exitCode == 0 && wasTerminated)
+                // we don't check exit code here, since Windows and Linux provide different exit code in case of "disconnectRequest" usage
+                if (wasExited && wasTerminated)
                     return true;
 
                 return false;

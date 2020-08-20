@@ -27,6 +27,118 @@ using std::string;
 using std::vector;
 using std::map;
 
+#ifdef FEATURE_PAL
+#include <pthread.h>
+#include <link.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+namespace {
+namespace hook {
+
+class waitpid_t
+{
+private:
+    typedef pid_t (*Signature)(pid_t pid, int *status, int options);
+    Signature original = nullptr;
+    static constexpr pid_t notConfigured = -1;
+    pid_t trackPID = notConfigured;
+    int exitCode = 0; // same behaviour as CoreCLR have, by default exit code is 0
+    pthread_mutex_t interlock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+
+    class scope_guard
+    {
+    private:
+        pthread_mutex_t &interlock;
+
+    public:
+        scope_guard(pthread_mutex_t &interlock) : interlock(interlock) {pthread_mutex_lock(&interlock);}
+        ~scope_guard() {pthread_mutex_unlock(&interlock);}
+    };
+
+public:
+    void init() noexcept
+    {
+        scope_guard lock(interlock);
+        if (original)
+            return;
+
+        auto ret = dlsym(RTLD_NEXT, "waitpid");
+        if (!ret) {
+            LogLevelWithLine(LOG_ERROR, "Could not find original function waitpid\n");
+            abort();
+        }
+        original = reinterpret_cast<Signature>(ret);
+    }
+
+    pid_t operator() (pid_t pid, int *status, int options)
+    {
+        return original(pid, status, options);
+    }
+
+    explicit operator bool() noexcept
+    {
+        scope_guard lock(interlock);
+        return original;
+    }
+
+    void SetupTrackingPID(pid_t PID)
+    {
+        scope_guard lock(interlock);
+        trackPID = PID;
+        exitCode = 0; // same behaviour as CoreCLR have, by default exit code is 0
+    }
+
+    int GetExitCode()
+    {
+        scope_guard lock(interlock);
+        return exitCode;
+    }
+
+    void SetExitCode(pid_t PID, int Code)
+    {
+        scope_guard lock(interlock);
+
+        if (trackPID == notConfigured || PID != trackPID)
+            return;
+
+        exitCode = Code;
+    }
+
+} waitpid;
+
+}
+}
+
+extern "C" {
+
+pid_t waitpid(pid_t pid, int *status, int options) noexcept
+{
+    if (!hook::waitpid)
+        hook::waitpid.init();
+
+    pid_t pidWaitRetval = hook::waitpid(pid, status, options);
+
+    // same logic as PAL have, see PROCGetProcessStatus() and CPalSynchronizationManager::HasProcessExited()
+    if (pidWaitRetval == pid)
+    {
+        if (WIFEXITED(*status))
+        {
+            hook::waitpid.SetExitCode(pid, WEXITSTATUS(*status));
+        }
+        else if (WIFSIGNALED(*status))
+        {
+            LogLevelWithLine(LOG_WARN, "Process terminated without exiting; can't get exit code. Killed by signal %d. Assuming EXIT_FAILURE.\n", WTERMSIG(*status));
+            hook::waitpid.SetExitCode(pid, EXIT_FAILURE);
+        }
+    }
+
+    return pidWaitRetval;
+}
+}
+#endif // FEATURE_PAL
+
+
 // From dbgshim.h
 struct dbgshim_t
 {
@@ -613,7 +725,25 @@ public:
             while (!m_debugger.m_evaluator.is_empty_eval_queue())
                 m_debugger.m_evaluator.pop_eval_queue();
 
-            m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(0));
+            // Linux: exit() and _exit() argument is int (signed int)
+            // Windows: ExitProcess() and TerminateProcess() argument is UINT (unsigned int)
+            // Windows: GetExitCodeProcess() argument is DWORD (unsigned long)
+            // internal CoreCLR variable LatchedExitCode is INT32 (signed int)
+            // C# Main() return values is int (signed int) or void (return 0)
+            int exitCode = 0;
+#ifdef FEATURE_PAL
+            exitCode = hook::waitpid.GetExitCode();
+#else
+            HPROCESS hProcess;
+            DWORD dwExitCode = 0;
+            if (SUCCEEDED(pProcess->GetHandle(&hProcess)))
+            {
+                GetExitCodeProcess(hProcess, &dwExitCode);
+                exitCode = static_cast<int>(dwExitCode);
+            }
+#endif // FEATURE_PAL
+
+            m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(exitCode));
             m_debugger.NotifyProcessExited();
             m_debugger.m_protocol->EmitTerminatedEvent();
 
@@ -1502,6 +1632,10 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 
     m_processId = pid;
 
+#ifdef FEATURE_PAL
+    hook::waitpid.SetupTrackingPID(m_processId);
+#endif // FEATURE_PAL
+
     return S_OK;
 }
 
@@ -1594,6 +1728,10 @@ HRESULT ManagedDebugger::RunProcess(string fileExec, std::vector<string> execArg
                                      outEnv.empty() ? NULL : &outEnv[0],
                                      m_cwd.empty() ? NULL : reinterpret_cast<LPCWSTR>(to_utf16(m_cwd).c_str()),
                                      &m_processId, &resumeHandle));
+
+#ifdef FEATURE_PAL
+    hook::waitpid.SetupTrackingPID(m_processId);
+#endif // FEATURE_PAL
 
     IfFailRet(g_dbgshim.RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 

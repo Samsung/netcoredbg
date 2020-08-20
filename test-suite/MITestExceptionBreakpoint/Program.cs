@@ -142,13 +142,8 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var exitCode = (MIConst)output["exit-code"];
-
-                if (exitCode.CString == "0") {
-                    return true;
-                }
-
-                return false;
+                // we don't check exit code here, since Windows and Linux provide different exit code in case of "-gdb-exit" usage
+                return true;
             };
 
             if (!MIDebugger.IsEventReceived(filter))

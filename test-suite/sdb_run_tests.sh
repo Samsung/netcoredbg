@@ -32,6 +32,7 @@ ALL_TEST_NAMES=(
     "MITestExecInt"
     "MITestHandshake"
     "MITestExceptionBreakpoint"
+    "MITestExitCode"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -42,6 +43,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestEvaluate"
     "VSCodeTestStepping"
     "VSCodeTestEnv"
+    "VSCodeTestExitCode"
 )
 
 SDB=${SDB:-sdb}
