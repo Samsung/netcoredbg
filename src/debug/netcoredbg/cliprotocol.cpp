@@ -160,26 +160,17 @@ HRESULT CLIProtocol::SetBreakpoint(
     auto &breakpointsInSource = m_breakpoints[filename];
     std::vector<SourceBreakpoint> srcBreakpoints;
     for (auto it : breakpointsInSource)
-    {
         srcBreakpoints.push_back(it.second);
-    }
 
     srcBreakpoints.emplace_back(linenum, condition);
 
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_debugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
 
-    for (const Breakpoint& b : breakpoints)
-    {
-        if (b.line != linenum)
-            continue;
-
-        breakpointsInSource.insert(std::make_pair(b.id, SourceBreakpoint{ b.line, b.condition }));
-        breakpoint = b;
-        return S_OK;
-    }
-
-    return E_FAIL;
+    // Note, SetBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "srcBreakpoints".
+    breakpoint = breakpoints.back();
+    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(srcBreakpoints.back())));
+    return S_OK;
 }
 
 HRESULT CLIProtocol::SetFunctionBreakpoint(
@@ -200,31 +191,30 @@ HRESULT CLIProtocol::SetFunctionBreakpoint(
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
 
-    for (const Breakpoint& b : breakpoints)
-    {
-        if (b.funcname != funcname)
-            continue;
-
-        m_funcBreakpoints.insert(std::make_pair(b.id, FunctionBreakpoint{ b.module, b.funcname,
-                                                                          b.params, b.condition }));
-        breakpoint = b;
-        return S_OK;
-    }
-
-    return E_FAIL;
+    // Note, SetFunctionBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
+    breakpoint = breakpoints.back();
+    m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
+    return S_OK;
 }
 
 void CLIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
     for (auto &breakpointsIter : m_breakpoints)
     {
+        std::size_t initialSize = breakpointsIter.second.size();
         std::vector<SourceBreakpoint> remainingBreakpoints;
-        for (auto it : breakpointsIter.second)
+        for (auto it = breakpointsIter.second.begin(); it != breakpointsIter.second.end();)
         {
-            if (ids.find(it.first) == ids.end())
-                remainingBreakpoints.push_back(it.second);
+            if (ids.find(it->first) == ids.end())
+            {
+                remainingBreakpoints.push_back(it->second);
+                ++it;
+            }
+            else
+                it = breakpointsIter.second.erase(it);
         }
-        if (remainingBreakpoints.size() == breakpointsIter.second.size())
+
+        if (initialSize == breakpointsIter.second.size())
             continue;
 
         std::string filename = breakpointsIter.first;
@@ -236,14 +226,20 @@ void CLIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 
 void CLIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
+    std::size_t initialSize = m_funcBreakpoints.size();
     std::vector<FunctionBreakpoint> remainingFuncBreakpoints;
-    for (auto &fb : m_funcBreakpoints)
+    for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
     {
-        if (ids.find(fb.first) == ids.end())
-            remainingFuncBreakpoints.push_back(fb.second);
+        if (ids.find(it->first) == ids.end())
+        {
+            remainingFuncBreakpoints.push_back(it->second);
+            ++it;
+        }
+        else
+            it = m_funcBreakpoints.erase(it);
     }
 
-    if (remainingFuncBreakpoints.size() == m_funcBreakpoints.size())
+    if (initialSize == m_funcBreakpoints.size())
         return;
 
     std::vector<Breakpoint> tmpBreakpoints;
@@ -467,6 +463,7 @@ HRESULT CLIProtocol::doHelp(const std::vector<std::string> &args, std::string &o
         "finish                                Continue execution until the current stack frame returns.\n"
         "help                       h          Print this help message.\n"
         "next                       n          Step program.\n"
+        "print <name>               p          Print variable's value.\n"
         "quit                       q          Quit the debugging session.\n"
         "run                        r          Start debugging program.\n"
         "step                       s          Step program until it reaches the next source line.\n"
@@ -479,6 +476,39 @@ HRESULT CLIProtocol::doHelp(const std::vector<std::string> &args, std::string &o
 HRESULT CLIProtocol::doNext(const std::vector<std::string> &args, std::string &output)
 {
     return StepCommand(args, output, Debugger::STEP_OVER);    
+}
+
+HRESULT CLIProtocol::PrintVariable(int threadId, uint64_t frameId, std::string name, Variable v, std::ostringstream &ss)
+{
+    ss << name << " = " << v.value;
+    if (v.namedVariables > 0)
+    {
+        std::vector<Variable> children;
+        ss << ": {";
+        m_debugger->GetVariables(v.variablesReference, VariablesNamed, 0, v.namedVariables, children);
+        for (auto &child : children)
+        {
+            PrintVariable(threadId, frameId, child.name, child, ss);
+            ss << ", ";
+        }
+        ss << "\b\b}";
+    }
+    return S_OK;
+}
+
+HRESULT CLIProtocol::doPrint(const std::vector<std::string> &args, std::string &output)
+{
+    HRESULT Status;
+    std::ostringstream ss;
+
+    ss << "\n";
+    int threadId = m_debugger->GetLastStoppedThreadId();
+    uint64_t frameId = StackFrame(threadId, 0, "").id;
+    Variable v(0);
+    IfFailRet(m_debugger->Evaluate(frameId, args[0], v, output));
+    PrintVariable (threadId, frameId, args[0], v, ss);
+    output = ss.str();
+    return S_OK;    
 }
 
 HRESULT CLIProtocol::doQuit(const std::vector<std::string> &, std::string &)
@@ -529,6 +559,8 @@ HRESULT CLIProtocol::HandleCommand(std::string command,
         {"h", &CLIProtocol::doHelp},
         {"n", &CLIProtocol::doNext},
         {"next", &CLIProtocol::doNext},
+        {"p", &CLIProtocol::doPrint},
+        {"print", &CLIProtocol::doPrint},
         {"q", &CLIProtocol::doQuit},
         {"quit", &CLIProtocol::doQuit},
         {"r", &CLIProtocol::doRun},
