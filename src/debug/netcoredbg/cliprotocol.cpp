@@ -478,20 +478,45 @@ HRESULT CLIProtocol::doNext(const std::vector<std::string> &args, std::string &o
     return StepCommand(args, output, Debugger::STEP_OVER);    
 }
 
-HRESULT CLIProtocol::PrintVariable(int threadId, uint64_t frameId, std::string name, Variable v, std::ostringstream &ss)
+HRESULT CLIProtocol::PrintVariable(int threadId, uint64_t frameId, std::queue<std::string> filters, Variable v, std::ostringstream &ss)
 {
-    ss << name << " = " << v.value;
+    if(!filters.empty())
+    {
+        filters.pop();
+    }
+
+    ss << v.name;
+    if (filters.empty())
+    {
+        ss << " = " << v.value;
+    } else if (filters.front().front() != '[') {
+        ss << ".";
+    }
+    
     if (v.namedVariables > 0)
     {
         std::vector<Variable> children;
-        ss << ": {";
+        if (filters.empty()) 
+        {
+            ss << ": {";
+        }
         m_debugger->GetVariables(v.variablesReference, VariablesNamed, 0, v.namedVariables, children);
         for (auto &child : children)
         {
-            PrintVariable(threadId, frameId, child.name, child, ss);
-            ss << ", ";
+            if (filters.empty())
+            {
+                PrintVariable(threadId, frameId, filters, child, ss);
+                ss << ", ";
+            } else if (child.name == filters.front())
+            {
+                PrintVariable(threadId, frameId, filters, child, ss);
+            }
         }
-        ss << "\b\b}";
+        ss << "\b\b";
+        if (filters.empty())
+        {
+            ss << "}";
+        }
     }
     return S_OK;
 }
@@ -500,13 +525,28 @@ HRESULT CLIProtocol::doPrint(const std::vector<std::string> &args, std::string &
 {
     HRESULT Status;
     std::ostringstream ss;
-
+    std::string result;
+    std::queue<std::string> filters;
+    
     ss << "\n";
     int threadId = m_debugger->GetLastStoppedThreadId();
     uint64_t frameId = StackFrame(threadId, 0, "").id;
     Variable v(0);
-    IfFailRet(m_debugger->Evaluate(frameId, args[0], v, output));
-    PrintVariable (threadId, frameId, args[0], v, ss);
+    Tokenizer tokenizer(args[0], ".[");
+    while (tokenizer.Next(result))
+    {
+        if (result.back() == ']')
+        {
+            filters.push('[' + result);
+        } 
+        else {
+            filters.push(result);
+        }
+    }
+    printf("\n");
+    IfFailRet(m_debugger->Evaluate(frameId, filters.front(), v, output));
+    v.name = filters.front();
+    PrintVariable (threadId, frameId, filters, v, ss);
     output = ss.str();
     return S_OK;    
 }
