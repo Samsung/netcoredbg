@@ -30,7 +30,7 @@ class CLIProtocol : public IProtocol
     pthread_t tid;
 #endif
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
-
+    
 public:
 
     CLIProtocol() : IProtocol(), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(".history"),
@@ -66,6 +66,7 @@ private:
     HRESULT doFinish(const std::vector<std::string> &args, std::string &output);
     HRESULT doHelp(const std::vector<std::string> &args, std::string &output);
     HRESULT doNext(const std::vector<std::string> &args, std::string &output);
+    HRESULT doPrint(const std::vector<std::string> &args, std::string &output);
     HRESULT doQuit(const std::vector<std::string> &, std::string &);
     HRESULT doRun(const std::vector<std::string> &args, std::string &output);
     HRESULT doStep(const std::vector<std::string> &args, std::string &output);
@@ -80,6 +81,7 @@ private:
     HRESULT PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
+    HRESULT PrintVariable(int threadId, uint64_t frameId, std::string name, Variable v, std::ostringstream &output);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
