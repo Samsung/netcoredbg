@@ -84,10 +84,10 @@ add_library(
 )
 
 # install
-install(TARGETS linenoise DESTINATION lib)
+#install(TARGETS linenoise DESTINATION lib)
 
 # headers
-install(FILES include/linenoise.h DESTINATION include)
+#install(FILES include/linenoise.h DESTINATION include)
 
 # build example
 add_executable(
