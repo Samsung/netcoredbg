@@ -70,6 +70,11 @@ Set breakpoint at function func2():
 cli> b func2
 ^done, Breakpoint 2 at func2()
 ```
+Set breakpoint at func1(int i) member function of Program class of hello namespace: 
+```
+cli> b hello.Program.func1(int)
+^done, Breakpoint 3 at func1()
+```
 ### Deleting breakpoints
 To delete breakpoint just type "delete" and it's number:
 ```
