@@ -491,7 +491,9 @@ HRESULT Variables::Evaluate(
     if (std::regex_match(expression, re))
     {
         // Use simple name parser
-        IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags));
+        Status = m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags);
+        if (FAILED(Status))
+            pResultValue->Release();
     }
 
     int typeId;

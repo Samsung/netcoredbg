@@ -4,9 +4,11 @@
 
 #include "valueprint.h"
 
+#include <string.h>
 #include <sstream>
 #include <vector>
 #include <iomanip>
+#include <type_traits>
 
 #include <arrayholder.h>
 
@@ -199,7 +201,9 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
     return S_OK;
 }
 
-static HRESULT GetUIntValue(ICorDebugValue *pInputValue, unsigned int &value)
+
+template <typename T, typename = typename std::enable_if<std::is_integral<T>::value>::type>
+static HRESULT GetIntegralValue(ICorDebugValue *pInputValue, T& value)
 {
     HRESULT Status;
 
@@ -212,29 +216,89 @@ static HRESULT GetUIntValue(ICorDebugValue *pInputValue, unsigned int &value)
 
     ULONG32 cbSize;
     IfFailRet(pValue->GetSize(&cbSize));
-    if (cbSize != sizeof(int))
+    if (cbSize != sizeof(value))
         return E_FAIL;
-
-    BYTE rgbValue[sizeof(int)] = {0};
-
-    ToRelease<ICorDebugGenericValue> pGenericValue;
-    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
-    IfFailRet(pGenericValue->GetValue((LPVOID) &(rgbValue[0])));
 
     CorElementType corElemType;
     IfFailRet(pValue->GetType(&corElemType));
 
     switch (corElemType)
     {
-    default:
+    case ELEMENT_TYPE_I1:
+    case ELEMENT_TYPE_U1:
+        if (typeid(T) == typeid(char) || typeid(T) == typeid(unsigned char) || typeid(T) == typeid(signed char))
+            break;
         return E_FAIL;
+
     case ELEMENT_TYPE_I4:
     case ELEMENT_TYPE_U4:
-        value = *(unsigned int*) &(rgbValue[0]);
-        return S_OK;
+        if (typeid(T) == typeid(int) || typeid(T) == typeid(unsigned))
+            break;
+
+        if (sizeof(int) == sizeof(long))
+        {
+            if (typeid(T) == typeid(long) || typeid(T) == typeid(unsigned long))
+                break;
+        }
+        return E_FAIL;
+
+    case ELEMENT_TYPE_I8:
+    case ELEMENT_TYPE_U8:
+        if (typeid(T) == typeid(long long) || typeid(T) == typeid(unsigned long long))
+            break;
+
+        if (sizeof(long long) == sizeof(long))
+        {
+            if (typeid(T) == typeid(long) || typeid(T) == typeid(unsigned long))
+                break;
+        }
+
+        return E_FAIL;
+
+    case ELEMENT_TYPE_I:
+    case ELEMENT_TYPE_U:
+        if (sizeof(T) == sizeof(int))
+        {
+            if (typeid(T) == typeid(int) || typeid(T) == typeid(unsigned))
+                break;
+
+            if (sizeof(int) == sizeof(long))
+            {
+                if (typeid(T) == typeid(long) || typeid(T) == typeid(unsigned long))
+                    break;
+            }
+        }
+
+        if (sizeof(T) == sizeof(long long))
+        {
+            if (typeid(T) == typeid(long long) || typeid(T) == typeid(unsigned long long))
+                break;
+
+            if (sizeof(long long) == sizeof(long))
+            {
+                if (typeid(T) == typeid(long) || typeid(T) == typeid(unsigned long))
+                    break;
+            }
+        }
+
+        return E_FAIL;
+
+    default:
+        return E_FAIL;
     }
-    return E_FAIL;
+
+    ToRelease<ICorDebugGenericValue> pGenericValue;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+    IfFailRet(pGenericValue->GetValue(&value));
+    return S_OK;
 }
+
+
+static HRESULT GetUIntValue(ICorDebugValue *pInputValue, unsigned& value)
+{
+    return GetIntegralValue(pInputValue, value);
+}
+
 
 static HRESULT GetDecimalFields(ICorDebugValue *pValue,
                                 unsigned int &hi,
@@ -286,10 +350,18 @@ static HRESULT GetDecimalFields(ICorDebugValue *pValue,
 
             string name = to_utf8(mdName /*, nameLen*/);
 
-            if (name == "hi")
+            if (name == "hi" || name == "_hi32")
             {
                 IfFailRet(GetUIntValue(pFieldVal, hi));
                 has_hi = true;
+            }
+            else if (name == "_lo64")
+            {
+                unsigned long long lo64;
+                IfFailRet(GetIntegralValue(pFieldVal, lo64));
+                mid = lo64 >> 32;
+                lo = lo64 & ((1ULL<<32) - 1);
+                has_mid = has_lo = true;
             }
             else if (name == "mid")
             {
@@ -300,7 +372,7 @@ static HRESULT GetDecimalFields(ICorDebugValue *pValue,
                 IfFailRet(GetUIntValue(pFieldVal, lo));
                 has_lo = true;
             }
-            else if (name == "flags")
+            else if (name == "flags" || name == "_flags")
             {
                 IfFailRet(GetUIntValue(pFieldVal, flags));
                 has_flags = true;
