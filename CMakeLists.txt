@@ -70,6 +70,8 @@ function(get_git_subject_date_revision _subjectvar _datevar)
     execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --format=%s
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE subjectvar
         ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REPLACE "\\" "\\\\" subjectvar ${subjectvar})
+    string(REPLACE "\"" "\\\"" subjectvar ${subjectvar})
     set(${_subjectvar} "${subjectvar}" PARENT_SCOPE)
     set(${_datevar} "${datevar}" PARENT_SCOPE)
 endfunction()
