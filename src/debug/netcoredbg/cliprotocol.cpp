@@ -478,42 +478,51 @@ HRESULT CLIProtocol::doNext(const std::vector<std::string> &args, std::string &o
     return StepCommand(args, output, Debugger::STEP_OVER);    
 }
 
-HRESULT CLIProtocol::PrintVariable(int threadId, uint64_t frameId, std::queue<std::string> filters, Variable v, std::ostringstream &ss)
+HRESULT CLIProtocol::PrintVariable(int threadId, uint64_t frameId, std::list<std::string>::iterator token_iterator, Variable v, std::ostringstream &ss, bool expand)
 {
-    if(!filters.empty())
+    if(!token_iterator->empty())
     {
-        filters.pop();
+        token_iterator++;
     }
 
+    bool empty = token_iterator->empty();
     ss << v.name;
-    if (filters.empty())
+    if (empty)
     {
         ss << " = " << v.value;
-    } else if (filters.front().front() != '[') {
+    } else if (token_iterator->front() != '[')
+    {
         ss << ".";
     }
-    
-    if (v.namedVariables > 0)
+
+    if (v.namedVariables > 0 && expand)
     {
         std::vector<Variable> children;
-        if (filters.empty()) 
+        if (empty) 
         {
             ss << ": {";
         }
-        m_debugger->GetVariables(v.variablesReference, VariablesNamed, 0, v.namedVariables, children);
+        HRESULT re = m_debugger->GetVariables(v.variablesReference, VariablesBoth, 0, v.namedVariables, children);
+        int count = 0;
         for (auto &child : children)
         {
-            if (filters.empty())
+            if (empty)
             {
-                PrintVariable(threadId, frameId, filters, child, ss);
+                PrintVariable(threadId, frameId, token_iterator, child, ss, false);
                 ss << ", ";
-            } else if (child.name == filters.front())
+                count++;
+            } else if (child.name == *token_iterator)
             {
-                PrintVariable(threadId, frameId, filters, child, ss);
+                PrintVariable(threadId, frameId, token_iterator, child, ss, true);
+                count++;
             }
         }
+        if (count == 0)
+        {
+            ss << *token_iterator << " -- Not found!\n";
+        }
         ss << "\b\b";
-        if (filters.empty())
+        if (empty)
         {
             ss << "}";
         }
@@ -526,7 +535,7 @@ HRESULT CLIProtocol::doPrint(const std::vector<std::string> &args, std::string &
     HRESULT Status;
     std::ostringstream ss;
     std::string result;
-    std::queue<std::string> filters;
+    std::list<std::string> tokens;
     
     ss << "\n";
     int threadId = m_debugger->GetLastStoppedThreadId();
@@ -537,16 +546,17 @@ HRESULT CLIProtocol::doPrint(const std::vector<std::string> &args, std::string &
     {
         if (result.back() == ']')
         {
-            filters.push('[' + result);
+            tokens.push_back('[' + result);
         } 
         else {
-            filters.push(result);
+            tokens.push_back(result);
         }
     }
+    tokens.push_back("");
     printf("\n");
-    IfFailRet(m_debugger->Evaluate(frameId, filters.front(), v, output));
-    v.name = filters.front();
-    PrintVariable (threadId, frameId, filters, v, ss);
+    IfFailRet(m_debugger->Evaluate(frameId, tokens.front(), v, output));
+    v.name = tokens.front();
+    PrintVariable (threadId, frameId, tokens.begin(), v, ss, true);
     output = ss.str();
     return S_OK;    
 }

@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <queue>
+#include <list>
 
 #include "debugger.h"
 #include "iprotocol.h"
@@ -82,7 +82,7 @@ private:
     HRESULT PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
-    HRESULT PrintVariable(int threadId, uint64_t frameId, std::queue<std::string> filters, Variable v, std::ostringstream &output);
+    HRESULT PrintVariable(int threadId, uint64_t frameId, std::list<std::string>::iterator it, Variable v, std::ostringstream &output, bool expand);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
