@@ -532,22 +532,33 @@ HRESULT CLIProtocol::PrintVariable(int threadId, uint64_t frameId, std::list<std
 
 HRESULT CLIProtocol::doPrint(const std::vector<std::string> &args, std::string &output)
 {
-    HRESULT Status;
+    if (!args.empty())
+    {
+        m_lastPrintArg = args[0];
+    }
+    else if (m_lastPrintArg.empty())
+    {
+        puts("The history is empty.");
+        return S_OK;
+    }
+
     std::ostringstream ss;
+
+    HRESULT Status;
     std::string result;
     std::list<std::string> tokens;
-    
+
     ss << "\n";
     int threadId = m_debugger->GetLastStoppedThreadId();
     uint64_t frameId = StackFrame(threadId, 0, "").id;
     Variable v(0);
-    Tokenizer tokenizer(args[0], ".[");
+    Tokenizer tokenizer(m_lastPrintArg, ".[");
     while (tokenizer.Next(result))
     {
         if (result.back() == ']')
         {
             tokens.push_back('[' + result);
-        } 
+        }
         else {
             tokens.push_back(result);
         }
@@ -558,7 +569,7 @@ HRESULT CLIProtocol::doPrint(const std::vector<std::string> &args, std::string &
     v.name = tokens.front();
     PrintVariable (threadId, frameId, tokens.begin(), v, ss, true);
     output = ss.str();
-    return S_OK;    
+    return S_OK;
 }
 
 HRESULT CLIProtocol::doQuit(const std::vector<std::string> &, std::string &)

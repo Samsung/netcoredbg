@@ -87,4 +87,6 @@ private:
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
     bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
+
+    std::string m_lastPrintArg;
 };
