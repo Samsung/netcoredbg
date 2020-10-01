@@ -29,7 +29,10 @@ include_directories(${CORECLR_DIR}/src/inc)
 include_directories(${CORECLR_DIR}/src/debug/inc)
 include_directories(${CORECLR_DIR}/src/debug/shim)
 include_directories(${CORECLR_DIR}/src/dlls/dbgshim)
+# for CoreCLR <= 3.x
 include_directories(${CORECLR_DIR}/src/coreclr/hosts/inc)
+# for dotnet-runtime (> 3.x)
+include_directories(${CORECLR_DIR}/src/hosts/inc)
 
 # Build native part of the debugger
 

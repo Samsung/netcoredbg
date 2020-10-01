@@ -5,7 +5,8 @@ if (CLR_CMAKE_PLATFORM_ARCH_AMD64)
   add_definitions(-D_AMD64_)
   add_definitions(-D_WIN64)
   add_definitions(-DAMD64)
-  add_definitions(-DBIT64=1)
+  add_definitions(-DBIT64=1)          # CoreClr <= 3.x
+  add_definitions(-DHOST_64BIT=1)     # CoreClr > 3.x
 elseif (CLR_CMAKE_PLATFORM_ARCH_I386)
   add_definitions(-D_X86_)
 elseif (CLR_CMAKE_PLATFORM_ARCH_ARM)
@@ -15,7 +16,8 @@ elseif (CLR_CMAKE_PLATFORM_ARCH_ARM64)
   add_definitions(-D_ARM64_)
   add_definitions(-DARM64)
   add_definitions(-D_WIN64)
-  add_definitions(-DBIT64=1)
+  add_definitions(-DBIT64=1)          # CoreClr <= 3.x
+  add_definitions(-DHOST_64BIT=1)     # CoreClr > 3.x
 else ()
   clr_unknown_arch()
 endif ()

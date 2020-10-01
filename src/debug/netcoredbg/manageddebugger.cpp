@@ -30,6 +30,11 @@ using std::map;
 #ifdef FEATURE_PAL
 #include <dlfcn.h>
 
+// as alternative, libuuid should be linked...
+// (the problem is, that in CoreClr > 3.x, in pal/inc/rt/rpc.h,
+// MIDL_INTERFACE uses DECLSPEC_UUID, which has empty definition.
+extern "C" const IID IID_IUnknown = { 0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 }};
+
 namespace {
 namespace hook {
 
