@@ -247,7 +247,8 @@ enum StopReason
     StopBreakpoint,
     StopException,
     StopPause,
-    StopEntry
+    StopEntry,
+    StopBreak
 };
 
 struct StoppedEvent

@@ -596,7 +596,24 @@ public:
             /* [in] */ ICorDebugThread *thread)
         {
             LogFuncEntry();
-            return E_NOTIMPL;
+
+            m_debugger.SetLastStoppedThread(thread);
+
+            DWORD threadId = 0;
+            thread->GetID(&threadId);
+
+            StoppedEvent event(StopBreak, threadId);
+
+            ToRelease<ICorDebugFrame> pFrame;
+            if (SUCCEEDED(thread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+            {
+                StackFrame stackFrame;
+                if (m_debugger.GetFrameLocation(pFrame, threadId, 0, stackFrame) == S_OK)
+                    event.frame = stackFrame;
+            }
+
+            m_debugger.m_protocol->EmitStoppedEvent(event);
+            return S_OK;
         }
 
         virtual HRESULT STDMETHODCALLTYPE Exception(

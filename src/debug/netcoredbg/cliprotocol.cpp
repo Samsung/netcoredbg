@@ -287,6 +287,12 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
                 int(event.threadId), frameLocation.c_str());
             break;
         }
+        case StopBreak:
+        {
+            printf("\nstopped, reason: Debugger.Break, thread id: %i, stopped threads: all, frame={%s\n}\n",
+                  event.threadId, frameLocation.c_str());
+            break;
+        }
         default:
             return;
     }

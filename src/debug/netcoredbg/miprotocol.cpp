@@ -553,6 +553,12 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
                 int(event.threadId), frameLocation.c_str());
             break;
         }
+        case StopBreak:
+        {
+            MIProtocol::Printf("*stopped,reason=\"Debugger.Break\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
+                event.threadId, frameLocation.c_str());
+            break;
+        }
         default:
             return;
     }
