@@ -680,7 +680,7 @@ void CLIProtocol::CommandLoop()
 
     while (!m_exit)
     {
-        std::unique_ptr<char> cmdline;
+        std::unique_ptr<char[]> cmdline;
         token.clear();
         input.clear();
 

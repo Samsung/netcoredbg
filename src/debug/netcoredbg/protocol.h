@@ -87,7 +87,7 @@ struct Breakpoint
     std::string funcname;
     std::string params;
 
-    Breakpoint() : id(0), verified(false), line(0), hitCount(0) {}
+    Breakpoint() : id(0), verified(false), line(0), endLine(0), hitCount(0) {}
 };
 
 enum SymbolStatus

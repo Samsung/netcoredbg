@@ -413,6 +413,7 @@ class Variables
             variablesReference(variablesReference),
             namedVariables(namedVariables),
             indexedVariables(0),
+            evalFlags(0), // unused in this case, not involved into GetScopes routine
             valueKind(ValueIsScope),
             value(nullptr),
             frameId(frameId)
