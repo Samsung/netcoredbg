@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include <corerror.h>
 
 #ifdef _MSC_VER
 std::string to_utf8(const wchar_t *wstr);
@@ -16,3 +17,6 @@ std::u16string to_utf16(const std::string &utf8);
 
 std::string to_utf8(char16_t wch);
 std::vector<std::string> split_on_tokens(const std::string &str, const char delim);
+
+const char* errormessage(HRESULT hr);
+

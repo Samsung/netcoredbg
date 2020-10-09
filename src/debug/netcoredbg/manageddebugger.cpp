@@ -1320,6 +1320,8 @@ HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
 {
     LogFuncEntry();
 
+    if (!m_pProcess)
+        return E_FAIL;
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_pProcess->GetThread(threadId, &pThread));
