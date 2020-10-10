@@ -33,6 +33,7 @@
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
+#include <crt_externs.h>
 #else
 #include <linux/limits.h>
 #endif

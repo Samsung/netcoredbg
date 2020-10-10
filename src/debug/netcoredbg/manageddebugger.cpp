@@ -29,9 +29,7 @@ using std::map;
 
 #ifdef FEATURE_PAL
 #include <pthread.h>
-#include <link.h>
-#include <sys/types.h>
-#include <sys/wait.h>
+#include <dlfcn.h>
 
 namespace {
 namespace hook {
