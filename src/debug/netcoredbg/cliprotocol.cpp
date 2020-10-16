@@ -7,6 +7,7 @@
 #include "torelease.h"
 #include "cliprotocol.h"
 #include "linenoise.h"
+#include "cputil.h"
 
 #include <sstream>
 #include <functional>
@@ -63,7 +64,7 @@ void CLIProtocol::EmitBreakpointEvent(BreakpointEvent event)
         {
             std::string output;
             PrintBreakpoint(event.breakpoint, output);
-            printf("=breakpoint-modified,%s\n", output.c_str());
+            printf("breakpoint modified, %s\n", output.c_str());
             return;
         }
         default:
@@ -75,8 +76,9 @@ HRESULT CLIProtocol::StepCommand(const std::vector<std::string> &args,
                                 std::string &output,
                                 Debugger::StepType stepType)
 {
+    HRESULT Status;
     DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
-    m_debugger->StepCommand(threadId, stepType);
+    IfFailRet(m_debugger->StepCommand(threadId, stepType));
     output = "^running";
     return S_OK;
 }
@@ -723,7 +725,7 @@ void CLIProtocol::CommandLoop()
             if (output.empty())
             {
                 printf("%s", redOn.c_str());
-                printf("%s Error: 0x%08x\n", token.c_str(), hr);
+                printf("%s Error: 0x%08x: %s\n", token.c_str(), hr, errormessage(hr));
                 printf("%s", colorOff.c_str());
             }
             else
