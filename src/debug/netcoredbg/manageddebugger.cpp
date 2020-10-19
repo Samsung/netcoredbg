@@ -28,7 +28,6 @@ using std::vector;
 using std::map;
 
 #ifdef FEATURE_PAL
-#include <pthread.h>
 #include <dlfcn.h>
 
 namespace {
@@ -42,64 +41,56 @@ private:
     static constexpr pid_t notConfigured = -1;
     pid_t trackPID = notConfigured;
     int exitCode = 0; // same behaviour as CoreCLR have, by default exit code is 0
-    pthread_mutex_t interlock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+    std::recursive_mutex interlock;
 
-    class scope_guard
-    {
-    private:
-        pthread_mutex_t &interlock;
+    waitpid_t(const waitpid_t&) = delete;
+    waitpid_t& operator=(const waitpid_t&) = delete;
 
-    public:
-        scope_guard(pthread_mutex_t &interlock) : interlock(interlock) {pthread_mutex_lock(&interlock);}
-        ~scope_guard() {pthread_mutex_unlock(&interlock);}
-    };
-
-public:
     void init() noexcept
     {
-        scope_guard lock(interlock);
-        if (original)
-            return;
-
         auto ret = dlsym(RTLD_NEXT, "waitpid");
-        if (!ret) {
+        if (!ret)
+        {
             LogLevelWithLine(LOG_ERROR, "Could not find original function waitpid\n");
             abort();
         }
         original = reinterpret_cast<Signature>(ret);
     }
 
+public:
+    waitpid_t() = default;
+    ~waitpid_t() = default;
+
     pid_t operator() (pid_t pid, int *status, int options)
     {
+        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
+        if (!original)
+        {
+            init();
+        }
         return original(pid, status, options);
-    }
-
-    explicit operator bool() noexcept
-    {
-        scope_guard lock(interlock);
-        return original;
     }
 
     void SetupTrackingPID(pid_t PID)
     {
-        scope_guard lock(interlock);
+        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
         trackPID = PID;
         exitCode = 0; // same behaviour as CoreCLR have, by default exit code is 0
     }
 
     int GetExitCode()
     {
-        scope_guard lock(interlock);
+        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
         return exitCode;
     }
 
     void SetExitCode(pid_t PID, int Code)
     {
-        scope_guard lock(interlock);
-
+        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
         if (trackPID == notConfigured || PID != trackPID)
+        {
             return;
-
+        }
         exitCode = Code;
     }
 
@@ -108,13 +99,9 @@ public:
 }
 }
 
-extern "C" {
-
-pid_t waitpid(pid_t pid, int *status, int options) noexcept
+// Note, we guaranty waitpid hook works only during debuggee process execution, it aimed to work only for PAL's waitpid calls interception.
+extern "C" pid_t waitpid(pid_t pid, int *status, int options) noexcept
 {
-    if (!hook::waitpid)
-        hook::waitpid.init();
-
     pid_t pidWaitRetval = hook::waitpid(pid, status, options);
 
     // same logic as PAL have, see PROCGetProcessStatus() and CPalSynchronizationManager::HasProcessExited()
@@ -132,7 +119,6 @@ pid_t waitpid(pid_t pid, int *status, int options) noexcept
     }
 
     return pidWaitRetval;
-}
 }
 #endif // FEATURE_PAL
 
