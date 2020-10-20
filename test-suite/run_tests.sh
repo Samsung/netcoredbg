@@ -48,14 +48,19 @@ if [[ -z $TEST_NAMES ]]; then
     TEST_NAMES="${ALL_TEST_NAMES[@]}"
 fi
 
-dotnet build TestRunner
+dotnet build TestRunner || exit $?
 
 test_pass=0
 test_fail=0
 test_list=""
 
 for TEST_NAME in $TEST_NAMES; do
-    dotnet build $TEST_NAME
+    dotnet build $TEST_NAME || {
+        echo "$TEST_NAME: build error." >&2
+        test_fail=$(($test_fail + 1))
+        test_list="$test_list$TEST_NAME ... failed: build error\n"
+        continue
+    }
 
     SOURCE_FILES=$(find $TEST_NAME \! -path "$TEST_NAME/obj/*" -type f -name "*.cs" -printf '%p;')
 

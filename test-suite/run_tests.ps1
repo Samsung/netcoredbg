@@ -51,6 +51,9 @@ if ($TEST_NAMES.count -eq 0) {
 
 # Prepare
 dotnet build TestRunner
+if ($lastexitcode -ne 0) {
+    throw ("Exec build test: " + $errorMessage)
+}
 
 $test_pass = 0
 $test_fail = 0
@@ -59,6 +62,11 @@ $test_list = ""
 # Build, push and run tests
 foreach ($TEST_NAME in $TEST_NAMES) {
     dotnet build $TEST_NAME
+    if ($lastexitcode -ne 0) {
+        $test_fail++
+        $test_list = "$test_list$TEST_NAME ... failed: build error`n"
+        continue
+    }
 
     $SOURCE_FILE_LIST = (Get-ChildItem -Path "$TEST_NAME" -Recurse -Filter *.cs | Where {$_.FullName -notlike "*\obj\*"} | Resolve-path -relative).Substring(2)
 
