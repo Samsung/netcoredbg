@@ -366,6 +366,7 @@ void VSCodeProtocol::AddCapabilitiesTo(json &capabilities)
     capabilities["supportsConditionalBreakpoints"] = true;
     capabilities["supportTerminateDebuggee"] = true;
     capabilities["supportsExceptionInfoRequest"] = true;
+    capabilities["supportsSetVariable"] = true;
 }
 
 HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &arguments, json &body)
