@@ -31,7 +31,6 @@ using std::map;
 #include <pthread.h>
 #include <link.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 
 namespace {
 namespace hook {
