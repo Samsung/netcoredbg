@@ -88,6 +88,8 @@ static void print_buildinfo()
 int main(int argc, char *argv[])
 {
     DWORD pidDebuggee = 0;
+    // prevent std::cout flush triggered by read operation on std::cin
+    std::cin.tie(nullptr);
 
     enum InterpreterType
     {
