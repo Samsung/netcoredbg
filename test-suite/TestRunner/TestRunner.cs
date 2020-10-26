@@ -88,7 +88,7 @@ namespace TestRunner
                 return 1;
             }
 
-            if (!debugger.DoHandshake(200)) {
+            if (!debugger.DoHandshake(5000)) {
                 Console.Error.WriteLine("Handshake is failed");
                 if (localDebugger != null) {
                     localDebugger.Close();
