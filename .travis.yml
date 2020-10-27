@@ -36,9 +36,9 @@ env:
   - RELEASE_BRANCH=master
 
 script:
+  - eval "${MATRIX_EVAL}"
+  - mkdir build && cd build
   - |
-      eval "${MATRIX_EVAL}"
-      mkdir build && cd build
       if [ ${TRAVIS_OS_NAME} = 'windows' ]; then
         powershell -Command "Set-ExecutionPolicy Unrestricted"
         cmake .. -G "Visual Studio 15 2017 Win64" -DCMAKE_INSTALL_PREFIX=$PWD/../bin
@@ -47,7 +47,7 @@ script:
         cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/../bin
         cmake --build . --target install
       fi
-      cd ..
+  - cd ..
 
 before_deploy:
   - |
@@ -66,7 +66,7 @@ before_deploy:
         if [ ${TRAVIS_OS_NAME} = 'windows' ]; then
           7z a netcoredbg-win64.zip netcoredbg
         elif [ ${TRAVIS_OS_NAME} = 'linux' ]; then
-          tar cfz netcoredbg-${TRAVIS_OS_NAME}-${TRAVIS_DIST}.tar.gz ./netcoredbg/*
+          tar cfz netcoredbg-${TRAVIS_OS_NAME}-${TRAVIS_DIST}-${TRAVIS_CPU_ARCH}.tar.gz ./netcoredbg/*
         else
           tar cfz netcoredbg-${TRAVIS_OS_NAME}.tar.gz ./netcoredbg/*
         fi
