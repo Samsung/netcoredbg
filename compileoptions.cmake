@@ -146,3 +146,10 @@ if(CLR_CMAKE_ENABLE_CODE_COVERAGE)
   endif(CLR_CMAKE_PLATFORM_UNIX)
 
 endif(CLR_CMAKE_ENABLE_CODE_COVERAGE)
+
+# inform C-preprocessor about debug type
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_definitions(-DDEBUG)
+endif()
+
+
