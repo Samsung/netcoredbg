@@ -85,11 +85,15 @@ namespace TestRunner
             }
             catch {
                 Console.Error.WriteLine("Can't create debugger client");
+                if (localDebugger != null) {
+                    localDebugger.Close();
+                }
                 return 1;
             }
 
             if (!debugger.DoHandshake(5000)) {
                 Console.Error.WriteLine("Handshake is failed");
+                debugger.Close();
                 if (localDebugger != null) {
                     localDebugger.Close();
                 }
@@ -116,10 +120,17 @@ namespace TestRunner
             }
             catch (System.Exception e) {
                 Console.Error.WriteLine("Script running is failed. Got exception:\n" + e.ToString());
+                debugger.Close();
+                if (localDebugger != null) {
+                    localDebugger.Close();
+                }
                 return 1;
             }
 
             debugger.Close();
+            if (localDebugger != null) {
+                localDebugger.Close();
+            }
             return 0;
         }
     }

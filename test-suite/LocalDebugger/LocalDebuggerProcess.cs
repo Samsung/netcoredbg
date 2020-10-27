@@ -13,6 +13,8 @@ namespace LocalDebugger
             DebuggerProcess.StartInfo.UseShellExecute = false;
             DebuggerProcess.StartInfo.RedirectStandardInput = true;
             DebuggerProcess.StartInfo.RedirectStandardOutput = true;
+            DebuggerProcess.EnableRaisingEvents = true;
+            DebuggerProcess.Exited += new System.EventHandler(DebuggerProcess_Exited);
             Input = null;
             Output = null;
         }
@@ -26,10 +28,26 @@ namespace LocalDebugger
 
         public void Close()
         {
-            DebuggerProcess.Kill();
+            CloseCalled =true;
+            DebuggerProcess.Kill(true);
             DebuggerProcess.WaitForExit();
             DebuggerProcess.Dispose();
         }
+
+        private void DebuggerProcess_Exited(object sender, System.EventArgs e)
+        {
+            if (!CloseCalled)
+            {
+                //kill process of test, which is child of netcoredbg. It's PID I don't know
+                // For Win it works automatically (I hope). For linux it is going
+                // to be passed to run_tests.sh/timeout
+                System.Console.Error.WriteLine("TestRunner: netcoredbg is dead with exit code {0}.\n{1}",
+                    DebuggerProcess.ExitCode, e.ToString());
+                System.Environment.Exit(DebuggerProcess.ExitCode);
+            }
+        }
+
+        private bool CloseCalled = false;
 
         public StreamWriter Input;
         public StreamReader Output;
