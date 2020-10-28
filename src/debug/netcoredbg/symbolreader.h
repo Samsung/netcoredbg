@@ -78,7 +78,7 @@ private:
 public:
     static const int HiddenLine;
 
-    PACK_BEGIN struct SequencePoint {
+    struct SequencePoint {
         int32_t startLine;
         int32_t startColumn;
         int32_t endLine;
@@ -92,7 +92,7 @@ public:
             document(nullptr)
         {}
         ~SequencePoint() { sysFreeString(document); }
-    } PACK_END;
+    };
 
     // Keep in sync with string[] basicTypes in SymbolReader.cs
     enum BasicTypes {

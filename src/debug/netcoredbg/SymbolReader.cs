@@ -48,8 +48,7 @@ namespace SOS
 
         }
 
-        // Unmanaged code expects struct with packing size is 1
-        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        [StructLayout(LayoutKind.Sequential)]
         internal struct DbgSequencePoint
         {
             public int startLine;
