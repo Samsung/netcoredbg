@@ -682,36 +682,60 @@ const std::string VSCodeProtocol::CONTENT_LENGTH("Content-Length: ");
 
 std::string VSCodeProtocol::ReadData()
 {
-    std::string header;
-
-    char c;
+    // parse header (only content len) until empty line
+    long content_len = -1;
     while (true)
     {
-        // Read until "\r\n\r\n"
-        if (!std::cin.get(c))
-            return std::string();
+        std::string line;
+        std::getline(std::cin, line);
+        if (!std::cin.good())
+        {
+            if (std::cin.eof()) LOGI("EOF");
+            else LOGE("input stream reading error");
+            return {};
+        }
 
-        header += c;
-        if (header.length() < TWO_CRLF.length())
-            continue;
+        if (!line.empty() && line.back() == '\r')
+                line.pop_back();
 
-        if (header.compare(header.length() - TWO_CRLF.length(), TWO_CRLF.length(), TWO_CRLF) != 0)
-            continue;
+        if (line.empty())
+        {
+            if (content_len < 0)
+            {
+                LOGE("protocol error: no 'Content Length:' field!");
+                return {};
+            }
+            break;         // header and content delimiter
+        }
 
-        // Extract Content-Length
-        auto lengthIndex = header.find(CONTENT_LENGTH);
-        if (lengthIndex == std::string::npos)
-            continue;
+        LOGD("header: '%s'", line.c_str());
 
-        size_t contentLength = std::stoul(header.substr(lengthIndex + CONTENT_LENGTH.length()));
+        if (line.size() > CONTENT_LENGTH.size()
+            && std::equal(CONTENT_LENGTH.begin(), CONTENT_LENGTH.end(), line.begin()))
+        {
+            if (content_len >= 0)
+                LOGW("protocol violation: duplicate '%s'", line.c_str());
 
-        std::string result(contentLength, ' ');
-        if (!std::cin.read(&result[0], contentLength))
-            return std::string();
-
-        return result;
+            char *p;
+            errno = 0;
+            content_len = strtoul(&line[CONTENT_LENGTH.size()], &p, 10);
+            if (errno == ERANGE || !(*p == 0 || isspace(*p)))
+            {
+                LOGE("protocol violation: '%s'", line.c_str());
+                return {};
+            }
+        }
     }
-    // unreachable
+
+    std::string result(content_len, 0);
+    if (!std::cin.read(&result[0], content_len))
+    {
+        if (std::cin.eof()) LOGE("Unexpected EOF!");
+        else LOGE("input stream reading error");
+        return {};
+    }
+
+    return result;
 }
 
 void VSCodeProtocol::CommandLoop()
