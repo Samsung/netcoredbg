@@ -87,7 +87,7 @@ namespace XUnitTests
                 throw new System.Exception();
             }
 
-            Xunit.Assert.True(DebuggerClient.DoHandshake(200));
+            Xunit.Assert.True(DebuggerClient.DoHandshake(5000));
 
             var Script = new DebuggeeScript(Env.SourceFilesPath, DebuggerClient.Protocol);
 
