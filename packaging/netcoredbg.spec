@@ -31,6 +31,8 @@ BuildRequires: corefx-managed
 BuildRequires: libdlog-devel
 Requires: coreclr
 
+%{!?build_type:%define build_type Release}
+
 # .NET Core Runtime
 %define dotnetdir       dotnet
 %define netshareddir    %{dotnetdir}/shared
@@ -89,11 +91,12 @@ cmake ../netcoredbg \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCORECLR_DIR=$NETCOREAPPDIR \
     -DCMAKE_INSTALL_PREFIX=%{install_prefix} \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE=%{build_type} \
     -DCLR_CMAKE_LINUX_ID=tizen \
     -DDBGSHIM_RUNTIME_DIR=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF
-make %{?jobs:-j%jobs}
+
+make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 
 %dotnet_build -s ../netcoredbg/packaging/pkgs ../netcoredbg/src/debug/netcoredbg
 
