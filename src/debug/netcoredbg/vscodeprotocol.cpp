@@ -431,7 +431,8 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return S_OK;
     } },
     {"launch", [this](const json &arguments, json &body) {
-        const string cwd = arguments.at("cwd").get<string>();
+        auto cwdIt = arguments.find("cwd");
+        const string cwd(cwdIt != arguments.end() ? cwdIt.value().get<string>() : std::string{});
         map<string, string> env;
         try {
             env = arguments.at("env").get<map<string, string> >();
