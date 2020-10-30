@@ -725,29 +725,42 @@ void VSCodeProtocol::CommandLoop()
             Log(LOG_COMMAND, requestText);
         }
 
-        json request = json::parse(requestText);
-
-        std::string command = request.at("command");
-        // assert(request["type"] == "request");
-
-        auto argIter = request.find("arguments");
-        json arguments = (argIter == request.end() ? json::object() : argIter.value());
-
-        json body = json::object();
-        HRESULT Status = HandleCommand(command, arguments, body);
-
+        struct bad_format : public std::invalid_argument
         {
-            std::lock_guard<std::mutex> lock(m_outMutex);
+            bad_format(const char *s) : invalid_argument(s) {}
+        };
 
-            json response;
+        json response;
+        try {
+            json request = json::parse(requestText);
 
-            response["type"] = "response";
-            response["command"] = command;
-            response["request_seq"] = request.at("seq");
+            // Variable `resp' is used to construct response and assign it to `response'
+            // variable in single step: `response' variable should always be in
+            // consistent state (it must not have state when some fields is assigned and
+            // some not assigned due to an exception) because `response' is used below
+            // in exception handler.
+            json resp;
+            resp["type"] = "response";
+            resp["request_seq"] = request.at("seq");
+            response = resp;
+
+            std::string command = request.at("command");
+            resp["command"] = command;
+            response = resp;
+
+            if (request["type"] != "request")
+                throw bad_format("wrong request type!");
+
+            auto argIter = request.find("arguments");
+            json arguments = (argIter == request.end() ? json::object() : argIter.value());
+
+            json body = json::object();
+            HRESULT Status = HandleCommand(command, arguments, body);
+
             if (SUCCEEDED(Status))
             {
-                response["success"] = true;
-                response["body"] = body;
+                resp["success"] = true;
+                resp["body"] = body;
             }
             else
             {
@@ -756,15 +769,35 @@ void VSCodeProtocol::CommandLoop()
                     std::ostringstream ss;
                     ss << "Failed command '" << command << "' : "
                     << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status;
-                    response["message"] = ss.str();
+                    resp["message"] = ss.str();
                 }
                 else
-                    response["message"] = body["message"];
+                    resp["message"] = body["message"];
 
-                response["success"] = false;
+                resp["success"] = false;
             }
-            std::string output = response.dump();
-            output = VSCodeSeq(m_seqCounter) + output.substr(1);
+            response = resp;
+        }
+        catch (nlohmann::detail::exception& ex)
+        {
+            Logger::levelLog(LOG_ERROR, "JSON error: %s", ex.what());
+            response["type"] = "response";
+            response["success"] = false;
+            response["message"] = std::string("can't parse: ") + ex.what();
+        }
+        catch (bad_format& ex)
+        {
+            Logger::levelLog(LOG_ERROR, "JSON error: %s", ex.what());
+            response["type"] = "response";
+            response["success"] = false;
+            response["message"] = std::string("can't parse: ") + ex.what();
+        }
+
+        std::string output = response.dump();
+        output = VSCodeSeq(m_seqCounter) + output.substr(1);
+
+        {
+            std::lock_guard<std::mutex> lock(m_outMutex);
             ++m_seqCounter;
 
             std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
