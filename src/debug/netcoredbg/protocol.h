@@ -21,6 +21,19 @@
 
 // Types commonly used in the debugger:
 
+// Process identifier.
+class PID : public Utility::CustomScalarType<PID>
+{	
+public:
+    typedef DWORD ScalarType;
+
+    explicit PID(ScalarType n) : m_pid{int(n)} {}
+    explicit operator ScalarType() const { return m_pid; }
+
+private:
+    int m_pid;
+};
+
 // Data type deficated to carry thread id.
 class ThreadId : public Utility::CustomScalarType<ThreadId>
 {

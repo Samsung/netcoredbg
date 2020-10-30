@@ -77,6 +77,7 @@ public:
     void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
 
     virtual void EmitInitializedEvent() = 0;
+    virtual void EmitExecEvent(PID, const std::string& argv0) = 0;
     virtual void EmitStoppedEvent(StoppedEvent event) = 0;
     virtual void EmitExitedEvent(ExitedEvent event) = 0;
     virtual void EmitTerminatedEvent() = 0;

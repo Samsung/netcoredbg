@@ -1762,6 +1762,9 @@ HRESULT ManagedDebugger::RunProcess(string fileExec, std::vector<string> execArg
         return E_FAIL;
     }
 
+    if (m_startupResult == S_OK)
+        m_protocol->EmitExecEvent(PID{m_processId}, fileExec);
+
     return m_startupResult;
 }
 

@@ -41,6 +41,7 @@ public:
                                  redOn(""), colorOff("") {}
 #endif                                
     void EmitInitializedEvent() override {}
+    void EmitExecEvent(PID, const std::string& argv) override {}
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
     void EmitTerminatedEvent() override {}

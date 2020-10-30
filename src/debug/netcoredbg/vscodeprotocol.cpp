@@ -299,6 +299,18 @@ void VSCodeProtocol::EmitInitializedEvent()
     EmitEvent("initialized", json::object());
 }
 
+void VSCodeProtocol::EmitExecEvent(PID pid, const std::string& argv0)
+{
+    json body;
+
+    body["name"] = argv0;
+    body["systemProcessId"] = unsigned(pid);
+    body["isLocalProcess"] = true;
+    body["startMethod"] = "launch";
+
+    EmitEvent("process", body);
+}
+
 void VSCodeProtocol::EmitCapabilitiesEvent()
 {
     LogFuncEntry();
