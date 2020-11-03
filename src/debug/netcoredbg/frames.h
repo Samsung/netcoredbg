@@ -11,8 +11,9 @@
 #pragma GCC diagnostic pop
 
 #include <vector>
+#include "protocol.h"
 
 struct Thread;
 
-HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame);
+HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **ppFrame);
 HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads);

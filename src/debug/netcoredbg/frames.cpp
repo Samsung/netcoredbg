@@ -44,7 +44,7 @@ HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &th
         IfFailRet(pProcess->IsRunning(&running));
 
         // Baground threads also included. GetUserState() not available for running thread.
-        threads.emplace_back(threadId, threadName, running);
+        threads.emplace_back(ThreadId{threadId}, threadName, running);
 
         fetched = 0;
         handle = nullptr;
@@ -61,7 +61,7 @@ static uint64_t GetFrameAddr(ICorDebugFrame *pFrame)
     return startAddr;
 }
 
-HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame)
+HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
 {
     HRESULT Status;
 
@@ -333,7 +333,7 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
     return S_OK;
 }
 
-HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame)
+HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **ppFrame)
 {
     ToRelease<ICorDebugFrame> result;
 
@@ -347,9 +347,9 @@ HRESULT GetFrameAt(ICorDebugThread *pThread, int level, ICorDebugFrame **ppFrame
     {
         currentFrame++;
 
-        if (currentFrame < level)
+        if (currentFrame < int(level))
             return S_OK;
-        else if (currentFrame > level)
+        else if (currentFrame > int(level))
             return E_FAIL;
 
         if (currentFrame == level && frameType == FrameCLRManaged)
@@ -387,14 +387,15 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
     }
 }
 
-HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames)
+HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
     LogFuncEntry();
 
     HRESULT Status;
 
-    DWORD threadId = 0;
-    pThread->GetID(&threadId);
+    DWORD tid = 0;
+    pThread->GetID(&tid);
+    ThreadId threadId{tid};
 
     int currentFrame = -1;
 
@@ -406,25 +407,25 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame,
     {
         currentFrame++;
 
-        if (currentFrame < startFrame)
+        if (currentFrame < int(startFrame))
             return S_OK;
-        if (levels != 0 && currentFrame >= (startFrame + levels))
+        if (maxFrames != 0 && currentFrame >= int(startFrame) + int(maxFrames))
             return S_OK;
 
         switch(frameType)
         {
             case FrameUnknown:
-                stackFrames.emplace_back(threadId, currentFrame, "?");
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "?");
                 stackFrames.back().addr = GetFrameAddr(pFrame);
                 break;
             case FrameNative:
-                stackFrames.emplace_back(threadId, currentFrame, pNative->symbol);
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, pNative->symbol);
                 stackFrames.back().addr = pNative->addr;
                 stackFrames.back().source = Source(pNative->file);
                 stackFrames.back().line = pNative->linenum;
                 break;
             case FrameCLRNative:
-                stackFrames.emplace_back(threadId, currentFrame, "[Native Frame]");
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "[Native Frame]");
                 stackFrames.back().addr = GetFrameAddr(pFrame);
                 break;
             case FrameCLRInternal:
@@ -436,14 +437,14 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, int startFrame,
                     std::string name = "[";
                     name += GetInternalTypeName(corFrameType);
                     name += "]";
-                    stackFrames.emplace_back(threadId, currentFrame, name);
+                    stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, name);
                     stackFrames.back().addr = GetFrameAddr(pFrame);
                 }
                 break;
             case FrameCLRManaged:
                 {
                     StackFrame stackFrame;
-                    GetFrameLocation(pFrame, threadId, currentFrame, stackFrame);
+                    GetFrameLocation(pFrame, threadId, FrameLevel{currentFrame}, stackFrame);
                     stackFrames.push_back(stackFrame);
                 }
                 break;

@@ -198,6 +198,18 @@ private:
 
 static dbgshim_t g_dbgshim;
 
+
+namespace
+{
+    ThreadId getThreadId(ICorDebugThread *pThread)
+    {
+        DWORD threadId = 0;  // invalid value for Win32
+        HRESULT res = pThread->GetID(&threadId);
+        return res == S_OK && threadId != 0 ? ThreadId{threadId} : ThreadId{};
+    }
+}
+
+
 void ManagedDebugger::NotifyProcessCreated()
 {
     std::lock_guard<std::mutex> lock(m_processAttachedMutex);
@@ -333,14 +345,13 @@ HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
 
 void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
 {
-    DWORD threadId = 0;
-    pThread->GetID(&threadId);
+    ThreadId threadId(getThreadId(pThread));
 
     std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
     m_lastStoppedThreadId = threadId;
 }
 
-int ManagedDebugger::GetLastStoppedThreadId()
+ThreadId ManagedDebugger::GetLastStoppedThreadId()
 {
     LogFuncEntry();
 
@@ -462,6 +473,7 @@ public:
             /* [in] */ ICorDebugBreakpoint *pBreakpoint)
         {
             LogFuncEntry();
+            ThreadId threadId(getThreadId(pThread));
 
             if (m_debugger.m_evaluator.IsEvalRunning())
             {
@@ -470,12 +482,9 @@ public:
             }
 
             auto stepForcedIgnoreBP = [&] () {
-                DWORD threadId = 0;
-                pThread->GetID(&threadId);
-
                 {
                     std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
-                    auto stepSettedUpForThread = m_debugger.m_stepSettedUp.find(threadId);
+                    auto stepSettedUpForThread = m_debugger.m_stepSettedUp.find(int(threadId));
                     if (stepSettedUpForThread == m_debugger.m_stepSettedUp.end() || !stepSettedUpForThread->second)
                     {
                         return false;
@@ -517,9 +526,7 @@ public:
                 ICorDebugThread *pThread,
                 ICorDebugBreakpoint *pBreakpoint)
             {
-                DWORD threadId = 0;
-                pThread->GetID(&threadId);
-
+                ThreadId threadId(getThreadId(pThread));
                 bool atEntry = false;
                 StoppedEvent event(StopBreakpoint, threadId);
                 if (FAILED(m_debugger.m_breakpoints.HitBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)))
@@ -533,7 +540,7 @@ public:
 
                 ToRelease<ICorDebugFrame> pFrame;
                 if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                    m_debugger.GetFrameLocation(pFrame, threadId, 0, event.frame);
+                    m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), event.frame);
 
                 m_debugger.SetLastStoppedThread(pThread);
                 m_debugger.m_protocol->EmitStoppedEvent(event);
@@ -554,15 +561,13 @@ public:
             /* [in] */ CorDebugStepReason reason)
         {
             LogFuncEntry();
-
-            DWORD threadId = 0;
-            pThread->GetID(&threadId);
+            ThreadId threadId(getThreadId(pThread));
 
             StackFrame stackFrame;
             ToRelease<ICorDebugFrame> pFrame;
             HRESULT Status = S_FALSE;
             if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                Status = m_debugger.GetFrameLocation(pFrame, threadId, 0, stackFrame);
+                Status = m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
 
             const bool no_source = Status == S_FALSE;
 
@@ -581,7 +586,7 @@ public:
             }
 
             std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
-            m_debugger.m_stepSettedUp[threadId] = false;
+            m_debugger.m_stepSettedUp[int(threadId)] = false;
 
             return S_OK;
         }
@@ -610,6 +615,7 @@ public:
             /* [in] */ ICorDebugEval *pEval)
         {
             LogFuncEntry();
+            ThreadId currentThreadId = getThreadId(pThread);
 
             HRESULT Status = S_OK;
 
@@ -621,12 +627,10 @@ public:
             }
             else
             {
-                DWORD currentThreadId;
-                pThread->GetID(&currentThreadId);
-                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                 if (evalThreadId == currentThreadId)
                 {
-                    Logger::levelLog(LOG_INFO, "Complete eval threadid = '%d'", currentThreadId);
+                    Logger::levelLog(LOG_INFO, "Complete eval threadid = '%d'", int(currentThreadId));
                     m_debugger.m_evaluator.pop_eval_queue();
 
                     if (m_debugger.m_evaluator.is_empty_eval_queue())
@@ -636,13 +640,13 @@ public:
                     else {
                         evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                         ToRelease<ICorDebugThread> pThreadEval;
-                        IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
+                        IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
                         IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
                         IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
                     }
                 }
                 else {
-                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", currentThreadId, evalThreadId);
+                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
                 }
             }
             return S_OK;
@@ -654,6 +658,7 @@ public:
             /* [in] */ ICorDebugEval *pEval)
         {
             LogFuncEntry();
+            ThreadId currentThreadId = getThreadId(pThread);
 
             HRESULT Status = S_OK;
 
@@ -674,13 +679,11 @@ public:
             }
             else
             {
-                DWORD currentThreadId;
-                pThread->GetID(&currentThreadId);
-                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                 if (evalThreadId == currentThreadId)
                 {
                     m_debugger.m_evaluator.pop_eval_queue();
-                    Logger::levelLog(LOG_INFO, "Eval exception, threadid = '%d'", currentThreadId);
+                    Logger::levelLog(LOG_INFO, "Eval exception, threadid = '%d'", int(currentThreadId));
 
                     if (m_debugger.m_evaluator.is_empty_eval_queue())
                     {
@@ -689,13 +692,13 @@ public:
                     else {
                         evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                         ToRelease<ICorDebugThread> pThreadEval;
-                        IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
+                        IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
                         IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
                         IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
                     }
                 }
                 else {
-                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", currentThreadId, evalThreadId);
+                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
                 }
             }
 
@@ -754,12 +757,10 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE CreateThread(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *thread)
+            /* [in] */ ICorDebugThread *pThread)
         {
             LogFuncEntry();
-
-            DWORD threadId = 0;
-            thread->GetID(&threadId);
+            ThreadId threadId(getThreadId(pThread));
             m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
             pAppDomain->Continue(0);
             return S_OK;
@@ -767,15 +768,14 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE ExitThread(
             /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *thread)
+            /* [in] */ ICorDebugThread *pThread)
         {
             LogFuncEntry();
+            ThreadId threadId(getThreadId(pThread));
 
             // TODO: clean evaluations and exceptions queues for current thread
+            m_debugger.m_evaluator.NotifyEvalComplete(pThread, nullptr);
 
-            m_debugger.m_evaluator.NotifyEvalComplete(thread, nullptr);
-            DWORD threadId = 0;
-            thread->GetID(&threadId);
             m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
             pAppDomain->Continue(0);
             return S_OK;
@@ -988,6 +988,7 @@ public:
             /* [in] */ DWORD dwFlags)
         {
             LogFuncEntry();
+            ThreadId threadId(getThreadId(pThread));
 
             // In case we inside evaluation (exception during implicit function execution), make sure we continue process execution.
             // This is internal CoreCLR routine, should not be interrupted by debugger. CoreCLR will care about exception in this case
@@ -1011,8 +1012,6 @@ public:
             // For "GC unsafe mode" or "Optimized code" we cannot invoke CreateEval() function.
 
             HRESULT Status = S_OK;
-            DWORD threadId = 0;
-            IfFailRet(pThread->GetID(&threadId));
             string excType, excModule;
             IfFailRet(GetExceptionInfo(pThread, excType, excModule));
 
@@ -1051,7 +1050,7 @@ public:
             StackFrame stackFrame;
             ToRelease<ICorDebugFrame> pActiveFrame;
             if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
-                m_debugger.GetFrameLocation(pActiveFrame, threadId, 0, stackFrame);
+                m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), stackFrame);
 
             m_debugger.SetLastStoppedThread(pThread);
 
@@ -1060,9 +1059,9 @@ public:
             event.frame = stackFrame;
 
             if (m_debugger.m_evaluator.IsEvalRunning() && !m_debugger.m_evaluator.is_empty_eval_queue()) {
-                DWORD evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                 ToRelease<ICorDebugThread> pThreadEval;
-                IfFailRet(m_debugger.m_pProcess->GetThread(evalThreadId, &pThreadEval));
+                IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
                 IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
                 IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
                 IfFailRet(pAppDomain->Continue(0));
@@ -1084,12 +1083,10 @@ public:
             /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
             /* [in] */ DWORD dwFlags)
         {
-            HRESULT Status;
-            DWORD threadId = 0;
-            IfFailRet(pThread->GetID(&threadId));
+            ThreadId threadId(getThreadId(pThread));
             // We produce DEBUG_EXCEPTION_INTERCEPTED from Exception() callback.
             // TODO: we should waiting this unwinding on exit().
-            Logger::levelLog(LOG_INFO, "ExceptionUnwind:threadId:%d,dwEventType:%d,dwFlags:%d", threadId, dwEventType, dwFlags);
+            Logger::levelLog(LOG_INFO, "ExceptionUnwind:threadId:%d,dwEventType:%d,dwFlags:%d", int(threadId), dwEventType, dwFlags);
             return E_NOTIMPL;
         }
 
@@ -1145,7 +1142,7 @@ public:
 
 ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
-    m_lastStoppedThreadId(-1),
+    m_lastStoppedThreadId(ThreadId::AllThreads),
     m_stopCounter(0),
     m_startMethod(StartNone),
     m_stopAtEntry(false),
@@ -1181,6 +1178,8 @@ HRESULT ManagedDebugger::Initialize()
 
 HRESULT ManagedDebugger::RunIfReady()
 {
+    FrameId::invalidate();
+
     if (m_startMethod == StartNone || !m_isConfigurationDone)
         return S_OK;
 
@@ -1289,15 +1288,14 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType 
 
     IfFailRet(pStepper2->SetJMC(IsJustMyCode()));
 
-    DWORD threadId = 0;
-    pThread->GetID(&threadId);
+    ThreadId threadId(getThreadId(pThread));
 
     if (stepType == STEP_OUT)
     {
         IfFailRet(pStepper->StepOut());
 
         std::lock_guard<std::mutex> lock(m_stepMutex);
-        m_stepSettedUp[threadId] = true;
+        m_stepSettedUp[int(threadId)] = true;
 
         return S_OK;
     }
@@ -1313,12 +1311,12 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, Debugger::StepType 
     }
 
     std::lock_guard<std::mutex> lock(m_stepMutex);
-    m_stepSettedUp[threadId] = true;
+    m_stepSettedUp[int(threadId)] = true;
 
     return S_OK;
 }
 
-HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
+HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
 {
     LogFuncEntry();
 
@@ -1326,23 +1324,26 @@ HRESULT ManagedDebugger::StepCommand(int threadId, StepType stepType)
         return E_FAIL;
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
+    IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
     DisableAllSteppers(m_pProcess);
     IfFailRet(SetupStep(pThread, stepType));
 
     m_variables.Clear();
     Status = m_pProcess->Continue(0);
 
-    if (SUCCEEDED(Status)) {
+    if (SUCCEEDED(Status))
+    {
+        FrameId::invalidate();
         m_protocol->EmitContinuedEvent(threadId);
         --m_stopCounter;
     }
     return Status;
 }
 
-HRESULT ManagedDebugger::Stop(int threadId, const StoppedEvent &event)
+HRESULT ManagedDebugger::Stop(ThreadId threadId, const StoppedEvent &event)
 {
     LogFuncEntry();
+
     HRESULT Status = S_OK;
 
     while (m_stopCounter.load() > 0) {
@@ -1356,7 +1357,7 @@ HRESULT ManagedDebugger::Stop(int threadId, const StoppedEvent &event)
     return Status;
 }
 
-HRESULT ManagedDebugger::Continue(int threadId)
+HRESULT ManagedDebugger::Continue(ThreadId threadId)
 {
     LogFuncEntry();
 
@@ -1400,7 +1401,9 @@ HRESULT ManagedDebugger::Continue(int threadId)
         }
     }
 
-    if (SUCCEEDED(res)) {
+    if (SUCCEEDED(res))
+    {
+        FrameId::invalidate();
         m_protocol->EmitContinuedEvent(threadId);
         --m_stopCounter;
     }
@@ -1434,7 +1437,7 @@ HRESULT ManagedDebugger::Pause()
     std::vector<Thread> threads;
     GetThreads(threads);
 
-    int lastStoppedId = GetLastStoppedThreadId();
+    ThreadId lastStoppedId = GetLastStoppedThreadId();
 
     // Reorder threads so that last stopped thread is checked first
     for (size_t i = 0; i < threads.size(); ++i)
@@ -1452,7 +1455,7 @@ HRESULT ManagedDebugger::Pause()
         int totalFrames = 0;
         std::vector<StackFrame> stackFrames;
 
-        if (FAILED(GetStackTrace(thread.id, 0, 0, stackFrames, totalFrames)))
+        if (FAILED(GetStackTrace(thread.id, FrameLevel(0), 0, stackFrames, totalFrames)))
             continue;
 
         for (const StackFrame& stackFrame : stackFrames)
@@ -1468,7 +1471,7 @@ HRESULT ManagedDebugger::Pause()
         }
     }
 
-    m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, 0));
+    m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, ThreadId::Invalid));
 
     return Status;
 }
@@ -1482,14 +1485,14 @@ HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
     return GetThreadsState(m_pProcess, threads);
 }
 
-HRESULT ManagedDebugger::GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames)
+HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
     HRESULT Status;
     if (!m_pProcess)
         return E_FAIL;
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(threadId, &pThread));
-    return GetStackTrace(pThread, startFrame, levels, stackFrames, totalFrames);
+    IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
+    return GetStackTrace(pThread, startFrame, maxFrames, stackFrames, totalFrames);
 }
 
 VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
@@ -1860,12 +1863,13 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 }
 
 // VSCode
-HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
+HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
     ExceptionInfoResponse &exceptionInfoResponse)
 {
     LogFuncEntry();
 
     // Are needed to move next line to Exception() callback?
+    assert(int(threadId) != -1);
     m_evaluator.push_eval_queue(threadId);
 
     HRESULT res = E_FAIL;
@@ -1877,7 +1881,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
     ToRelease<ICorDebugThread> pThread;
 
     WCHAR message[] = W("_message\0");
-    uint64_t frameId = StackFrame(threadId, 0, "").id;
+    FrameId frameId;
 
     std::unique_lock<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
     if (m_lastUnhandledExceptionThreadIds.find(threadId) != m_lastUnhandledExceptionThreadIds.end()) {
@@ -1894,7 +1898,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(int threadId,
         exceptionInfoResponse.breakMode = mode;
     }
 
-    if ((res = m_pProcess->GetThread(threadId, &pThread)) && FAILED(res))
+    if ((res = m_pProcess->GetThread(int(threadId), &pThread)) && FAILED(res))
         goto failed;
 
     if ((res = pThread->GetCurrentException(&pExceptionValue)) && FAILED(res)) {
@@ -2028,3 +2032,4 @@ HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
     IfFailRet(pProcess->QueryInterface(IID_ICorDebugProcess3, (LPVOID*) &pProcess3));
     return pProcess3->SetEnableCustomNotification(pClass, fEnable);
 }
+

@@ -44,7 +44,7 @@ public:
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
     void EmitTerminatedEvent() override {}
-    void EmitContinuedEvent(int threadId) override;
+    void EmitContinuedEvent(ThreadId threadId) override;
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitModuleEvent(ModuleEvent event) override;
     void EmitOutputEvent(OutputEvent event) override;
@@ -79,10 +79,10 @@ private:
     HRESULT StepCommand(const std::vector<std::string> &args,
                         std::string &output,
                         Debugger::StepType stepType);
-    HRESULT PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame);
+    HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
-    HRESULT PrintVariable(int threadId, uint64_t frameId, std::list<std::string>::iterator it, Variable v, std::ostringstream &output, bool expand);
+    HRESULT PrintVariable(ThreadId threadId, FrameId frameId, std::list<std::string>::iterator it, Variable v, std::ostringstream &output, bool expand);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);

@@ -44,6 +44,7 @@ set(netcoredbg_SRC
     manageddebugger.cpp
     symbolreader.cpp
     platform.cpp
+    protocol.cpp
     breakpoints.cpp
     modules.cpp
     variables.cpp

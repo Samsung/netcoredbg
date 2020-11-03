@@ -17,6 +17,7 @@
 #include <list>
 #include <set>
 
+
 enum ValueKind
 {
     ValueIsScope,
@@ -34,23 +35,23 @@ public:
     Modules &m_modules;
 
     std::mutex m_evalQueueMutex;
-    std::list<DWORD> m_evalQueue;
+    std::list<ThreadId> m_evalQueue;
 
     bool is_empty_eval_queue() {
         std::lock_guard<std::mutex> lock(m_evalQueueMutex);
         return m_evalQueue.empty();
     }
 
-    void push_eval_queue(DWORD tid) {
+    void push_eval_queue(ThreadId tid) {
         std::lock_guard<std::mutex> lock(m_evalQueueMutex);
         m_evalQueue.push_back(tid);
     }
 
-    DWORD front_eval_queue() {
+    ThreadId front_eval_queue() {
         std::lock_guard<std::mutex> lock(m_evalQueueMutex);
         if (!m_evalQueue.empty())
             return m_evalQueue.front();
-        return 0;
+        return ThreadId{};
     }
 
     void pop_eval_queue() {
@@ -396,9 +397,9 @@ class Variables
 
         ValueKind valueKind;
         ToRelease<ICorDebugValue> value;
-        uint64_t frameId;
+        FrameId frameId;
 
-        VariableReference(const Variable &variable, uint64_t frameId, ToRelease<ICorDebugValue> value, ValueKind valueKind) :
+        VariableReference(const Variable &variable, FrameId frameId, ToRelease<ICorDebugValue> value, ValueKind valueKind) :
             variablesReference(variable.variablesReference),
             namedVariables(variable.namedVariables),
             indexedVariables(variable.indexedVariables),
@@ -409,7 +410,7 @@ class Variables
             frameId(frameId)
         {}
 
-        VariableReference(uint32_t variablesReference, uint64_t frameId, int namedVariables) :
+        VariableReference(uint32_t variablesReference, FrameId frameId, int namedVariables) :
             variablesReference(variablesReference),
             namedVariables(namedVariables),
             indexedVariables(0),
@@ -431,17 +432,17 @@ class Variables
     std::unordered_map<uint32_t, VariableReference> m_variables;
     uint32_t m_nextVariableReference;
 
-    void AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind);
+    void AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *value, ValueKind valueKind);
 
 public:
     HRESULT GetExceptionVariable(
-        uint64_t frameId,
+        FrameId frameId,
         ICorDebugThread *pThread,
         Variable &variable);
 
 private:
     HRESULT GetStackVariables(
-        uint64_t frameId,
+        FrameId frameId,
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         int start,
@@ -475,7 +476,7 @@ private:
         bool static_members = false);
 
     HRESULT SetStackVariable(
-        uint64_t frameId,
+        FrameId frameId,
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         const std::string &name,
@@ -522,22 +523,22 @@ public:
         ICorDebugProcess *pProcess,
         ICorDebugValue *pVariable,
         const std::string &value,
-        uint64_t frameId,
+        FrameId frameId,
         std::string &output);
 
     HRESULT GetScopes(ICorDebugProcess *pProcess,
-        uint64_t frameId,
+        FrameId frameId,
         std::vector<Scope> &scopes);
 
     HRESULT Evaluate(ICorDebugProcess *pProcess,
-        uint64_t frameId,
+        FrameId frameId,
         const std::string &expression,
         Variable &variable,
         std::string &output);
 
     HRESULT GetValueByExpression(
         ICorDebugProcess *pProcess,
-        uint64_t frameId,
+        FrameId frameId,
         const Variable &variable,
         ICorDebugValue **ppResult);
 
@@ -566,10 +567,10 @@ private:
     HRESULT CheckNoProcess();
 
     std::mutex m_lastStoppedThreadIdMutex;
-    int m_lastStoppedThreadId;
+    ThreadId m_lastStoppedThreadId;
 
     std::mutex m_lastUnhandledExceptionThreadIdsMutex;
-    std::set<int> m_lastUnhandledExceptionThreadIds;
+    std::set<ThreadId> m_lastUnhandledExceptionThreadIds;
 
     void SetLastStoppedThread(ICorDebugThread *pThread);
 
@@ -621,8 +622,8 @@ private:
 
     HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
 
-    HRESULT GetStackTrace(ICorDebugThread *pThread, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames);
-    HRESULT GetFrameLocation(ICorDebugFrame *pFrame, int threadId, uint32_t level, StackFrame &stackFrame);
+    HRESULT GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames);
+    HRESULT GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame);
 
     HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
     HRESULT AttachToProcess(DWORD pid);
@@ -650,24 +651,30 @@ public:
 
     HRESULT Disconnect(DisconnectAction action = DisconnectDefault) override;
 
-    int GetLastStoppedThreadId() override;
-    HRESULT Continue(int threadId) override;
+    ThreadId GetLastStoppedThreadId() override;
+    HRESULT Continue(ThreadId threadId) override;
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
     HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT SetFunctionBreakpoints(const std::vector<FunctionBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
-    HRESULT GetStackTrace(int threadId, int startFrame, int levels, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
-    HRESULT StepCommand(int threadId, StepType stepType) override;
-    HRESULT GetScopes(uint64_t frameId, std::vector<Scope> &scopes) override;
+    HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
+    HRESULT StepCommand(ThreadId threadId, StepType stepType) override;
+    HRESULT GetScopes(FrameId frameId, std::vector<Scope> &scopes) override;
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;
     int GetNamedVariables(uint32_t variablesReference) override;
-    HRESULT Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output) override;
+    HRESULT Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output) override;
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
-    HRESULT SetVariableByExpression(uint64_t frameId, const Variable &variable, const std::string &value, std::string &output) override;
-    HRESULT GetExceptionInfoResponse(int threadId, ExceptionInfoResponse &exceptionResponse) override;
+    HRESULT SetVariableByExpression(FrameId frameId, const Variable &variable, const std::string &value, std::string &output) override;
+    HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) override;
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
+
+    // Functions which converts FrameId to ThreadId and FrameLevel and vice versa.
+    FrameId getFrameId(ThreadId, FrameLevel);
+    ThreadId threadByFrameId(FrameId) const;
+    FrameLevel frameByFrameId(FrameId) const;
+
 private:
-    HRESULT Stop(int threadId, const StoppedEvent &event);
+    HRESULT Stop(ThreadId threadId, const StoppedEvent &event);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 };

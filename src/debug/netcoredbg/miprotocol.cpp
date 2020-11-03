@@ -71,7 +71,7 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
                                 std::string &output,
                                 Debugger::StepType stepType)
 {
-    DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
+    ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
     m_debugger->StepCommand(threadId, stepType);
     output = "^running";
     return S_OK;
@@ -109,16 +109,17 @@ HRESULT MIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string
     return stackFrame.source.IsNull() ? S_FALSE : S_OK;
 }
 
-HRESULT MIProtocol::PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame)
+HRESULT MIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame)
 {
     HRESULT Status;
     std::ostringstream ss;
 
     int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
-    IfFailRet(m_debugger->GetStackTrace(threadId, lowFrame, highFrame - lowFrame, stackFrames, totalFrames));
+    IfFailRet(m_debugger->GetStackTrace(threadId,
+        lowFrame, int(highFrame) - int(lowFrame), stackFrames, totalFrames));
 
-    int currentFrame = lowFrame;
+    int currentFrame = int(lowFrame);
 
     ss << "stack=[";
     const char *sep = "";
@@ -185,7 +186,7 @@ bool MIProtocol::IsEditable(const std::string &type)
     return false;
 }
 
-void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, int threadId, int print_values, std::string &output)
+void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
 {
     std::ostringstream ss;
 
@@ -204,13 +205,13 @@ void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, int thread
     ss << "exp=\"" << (v.name.empty() ? v.evaluateName : v.name) << "\",";
     ss << "numchild=\"" << v.namedVariables << "\",";
     ss << "type=\"" << v.type << "\",";
-    ss << "thread-id=\"" << threadId << "\"";
+    ss << "thread-id=\"" << int(threadId) << "\"";
     //,has_more="0"}
 
     output = ss.str();
 }
 
-void MIProtocol::PrintNewVar(std::string varobjName, Variable &v, int threadId, int print_values, std::string &output)
+void MIProtocol::PrintNewVar(std::string varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
 {
     if (varobjName.empty() || varobjName == "-")
     {
@@ -222,11 +223,11 @@ void MIProtocol::PrintNewVar(std::string varobjName, Variable &v, int threadId, 
     PrintVar(varobjName, v, threadId, print_values, output);
 }
 
-HRESULT MIProtocol::CreateVar(int threadId, int level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output)
+HRESULT MIProtocol::CreateVar(ThreadId threadId, FrameLevel level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output)
 {
     HRESULT Status;
 
-    uint64_t frameId = StackFrame(threadId, level, "").id;
+    FrameId frameId = StackFrame(threadId, level, "").id;
 
     Variable variable(evalFlags);
     IfFailRet(m_debugger->Evaluate(frameId, expression, variable, output));
@@ -260,7 +261,7 @@ void MIProtocol::Cleanup()
     m_breakpoints.clear();
 }
 
-void MIProtocol::PrintChildren(std::vector<Variable> &children, int threadId, int print_values, bool has_more, std::string &output)
+void MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output)
 {
     std::ostringstream ss;
     ss << "numchild=\"" << children.size() << "\"";
@@ -288,7 +289,7 @@ void MIProtocol::PrintChildren(std::vector<Variable> &children, int threadId, in
     output = ss.str();
 }
 
-HRESULT MIProtocol::ListChildren(int threadId, int level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output)
+HRESULT MIProtocol::ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output)
 {
     HRESULT Status;
 
@@ -516,13 +517,13 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
         case StopBreakpoint:
         {
             MIProtocol::Printf("*stopped,reason=\"breakpoint-hit\",thread-id=\"%i\",stopped-threads=\"all\",bkptno=\"%u\",times=\"%u\",frame={%s}\n",
-                event.threadId, (unsigned int)event.breakpoint.id, (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
+                int(event.threadId), (unsigned int)event.breakpoint.id, (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
             break;
         }
         case StopStep:
         {
             MIProtocol::Printf("*stopped,reason=\"end-stepping-range\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                event.threadId, frameLocation.c_str());
+                int(event.threadId), frameLocation.c_str());
             break;
         }
         case StopException:
@@ -534,7 +535,7 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
                 MIProtocol::EscapeMIValue(event.description).c_str(),
                 stage.c_str(),
                 category.c_str(),
-                event.threadId,
+                int(event.threadId),
                 frameLocation.c_str());
             break;
         }
@@ -543,13 +544,13 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
             // When async break happens, this should be reason="interrupted".
             // But MIEngine in Visual Studio accepts only reason="signal-received",signal-name="SIGINT".
             MIProtocol::Printf("*stopped,reason=\"signal-received\",signal-name=\"SIGINT\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                event.threadId, frameLocation.c_str());
+                int(event.threadId), frameLocation.c_str());
             break;
         }
         case StopEntry:
         {
             MIProtocol::Printf("*stopped,reason=\"entry-point-hit\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                event.threadId, frameLocation.c_str());
+                int(event.threadId), frameLocation.c_str());
             break;
         }
         default:
@@ -567,7 +568,7 @@ void MIProtocol::EmitExitedEvent(ExitedEvent event)
     MIProtocol::Printf("(gdb)\n");
 }
 
-void MIProtocol::EmitContinuedEvent(int threadId)
+void MIProtocol::EmitContinuedEvent(ThreadId threadId)
 {
     LogFuncEntry();
 }
@@ -586,7 +587,7 @@ void MIProtocol::EmitThreadEvent(ThreadEvent event)
             reasonText = "thread-exited";
             break;
     }
-    MIProtocol::Printf("=%s,id=\"%i\"\n", reasonText, event.threadId);
+    MIProtocol::Printf("=%s,id=\"%i\"\n", reasonText, int(event.threadId));
 }
 
 void MIProtocol::EmitModuleEvent(ModuleEvent event)
@@ -643,7 +644,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         const char *sep = "";
         for (const Thread& thread : threads)
         {
-            ss << sep << "{id=\"" << thread.id
+            ss << sep << "{id=\"" << int(thread.id)
                << "\",name=\"" << MIProtocol::EscapeMIValue(thread.name) << "\",state=\""
                << (thread.running ? "running" : "stopped") << "\"}";
             sep = ",";
@@ -655,7 +656,7 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     } },
     { "exec-continue", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
-        IfFailRet(m_debugger->Continue(-1));
+        IfFailRet(m_debugger->Continue(ThreadId::AllThreads));
         output = "^running";
         return S_OK;
     } },
@@ -774,18 +775,18 @@ HRESULT MIProtocol::HandleCommand(std::string command,
     }},
     { "stack-list-frames", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         std::vector<std::string> args = args_orig;
-        DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
+        ThreadId threadId { GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
         int lowFrame = 0;
-        int highFrame = INT_MAX;
+        int highFrame = FrameLevel::MaxFrameLevel;
         StripArgs(args);
         GetIndices(args, lowFrame, highFrame);
-        return PrintFrames(threadId, output, lowFrame, highFrame);
+        return PrintFrames(threadId, output, FrameLevel{lowFrame}, FrameLevel{highFrame});
     }},
     { "stack-list-variables", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
 
-        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
-        StackFrame stackFrame(threadId, GetIntArg(args, "--frame", 0), "");
+        ThreadId threadId { GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+        StackFrame stackFrame(threadId, FrameLevel{GetIntArg(args, "--frame", 0)}, "");
         std::vector<Scope> scopes;
         std::vector<Variable> variables;
         IfFailRet(m_debugger->GetScopes(stackFrame.id, scopes));
@@ -805,8 +806,8 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             return E_FAIL;
         }
 
-        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
-        int level = GetIntArg(args, "--frame", 0);
+        ThreadId threadId { GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+        FrameLevel level { GetIntArg(args, "--frame", 0) };
         int evalFlags = GetIntArg(args, "--evalFlags", 0);
 
         std::string varName = args.at(0);
@@ -841,8 +842,8 @@ HRESULT MIProtocol::HandleCommand(std::string command,
             return E_FAIL;
         }
 
-        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
-        int level = GetIntArg(args, "--frame", 0);
+        ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+        FrameLevel level{ GetIntArg(args, "--frame", 0) };
 
         int childStart = 0;
         int childEnd = INT_MAX;
@@ -1021,9 +1022,9 @@ HRESULT MIProtocol::HandleCommand(std::string command,
         if (varExpr.size() >= 2 && varExpr.front() == '"' && varExpr.back() == '"')
             varExpr = varExpr.substr(1, varExpr.size() - 2);
 
-        int threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
-        int level = GetIntArg(args, "--frame", 0);
-        uint64_t frameId = StackFrame(threadId, level, "").id;
+        ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+        FrameLevel level{ GetIntArg(args, "--frame", 0) };
+        FrameId frameId = StackFrame(threadId, level, "").id;
 
         Variable variable;
         IfFailRet(FindVar(varName, variable));

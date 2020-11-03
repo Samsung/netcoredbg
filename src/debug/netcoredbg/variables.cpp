@@ -202,7 +202,7 @@ HRESULT Variables::GetVariables(
 
     StackFrame stackFrame(ref.frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -221,7 +221,7 @@ HRESULT Variables::GetVariables(
     return S_OK;
 }
 
-void Variables::AddVariableReference(Variable &variable, uint64_t frameId, ICorDebugValue *value, ValueKind valueKind)
+void Variables::AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *value, ValueKind valueKind)
 {
     unsigned int numChild = 0;
     GetNumChild(value, numChild, valueKind == ValueIsClass);
@@ -263,7 +263,7 @@ static HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module) {
 }
 
 HRESULT Variables::GetExceptionVariable(
-    uint64_t frameId,
+    FrameId frameId,
     ICorDebugThread *pThread,
     Variable &var)
 {
@@ -292,7 +292,7 @@ HRESULT Variables::GetExceptionVariable(
 }
 
 HRESULT Variables::GetStackVariables(
-    uint64_t frameId,
+    FrameId frameId,
     ICorDebugThread *pThread,
     ICorDebugFrame *pFrame,
     int start,
@@ -329,14 +329,14 @@ HRESULT Variables::GetStackVariables(
     return S_OK;
 }
 
-HRESULT ManagedDebugger::GetScopes(uint64_t frameId, std::vector<Scope> &scopes)
+HRESULT ManagedDebugger::GetScopes(FrameId frameId, std::vector<Scope> &scopes)
 {
     LogFuncEntry();
 
     return m_variables.GetScopes(m_pProcess, frameId, scopes);
 }
 
-HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::vector<Scope> &scopes)
+HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::vector<Scope> &scopes)
 {
     if (pProcess == nullptr)
         return E_FAIL;
@@ -345,7 +345,7 @@ HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, uint64_t frameId, std::
 
     StackFrame stackFrame(frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -456,7 +456,7 @@ HRESULT Variables::GetChildren(
     return S_OK;
 }
 
-HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expression, Variable &variable, std::string &output)
+HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output)
 {
     LogFuncEntry();
 
@@ -465,7 +465,7 @@ HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expressio
 
 HRESULT Variables::Evaluate(
     ICorDebugProcess *pProcess,
-    uint64_t frameId,
+    FrameId frameId,
     const std::string &expression,
     Variable &variable,
     std::string &output)
@@ -477,7 +477,7 @@ HRESULT Variables::Evaluate(
 
     StackFrame stackFrame(frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
     ToRelease<ICorDebugILFrame> pILFrame;
@@ -616,7 +616,7 @@ HRESULT Variables::SetVariable(
 
     StackFrame stackFrame(varRef.frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -633,7 +633,7 @@ HRESULT Variables::SetVariable(
 }
 
 HRESULT Variables::SetStackVariable(
-    uint64_t frameId,
+    FrameId frameId,
     ICorDebugThread *pThread,
     ICorDebugFrame *pFrame,
     const std::string &name,
@@ -703,7 +703,7 @@ HRESULT Variables::SetChild(
 }
 
 HRESULT ManagedDebugger::SetVariableByExpression(
-    uint64_t frameId,
+    FrameId frameId,
     const Variable &variable,
     const std::string &value,
     std::string &output)
@@ -715,7 +715,7 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
 }
 
-HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t frameId, const Variable &variable,
+HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId frameId, const Variable &variable,
                                         ICorDebugValue **ppResult)
 {
     if (pProcess == nullptr)
@@ -725,7 +725,7 @@ HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, uint64_t fra
 
     StackFrame stackFrame(frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -736,7 +736,7 @@ HRESULT Variables::SetVariable(
     ICorDebugProcess *pProcess,
     ICorDebugValue *pVariable,
     const std::string &value,
-    uint64_t frameId,
+    FrameId frameId,
     std::string &output)
 {
     HRESULT Status;
@@ -746,7 +746,7 @@ HRESULT Variables::SetVariable(
 
     StackFrame stackFrame(frameId);
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
 
     IfFailRet(WriteValue(pVariable, value, pThread, m_evaluator, output));
     bool escape = true;

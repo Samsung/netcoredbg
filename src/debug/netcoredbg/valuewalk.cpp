@@ -254,7 +254,7 @@ HRESULT Evaluator::EvalFunction(
 
     DWORD tid;
     pThread->GetID(&tid);
-    push_eval_queue(tid);
+    push_eval_queue(ThreadId{tid});
 
 
     // TODO: maybe in this point we can _restore_ thread state?

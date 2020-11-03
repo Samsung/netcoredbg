@@ -51,7 +51,7 @@ void to_json(json &j, const Breakpoint &b) {
 
 void to_json(json &j, const StackFrame &f) {
     j = json{
-        {"id",        f.id},
+        {"id",        int(f.id)},
         {"name",      f.name},
         {"line",      f.line},
         {"column",    f.column},
@@ -63,7 +63,7 @@ void to_json(json &j, const StackFrame &f) {
 }
 
 void to_json(json &j, const Thread &t) {
-    j = json{{"id",   t.id},
+    j = json{{"id",   int(t.id)},
              {"name", t.name}};
           // {"running", t.running}
 }
@@ -122,14 +122,14 @@ static json getVSCode(const ExceptionDetails &self) {
     return details;
 }
 
-void VSCodeProtocol::EmitContinuedEvent(int threadId)
+void VSCodeProtocol::EmitContinuedEvent(ThreadId threadId)
 {
     LogFuncEntry();
 
     json body;
 
-    if (threadId != -1)
-        body["threadId"] = threadId;
+    if (threadId)
+        body["threadId"] = int(threadId);
 
     body["allThreadsContinued"] = true;
     EmitEvent("continued", body);
@@ -162,7 +162,7 @@ void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
 
     body["description"] = event.description;
     body["text"] = event.text;
-    body["threadId"] = event.threadId;
+    body["threadId"] = int(event.threadId);
     body["allThreadsStopped"] = event.allThreadsStopped;
 
     // vsdbg shows additional info, but it is not a part of the protocol
@@ -203,7 +203,7 @@ void VSCodeProtocol::EmitThreadEvent(ThreadEvent event)
             break;
     }
 
-    body["threadId"] = event.threadId;
+    body["threadId"] = int(event.threadId);
 
     EmitEvent("thread", body);
 }
@@ -402,7 +402,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return m_debugger->ConfigurationDone();
     } },
     { "exceptionInfo", [this](const json &arguments, json &body) {
-        int threadId = arguments.at("threadId");
+        ThreadId threadId{int(arguments.at("threadId"))};
         ExceptionInfoResponse exceptionResponse;
         if (!m_debugger->GetExceptionInfoResponse(threadId, exceptionResponse))
         {
@@ -474,13 +474,13 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         HRESULT Status;
 
         int totalFrames = 0;
-        int threadId = arguments.at("threadId");
+        ThreadId threadId{int(arguments.at("threadId"))};
 
         std::vector<StackFrame> stackFrames;
         IfFailRet(m_debugger->GetStackTrace(
             threadId,
-            arguments.value("startFrame", 0),
-            arguments.value("levels", 0),
+            FrameLevel{arguments.value("startFrame", 0)},
+            unsigned(arguments.value("levels", 0)),
             stackFrames,
             totalFrames
             ));
@@ -493,26 +493,27 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "continue", [this](const json &arguments, json &body){
         body["allThreadsContinued"] = true;
 
-        const int threadId = arguments.at("threadId");
-        body["threadId"] = threadId;
+        ThreadId threadId{int(arguments.at("threadId"))};
+        body["threadId"] = int(threadId);
         return m_debugger->Continue(threadId);
     } },
     { "pause", [this](const json &arguments, json &body){
         return m_debugger->Pause();
     } },
     { "next", [this](const json &arguments, json &body){
-        return m_debugger->StepCommand(arguments.at("threadId"), Debugger::STEP_OVER);
+        return m_debugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, Debugger::STEP_OVER);
     } },
     { "stepIn", [this](const json &arguments, json &body){
-        return m_debugger->StepCommand(arguments.at("threadId"), Debugger::STEP_IN);
+        return m_debugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, Debugger::STEP_IN);
     } },
     { "stepOut", [this](const json &arguments, json &body){
-        return m_debugger->StepCommand(arguments.at("threadId"), Debugger::STEP_OUT);
+        return m_debugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, Debugger::STEP_OUT);
     } },
     { "scopes", [this](const json &arguments, json &body){
         HRESULT Status;
         std::vector<Scope> scopes;
-        IfFailRet(m_debugger->GetScopes(arguments.at("frameId"), scopes));
+        FrameId frameId{int(arguments.at("frameId"))};
+        IfFailRet(m_debugger->GetScopes(frameId, scopes));
 
         body["scopes"] = scopes;
 
@@ -543,15 +544,17 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "evaluate", [this](const json &arguments, json &body){
         HRESULT Status;
         std::string expression = arguments.at("expression");
-        uint64_t frameId;
-        auto frameIdIter = arguments.find("frameId");
-        if (frameIdIter == arguments.end())
-        {
-            int threadId = m_debugger->GetLastStoppedThreadId();
-            frameId = StackFrame(threadId, 0, "").id;
-        }
-        else
-            frameId = frameIdIter.value();
+        FrameId frameId([&](){
+            auto frameIdIter = arguments.find("frameId");
+            if (frameIdIter == arguments.end())
+            {
+                ThreadId threadId = m_debugger->GetLastStoppedThreadId();
+                return FrameId{StackFrame(threadId, FrameLevel{0}, "").id};
+            }
+            else {
+                return FrameId{int(frameIdIter.value())};
+            }
+        }());
 
         // NOTE
         // VSCode don't support evaluation flags, we can't disable implicit function calls during evaluation.

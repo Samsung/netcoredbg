@@ -5,21 +5,112 @@
 #pragma once
 
 #include <string>
+#include <tuple>
 #include <vector>
 #include <bitset>
 #include <unordered_map>
-
+#include <cassert>
+#include <climits>
+#include <new>
 #include "platform.h"
+#include "utility.h"
+
+#ifdef FEATURE_PAL
+#include "pal_mstypes.h"
+#endif
+
+// Types commonly used in the debugger:
+
+// Data type deficated to carry thread id.
+class ThreadId : public Utility::CustomScalarType<ThreadId>
+{
+    enum SpecialValues
+    {
+        InvalidValue = 0,
+        AllThreadsValue = -1
+    };
+
+    int m_id;
+
+    ThreadId(SpecialValues val) : m_id(val) {}
+
+public:
+    typedef int ScalarType;
+
+    // This is for cases, when ThreadId isn't initialized/unknown.
+    static const ThreadId Invalid;
+
+    // This should be used as Any/All threads sign for protocol (for Emit...Event).
+    static const ThreadId AllThreads;
+
+    ThreadId() : ThreadId(Invalid) {}
+
+    explicit ThreadId(int threadId) : m_id(threadId)
+    {
+        assert(threadId != InvalidValue && threadId != AllThreadsValue);
+    }
+
+    explicit ThreadId(DWORD threadId) : ThreadId(int(threadId)) {}
+
+    explicit operator bool() const { return m_id != InvalidValue; }
+
+    explicit operator ScalarType() const { return assert(*this), m_id; }
+};
+
+// Data type dedicated to carry stack frame depth (level).
+class FrameLevel : public Utility::CustomScalarType<FrameLevel>
+{
+public:
+    typedef int ScalarType;
+
+    static const int MaxFrameLevel = SHRT_MAX;
+
+    FrameLevel() : m_level(-1) {}
+
+    explicit FrameLevel(unsigned n) : m_level{(assert(int(n) <= MaxFrameLevel), int(n))} {}
+    explicit FrameLevel(int n) : FrameLevel(unsigned(n)) {}
+
+    explicit operator ScalarType() const { return assert(*this), m_level; }
+    explicit operator bool() const { return m_level != -1; }
+
+private:
+    int m_level;
+};
+
+// Unique stack frame identifier, which persist until program isn't continued.
+class FrameId : public Utility::CustomScalarType<FrameId>
+{
+public:
+    typedef int ScalarType;
+
+    const static int32_t MaxFrameId = INT32_MAX;
+
+    FrameId() : m_id(-1) {}
+    FrameId(ThreadId, FrameLevel);
+    FrameId(int); 
+
+    explicit operator ScalarType() const noexcept { return assert(*this), m_id; }
+    explicit operator bool() const { return m_id != -1; }
+
+    ThreadId getThread() const noexcept;
+    FrameLevel getLevel() const noexcept;
+
+    static void invalidate();
+
+private:
+    ScalarType m_id;
+};
+
 
 // From https://github.com/Microsoft/vscode-debugadapter-node/blob/master/protocol/src/debugProtocol.ts
 
 struct Thread
 {
-    int id;
+    ThreadId id;
     std::string name;
     bool running;
 
-    Thread(int id, std::string name, bool running) : id(id), name(name), running(running) {}
+    Thread(ThreadId id, std::string name, bool running) : id(id), name(name), running(running) {}
 };
 
 struct Source
@@ -41,9 +132,20 @@ struct ClrAddr
     bool IsNull() const { return methodToken == 0; }
 };
 
+
+
+
+
 struct StackFrame
 {
-    uint64_t id; // (threadId << 32) | level
+private:
+    template <typename T> using Optional = std::tuple<T, bool>;
+
+    mutable Optional<ThreadId> thread;
+    mutable Optional<FrameLevel> level;
+
+public:
+    FrameId id;         // should be assigned only once, befor calls to GetLevel or GetThreadId.
     std::string name;
     Source source;
     int line;
@@ -56,20 +158,28 @@ struct StackFrame
     uint64_t addr; // exposed for MI protocol
 
     StackFrame() :
-        id(0), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
+        thread(ThreadId{}, true), level(FrameLevel{}, true), id(),
+        line(0), column(0), endLine(0), endColumn(0), addr(0) {}
 
-    StackFrame(int threadId, uint32_t level, std::string name) :
+    StackFrame(ThreadId threadId, FrameLevel level, const std::string& name) :
+        thread(threadId, true), level(level, true), id(FrameId(threadId, level)),
         name(name), line(0), column(0), endLine(0), endColumn(0), addr(0)
+    {}
+
+    StackFrame(FrameId id) :
+        thread(ThreadId{}, false), level(FrameLevel{}, false), id(id),
+        line(0), column(0), endLine(0), endColumn(0), addr(0)
+    {}
+
+    FrameLevel GetLevel() const
     {
-        id = static_cast<uint64_t>(threadId);
-        id <<= 32;
-        id |= level;
+        return std::get<1>(level) ? std::get<0>(level) : std::get<0>(level) = id.getLevel();
     }
 
-    StackFrame(uint64_t id) : id(id), line(0), column(0), endLine(0), endColumn(0), addr(0) {}
-
-    uint32_t GetLevel() const { return id & 0xFFFFFFFFul; }
-    int GetThreadId() const { return id >> 32; }
+    ThreadId GetThreadId() const
+    {
+        return std::get<1>(thread) ? std::get<0>(thread) : std::get<0>(thread) = id.getThread();
+    }
 };
 
 struct Breakpoint
@@ -131,14 +241,16 @@ struct StoppedEvent
 {
     StopReason reason;
     std::string description;
-    int threadId;
+    ThreadId threadId;
     std::string text;
     bool allThreadsStopped;
 
     StackFrame frame; // exposed for MI protocol
     Breakpoint breakpoint; // exposed for MI protocol
 
-    StoppedEvent(StopReason reason, int threadId = 0) : reason(reason), threadId(threadId), allThreadsStopped(true) {}
+    StoppedEvent(StopReason reason, ThreadId threadId = ThreadId::Invalid)
+        :reason(reason), threadId(threadId), allThreadsStopped(true)
+    {}
 };
 
 struct BreakpointEvent
@@ -165,9 +277,9 @@ enum ThreadReason
 struct ThreadEvent
 {
     ThreadReason reason;
-    int threadId;
+    ThreadId threadId;
 
-    ThreadEvent(ThreadReason reason, int threadId) : reason(reason), threadId(threadId) {}
+    ThreadEvent(ThreadReason reason, ThreadId threadId) : reason(reason), threadId(threadId) {}
 };
 
 enum OutputCategory

@@ -69,7 +69,7 @@ public:
     void EmitStoppedEvent(StoppedEvent event) override;
     void EmitExitedEvent(ExitedEvent event) override;
     void EmitTerminatedEvent() override;
-    void EmitContinuedEvent(int threadId) override;
+    void EmitContinuedEvent(ThreadId threadId) override;
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitModuleEvent(ModuleEvent event) override;
     void EmitOutputEvent(OutputEvent event) override;

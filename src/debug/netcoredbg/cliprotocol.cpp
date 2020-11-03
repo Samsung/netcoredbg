@@ -77,7 +77,7 @@ HRESULT CLIProtocol::StepCommand(const std::vector<std::string> &args,
                                 Debugger::StepType stepType)
 {
     HRESULT Status;
-    DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
+    ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
     IfFailRet(m_debugger->StepCommand(threadId, stepType));
     output = "^running";
     return S_OK;
@@ -108,16 +108,16 @@ HRESULT CLIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::strin
     return stackFrame.source.IsNull() ? S_FALSE : S_OK;
 }
 
-HRESULT CLIProtocol::PrintFrames(int threadId, std::string &output, int lowFrame, int highFrame)
+HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame)
 {
     HRESULT Status;
     std::ostringstream ss;
 
     int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
-    IfFailRet(m_debugger->GetStackTrace(threadId, lowFrame, highFrame - lowFrame, stackFrames, totalFrames));
+    IfFailRet(m_debugger->GetStackTrace(threadId, lowFrame, int(highFrame) - int(lowFrame), stackFrames, totalFrames));
 
-    int currentFrame = lowFrame;
+    int currentFrame = int(lowFrame);
 
     ss << "stack=[";
     const char *sep = "";
@@ -260,12 +260,12 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
         case StopBreakpoint:
         {
             printf("\nstopped, reason: breakpoint %i hit, thread id: %i, stopped threads: all, times= %u, frame={%s\n}\n",
-                  (unsigned int)event.breakpoint.id, event.threadId, (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
+                  (unsigned int)event.breakpoint.id, int(event.threadId), (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
             break;
         }
         case StopStep:
         {
-            printf("\nstopped, reason: end stepping range, thread id: %i, stopped threads: all, frame={%s\n}\n", event.threadId, frameLocation.c_str());
+            printf("\nstopped, reason: end stepping range, thread id: %i, stopped threads: all, frame={%s\n}\n", int(event.threadId), frameLocation.c_str());
             break;
         }
         case StopException:
@@ -277,14 +277,14 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
                 event.description.c_str(),
                 stage.c_str(),
                 category.c_str(),
-                event.threadId,
+                int(event.threadId),
                 frameLocation.c_str());
             break;
         }
         case StopEntry:
         {
             printf("\nstopped, reason: entry point hit, thread id: %i, stopped threads: all, frame={%s\n}\n",
-                event.threadId, frameLocation.c_str());
+                int(event.threadId), frameLocation.c_str());
             break;
         }
         default:
@@ -305,7 +305,7 @@ void CLIProtocol::EmitExitedEvent(ExitedEvent event)
 #endif
 }
 
-void CLIProtocol::EmitContinuedEvent(int threadId)
+void CLIProtocol::EmitContinuedEvent(ThreadId threadId)
 {
     LogFuncEntry();
 }
@@ -324,7 +324,7 @@ void CLIProtocol::EmitThreadEvent(ThreadEvent event)
             reasonText = "thread exited";
             break;
     }
-    printf("\n%s, id: %i\n", reasonText, event.threadId);
+    printf("\n%s, id: %i\n", reasonText, int(event.threadId));
 }
 
 void CLIProtocol::EmitModuleEvent(ModuleEvent event)
@@ -361,12 +361,12 @@ void CLIProtocol::EmitOutputEvent(OutputEvent event)
 HRESULT CLIProtocol::doBacktrace(const std::vector<std::string> &args_orig, std::string &output)
 {
     std::vector<std::string> args = args_orig;
-    DWORD threadId = GetIntArg(args, "--thread", m_debugger->GetLastStoppedThreadId());
+    ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
     int lowFrame = 0;
-    int highFrame = INT_MAX;
+    int highFrame = FrameLevel::MaxFrameLevel;
     StripArgs(args);
     GetIndices(args, lowFrame, highFrame);
-    return PrintFrames(threadId, output, lowFrame, highFrame);
+    return PrintFrames(threadId, output, FrameLevel{lowFrame}, FrameLevel{highFrame});
 }
 
 HRESULT CLIProtocol::doBreak(const std::vector<std::string> &unmutable_args, std::string &output)
@@ -413,7 +413,7 @@ HRESULT CLIProtocol::doBreak(const std::vector<std::string> &unmutable_args, std
 HRESULT CLIProtocol::doContinue(const std::vector<std::string> &, std::string &output)
 {
     HRESULT Status;
-    IfFailRet(m_debugger->Continue(-1));
+    IfFailRet(m_debugger->Continue(ThreadId::AllThreads));
     output = "^running";
     return S_OK;
 }
@@ -480,7 +480,7 @@ HRESULT CLIProtocol::doNext(const std::vector<std::string> &args, std::string &o
     return StepCommand(args, output, Debugger::STEP_OVER);    
 }
 
-HRESULT CLIProtocol::PrintVariable(int threadId, uint64_t frameId, std::list<std::string>::iterator token_iterator, Variable v, std::ostringstream &ss, bool expand)
+HRESULT CLIProtocol::PrintVariable(ThreadId threadId, FrameId frameId, std::list<std::string>::iterator token_iterator, Variable v, std::ostringstream &ss, bool expand)
 {
     if(!token_iterator->empty())
     {
@@ -550,8 +550,8 @@ HRESULT CLIProtocol::doPrint(const std::vector<std::string> &args, std::string &
     std::list<std::string> tokens;
 
     ss << "\n";
-    int threadId = m_debugger->GetLastStoppedThreadId();
-    uint64_t frameId = StackFrame(threadId, 0, "").id;
+    ThreadId threadId = m_debugger->GetLastStoppedThreadId();
+    FrameId frameId = StackFrame(threadId, FrameLevel{0}, "").id;
     Variable v(0);
     Tokenizer tokenizer(m_lastPrintArg, ".[");
     while (tokenizer.Next(result))
