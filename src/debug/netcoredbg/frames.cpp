@@ -2,12 +2,6 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#ifndef FEATURE_PAL
-// Turn off macro definitions named max and min in <windows.h> header file
-// to avoid compile error for std::numeric_limits<uint64_t>::max().
-#define NOMINMAX
-#endif
-
 #include "frames.h"
 
 #include <sstream>

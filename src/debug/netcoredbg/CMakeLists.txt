@@ -71,6 +71,11 @@ if (NOT WIN32)
     add_definitions(-DPAL_STDCPP_COMPAT)
 endif()
 
+if (WIN32)
+    # fix issue with std::numeric_limits<T>::max() and std::max()
+    add_definitions(-DNOMINMAX)
+endif()
+
 add_executable(netcoredbg ${netcoredbg_SRC})
 
 if (WIN32)

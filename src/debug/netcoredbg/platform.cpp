@@ -2,11 +2,6 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#ifndef FEATURE_PAL
-// Turn off macro definitions named max and min in <windows.h> header file
-// to avoid compile error for std::max().
-#define NOMINMAX
-#endif
 #ifdef _MSC_VER
 // Disable compiler warning about unsafe std::copy
 #define _SCL_SECURE_NO_WARNINGS
