@@ -1,4 +1,6 @@
 if (CLR_CMAKE_PLATFORM_UNIX)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
   # Disable frame pointer optimizations so profilers can get better call stacks
   add_compile_options(-fno-omit-frame-pointer)
 
@@ -28,13 +30,8 @@ if (CLR_CMAKE_PLATFORM_UNIX)
     add_compile_options(-Werror)
   endif(CLR_CMAKE_WARNINGS_ARE_ERRORS)
 
-  # Disabled warnings
-  add_compile_options(-Wno-unused-private-field)
-  add_compile_options(-Wno-unused-variable)
   # Explicit constructor calls are not supported by clang (this->ClassName::ClassName())
   add_compile_options(-Wno-microsoft)
-  # This warning is caused by comparing 'this' to NULL
-  add_compile_options(-Wno-tautological-compare)
   # There are constants of type BOOL used in a condition. But BOOL is defined as int
   # and so the compiler thinks that there is a mistake.
   add_compile_options(-Wno-constant-logical-operand)
@@ -45,8 +42,6 @@ if (CLR_CMAKE_PLATFORM_UNIX)
 
   add_compile_options(-Wno-unknown-warning-option)
 
-  #These seem to indicate real issues
-  add_compile_options(-Wno-invalid-offsetof)
   # The following warning indicates that an attribute __attribute__((__ms_struct__)) was applied
   # to a struct or a class that has virtual members or a base class. In that case, clang
   # may not generate the same object layout as MSVC.
@@ -55,7 +50,10 @@ if (CLR_CMAKE_PLATFORM_UNIX)
   # Some architectures (e.g., ARM) assume char type is unsigned while CoreCLR assumes char is signed
   # as x64 does. It has been causing issues in ARM (https://github.com/dotnet/coreclr/issues/4746)
   add_compile_options(-fsigned-char)
+
+  add_compile_options(-Wall -Wextra -Walign-cast -Wstrict-aliasing -Wno-unused-parameter -Wnarrowing)
 endif(CLR_CMAKE_PLATFORM_UNIX)
+
 
 if(CLR_CMAKE_PLATFORM_UNIX_ARM AND NOT DEFINED CLR_CMAKE_TARGET_TIZEN_LINUX)
    # Because we don't use CMAKE_C_COMPILER/CMAKE_CXX_COMPILER to use clang
@@ -71,6 +69,7 @@ endif()
 
 if (WIN32)
   # Compile options for targeting windows
+  set(CMAKE_CXX_STANDARD 11)
 
   # The following options are set by the razzle build
   add_compile_options(/TP) # compile all files as C++

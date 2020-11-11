@@ -580,7 +580,6 @@ HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> 
 
 HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, SymbolReader *symbolReader)
 {
-    HRESULT Status;
     ULONG numTypedefs = 0;
     HCORENUM fEnum = NULL;
     mdTypeDef typeDef;
@@ -603,6 +602,7 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Symbo
                 std::string fullPath = to_utf8(point.document);
 
 #ifdef WIN32
+                HRESULT Status = S_OK;
                 std::string initialFullPath = fullPath;
                 IfFailRet(SymbolReader::StringToUpper(fullPath));
                 m_sourceCaseSensitiveFullPaths[fullPath] = initialFullPath;

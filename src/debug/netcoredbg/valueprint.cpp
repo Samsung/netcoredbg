@@ -130,7 +130,6 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
 
     //Now that we know the underlying enum type, let's decode the enum variable into OR-ed, human readable enum constants
     fEnum = NULL;
-    bool isFirst = true;
     ULONG64 remainingValue = *((ULONG64*)enumValue);
     while(SUCCEEDED(pMD->EnumFields(&fEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
     {

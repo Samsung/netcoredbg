@@ -10,7 +10,11 @@
 
 #include <exception>
 
+#pragma warning (disable:4068)  // Visual Studio should ignore GCC pragmas
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <winerror.h>
+#pragma GCC diagnostic pop
 
 #include "vscodeprotocol.h"
 

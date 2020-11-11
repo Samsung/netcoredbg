@@ -388,8 +388,6 @@ HRESULT SymbolReader::PrepareSymbolReader()
 
 HRESULT SymbolReader::ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset)
 {
-    HRESULT Status = S_OK;
-
     if (m_symbolReaderHandle != 0)
     {
         _ASSERTE(resolveSequencePointDelegate != nullptr);
@@ -409,8 +407,6 @@ HRESULT SymbolReader::GetSequencePointByILOffset(
     ULONG64 ilOffset,
     SequencePoint *sequencePoint)
 {
-    HRESULT Status = S_OK;
-
     if (m_symbolReaderHandle != 0)
     {
         _ASSERTE(getSequencePointByILOffsetDelegate != nullptr);
@@ -429,8 +425,6 @@ HRESULT SymbolReader::GetSequencePointByILOffset(
 
 HRESULT SymbolReader::GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset)
 {
-    HRESULT Status = S_OK;
-
     if (m_symbolReaderHandle != 0)
     {
         _ASSERTE(getStepRangesFromIPDelegate != nullptr);
@@ -456,8 +450,6 @@ HRESULT SymbolReader::GetNamedLocalVariableAndScope(
     ULONG32* pIlStart,
     ULONG32* pIlEnd)
 {
-    HRESULT Status = S_OK;
-
     if (!m_symbolReaderHandle)
         return E_FAIL;
 
@@ -488,8 +480,6 @@ HRESULT SymbolReader::GetNamedLocalVariableAndScope(
 
 HRESULT SymbolReader::GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points)
 {
-    HRESULT Status = S_OK;
-
     if (m_symbolReaderHandle != 0)
     {
         _ASSERTE(getSequencePointsDelegate != nullptr);

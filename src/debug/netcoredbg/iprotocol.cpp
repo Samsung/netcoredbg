@@ -79,7 +79,7 @@ bool IProtocol::GetIndices(const std::vector<std::string> &args, int &index1, in
 
 BreakType IProtocol::GetBreakpointType(const std::vector<std::string> &args)
 {
-    int ncnt = 0;
+    unsigned ncnt = 0;
 
     if (args.empty())
         return BreakType::Error;

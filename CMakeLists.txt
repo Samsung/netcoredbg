@@ -8,12 +8,6 @@ set(DOTNET_CHANNEL "3.1" CACHE STRING ".NET SDK channel")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
 set(DBGSHIM_RUNTIME_DIR "" CACHE FILEPATH "Path to dbgshim library directory (at runtime)")
 
-if (WIN32)
-    set(CMAKE_CXX_STANDARD 11)
-else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-null-conversion")
-endif()
-
 function(clr_unknown_arch)
     message(FATAL_ERROR "Only AMD64, ARM64, ARM, ARMEL, I386 and WASM are supported")
 endfunction()

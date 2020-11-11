@@ -718,6 +718,7 @@ public:
 #ifdef FEATURE_PAL
             exitCode = hook::waitpid.GetExitCode();
 #else
+            HRESULT Status = S_OK;
             HPROCESS hProcess;
             DWORD dwExitCode = 0;
             if (SUCCEEDED(pProcess->GetHandle(&hProcess)))

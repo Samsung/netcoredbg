@@ -630,7 +630,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
 
         case ELEMENT_TYPE_VAR        :
             n  = CorSigUncompressData(typePtr);
-            out = n < args.size() ? args.at(n) : "!" + std::to_string(n);
+            out = n < int(args.size()) ? args.at(n) : "!" + std::to_string(n);
             break;
 
         case ELEMENT_TYPE_MVAR        :
@@ -654,7 +654,6 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
                 std::list<std::string> genericArgs;
 
                 unsigned numArgs = CorSigUncompressData(typePtr);
-                bool needComma = false;
                 while(numArgs--)
                 {
                     std::string genType;

@@ -147,9 +147,6 @@ HRESULT MIProtocol::PrintFrames(int threadId, std::string &output, int lowFrame,
 
 HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::string &output)
 {
-    const bool printValues = true;
-    const bool printTypes = false;
-
     std::ostringstream ss;
     ss << "variables=[";
     const char *sep = "";
@@ -1176,7 +1173,7 @@ void MIProtocol::Printf(const char *fmt, ...)
     if (n < 0)
         return;
 
-    if (n >= sizeof(buffer))
+    if (n >= int(sizeof(buffer)))
     {
         strbuffer.resize(n);
 
@@ -1184,7 +1181,7 @@ void MIProtocol::Printf(const char *fmt, ...)
         n = vsnprintf(&strbuffer[0], strbuffer.size() + 1, fmt, arg);
         va_end(arg);
 
-        if (n < 0 || n > strbuffer.size())
+        if (n < 0 || n > int(strbuffer.size()))
             return;
         out = strbuffer.c_str();
     }

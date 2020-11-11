@@ -14,6 +14,9 @@ endif()
 add_compile_options(-D_MIDL_USE_GUIDDEF_)
 file(GLOB CORGUIDS_SOURCES "${CORECLR_DIR}/src/pal/prebuilt/idl/*_i.cpp")
 add_library(corguids STATIC ${CORGUIDS_SOURCES})
+if (NOT WIN32)
+    target_compile_options(corguids PRIVATE -Wno-unused-parameter)
+endif()
 
 # Include coreclr headers
 
