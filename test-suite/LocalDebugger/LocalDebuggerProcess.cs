@@ -36,13 +36,13 @@ namespace LocalDebugger
 
         private void DebuggerProcess_Exited(object sender, System.EventArgs e)
         {
-            if (!CloseCalled)
+            if (!CloseCalled && DebuggerProcess.ExitCode != 0)
             {
                 //kill process of test, which is child of netcoredbg. It's PID I don't know
                 // For Win it works automatically (I hope). For linux it is going
                 // to be passed to run_tests.sh/timeout
-                System.Console.Error.WriteLine("TestRunner: netcoredbg is dead with exit code {0}.\n{1}",
-                    DebuggerProcess.ExitCode, e.ToString());
+                System.Console.Error.WriteLine("TestRunner: netcoredbg is dead with exit code {0}.",
+                    DebuggerProcess.ExitCode);
                 System.Environment.Exit(DebuggerProcess.ExitCode);
             }
         }

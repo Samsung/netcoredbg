@@ -39,6 +39,9 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestSrcBreakpointResolve"
 )
 
+# Skipped tests:
+# VSCodeTest297killNCD --- is not automated enough. For manual run only.
+
 $TEST_NAMES = $args
 
 if ($NETCOREDBG.count -eq 0) {

@@ -75,6 +75,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestSrcBreakpointResolve"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestSrcBreakpointResolve", "VSCodeTestSrcBreakpointResolve\VSCodeTestSrcBreakpointResolve.csproj", "{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTest297killNCD", "VSCodeTest297killNCD\VSCodeTest297killNCD.csproj", "{EE566D3A-1859-451F-AFCA-CFDC624B9E66}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -532,5 +534,17 @@ Global
 		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|x64.Build.0 = Release|Any CPU
 		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|x86.ActiveCfg = Release|Any CPU
 		{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}.Release|x86.Build.0 = Release|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Debug|x64.ActiveCfg = Debug|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Debug|x64.Build.0 = Debug|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Debug|x86.ActiveCfg = Debug|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Debug|x86.Build.0 = Debug|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Release|Any CPU.Build.0 = Release|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Release|x64.ActiveCfg = Release|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Release|x64.Build.0 = Release|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Release|x86.ActiveCfg = Release|Any CPU
+        {EE566D3A-1859-451F-AFCA-CFDC624B9E66}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

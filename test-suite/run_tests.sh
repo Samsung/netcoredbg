@@ -40,6 +40,9 @@ ALL_TEST_NAMES=(
     "VSCodeTestSrcBreakpointResolve"
 )
 
+# Skipped tests:
+# VSCodeTest297killNCD --- is not automated enough. For manual run only.
+
 TEST_NAMES="$@"
 
 if [[ -z $NETCOREDBG ]]; then
@@ -84,7 +87,7 @@ test_timeout()(
             sleep $1
             echo "task killed by timeout" >&2
             get_pgid() { set -- $(cat /proc/self/stat); echo $5; }
-            kill -ALRM -$pgid >/dev/null 2>&1
+            kill -ALRM -$(get_pgid) >/dev/null 2>&1
         } &
         shift
         $saved_errexit

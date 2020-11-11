@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NetcoreDbgTest\NetcoreDbgTest.csproj" />
+    <ProjectReference Include="..\TestRunner\TestRunner.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <!--
+    -->
+    <EnableDefaultCompileItems>False</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <Compile Include="t297killNCD.cs" />
+  </ItemGroup>
+
+</Project>
