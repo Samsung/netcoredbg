@@ -68,7 +68,7 @@ struct Variables::Member
     std::string name;
     std::string ownerType;
     ToRelease<ICorDebugValue> value;
-    Member(const std::string &name, const std::string ownerType, ToRelease<ICorDebugValue> value) :
+    Member(const std::string &name, const std::string& ownerType, ToRelease<ICorDebugValue> value) :
         name(name),
         ownerType(ownerType),
         value(std::move(value))

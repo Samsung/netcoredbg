@@ -43,7 +43,7 @@ void IProtocol::StripArgs(std::vector<std::string> &args)
     }
 }
 
-int IProtocol::GetIntArg(const std::vector<std::string> &args, const std::string name, int defaultValue)
+int IProtocol::GetIntArg(const std::vector<std::string> &args, const std::string& name, int defaultValue)
 {
     auto it = std::find(args.begin(), args.end(), name);
 

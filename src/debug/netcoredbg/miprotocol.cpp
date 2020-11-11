@@ -211,16 +211,20 @@ void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, ThreadId t
     output = ss.str();
 }
 
-void MIProtocol::PrintNewVar(std::string varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
+void MIProtocol::PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
 {
+    std::string name;
     if (varobjName.empty() || varobjName == "-")
     {
-        varobjName = "var" + std::to_string(m_varCounter++);
+        name = "var" + std::to_string(m_varCounter++);
+    }
+    else {
+        name = varobjName;
     }
 
-    m_vars[varobjName] = v;
+    m_vars[name] = v;
 
-    PrintVar(varobjName, v, threadId, print_values, output);
+    PrintVar(name, v, threadId, print_values, output);
 }
 
 HRESULT MIProtocol::CreateVar(ThreadId threadId, FrameLevel level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output)
@@ -277,7 +281,8 @@ void MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadI
     for (auto &child : children)
     {
         std::string varout;
-        PrintNewVar("-", child, threadId, print_values, varout);
+        std::string minus("-");
+        PrintNewVar(minus, child, threadId, print_values, varout);
 
         ss << sep;
         sep = ",";
@@ -632,7 +637,7 @@ void MIProtocol::EmitOutputEvent(OutputEvent event)
             MIProtocol::EscapeMIValue(event.source).c_str());
 }
 
-HRESULT MIProtocol::HandleCommand(std::string command,
+HRESULT MIProtocol::HandleCommand(const std::string& command,
                                   const std::vector<std::string> &args,
                                   std::string &output)
 {

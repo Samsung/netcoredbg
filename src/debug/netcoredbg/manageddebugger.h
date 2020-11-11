@@ -625,7 +625,7 @@ private:
     HRESULT GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame);
 
-    HRESULT RunProcess(std::string fileExec, std::vector<std::string> execArgs);
+    HRESULT RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs);
     HRESULT AttachToProcess(DWORD pid);
     HRESULT DetachFromProcess();
     HRESULT TerminateProcess();
@@ -655,7 +655,7 @@ public:
     HRESULT Continue(ThreadId threadId) override;
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
-    HRESULT SetBreakpoints(std::string filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
+    HRESULT SetBreakpoints(const std::string& filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT SetFunctionBreakpoints(const std::vector<FunctionBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
     HRESULT StepCommand(ThreadId threadId, StepType stepType) override;

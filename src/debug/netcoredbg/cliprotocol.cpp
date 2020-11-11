@@ -608,7 +608,7 @@ HRESULT CLIProtocol::doSetArgs(const std::vector<std::string> &args, std::string
     return S_OK;
 }
 
-HRESULT CLIProtocol::HandleCommand(std::string command,
+HRESULT CLIProtocol::HandleCommand(const std::string& command,
                                   const std::vector<std::string> &args,
                                   std::string &output)
 {

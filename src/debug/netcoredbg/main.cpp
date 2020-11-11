@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (Logger::setLogging(logType))
+    if (Logger::setLogging(logType.c_str()))
     {
         fprintf(stderr, "Error: Invalid log type\n");
         return EXIT_FAILURE;
@@ -286,12 +286,12 @@ int main(int argc, char *argv[])
     {
         server.reset(new IORedirectServer (
             serverPort,
-            [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
-            [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); }
+            [&protocol](const std::string& text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
+            [&protocol](const std::string& text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); }
         ));
     }
 
-    Logger::log("pidDebugee = " + std::to_string(pidDebuggee));
+    Logger::log("pidDebugee = %d", pidDebuggee);
     if (pidDebuggee != 0)
     {
         debugger.Initialize();

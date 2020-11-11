@@ -1697,7 +1697,7 @@ static bool IsDirExists(const char* const path)
     return true;
 }
 
-HRESULT ManagedDebugger::RunProcess(string fileExec, std::vector<string> execArgs)
+HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<string>& execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
     HRESULT Status;

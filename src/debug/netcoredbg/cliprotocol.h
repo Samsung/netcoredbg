@@ -73,7 +73,7 @@ private:
     HRESULT doRun(const std::vector<std::string> &args, std::string &output);
     HRESULT doStep(const std::vector<std::string> &args, std::string &output);
     HRESULT doSetArgs(const std::vector<std::string> &args, std::string &output);
-    HRESULT HandleCommand(std::string command,
+    HRESULT HandleCommand(const std::string& command,
                           const std::vector<std::string> &args,
                           std::string &output);
 

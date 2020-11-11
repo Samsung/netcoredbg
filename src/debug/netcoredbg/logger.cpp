@@ -4,12 +4,25 @@
 #include <iomanip>
 #include <chrono>
 #include <stdio.h>
+#include <string.h>
 #include "platform.h"
 #include "logger.h"
 
+namespace 
+{
+    template <typename Logger>
+    void log_via_va_args(Logger& logger, LogLevel level, const char *msg, ...)
+    {
+        va_list args;
+        va_start(args, msg);
+        logger.vlog(level, "%s", args);
+        va_end(args);
+    }
+}
+
+
 #ifdef DEBUGGER_FOR_TIZEN
 #include "dlog/dlog.h"
-
 
 class DlogLogger : public LoggerImpl
 {
@@ -19,8 +32,8 @@ class DlogLogger : public LoggerImpl
     public:
         DlogLogger() {}
         ~DlogLogger() override {}
-        void log(LogLevel level, const std::string& msg) override;
-        void vlog(LogLevel level, const std::string& fmt, va_list args) override;
+        void log(LogLevel level, const char *msg) override;
+        void vlog(LogLevel level, const char *fmt, va_list args) override;
 };
 
 log_priority DlogLogger::MapLogLevel(LogLevel level)
@@ -35,19 +48,26 @@ log_priority DlogLogger::MapLogLevel(LogLevel level)
     return DLOG_DEBUG;
 }
 
-void DlogLogger::log(LogLevel level, const std::string &msg)
+void DlogLogger::log(LogLevel level, const char *msg)
 {
-    dlog_print(MapLogLevel(level), "NETCOREDBG", "%s", msg.c_str());
+    log_via_va_args(*this, level, "%s", msg);
 }
 
-void DlogLogger::vlog(LogLevel level, const std::string &fmt, va_list args)
+void DlogLogger::vlog(LogLevel level, const char *fmt, va_list args)
 {
-    dlog_vprint(MapLogLevel(level), "NETCOREDBG", fmt.c_str(), args);
+    dlog_vprint(MapLogLevel(level), "NETCOREDBG", fmt, args);
 }
 
+#endif // Tizen specific
 
-#endif
 
+const char *const levelNames[] =
+{
+    "DEBUG",
+    "INFO",
+    "WARN",
+    "ERROR"
+};
 
 
 class NoLogger : public LoggerImpl
@@ -55,36 +75,26 @@ class NoLogger : public LoggerImpl
     public:
         NoLogger() {}
         ~NoLogger() override {}
-        void log(LogLevel level, const std::string& msg) override {}
-        void vlog(LogLevel level, const std::string& fmt, va_list args) override {}
+        void log(LogLevel level, const char *msg) override {}
+        void vlog(LogLevel level, const char *fmt, va_list args) override {}
 };
 
 class FileLogger : public LoggerImpl
 {
     private:
         static const std::string filenameBase;
-        static const std::string debugStr;
-        static const std::string infoStr;
-        static const std::string warnStr;
-        static const std::string errorStr;
-
         FILE *logFile;
-
-        static std::string FormatMessageString(LogLevel level, const std::string &str);
-        static const std::string& LevelToString(LogLevel level);
 
     public:
         FileLogger();
         ~FileLogger() override;
-        void log(LogLevel level, const std::string& msg) override;
-        void vlog(LogLevel level, const std::string& fmt, va_list args) override;
+        void log(LogLevel level, const char *msg) override;
+        void vlog(LogLevel level, const char *fmt, va_list args) override;
 };
 
+
 const std::string FileLogger::filenameBase = "netcoredbg_";
-const std::string FileLogger::debugStr = "DEBUG";
-const std::string FileLogger::infoStr = "INFO";
-const std::string FileLogger::warnStr = "WARN";
-const std::string FileLogger::errorStr = "ERROR";
+
 
 static void get_local_time(std::tm *tm_snapshot)
 {
@@ -114,66 +124,42 @@ FileLogger::~FileLogger()
     fclose(logFile);
 }
 
-const std::string& FileLogger::LevelToString(LogLevel level)
+
+void FileLogger::log(LogLevel level, const char *msg)
 {
-    switch (level) {
-    case LOG_INFO:
-        return infoStr;
-    case LOG_WARN:
-        return warnStr;
-    case LOG_ERROR:
-        return errorStr;
-    case LOG_DEBUG:
-    default:
-        return debugStr;
-    }
+    log_via_va_args(*this, level, "%s", msg);
 }
 
-std::string FileLogger::FormatMessageString(LogLevel level, const std::string &str)
+void FileLogger::vlog(LogLevel level, const char *fmt, va_list args)
 {
-    std::ostringstream oss;
-    std::tm tm_snapshot;
-    get_local_time(&tm_snapshot);
-    oss << std::put_time(&tm_snapshot, "%y-%m-%d %OH:%OM:%OS") << " " << LevelToString(level) << " " << str << std::endl;
+    if (logFile == NULL) return;
 
-    return oss.str();
+    const char *level_name = (unsigned(level) < sizeof(levelNames)/sizeof(levelNames[0]))
+                            ? levelNames[level] : levelNames[LOG_DEBUG];
+    std::tm tm;
+    get_local_time(&tm);
+
+    fprintf(logFile, "%04u-%02u-%02u %02u:%02u:%02u %s ",
+        tm.tm_year+1900, tm.tm_mon+1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, level_name);
+
+    vfprintf(logFile, fmt, args);
+    fputc('\n', logFile);
+
+    fflush(logFile);
 }
-
-void FileLogger::log(LogLevel level, const std::string& msg)
-{
-    if (logFile != NULL) {
-        fprintf(logFile, "%s", FormatMessageString(level, msg).c_str());
-        fflush(logFile);
-    }
-}
-
-void FileLogger::vlog(LogLevel level, const std::string& fmt, va_list args)
-{
-    if (logFile != NULL) {
-        vfprintf(logFile, FormatMessageString(level, fmt).c_str(), args);
-        fflush(logFile);
-    }
-}
-
-
-
 
 
 std::shared_ptr<LoggerImpl> Logger::logger = std::make_shared<NoLogger>();
-const std::string Logger::fileStr = "file";
-const std::string Logger::nologStr = "off";
-#ifdef DEBUGGER_FOR_TIZEN
-const std::string Logger::dlogStr = "dlog";
-#endif
 
-int Logger::setLogging(const std::string &type)
+
+int Logger::setLogging(const char *type)
 {
-    if (type == Logger::fileStr)
+    if (!strcmp(type, "file"))
     {
         logger = std::make_shared<FileLogger>();
     }
 #ifdef DEBUGGER_FOR_TIZEN
-    else if (type == Logger::dlogStr)
+    else if (!strcmp(type, "dlog"))
     {
         logger = std::make_shared<DlogLogger>();
     }
@@ -182,14 +168,14 @@ int Logger::setLogging(const std::string &type)
     {
         logger = std::make_shared<NoLogger>();
 
-        if (type != Logger::nologStr)
+        if (strcmp(type, "off") != 0)
             return -1;
     }
 
     return 0;
 }
 
-void Logger::levelLog(LogLevel level, const std::string fmt, ...)
+void Logger::levelLog(LogLevel level, const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -197,7 +183,7 @@ void Logger::levelLog(LogLevel level, const std::string fmt, ...)
     va_end(args);
 }
 
-void Logger::log(const std::string fmt, ...)
+void Logger::log(const char *fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
@@ -205,7 +191,13 @@ void Logger::log(const std::string fmt, ...)
     va_end(args);
 }
 
-FuncLogger Logger::getFuncLogger(const std::string &func)
+
+void FuncLogger::log(LoggerImpl *logger, LogLevel level, const char *fmt, ...)
 {
-    return FuncLogger(logger, func);
+    if (logger == nullptr) return;
+
+    va_list args;
+    va_start(args, fmt);
+    logger->vlog(level, fmt, args);
+    va_end(args);
 }

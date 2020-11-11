@@ -123,7 +123,7 @@ struct Thread
     std::string name;
     bool running;
 
-    Thread(ThreadId id, std::string name, bool running) : id(id), name(name), running(running) {}
+    Thread(ThreadId id, const std::string& name, bool running) : id(id), name(name), running(running) {}
 };
 
 struct Source
@@ -131,7 +131,7 @@ struct Source
     std::string name;
     std::string path;
 
-    Source(std::string path = std::string()) : name(GetFileName(path)), path(path) {}
+    Source(const std::string& path = std::string()) : name(GetFileName(path)), path(path) {}
     bool IsNull() const { return name.empty() && path.empty(); }
 };
 
@@ -310,7 +310,7 @@ struct OutputEvent
 
     std::string source; // exposed for MI protocol
 
-    OutputEvent(OutputCategory category, std::string output) : category(category), output(output) {}
+    OutputEvent(OutputCategory category, const std::string& output) : category(category), output(output) {}
 };
 
 enum ModuleReason
