@@ -281,14 +281,14 @@ int main(int argc, char *argv[])
 
     debugger.SetProtocol(protocol.get());
 
-    IORedirectServer* server = NULL;
+    std::unique_ptr<IORedirectServer> server;
     if (interpreterType != InterpreterCLI)
     {
-        server = new IORedirectServer (
+        server.reset(new IORedirectServer (
             serverPort,
             [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
             [&protocol](std::string text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); }
-        );
+        ));
     }
 
     Logger::log("pidDebugee = " + std::to_string(pidDebuggee));
@@ -305,9 +305,5 @@ int main(int argc, char *argv[])
     }
 
     protocol->CommandLoop();
-
-    if (server)
-        delete server;
-
     return EXIT_SUCCESS;
 }
