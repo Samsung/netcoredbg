@@ -7,7 +7,12 @@
 #include <mutex>
 #include <string>
 
+#pragma warning (disable:4068)  // Visual Studio should ignore GCC pragmas
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtautological-overlap-compare"
 #include "json/json.hpp"
+#pragma GCC diagnostic pop
+
 #include "debugger.h"
 
 namespace VSCodeExceptionBreakModeKeyWord
