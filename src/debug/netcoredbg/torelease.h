@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <assert.h>
 #include "logger.h"
 
 // This class acts a smart pointer which calls the Release method on any object
@@ -31,28 +32,30 @@ public:
 
     ~ToRelease()
     {
-        Release();
+        Free();
     }
 
     void operator=(T *ptr)
     {
-        Release();
+        Free();
 
         m_ptr = ptr;
     }
 
-    T* operator->()
+    T* operator->() const
     {
+        assert(m_ptr != 0);  // accessing NULL pointer
         return m_ptr;
     }
 
-    operator T*()
+    operator T*() const
     {
         return m_ptr;
     }
 
     T** operator&()
     {
+        assert(m_ptr == 0);  // make sure, that previously stored value of type `T' isn't lost
         return &m_ptr;
     }
 
@@ -68,7 +71,7 @@ public:
         return pT;
     }
 
-    void Release()
+    void Free()
     {
         if (m_ptr != nullptr) {
             m_ptr->Release();

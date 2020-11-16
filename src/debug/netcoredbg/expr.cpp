@@ -224,9 +224,9 @@ HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue 
 void Evaluator::Cleanup()
 {
     if (m_pRunClassConstructor)
-        m_pRunClassConstructor.Release();
+        m_pRunClassConstructor.Free();
     if (m_pGetTypeHandle)
-        m_pGetTypeHandle.Release();
+        m_pGetTypeHandle.Free();
 }
 
 HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
@@ -250,7 +250,7 @@ HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
         ToRelease<ICorDebugValue> pClassValue(std::move(pResultValue));
         RunClassConstructor(pThread, pClassValue, evalFlags);
         IfFailRet(GetFieldOrPropertyWithName(
-            pThread, pILFrame, pClassValue, valueKind, parts[i], &pResultValue, evalFlags));
+            pThread, pILFrame, pClassValue, valueKind, parts[i], &pResultValue, evalFlags));  // NOLINT(clang-analyzer-cplusplus.Move)
         valueKind = ValueIsVariable; // we can only follow through instance fields
     }
 
@@ -482,7 +482,7 @@ HRESULT Evaluator::GetType(
                 *irank > 1 ? ELEMENT_TYPE_ARRAY : ELEMENT_TYPE_SZARRAY,
                 *irank,
                 pElementType,
-                &pType));
+                &pType));        // NOLINT(clang-analyzer-cplusplus.Move)
         }
     }
 
@@ -601,7 +601,7 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
     {
         ToRelease<ICorDebugType> pEnclosingType(std::move(pType));
         nextClassPart = 0;
-        if (FAILED(FindType(classParts, nextClassPart, pThread, pModule, &pType)))
+        if (FAILED(FindType(classParts, nextClassPart, pThread, pModule, &pType)))  // NOLINT(clang-analyzer-cplusplus.Move)
             break;
 
         ToRelease<ICorDebugValue> pTypeValue;
@@ -708,7 +708,8 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
         valueKind = ValueIsClass;
     }
 
-    IfFailRet(FollowFields(pThread, pILFrame, pResultValue, valueKind, parts, nextPart, &pResultValue, evalFlags));
+    ICorDebugValue *pValue = pResultValue.Detach();
+    IfFailRet(FollowFields(pThread, pILFrame, pValue, valueKind, parts, nextPart, &pResultValue, evalFlags));
 
     *ppResult = pResultValue.Detach();
 

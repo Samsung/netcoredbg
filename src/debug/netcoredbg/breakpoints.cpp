@@ -259,7 +259,7 @@ bool Breakpoints::HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreak
         return false;
 
     m_entryBreakpoint->Activate(0);
-    m_entryBreakpoint.Release();
+    m_entryBreakpoint.Free();
     return true;
 }
 
@@ -271,7 +271,7 @@ void Breakpoints::DeleteAllBreakpoints()
     m_srcInitialBreakpoints.clear();
 
     if (m_entryBreakpoint)
-        m_entryBreakpoint.Release();
+        m_entryBreakpoint.Free();
     m_entryPoint = mdMethodDefNil;
 }
 

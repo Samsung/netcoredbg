@@ -493,7 +493,7 @@ HRESULT Variables::Evaluate(
         // Use simple name parser
         Status = m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags);
         if (FAILED(Status))
-            pResultValue.Release();
+            pResultValue.Free();
     }
 
     int typeId;
