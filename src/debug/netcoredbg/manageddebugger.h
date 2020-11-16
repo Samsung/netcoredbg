@@ -531,6 +531,7 @@ public:
 
     HRESULT Evaluate(ICorDebugProcess *pProcess,
         uint64_t frameId,
+        int threadId,
         const std::string &expression,
         Variable &variable,
         std::string &output);

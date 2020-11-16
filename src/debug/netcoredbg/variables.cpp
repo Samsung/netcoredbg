@@ -460,12 +460,13 @@ HRESULT ManagedDebugger::Evaluate(uint64_t frameId, const std::string &expressio
 {
     LogFuncEntry();
 
-    return m_variables.Evaluate(m_pProcess, frameId, expression, variable, output);
+    return m_variables.Evaluate(m_pProcess, frameId, GetLastStoppedThreadId(), expression, variable, output);
 }
 
 HRESULT Variables::Evaluate(
     ICorDebugProcess *pProcess,
     uint64_t frameId,
+    int threadId,
     const std::string &expression,
     Variable &variable,
     std::string &output)
@@ -481,8 +482,15 @@ HRESULT Variables::Evaluate(
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
     ToRelease<ICorDebugILFrame> pILFrame;
-    if (pFrame)
-        IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    if (!pFrame) {
+        stackFrame = StackFrame(threadId, 0, "");
+        frameId = stackFrame.id;
+        IfFailRet(pProcess->GetThread(stackFrame.GetThreadId(), &pThread));
+        IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
+    }
+
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
     ToRelease<ICorDebugValue> pResultValue;
 
