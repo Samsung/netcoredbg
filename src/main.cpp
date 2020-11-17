@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
+#ifdef __linux__
+#include <linux/limits.h>
+#endif
 
 #include "debugger/manageddebugger.h"
 #include "protocols/miprotocol.h"
@@ -14,6 +18,18 @@
 #include "protocols/cliprotocol.h"
 #include "utils/logger.h"
 #include "version.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#define PATH_MAX MAX_PATH
+static void setenv(const char* var, const char* val, int) { _putenv_s(var, val); }
+#define getpid() (GetCurrentProcessId())
+#endif
+
+#ifdef __unix__
+#include <sys/types.h>
+#include <unistd.h>
+#endif
 
 #include "buildinfo.cpp"
 
@@ -107,7 +123,6 @@ int main(int argc, char *argv[])
 
     bool engineLogging = false;
     std::string logFilePath;
-    std::string logType = "off";
 
     uint16_t serverPort = 0;
 
@@ -178,11 +193,23 @@ int main(int argc, char *argv[])
         }
         else if (strcmp(argv[i], "--log") == 0)
         {
-            logType = "file";
+            #ifdef _WIN32
+            static const char path_separator[] = "/\\";
+            #else
+            static const char path_separator[] = "/";
+            #endif
+
+            // somethat similar to basename(3)
+            char *s = argv[0] + strlen(argv[0]);
+            while (s > argv[0] && !strchr(path_separator, s[-1])) s--;
+
+            char tmp[PATH_MAX];
+            snprintf(tmp, sizeof(tmp), "%s/%s.%u.log", GetTempFolder().c_str(), s, getpid());
+            setenv("LOG_OUTPUT", tmp, 1);
         }
         else if (strstr(argv[i], "--log=") == argv[i])
         {
-            logType = argv[i] + strlen("--log=");
+            setenv("LOG_OUTPUT", argv[i] + strlen("--log="), 1);
         }
         else if (strcmp(argv[i], "--server") == 0)
         {
@@ -225,12 +252,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (Logger::setLogging(logType.c_str()))
-    {
-        fprintf(stderr, "Error: Invalid log type\n");
-        return EXIT_FAILURE;
-    }
-    Logger::log("Start logging");
+    LOGI("Start logging");
 
     ManagedDebugger debugger;
     std::unique_ptr<Protocol> protocol;
@@ -239,28 +261,28 @@ int main(int argc, char *argv[])
     {
         case InterpreterMI:
         {
-            Logger::log("InterpreterMI selected");
+            LOGI("InterpreterMI selected");
             if (engineLogging)
             {
                 fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
-                Logger::log("Error: Engine logging is only supported in VsCode interpreter mode.");
+                LOGI("Error: Engine logging is only supported in VsCode interpreter mode.");
                 return EXIT_FAILURE;
             }
             MIProtocol *miProtocol = new MIProtocol();
             protocol.reset(miProtocol);
             miProtocol->SetDebugger(&debugger);
-            Logger::log("SetDebugger for InterpreterMI");
+            LOGI("SetDebugger for InterpreterMI");
             if (!execFile.empty())
                 miProtocol->SetLaunchCommand(execFile, execArgs);
             break;
         }
         case InterpreterVSCode:
         {
-            Logger::log("InterpreterVSCode selected");
+            LOGI("InterpreterVSCode selected");
             VSCodeProtocol *vsCodeProtocol = new VSCodeProtocol();
             protocol.reset(vsCodeProtocol);
             vsCodeProtocol->SetDebugger(&debugger);
-            Logger::log("SetDebugger for InterpreterVSCode");
+            LOGI("SetDebugger for InterpreterVSCode");
             if (engineLogging)
                 vsCodeProtocol->EngineLogging(logFilePath);
             if (!execFile.empty())
@@ -269,17 +291,17 @@ int main(int argc, char *argv[])
         }
         case InterpreterCLI:
         {
-            Logger::log("InterpreterCLI selected");
+            LOGI("InterpreterCLI selected");
             if (engineLogging)
             {
                 fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
-                Logger::log("Error: Engine logging is only supported in VsCode interpreter mode.");
+                LOGI("Error: Engine logging is only supported in VsCode interpreter mode.");
                 return EXIT_FAILURE;
             }
             CLIProtocol *cliProtocol = new CLIProtocol();
             protocol.reset(cliProtocol);
             cliProtocol->SetDebugger(&debugger);
-            Logger::log("SetDebugger for InterpreterCLI");
+            LOGI("SetDebugger for InterpreterCLI");
             if (!execFile.empty())
                 cliProtocol->SetLaunchCommand(execFile, execArgs);
             break;
@@ -298,7 +320,7 @@ int main(int argc, char *argv[])
         ));
     }
 
-    Logger::log("pidDebugee = %d", pidDebuggee);
+    LOGI("pidDebugee %d", pidDebuggee);
     if (pidDebuggee != 0)
     {
         debugger.Initialize();

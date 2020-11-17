@@ -62,7 +62,7 @@ std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > Evaluator::RunEval(
     std::promise<std::unique_ptr<ToRelease<ICorDebugValue> > > p;
     auto f = p.get_future();
     if (!f.valid()) {
-        Logger::levelLog(LOG_ERROR, "get_future() returns not valid promise object");
+        LOGE("get_future() returns not valid promise object");
     }
 
     HRESULT res;
@@ -72,7 +72,7 @@ std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > Evaluator::RunEval(
     ToRelease<ICorDebugProcess> pProcess;
     res = pThread->GetProcess(&pProcess);
     if (FAILED(res)) {
-        Logger::levelLog(LOG_ERROR, "GetProcess() failed, %0x", res);
+        LOGE("GetProcess() failed, %0x", res);
         return f;
     }
 
@@ -87,7 +87,7 @@ std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > Evaluator::RunEval(
 
     res = pProcess->Continue(0);
     if (FAILED(res)) {
-        Logger::levelLog(LOG_ERROR, "Continue() failed, %0x", res);
+        LOGE("Continue() failed, %0x", res);
         m_evalResults.erase(threadId);
     }
 
@@ -128,7 +128,7 @@ HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
         std::future_status timeoutStatus = f.wait_for(std::chrono::milliseconds(5000));
         if (timeoutStatus == std::future_status::timeout)
         {
-            Logger::levelLog(LOG_WARN, "Evaluation timed out.");
+            LOGW("Evaluation timed out.");
 
             // NOTE
             // Call ICorDebugEval::Abort() and ICorDebugEval2::RudeAbort() during process execution is allowed, we are safe here.
@@ -210,37 +210,37 @@ HRESULT Evaluator::EvalFunction(
 
     switch (res) {
         case CORDBG_E_ILLEGAL_IN_OPTIMIZED_CODE: {
-            Logger::log("ERROR: Can not evaluate in optimized code");
+            LOGE("ERROR: Can not evaluate in optimized code");
             return res;
         }
         break;
 
         case CORDBG_E_APPDOMAIN_MISMATCH: {
-            Logger::log("ERROR: Object is in wrong AppDomain");
+            LOGE("ERROR: Object is in wrong AppDomain");
             return res;
         }
         break;
 
         case CORDBG_E_FUNCTION_NOT_IL: {
-            Logger::log("ERROR: Function does not have IL code");
+            LOGE("ERROR: Function does not have IL code");
             return res;
         }
         break;
 
         case CORDBG_E_ILLEGAL_IN_STACK_OVERFLOW: {
-            Logger::log("ERROR: Can not evaluate after stack overflow");
+            LOGE("ERROR: Can not evaluate after stack overflow");
             return res;
         }
         break;
 
         case CORDBG_E_FUNC_EVAL_BAD_START_POINT: {
-            Logger::log("ERROR: Func eval cannot work. Bad starting point");
+            LOGE("ERROR: Func eval cannot work. Bad starting point");
             return res;
         }
         break;
 
         case CORDBG_E_ILLEGAL_AT_GC_UNSAFE_POINT: {
-            Logger::log("ERROR: Thread is in GC unsafe point");
+            LOGE("ERROR: Thread is in GC unsafe point");
             // INFO: Skip this evaluations as unsafe state.
             //  we can continue this thread for change state from unsafe to safe,
             //  but after running thread we can get a new unhanded exception and

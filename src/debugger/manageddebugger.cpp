@@ -62,7 +62,7 @@ private:
         auto ret = dlsym(RTLD_NEXT, "waitpid");
         if (!ret)
         {
-            LogLevelWithLine(LOG_ERROR, "Could not find original function waitpid\n");
+            LOGE("Could not find original function waitpid");
             abort();
         }
         original = reinterpret_cast<Signature>(ret);
@@ -124,7 +124,7 @@ extern "C" pid_t waitpid(pid_t pid, int *status, int options) noexcept
         }
         else if (WIFSIGNALED(*status))
         {
-            LogLevelWithLine(LOG_WARN, "Process terminated without exiting; can't get exit code. Killed by signal %d. Assuming EXIT_FAILURE.\n", WTERMSIG(*status));
+            LOGW("Process terminated without exiting; can't get exit code. Killed by signal %d. Assuming EXIT_FAILURE.", WTERMSIG(*status));
             hook::waitpid.SetExitCode(pid, EXIT_FAILURE);
         }
     }
@@ -615,7 +615,7 @@ public:
                 ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                 if (evalThreadId == currentThreadId)
                 {
-                    Logger::levelLog(LOG_INFO, "Complete eval threadid = '%d'", int(currentThreadId));
+                    LOGI("Complete eval threadid = '%d'", int(currentThreadId));
                     m_debugger.m_evaluator.pop_eval_queue();
 
                     if (m_debugger.m_evaluator.is_empty_eval_queue())
@@ -633,7 +633,7 @@ public:
                 }
                 else
                 {
-                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
+                    LOGE("Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
                 }
             }
             return S_OK;
@@ -670,7 +670,7 @@ public:
                 if (evalThreadId == currentThreadId)
                 {
                     m_debugger.m_evaluator.pop_eval_queue();
-                    Logger::levelLog(LOG_INFO, "Eval exception, threadid = '%d'", int(currentThreadId));
+                    LOGI("Eval exception, threadid = '%d'", int(currentThreadId));
 
                     if (m_debugger.m_evaluator.is_empty_eval_queue())
                     {
@@ -687,7 +687,7 @@ public:
                 }
                 else
                 {
-                    Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
+                    LOGE("Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
                 }
             }
 
@@ -710,7 +710,7 @@ public:
 
             if (m_debugger.m_evaluator.IsEvalRunning())
             {
-                Logger::levelLog(LOG_WARN, "The target process exited while evaluating the function.");
+                LOGW("The target process exited while evaluating the function.");
             }
 
             m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
@@ -1075,7 +1075,7 @@ public:
             ThreadId threadId(getThreadId(pThread));
             // We produce DEBUG_EXCEPTION_INTERCEPTED from Exception() callback.
             // TODO: we should waiting this unwinding on exit().
-            Logger::levelLog(LOG_INFO, "ExceptionUnwind:threadId:%d,dwEventType:%d,dwFlags:%d", int(threadId), dwEventType, dwFlags);
+            LOGI("ExceptionUnwind:threadId:%d,dwEventType:%d,dwFlags:%d", int(threadId), dwEventType, dwFlags);
             return E_NOTIMPL;
         }
 
@@ -1359,16 +1359,16 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
             // TODO: need function for printing coreCLR errors by error code
             switch (res) {
                 case CORDBG_E_PROCESS_NOT_SYNCHRONIZED:
-                    Logger::levelLog(LOG_ERROR, "Setting thread state failed. Process not synchronized:'%0x'", res);
+                    LOGE("Setting thread state failed. Process not synchronized:'%0x'", res);
                 break;
                 case CORDBG_E_PROCESS_TERMINATED:
-                    Logger::levelLog(LOG_ERROR, "Setting thread state failed. Process was terminated:'%0x'", res);
+                    LOGE("Setting thread state failed. Process was terminated:'%0x'", res);
                 break;
                 case CORDBG_E_OBJECT_NEUTERED:
-                    Logger::levelLog(LOG_ERROR, "Setting thread state failed. Object has been neutered(it's in a zombie state):'%0x'", res);
+                    LOGE("Setting thread state failed. Object has been neutered(it's in a zombie state):'%0x'", res);
                 break;
                 default:
-                    Logger::levelLog(LOG_ERROR, "SetAllThreadsDebugState() %0x", res);
+                    LOGE("SetAllThreadsDebugState() %0x", res);
                 break;
             }
         }
@@ -1376,16 +1376,16 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     if ((res = m_pProcess->Continue(0)) != S_OK) {
         switch (res) {
         case CORDBG_E_SUPERFLOUS_CONTINUE:
-            Logger::levelLog(LOG_ERROR, "Continue failed. Returned from a call to Continue that was not matched with a stopping event:'%0x'", res);
+            LOGE("Continue failed. Returned from a call to Continue that was not matched with a stopping event:'%0x'", res);
             break;
         case CORDBG_E_PROCESS_TERMINATED:
-            Logger::levelLog(LOG_ERROR, "Continue failed. Process was terminated:'%0x'", res);
+            LOGE("Continue failed. Process was terminated:'%0x'", res);
             break;
         case CORDBG_E_OBJECT_NEUTERED:
-            Logger::levelLog(LOG_ERROR, "Continue failed. Object has been neutered(it's in a zombie state):'%0x'", res);
+            LOGE("Continue failed. Object has been neutered(it's in a zombie state):'%0x'", res);
             break;
         default:
-            Logger::levelLog(LOG_ERROR, "Continue() %0x", res);
+            LOGE("Continue() %0x", res);
             break;
         }
     }
@@ -1894,7 +1894,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
         goto failed;
 
     if ((res = pThread->GetCurrentException(&pExceptionValue)) && FAILED(res)) {
-        Logger::levelLog(LOG_ERROR, "GetCurrentException() failed, %0x", res);
+        LOGE("GetCurrentException() failed, %0x", res);
         goto failed;
     }
 

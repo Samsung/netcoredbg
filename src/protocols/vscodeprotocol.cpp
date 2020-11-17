@@ -456,7 +456,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             env = arguments.at("env").get<map<string, string> >();
         }
         catch (std::exception &ex) {
-            Logger::levelLog(LOG_INFO, "'%s'", ex.what());
+            LOGI("exception '%s'", ex.what());
             // If we catch inconsistent state on the interrupted reading
             env.clear();
         }
@@ -783,14 +783,14 @@ void VSCodeProtocol::CommandLoop()
         }
         catch (nlohmann::detail::exception& ex)
         {
-            Logger::levelLog(LOG_ERROR, "JSON error: %s", ex.what());
+            LOGE("JSON error: %s", ex.what());
             response["type"] = "response";
             response["success"] = false;
             response["message"] = std::string("can't parse: ") + ex.what();
         }
         catch (bad_format& ex)
         {
-            Logger::levelLog(LOG_ERROR, "JSON error: %s", ex.what());
+            LOGE("JSON error: %s", ex.what());
             response["type"] = "response";
             response["success"] = false;
             response["message"] = std::string("can't parse: ") + ex.what();

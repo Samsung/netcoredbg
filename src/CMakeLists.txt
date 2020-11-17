@@ -1,5 +1,8 @@
 # Locate dbgshim library
 
+# application name for tizens logger
+add_definitions(-DLOG_TAG="NETCOREDBG")
+
 if (NOT DBGSHIM_RUNTIME_DIR STREQUAL "")
     add_definitions(-DDBGSHIM_RUNTIME_DIR="${DBGSHIM_RUNTIME_DIR}")
 else()
@@ -92,7 +95,6 @@ set(netcoredbg_SRC
     protocols/tokenizer.cpp
     protocols/vscodeprotocol.cpp
     utils/utf.cpp
-    utils/logger.cpp
     buildinfo.cpp
     errormessage.cpp
     main.cpp
@@ -109,6 +111,11 @@ if (WIN32)
     # fix issue with std::numeric_limits<T>::max() and std::max()
     add_definitions(-DNOMINMAX)
 endif()
+
+if (NOT CLR_CMAKE_TARGET_TIZEN_LINUX)
+    list(APPEND netcoredbg_SRC utils/logger.cpp)
+endif()
+
 
 add_executable(netcoredbg ${netcoredbg_SRC})
 

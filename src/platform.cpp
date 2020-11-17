@@ -17,6 +17,7 @@
 #include <map>
 
 #ifdef FEATURE_PAL
+#include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
 #include <dlfcn.h>
@@ -804,15 +805,12 @@ std::string GetTempFolder()
     CHAR path[MAX_PATH];
     DWORD len = GetTempPathA(MAX_PATH - 1, path);
     return std::string(path, len);
-#elif __APPLE__
+#else
     char *pPath = getenv("TMPDIR");
-
     if (pPath != nullptr)
-        return std::string(pPath);
+        return pPath;
     else
-        return "";
-#else //WIN32
-    return "/tmp/";
+        return P_tmpdir;
 #endif // WIN32
 }
 

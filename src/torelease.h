@@ -89,7 +89,7 @@ private:
 };
 
 #ifndef IfFailRet
-#define IfFailRet(EXPR) do { Status = (EXPR); if(FAILED(Status)) { LogLevelWithLine(LOG_ERROR, "%s : 0x%08x", #EXPR, Status); return (Status); } } while (0)
+#define IfFailRet(EXPR) do { Status = (EXPR); if(FAILED(Status)) { LOGE("%s : 0x%08x", #EXPR, Status); return (Status); } } while (0)
 #endif
 
 #ifndef _countof
