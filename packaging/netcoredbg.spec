@@ -72,6 +72,7 @@ export CSVER=$(ls /nuget/microsoft.codeanalysis.common.*.nupkg | sort -n | tail 
 
 cp packaging/microsoft.codeanalysis.scripting.common.$CSVER.nupkg packaging/pkgs/
 cp packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nupkg packaging/pkgs/
+cp packaging/nuget.xml tools/generrmsg/nuget.xml
 
 %build
 export CFLAGS=" --target=%{_host}"

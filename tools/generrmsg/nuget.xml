@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration/>
+<!-- This file contains an empty configuration for the regular local build. For GBS build it will be replaced with packaging/nuget.repo -->
