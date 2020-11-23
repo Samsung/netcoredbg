@@ -304,7 +304,7 @@ void VSCodeProtocol::EmitExecEvent(PID pid, const std::string& argv0)
     json body;
 
     body["name"] = argv0;
-    body["systemProcessId"] = unsigned(pid);
+    body["systemProcessId"] = DWORD(pid);
     body["isLocalProcess"] = true;
     body["startMethod"] = "launch";
 
