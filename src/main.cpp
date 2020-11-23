@@ -8,11 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "manageddebugger.h"
-#include "miprotocol.h"
-#include "vscodeprotocol.h"
-#include "cliprotocol.h"
-#include "logger.h"
+#include "debugger/manageddebugger.h"
+#include "protocols/miprotocol.h"
+#include "protocols/vscodeprotocol.h"
+#include "protocols/cliprotocol.h"
+#include "utils/logger.h"
 #include "version.h"
 
 #include "buildinfo.cpp"

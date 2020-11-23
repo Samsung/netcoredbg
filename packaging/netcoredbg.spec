@@ -99,14 +99,14 @@ cmake ../netcoredbg \
 
 make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 
-%dotnet_build -s ../netcoredbg/packaging/pkgs ../netcoredbg/src/debug/netcoredbg
+%dotnet_build -s ../netcoredbg/packaging/pkgs ../netcoredbg/src/managed
 
 %install
 cd build
 %make_install
 mkdir -p %{buildroot}%{sdk_install_prefix}
 mv %{buildroot}%{install_prefix}/netcoredbg %{buildroot}%{sdk_install_prefix}
-install -p -m 644 ../netcoredbg/src/debug/netcoredbg/bin/*/*/SymbolReader.dll %{buildroot}%{sdk_install_prefix}
+install -p -m 644 ../netcoredbg/src/managed/bin/*/*/ManagedPart.dll %{buildroot}%{sdk_install_prefix}
 
 export CSVER=$(ls /nuget/microsoft.codeanalysis.common.*.nupkg | sort -n | tail -1 | cut -d "." -f4-6)
 export SYSCODEPAGES=$(ls /nuget/system.text.encoding.codepages.4.*.nupkg | sort -n | tail -1)

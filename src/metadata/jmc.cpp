@@ -2,17 +2,17 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "modules.h"
+#include "metadata/modules.h"
 
 #include <string>
 #include <vector>
 #include <list>
 #include <unordered_set>
 
-#include "typeprinter.h"
+#include "metadata/typeprinter.h"
 #include "platform.h"
-#include "symbolreader.h"
-#include "cputil.h"
+#include "managed/interop.h"
+#include "utils/utf.h"
 
 
 static const char *g_nonUserCode = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";

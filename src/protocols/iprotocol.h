@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "debugger.h"
+#include "debugger/debugger.h"
 
 enum BreakType
 {

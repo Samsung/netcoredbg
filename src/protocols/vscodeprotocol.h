@@ -13,7 +13,7 @@
 #include "json/json.hpp"
 #pragma GCC diagnostic pop
 
-#include "debugger.h"
+#include "debugger/debugger.h"
 
 namespace VSCodeExceptionBreakModeKeyWord
 {

@@ -7,7 +7,7 @@
 #pragma once
 
 #include <assert.h>
-#include "logger.h"
+#include "utils/logger.h"
 
 // This class acts a smart pointer which calls the Release method on any object
 // you place in it when the ToRelease class falls out of scope.  You may use it

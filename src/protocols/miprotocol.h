@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "debugger.h"
+#include "debugger/debugger.h"
 #include "iprotocol.h"
 
 

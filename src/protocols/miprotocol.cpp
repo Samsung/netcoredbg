@@ -2,10 +2,10 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "frames.h"
+#include "debugger/frames.h"
 #include "platform.h"
 #include "torelease.h"
-#include "miprotocol.h"
+#include "protocols/miprotocol.h"
 #include "tokenizer.h"
 
 #include <sstream>
@@ -14,7 +14,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include "logger.h"
+#include "utils/logger.h"
 
 using namespace std::placeholders;
 using std::unordered_set;

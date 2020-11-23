@@ -2,12 +2,12 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "frames.h"
+#include "debugger/frames.h"
 #include "platform.h"
 #include "torelease.h"
-#include "cliprotocol.h"
+#include "protocols/cliprotocol.h"
 #include "linenoise.h"
-#include "cputil.h"
+#include "utils/utf.h"
 
 #include <sstream>
 #include <functional>
@@ -16,7 +16,7 @@
 #include <iomanip>
 #include <csignal>
 
-#include "logger.h"
+#include "utils/logger.h"
 #include "tokenizer.h"
 
 using namespace std::placeholders;

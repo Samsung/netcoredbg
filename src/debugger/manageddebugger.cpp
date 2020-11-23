@@ -13,15 +13,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include "manageddebugger.h"
+#include "debugger/manageddebugger.h"
 
 #include "valueprint.h"
-#include "symbolreader.h"
-#include "cputil.h"
+#include "managed/interop.h"
+#include "utils/utf.h"
 #include "platform.h"
-#include "typeprinter.h"
-#include "frames.h"
-#include "logger.h"
+#include "metadata/typeprinter.h"
+#include "debugger/frames.h"
+#include "utils/logger.h"
 
 using std::string;
 using std::vector;

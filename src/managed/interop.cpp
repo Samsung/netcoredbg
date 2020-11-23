@@ -4,18 +4,18 @@
 
 // Copyright (c) 2017 Samsung Electronics Co., LTD
 
-#include "symbolreader.h"
+#include "managed/interop.h"
 
 #include <coreclrhost.h>
 #include <thread>
 
-#include "modules.h"
+#include "metadata/modules.h"
 #include "platform.h"
 #include "torelease.h"
-#include "cputil.h"
+#include "utils/utf.h"
 
 
-static const char *SymbolReaderDllName = "SymbolReader";
+static const char *SymbolReaderDllName = "ManagedPart";
 static const char *SymbolReaderClassName = "SOS.SymbolReader";
 
 #ifdef FEATURE_PAL

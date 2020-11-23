@@ -2,7 +2,7 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "manageddebugger.h"
+#include "debugger/manageddebugger.h"
 
 #include <sstream>
 #include <mutex>
@@ -11,8 +11,8 @@
 #include <vector>
 #include <list>
 
-#include "cputil.h"
-#include "typeprinter.h"
+#include "utils/utf.h"
+#include "metadata/typeprinter.h"
 #include "valueprint.h"
 
 using std::string;

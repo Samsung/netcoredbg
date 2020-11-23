@@ -10,7 +10,7 @@
 #include <vector>
 #include <list>
 
-#include "debugger.h"
+#include "debugger/debugger.h"
 #include "iprotocol.h"
 
 

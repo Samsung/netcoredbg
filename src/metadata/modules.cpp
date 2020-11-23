@@ -2,17 +2,17 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "modules.h"
+#include "metadata/modules.h"
 
 #include <sstream>
 #include <vector>
 #include <iomanip>
 #include <algorithm>
 
-#include "symbolreader.h"
+#include "managed/interop.h"
 #include "platform.h"
-#include "cputil.h"
-#include "typeprinter.h"
+#include "utils/utf.h"
+#include "metadata/typeprinter.h"
 
 
 bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)

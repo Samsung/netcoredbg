@@ -3,7 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include <regex>
-#include "manageddebugger.h"
+#include "debugger/manageddebugger.h"
 
 #include <unordered_set>
 #include <vector>
@@ -11,14 +11,14 @@
 #include <algorithm>
 #include <sstream>
 
-#include "typeprinter.h"
+#include "metadata/typeprinter.h"
 #include "valueprint.h"
 #include "valuewrite.h"
-#include "frames.h"
-#include "symbolreader.h"
-#include "logger.h"
-#include "cputil.h"
-#include "protocol.h"
+#include "debugger/frames.h"
+#include "managed/interop.h"
+#include "utils/logger.h"
+#include "utils/utf.h"
+#include "protocols/protocol.h"
 
 using std::string;
 using std::vector;

@@ -12,10 +12,10 @@
 
 #include <arrayholder.h>
 
-#include "typeprinter.h"
+#include "metadata/typeprinter.h"
 #include "torelease.h"
-#include "cputil.h"
-#include "symbolreader.h"
+#include "utils/utf.h"
+#include "managed/interop.h"
 
 using std::string;
 

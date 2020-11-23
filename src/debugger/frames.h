@@ -11,7 +11,7 @@
 #pragma GCC diagnostic pop
 
 #include <vector>
-#include "protocol.h"
+#include "protocols/protocol.h"
 
 struct Thread;
 

@@ -3,9 +3,9 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
-#include "modules.h"
-#include "debugger.h"
-#include "protocol.h"
+#include "metadata/modules.h"
+#include "debugger/debugger.h"
+#include "protocols/protocol.h"
 
 #include <unordered_map>
 #include <unordered_set>

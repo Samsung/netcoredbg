@@ -19,7 +19,7 @@
 #include <mutex>
 #include <memory>
 
-#include "protocol.h"
+#include "protocols/protocol.h"
 #include "torelease.h"
 
 

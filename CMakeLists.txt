@@ -44,7 +44,7 @@ if (NOT "${DOTNET_DIR}" STREQUAL "")
 endif()
 
 add_subdirectory(third_party/linenoise-ng)
-add_subdirectory(src/debug/netcoredbg)
+add_subdirectory(src)
 
 include(getgitrevisiondescription.cmake)
 
@@ -88,5 +88,5 @@ get_git_subject_date_revision_dir(BUILD_CORECLR_GIT_SUBJECT BUILD_CORECLR_GIT_DA
 execute_process(COMMAND date OUTPUT_VARIABLE BUILD_NETCOREDBG_DATE
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/debug/netcoredbg/buildinfo.cpp.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/src/debug/netcoredbg/buildinfo.cpp" @ONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/buildinfo.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/src/buildinfo.cpp" @ONLY)

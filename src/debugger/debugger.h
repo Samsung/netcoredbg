@@ -15,7 +15,7 @@
 #include <windows.h>
 #endif
 
-#include "protocol.h"
+#include "protocols/protocol.h"
 
 class Debugger
 {

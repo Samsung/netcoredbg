@@ -13,7 +13,7 @@
 #include <cordebug.h>
 #pragma GCC diagnostic pop
 
-#include "manageddebugger.h"
+#include "debugger/manageddebugger.h"
 
 HRESULT WriteValue(
     ICorDebugValue *pValue,

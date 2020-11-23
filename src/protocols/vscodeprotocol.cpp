@@ -16,11 +16,11 @@
 #include <winerror.h>
 #pragma GCC diagnostic pop
 
-#include "vscodeprotocol.h"
+#include "protocols/vscodeprotocol.h"
 
 #include "torelease.h"
-#include "cputil.h"
-#include "logger.h"
+#include "utils/utf.h"
+#include "utils/logger.h"
 
 using std::string;
 using std::vector;

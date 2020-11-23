@@ -15,9 +15,9 @@
 #include <arrayholder.h>
 
 #include "torelease.h"
-#include "cputil.h"
-#include "typeprinter.h"
-#include "symbolreader.h"
+#include "utils/utf.h"
+#include "metadata/typeprinter.h"
+#include "managed/interop.h"
 
 
 HRESULT WriteValue(

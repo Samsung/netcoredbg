@@ -2,7 +2,7 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "typeprinter.h"
+#include "metadata/typeprinter.h"
 
 #include <sstream>
 #include <unordered_map>
@@ -13,7 +13,7 @@
 typedef LPCSTR  LPCUTF8;
 #include "sos_md.h"
 
-#include "cputil.h"
+#include "utils/utf.h"
 
 // <TODO> Get rid of these!  Don't use them any more!</TODO>
 #define MAX_CLASSNAME_LENGTH    1024

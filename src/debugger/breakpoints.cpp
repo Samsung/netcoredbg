@@ -2,16 +2,16 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "manageddebugger.h"
+#include "debugger/manageddebugger.h"
 
 #include <mutex>
 #include <unordered_set>
 #include <fstream>
 #include <algorithm>
-#include "typeprinter.h"
-#include "logger.h"
-#include "cputil.h"
-#include "symbolreader.h"
+#include "metadata/typeprinter.h"
+#include "utils/logger.h"
+#include "utils/utf.h"
+#include "managed/interop.h"
 
 using std::string;
 

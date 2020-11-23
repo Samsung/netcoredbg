@@ -73,31 +73,31 @@ add_custom_command(
 )
 
 set(netcoredbg_SRC
-    main.cpp
-    manageddebugger.cpp
-    symbolreader.cpp
-    platform.cpp
-    protocol.cpp
-    breakpoints.cpp
-    modules.cpp
-    variables.cpp
-    typeprinter.cpp
-    valuewalk.cpp
-    valueprint.cpp
-    miprotocol.cpp
-    vscodeprotocol.cpp
-    frames.cpp
-    jmc.cpp
-    cputil.cpp
-    expr.cpp
-    valuewrite.cpp
-    logger.cpp
+    debugger/breakpoints.cpp
+    debugger/expr.cpp
+    debugger/frames.cpp
+    debugger/manageddebugger.cpp
+    debugger/valueprint.cpp
+    debugger/valuewalk.cpp
+    debugger/valuewrite.cpp
+    debugger/variables.cpp
+    managed/interop.cpp
+    metadata/jmc.cpp
+    metadata/modules.cpp
+    metadata/typeprinter.cpp
+    protocols/cliprotocol.cpp
+    protocols/iprotocol.cpp
+    protocols/miprotocol.cpp
+    protocols/protocol.cpp
+    protocols/tokenizer.cpp
+    protocols/vscodeprotocol.cpp
+    utils/utf.cpp
+    utils/logger.cpp
     buildinfo.cpp
-    cliprotocol.cpp
-    iprotocol.cpp
-    tokenizer.cpp
     errormessage.cpp
-)
+    main.cpp
+    platform.cpp
+    )
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -128,24 +128,24 @@ if (DBGSHIM_LOCATION)
     install(FILES ${DBGSHIM_LOCATION} DESTINATION ${CMAKE_INSTALL_PREFIX})
 endif()
 
-# Build managed part of the debugger (SymbolReader.dll)
+# Build managed part of the debugger (ManagedPart.dll)
 
 if (BUILD_MANAGED)
-    set(SYMBOLREADER_PROJECT ${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.csproj)
-    set(SYMBOLREADER_DLL_NAME SymbolReader.dll)
-    set(DOTNET_BUILD_RESULT ${CMAKE_CURRENT_BINARY_DIR}/${SYMBOLREADER_DLL_NAME})
+    set(MANAGEDPART_PROJECT ${CMAKE_CURRENT_SOURCE_DIR}/managed/ManagedPart.csproj)
+    set(MANAGEDPART_DLL_NAME ManagedPart.dll)
+    set(DOTNET_BUILD_RESULT ${CMAKE_CURRENT_BINARY_DIR}/${MANAGEDPART_DLL_NAME})
 
     find_program(DOTNETCLI dotnet PATHS "${DOTNET_DIR}" ENV PATH NO_DEFAULT_PATH)
 
     add_custom_command(OUTPUT ${DOTNET_BUILD_RESULT}
-      COMMAND ${DOTNETCLI} publish ${SYMBOLREADER_PROJECT} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/
+      COMMAND ${DOTNETCLI} publish ${MANAGEDPART_PROJECT} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/
       WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/SymbolReader.cs" "${SYMBOLREADER_PROJECT}"
-      COMMENT "Compiling ${SYMBOLREADER_DLL_NAME}"
+      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/managed/SymbolReader.cs" "${MANAGEDPART_PROJECT}"
+      COMMENT "Compiling ${MANAGEDPART_DLL_NAME}"
       VERBATIM
     )
 
-    add_custom_target(symbolreader_dll ALL DEPENDS ${DOTNET_BUILD_RESULT})
+    add_custom_target(managedpart_dll ALL DEPENDS ${DOTNET_BUILD_RESULT})
 
     # Copy dlls
     set(ROSLYN_DLLS
