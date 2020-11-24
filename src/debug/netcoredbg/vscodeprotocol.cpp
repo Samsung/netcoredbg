@@ -158,9 +158,6 @@ void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
         case StopEntry:
             body["reason"] = "entry";
             break;
-        case StopBreak:
-            body["reason"] = "Debugger.Break";
-            break;
     }
 
     body["description"] = event.description;
