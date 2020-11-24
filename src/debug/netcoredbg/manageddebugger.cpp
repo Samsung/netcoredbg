@@ -652,7 +652,8 @@ public:
                     {
                         pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
                     }
-                    else {
+                    else
+                    {
                         evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                         ToRelease<ICorDebugThread> pThreadEval;
                         IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
@@ -660,7 +661,8 @@ public:
                         IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
                     }
                 }
-                else {
+                else
+                {
                     Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
                 }
             }
@@ -704,7 +706,8 @@ public:
                     {
                         pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
                     }
-                    else {
+                    else
+                    {
                         evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                         ToRelease<ICorDebugThread> pThreadEval;
                         IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
@@ -712,7 +715,8 @@ public:
                         IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
                     }
                 }
-                else {
+                else
+                {
                     Logger::levelLog(LOG_ERROR, "Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
                 }
             }
