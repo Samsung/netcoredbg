@@ -58,11 +58,11 @@ HRESULT WriteValue(
     auto renamed = cor2name.find(corType);
     if (renamed != cor2name.end())
     {
-        IfFailRet(SymbolReader::ParseExpression(value, renamed->second, data, errorText));
+        IfFailRet(ManagedPart::ParseExpression(value, renamed->second, data, errorText));
     }
     else if (corType == ELEMENT_TYPE_STRING)
     {
-        IfFailRet(SymbolReader::ParseExpression(value, "System.String", data, errorText));
+        IfFailRet(ManagedPart::ParseExpression(value, "System.String", data, errorText));
 
         ToRelease<ICorDebugValue> pNewString;
         IfFailRet(evaluator.CreateString(pThread, data, &pNewString));
@@ -88,7 +88,7 @@ HRESULT WriteValue(
             errorText = "Unable to set value of type '" + typeName + "'";
             return E_FAIL;
         }
-        IfFailRet(SymbolReader::ParseExpression(value, "System.Decimal", data, errorText));
+        IfFailRet(ManagedPart::ParseExpression(value, "System.Decimal", data, errorText));
     }
     else
     {

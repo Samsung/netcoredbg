@@ -25,14 +25,14 @@
 namespace netcoredbg
 {
 
-class SymbolReader;
+class ManagedPart;
 typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
 
 class Modules
 {
     struct ModuleInfo
     {
-        std::unique_ptr<SymbolReader> symbols;
+        std::unique_ptr<ManagedPart> managedPart;
         ToRelease<ICorDebugModule> module;
 
         ModuleInfo(ModuleInfo &&) = default;
@@ -42,7 +42,7 @@ class Modules
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
 
-    static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader);
+    static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, ManagedPart *managedPart);
     static HRESULT ResolveMethodInModule(
         ICorDebugModule *pModule,
         const std::string &funcName,
@@ -55,7 +55,7 @@ class Modules
     // map of source file name to list of source full paths from loaded assemblies,
     // need it order to resolve source full path by requested breakpoint relative source path
     std::unordered_map<std::string, std::list<std::string> > m_sourcesFullPaths;
-    HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, SymbolReader *symbolReader);
+    HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, ManagedPart *managedPart);
     HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename);
 #ifdef WIN32
     // all internal breakpoint routine are case sensitive, proper source full name for Windows must be used (same as in module)
@@ -129,7 +129,7 @@ public:
         ULONG32 *pIlEnd);
 
     HRESULT GetSequencePointByILOffset(
-        SymbolReader *symbols,
+        ManagedPart *managedPart,
         mdMethodDef methodToken,
         ULONG32 &ilOffset,
         SequencePoint *sequencePoint);

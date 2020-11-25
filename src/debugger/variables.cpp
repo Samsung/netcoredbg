@@ -504,7 +504,7 @@ HRESULT Variables::Evaluate(
     // Use Roslyn for expression evaluation
     if (!pResultValue)
     {
-    IfFailRet(SymbolReader::EvalExpression(
+    IfFailRet(ManagedPart::EvalExpression(
         expression, output, &typeId, &pResultValue,
         [&](void *corValue, const std::string &name, int *typeId, void **data) -> bool
     {

@@ -29,8 +29,13 @@ static void RaiseException(DWORD dwExceptionCode,
 namespace netcoredbg
 {
 
-const char SymbolReaderDllName[] = "ManagedPart";
-const char SymbolReaderClassName[] = "SOS.SymbolReader";
+const char ManagedPartDllName[] = "ManagedPart";
+const char SymbolReaderClassName[] = "NetCoreDbg.SymbolReader";
+const char EvaluationClassName[] = "NetCoreDbg.Evaluation";
+const char UtilsClassName[] = "NetCoreDbg.Utils";
+
+namespace WinAPI
+{
 
 #ifdef FEATURE_PAL
 
@@ -160,38 +165,43 @@ void PAL_CoTaskMemFree(LPVOID pt)
     free(pt);
 }
 
-SysAllocStringLen_t SymbolReader::sysAllocStringLen = PAL_SysAllocStringLen;
-SysFreeString_t SymbolReader::sysFreeString = PAL_SysFreeString;
-SysStringLen_t SymbolReader::sysStringLen = PAL_SysStringLen;
-CoTaskMemAlloc_t SymbolReader::coTaskMemAlloc = PAL_CoTaskMemAlloc;
-CoTaskMemFree_t SymbolReader::coTaskMemFree = PAL_CoTaskMemFree;
+SysAllocStringLen_t sysAllocStringLen = PAL_SysAllocStringLen;
+SysFreeString_t sysFreeString = PAL_SysFreeString;
+SysStringLen_t sysStringLen = PAL_SysStringLen;
+CoTaskMemAlloc_t coTaskMemAlloc = PAL_CoTaskMemAlloc;
+CoTaskMemFree_t coTaskMemFree = PAL_CoTaskMemFree;
 
 #else
 
-SysAllocStringLen_t SymbolReader::sysAllocStringLen = SysAllocStringLen;
-SysFreeString_t SymbolReader::sysFreeString = SysFreeString;
-SysStringLen_t SymbolReader::sysStringLen = SysStringLen;
-CoTaskMemAlloc_t SymbolReader::coTaskMemAlloc = CoTaskMemAlloc;
-CoTaskMemFree_t SymbolReader::coTaskMemFree = CoTaskMemFree;
+SysAllocStringLen_t sysAllocStringLen = SysAllocStringLen;
+SysFreeString_t sysFreeString = SysFreeString;
+SysStringLen_t sysStringLen = SysStringLen;
+CoTaskMemAlloc_t coTaskMemAlloc = CoTaskMemAlloc;
+CoTaskMemFree_t coTaskMemFree = CoTaskMemFree;
 
 #endif // FEATURE_PAL
 
-std::string SymbolReader::coreClrPath;
-LoadSymbolsForModuleDelegate SymbolReader::loadSymbolsForModuleDelegate;
-DisposeDelegate SymbolReader::disposeDelegate;
-ResolveSequencePointDelegate SymbolReader::resolveSequencePointDelegate;
-GetLocalVariableNameAndScope SymbolReader::getLocalVariableNameAndScopeDelegate;
-GetSequencePointByILOffsetDelegate SymbolReader::getSequencePointByILOffsetDelegate;
-GetStepRangesFromIPDelegate SymbolReader::getStepRangesFromIPDelegate;
-GetSequencePointsDelegate SymbolReader::getSequencePointsDelegate;
-ParseExpressionDelegate SymbolReader::parseExpressionDelegate = nullptr;
-EvalExpressionDelegate SymbolReader::evalExpressionDelegate = nullptr;
-RegisterGetChildDelegate SymbolReader::registerGetChildDelegate = nullptr;
-StringToUpperDelegate SymbolReader::stringToUpperDelegate = nullptr;
+} // namespace WinAPI
 
-const int SymbolReader::HiddenLine = 0xfeefee;
+std::string ManagedPart::coreClrPath;
+LoadSymbolsForModuleDelegate ManagedPart::loadSymbolsForModuleDelegate;
+DisposeDelegate ManagedPart::disposeDelegate;
+ResolveSequencePointDelegate ManagedPart::resolveSequencePointDelegate;
+GetLocalVariableNameAndScope ManagedPart::getLocalVariableNameAndScopeDelegate;
+GetSequencePointByILOffsetDelegate ManagedPart::getSequencePointByILOffsetDelegate;
+GetStepRangesFromIPDelegate ManagedPart::getStepRangesFromIPDelegate;
+GetSequencePointsDelegate ManagedPart::getSequencePointsDelegate;
+ParseExpressionDelegate ManagedPart::parseExpressionDelegate = nullptr;
+EvalExpressionDelegate ManagedPart::evalExpressionDelegate = nullptr;
+RegisterGetChildDelegate ManagedPart::registerGetChildDelegate = nullptr;
+StringToUpperDelegate ManagedPart::stringToUpperDelegate = nullptr;
 
-HRESULT SymbolReader::LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule)
+// 0xfeefee is a magic number for "#line hidden" directive.
+// https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/preprocessor-directives/preprocessor-line
+// https://docs.microsoft.com/en-us/archive/blogs/jmstall/line-hidden-and-0xfeefee-sequence-points
+const int ManagedPart::HiddenLine = 0xfeefee;
+
+HRESULT ManagedPart::LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule)
 {
     HRESULT Status = S_OK;
     BOOL isDynamic = FALSE;
@@ -221,11 +231,46 @@ HRESULT SymbolReader::LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule
     );
 }
 
+/**********************************************************************\
+* Routine Description:                                                 *
+*                                                                      *
+*    This function is called to read memory from the debugee's         *
+*    address space.  If the initial read fails, it attempts to read    *
+*    only up to the edge of the page containing "offset".              *
+*                                                                      *
+\**********************************************************************/
+static BOOL SafeReadMemory(TADDR offset, PVOID lpBuffer, ULONG cb, PULONG lpcbBytesRead)
+{
+    return FALSE;
+    // TODO: In-memory PDB?
+    // std::lock_guard<std::mutex> lock(g_processMutex);
+
+    // if (!g_process)
+    //     return FALSE;
+
+    // BOOL bRet = FALSE;
+
+    // SIZE_T bytesRead = 0;
+
+    // bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
+    //                                        &bytesRead));
+
+    // if (!bRet)
+    // {
+    //     cb   = (ULONG)(NextOSPageAddress(offset) - offset);
+    //     bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
+    //                                         &bytesRead));
+    // }
+
+    // *lpcbBytesRead = bytesRead;
+    // return bRet;
+}
+
 //
 // Pass to managed helper code to read in-memory PEs/PDBs
 // Returns the number of bytes read.
 //
-int ReadMemoryForSymbols(ULONG64 address, char *buffer, int cb)
+static int ReadMemoryForSymbols(ULONG64 address, char *buffer, int cb)
 {
     ULONG read;
     if (SafeReadMemory(TO_TADDR(address), (PVOID)buffer, cb, &read))
@@ -235,7 +280,7 @@ int ReadMemoryForSymbols(ULONG64 address, char *buffer, int cb)
     return 0;
 }
 
-HRESULT SymbolReader::LoadSymbolsForPortablePDB(
+HRESULT ManagedPart::LoadSymbolsForPortablePDB(
     const std::string &modulePath,
     BOOL isInMemory,
     BOOL isFileLayout,
@@ -248,7 +293,7 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
 
     if (loadSymbolsForModuleDelegate == nullptr)
     {
-        IfFailRet(PrepareSymbolReader());
+        IfFailRet(PrepareManagedPart());
     }
 
     // The module name needs to be null for in-memory PE's.
@@ -272,7 +317,7 @@ HRESULT SymbolReader::LoadSymbolsForPortablePDB(
 
 struct GetChildProxy
 {
-    SymbolReader::GetChildCallback &m_cb;
+    ManagedPart::GetChildCallback &m_cb;
     static BOOL GetChild(PVOID opaque, PVOID corValue, const WCHAR* name, int *typeId, PVOID *data)
     {
         std::string uft8Name = to_utf8(name);
@@ -280,16 +325,16 @@ struct GetChildProxy
     }
 };
 
-HRESULT SymbolReader::PrepareSymbolReader()
+HRESULT ManagedPart::PrepareManagedPart()
 {
-    static bool attemptedSymbolReaderPreparation = false;
-    if (attemptedSymbolReaderPreparation)
+    static bool attemptedManagedPartPreparation = false;
+    if (attemptedManagedPartPreparation)
     {
         // If we already tried to set up the symbol reader, we won't try again.
         return E_FAIL;
     }
 
-    attemptedSymbolReaderPreparation = true;
+    attemptedManagedPartPreparation = true;
 
     std::string clrDir = coreClrPath.substr(0, coreClrPath.rfind(DIRECTORY_SEPARATOR_STR_A));
 
@@ -365,33 +410,33 @@ HRESULT SymbolReader::PrepareSymbolReader()
         return E_FAIL;
     }
 
-    // TODO: If SymbolReaderDllName could not be found, we are going to see the error message.
+    // TODO: If ManagedPartDllName could not be found, we are going to see the error message.
     //       But the cleaner way is to provide error message for any failed createDelegate().
-    if (FAILED(Status = createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "LoadSymbolsForModule", (void **)&loadSymbolsForModuleDelegate)))
+    if (FAILED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "LoadSymbolsForModule", (void **)&loadSymbolsForModuleDelegate)))
     {
         fprintf(stderr, "Error: createDelegate failed for LoadSymbolsForModule: 0x%x\n", Status);
         return E_FAIL;
     }
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ResolveSequencePoint", (void **)&resolveSequencePointDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "ParseExpression", (void **)&parseExpressionDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "EvalExpression", (void **)&evalExpressionDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "RegisterGetChild", (void **)&registerGetChildDelegate));
-    IfFailRet(createDelegate(hostHandle, domainId, SymbolReaderDllName, SymbolReaderClassName, "StringToUpper", (void **)&stringToUpperDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "ResolveSequencePoint", (void **)&resolveSequencePointDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "RegisterGetChild", (void **)&registerGetChildDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "StringToUpper", (void **)&stringToUpperDelegate));
     if (!registerGetChildDelegate(GetChildProxy::GetChild))
         return E_FAIL;
 
     // Warm up Roslyn
-    std::thread([](){ std::string data; std::string err; SymbolReader::ParseExpression("1", "System.Int32", data, err); }).detach();
+    std::thread([](){ std::string data; std::string err; ManagedPart::ParseExpression("1", "System.Int32", data, err); }).detach();
 
     return S_OK;
 }
 
-HRESULT SymbolReader::ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset)
+HRESULT ManagedPart::ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset)
 {
     if (m_symbolReaderHandle != 0)
     {
@@ -407,7 +452,7 @@ HRESULT SymbolReader::ResolveSequencePoint(const char *filename, ULONG32 lineNum
     return E_FAIL;
 }
 
-HRESULT SymbolReader::GetSequencePointByILOffset(
+HRESULT ManagedPart::GetSequencePointByILOffset(
     mdMethodDef methodToken,
     ULONG64 ilOffset,
     SequencePoint *sequencePoint)
@@ -428,7 +473,7 @@ HRESULT SymbolReader::GetSequencePointByILOffset(
     return E_FAIL;
 }
 
-HRESULT SymbolReader::GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset)
+HRESULT ManagedPart::GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset)
 {
     if (m_symbolReaderHandle != 0)
     {
@@ -445,7 +490,7 @@ HRESULT SymbolReader::GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, U
     return E_FAIL;
 }
 
-HRESULT SymbolReader::GetNamedLocalVariableAndScope(
+HRESULT ManagedPart::GetNamedLocalVariableAndScope(
     ICorDebugILFrame * pILFrame,
     mdMethodDef methodToken,
     ULONG localIndex,
@@ -460,20 +505,20 @@ HRESULT SymbolReader::GetNamedLocalVariableAndScope(
 
     _ASSERTE(getLocalVariableNameAndScopeDelegate != nullptr);
 
-    BSTR wszParamName = sysAllocStringLen(0, mdNameLen);
-    if (sysStringLen(wszParamName) == 0)
+    BSTR wszParamName = WinAPI::sysAllocStringLen(0, mdNameLen);
+    if (WinAPI::sysStringLen(wszParamName) == 0)
     {
         return E_OUTOFMEMORY;
     }
 
     if (getLocalVariableNameAndScopeDelegate(m_symbolReaderHandle, methodToken, localIndex, &wszParamName, pIlStart, pIlEnd) == FALSE)
     {
-        sysFreeString(wszParamName);
+        WinAPI::sysFreeString(wszParamName);
         return E_FAIL;
     }
 
     wcscpy_s(paramName, paramNameLen, wszParamName);
-    sysFreeString(wszParamName);
+    WinAPI::sysFreeString(wszParamName);
 
     if (FAILED(pILFrame->GetLocalVariable(localIndex, ppValue)) || (*ppValue == NULL))
     {
@@ -483,7 +528,7 @@ HRESULT SymbolReader::GetNamedLocalVariableAndScope(
     return S_OK;
 }
 
-HRESULT SymbolReader::GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points)
+HRESULT ManagedPart::GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points)
 {
     if (m_symbolReaderHandle != 0)
     {
@@ -499,7 +544,7 @@ HRESULT SymbolReader::GetSequencePoints(mdMethodDef methodToken, std::vector<Seq
 
         points.assign(allocatedPoints, allocatedPoints + pointsCount);
 
-        coTaskMemFree(allocatedPoints);
+        WinAPI::coTaskMemFree(allocatedPoints);
 
         return S_OK;
     }
@@ -507,13 +552,13 @@ HRESULT SymbolReader::GetSequencePoints(mdMethodDef methodToken, std::vector<Seq
     return E_FAIL;
 }
 
-HRESULT SymbolReader::ParseExpression(
+HRESULT ManagedPart::ParseExpression(
     const std::string &expr,
     const std::string &typeName,
     std::string &data,
     std::string &errorText)
 {
-    PrepareSymbolReader();
+    PrepareManagedPart();
 
     if (parseExpressionDelegate == nullptr)
         return E_FAIL;
@@ -524,28 +569,28 @@ HRESULT SymbolReader::ParseExpression(
     if (parseExpressionDelegate(to_utf16(expr).c_str(), to_utf16(typeName).c_str(), &dataPtr, &dataSize, &werrorText) == FALSE)
     {
         errorText = to_utf8(werrorText);
-        sysFreeString(werrorText);
+        WinAPI::sysFreeString(werrorText);
         return E_FAIL;
     }
 
     if (typeName == "System.String")
     {
         data = to_utf8((BSTR)dataPtr);
-        sysFreeString((BSTR)dataPtr);
+        WinAPI::sysFreeString((BSTR)dataPtr);
     }
     else
     {
         data.resize(dataSize);
         memmove(&data[0], dataPtr, dataSize);
-        coTaskMemFree(dataPtr);
+        WinAPI::coTaskMemFree(dataPtr);
     }
 
     return S_OK;
 }
 
-HRESULT SymbolReader::EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb)
+HRESULT ManagedPart::EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb)
 {
-    PrepareSymbolReader();
+    PrepareManagedPart();
 
     if (evalExpressionDelegate == nullptr)
         return E_FAIL;
@@ -561,7 +606,7 @@ HRESULT SymbolReader::EvalExpression(const std::string &expr, std::string &resul
         if (resultText)
         {
             result = to_utf8(resultText);
-            sysFreeString(resultText);
+            WinAPI::sysFreeString(resultText);
         }
         return E_FAIL;
     }
@@ -578,40 +623,40 @@ HRESULT SymbolReader::EvalExpression(const std::string &expr, std::string &resul
             break;
         case TypeString:
             result = to_utf8((BSTR)valuePtr);
-            sysFreeString((BSTR)valuePtr);
+            WinAPI::sysFreeString((BSTR)valuePtr);
             break;
         default:
             result.resize(size);
             memmove(&result[0], valuePtr, size);
-            coTaskMemFree(valuePtr);
+            WinAPI::coTaskMemFree(valuePtr);
             break;
     }
 
     return S_OK;
 }
 
-PVOID SymbolReader::AllocBytes(size_t size)
+PVOID ManagedPart::AllocBytes(size_t size)
 {
-    PrepareSymbolReader();
-    return coTaskMemAlloc(size);
+    PrepareManagedPart();
+    return WinAPI::coTaskMemAlloc(size);
 }
 
-PVOID SymbolReader::AllocString(const std::string &str)
+PVOID ManagedPart::AllocString(const std::string &str)
 {
-    PrepareSymbolReader();
+    PrepareManagedPart();
     auto wstr = to_utf16(str);
     if (wstr.size() > UINT_MAX)
         return nullptr;
-    BSTR bstr = sysAllocStringLen(0, (UINT)wstr.size());
-    if (sysStringLen(bstr) == 0)
+    BSTR bstr = WinAPI::sysAllocStringLen(0, (UINT)wstr.size());
+    if (WinAPI::sysStringLen(bstr) == 0)
         return nullptr;
     memmove(bstr, wstr.data(), wstr.size() * sizeof(decltype(wstr[0])));
     return bstr;
 }
 
-HRESULT SymbolReader::StringToUpper(std::string &String)
+HRESULT ManagedPart::StringToUpper(std::string &String)
 {
-    PrepareSymbolReader();
+    PrepareManagedPart();
 
     if (stringToUpperDelegate == nullptr)
         return E_FAIL;
@@ -623,7 +668,7 @@ HRESULT SymbolReader::StringToUpper(std::string &String)
         return E_FAIL;
 
     String = to_utf8(wString);
-    sysFreeString(wString);
+    WinAPI::sysFreeString(wString);
 
     return S_OK;
 }

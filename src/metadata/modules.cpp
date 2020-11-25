@@ -190,11 +190,11 @@ HRESULT Modules::GetLocationInAny(
 
         CORDB_ADDRESS modAddress;
         IfFailRet(mdInfo.module->GetBaseAddress(&modAddress));
-        if (FAILED(mdInfo.symbols->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset)))
+        if (FAILED(mdInfo.managedPart->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset)))
             continue;
 
         SequencePoint resolvedSequencePoint;
-        if (FAILED(GetSequencePointByILOffset(mdInfo.symbols.get(), methodToken, ilOffset, &resolvedSequencePoint)))
+        if (FAILED(GetSequencePointByILOffset(mdInfo.managedPart.get(), methodToken, ilOffset, &resolvedSequencePoint)))
             continue;
 
         mdInfo.module->AddRef();
@@ -223,10 +223,10 @@ HRESULT Modules::GetLocationInModule(
         return E_FAIL;
     }
 
-    IfFailRet(info_pair->second.symbols->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset));
+    IfFailRet(info_pair->second.managedPart->ResolveSequencePoint(filename.c_str(), linenum, modAddress, &methodToken, &ilOffset));
 
     SequencePoint resolvedSequencePoint;
-    IfFailRet(GetSequencePointByILOffset(info_pair->second.symbols.get(), methodToken, ilOffset, &resolvedSequencePoint));
+    IfFailRet(GetSequencePointByILOffset(info_pair->second.managedPart.get(), methodToken, ilOffset, &resolvedSequencePoint));
 
     return S_OK;
 }
@@ -344,7 +344,7 @@ HRESULT Modules::GetFrameILAndSequencePoint(
         return E_FAIL;
     }
 
-    IfFailRet(GetSequencePointByILOffset(info_pair->second.symbols.get(), methodToken, ilOffset, &sequencePoint));
+    IfFailRet(GetSequencePointByILOffset(info_pair->second.managedPart.get(), methodToken, ilOffset, &sequencePoint));
 
     return S_OK;
 }
@@ -387,7 +387,7 @@ HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_S
             return E_FAIL;
         }
 
-        IfFailRet(info_pair->second.symbols->GetStepRangesFromIP(nOffset, methodToken, &ilStartOffset, &ilEndOffset));
+        IfFailRet(info_pair->second.managedPart->GetStepRangesFromIP(nOffset, methodToken, &ilStartOffset, &ilEndOffset));
     }
 
     if (ilStartOffset == ilEndOffset)
@@ -448,10 +448,10 @@ HRESULT Modules::TryLoadModuleSymbols(
     module.path = GetModuleFileName(pModule);
     module.name = GetFileName(module.path);
 
-    std::unique_ptr<SymbolReader> symbolReader(new SymbolReader());
+    std::unique_ptr<ManagedPart> managedPart(new ManagedPart());
 
-    symbolReader->LoadSymbols(pMDImport, pModule);
-    module.symbolStatus = symbolReader->SymbolsLoaded() ? SymbolsLoaded : SymbolsNotFound;
+    managedPart->LoadSymbols(pMDImport, pModule);
+    module.symbolStatus = managedPart->SymbolsLoaded() ? SymbolsLoaded : SymbolsNotFound;
 
     if (needJMC && module.symbolStatus == SymbolsLoaded)
     {
@@ -466,12 +466,12 @@ HRESULT Modules::TryLoadModuleSymbols(
         if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
         {
             pModule2->SetJMCStatus(true, 0, nullptr);
-            SetJMCFromAttributes(pModule, symbolReader.get());
+            SetJMCFromAttributes(pModule, managedPart.get());
         }
     }
 
     if (module.symbolStatus == SymbolsLoaded)
-        IfFailRet(Modules::FillSourcesCodeLinesForModule(pMDImport, symbolReader.get()));
+        IfFailRet(Modules::FillSourcesCodeLinesForModule(pMDImport, managedPart.get()));
 
     IfFailRet(GetModuleId(pModule, module.id));
 
@@ -485,7 +485,7 @@ HRESULT Modules::TryLoadModuleSymbols(
     {
         std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
         pModule->AddRef();
-        ModuleInfo mdInfo { std::move(symbolReader), pModule };
+        ModuleInfo mdInfo { std::move(managedPart), pModule };
         m_modulesInfo.insert(std::make_pair(baseAddress, std::move(mdInfo)));
     }
 
@@ -517,7 +517,7 @@ HRESULT Modules::GetFrameNamedLocalVariable(
             return E_FAIL;
         }
 
-        IfFailRet(info_pair->second.symbols->GetNamedLocalVariableAndScope(pILFrame, methodToken, localIndex, wParamName, _countof(wParamName), ppValue, pIlStart, pIlEnd));
+        IfFailRet(info_pair->second.managedPart->GetNamedLocalVariableAndScope(pILFrame, methodToken, localIndex, wParamName, _countof(wParamName), ppValue, pIlStart, pIlEnd));
     }
 
     paramName = to_utf8(wParamName);
@@ -546,14 +546,14 @@ HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **pp
 }
 
 HRESULT Modules::GetSequencePointByILOffset(
-    SymbolReader *symbols,
+    ManagedPart *managedPart,
     mdMethodDef methodToken,
     ULONG32 &ilOffset,
     SequencePoint *sequencePoint)
 {
-    SymbolReader::SequencePoint symSequencePoint;
+    ManagedPart::SequencePoint symSequencePoint;
 
-    if (FAILED(symbols->GetSequencePointByILOffset(methodToken, ilOffset, &symSequencePoint))) {
+    if (FAILED(managedPart->GetSequencePointByILOffset(methodToken, ilOffset, &symSequencePoint))) {
         return E_FAIL;
     }
 
@@ -580,7 +580,7 @@ HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> 
     return S_OK;
 }
 
-HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, SymbolReader *symbolReader)
+HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, ManagedPart *managedPart)
 {
     ULONG numTypedefs = 0;
     HCORENUM fEnum = NULL;
@@ -592,13 +592,13 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Symbo
         mdMethodDef methodDef;
         while(SUCCEEDED(pMDImport->EnumMethods(&fEnum, typeDef, &methodDef, 1, &numMethods)) && numMethods != 0)
         {
-            std::vector<SymbolReader::SequencePoint> points;
-            if (FAILED(symbolReader->GetSequencePoints(methodDef, points)))
+            std::vector<ManagedPart::SequencePoint> points;
+            if (FAILED(managedPart->GetSequencePoints(methodDef, points)))
                 continue;
 
             for (auto &point : points)
             {
-                if (point.startLine == SymbolReader::HiddenLine)
+                if (point.startLine == ManagedPart::HiddenLine)
                     continue;
 
                 std::string fullPath = to_utf8(point.document);
@@ -606,7 +606,7 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Symbo
 #ifdef WIN32
                 HRESULT Status = S_OK;
                 std::string initialFullPath = fullPath;
-                IfFailRet(SymbolReader::StringToUpper(fullPath));
+                IfFailRet(ManagedPart::StringToUpper(fullPath));
                 m_sourceCaseSensitiveFullPaths[fullPath] = initialFullPath;
 #endif
 
@@ -720,7 +720,7 @@ HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenu
 {
     HRESULT Status;
 #ifdef WIN32
-    IfFailRet(SymbolReader::StringToUpper(filename));
+    IfFailRet(ManagedPart::StringToUpper(filename));
 #endif
 
     auto searchByFullPath = m_sourcesCodeLines.find(filename);

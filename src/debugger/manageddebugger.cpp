@@ -243,42 +243,6 @@ size_t NextOSPageAddress (size_t addr)
     return (addr+pageSize)&(~(pageSize-1));
 }
 
-/**********************************************************************\
-* Routine Description:                                                 *
-*                                                                      *
-*    This function is called to read memory from the debugee's         *
-*    address space.  If the initial read fails, it attempts to read    *
-*    only up to the edge of the page containing "offset".              *
-*                                                                      *
-\**********************************************************************/
-BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
-                     PULONG lpcbBytesRead)
-{
-    return FALSE;
-    // TODO: In-memory PDB?
-    // std::lock_guard<std::mutex> lock(g_processMutex);
-
-    // if (!g_process)
-    //     return FALSE;
-
-    // BOOL bRet = FALSE;
-
-    // SIZE_T bytesRead = 0;
-
-    // bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
-    //                                        &bytesRead));
-
-    // if (!bRet)
-    // {
-    //     cb   = (ULONG)(NextOSPageAddress(offset) - offset);
-    //     bRet = SUCCEEDED(g_process->ReadMemory(TO_CDADDR(offset), cb, (BYTE*)lpBuffer,
-    //                                         &bytesRead));
-    // }
-
-    // *lpcbBytesRead = bytesRead;
-    // return bRet;
-}
-
 static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
 {
     HRESULT Status;
@@ -1649,7 +1613,7 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     if (m_clrPath.empty())
         m_clrPath = GetCLRPath(pid);
 
-    SymbolReader::SetCoreCLRPath(m_clrPath);
+    ManagedPart::SetCoreCLRPath(m_clrPath);
 
     ToRelease<ICorDebugProcess> pProcess;
     Status = pCorDebug->DebugActiveProcess(pid, FALSE, &pProcess);

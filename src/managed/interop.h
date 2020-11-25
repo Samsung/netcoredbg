@@ -37,16 +37,23 @@ typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int *, PVOID*);
 typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
 typedef  void (*StringToUpperDelegate)(const WCHAR*, BSTR*);
 
+// TODO WinAPI and related code should be moved in platform-related sources
+namespace WinAPI
+{
 typedef BSTR (*SysAllocStringLen_t)(const OLECHAR*, UINT);
 typedef void (*SysFreeString_t)(BSTR);
 typedef UINT (*SysStringLen_t)(BSTR);
 typedef LPVOID (*CoTaskMemAlloc_t)(size_t);
 typedef void (*CoTaskMemFree_t)(LPVOID);
 
-BOOL SafeReadMemory (TADDR offset, PVOID lpBuffer, ULONG cb,
-                     PULONG lpcbBytesRead);
+extern SysAllocStringLen_t sysAllocStringLen;
+extern SysFreeString_t sysFreeString;
+extern SysStringLen_t sysStringLen;
+extern CoTaskMemAlloc_t coTaskMemAlloc;
+extern CoTaskMemFree_t coTaskMemFree;
+} // namespace WinAPI
 
-class SymbolReader
+class ManagedPart
 {
 private:
     PVOID m_symbolReaderHandle;
@@ -64,13 +71,7 @@ private:
     static RegisterGetChildDelegate registerGetChildDelegate;
     static StringToUpperDelegate stringToUpperDelegate;
 
-    static SysAllocStringLen_t sysAllocStringLen;
-    static SysFreeString_t sysFreeString;
-    static SysStringLen_t sysStringLen;
-    static CoTaskMemAlloc_t coTaskMemAlloc;
-    static CoTaskMemFree_t coTaskMemFree;
-
-    static HRESULT PrepareSymbolReader();
+    static HRESULT PrepareManagedPart();
 
     HRESULT LoadSymbolsForPortablePDB(
         const std::string &modulePath,
@@ -97,10 +98,10 @@ public:
             offset(0),
             document(nullptr)
         {}
-        ~SequencePoint() { sysFreeString(document); }
+        ~SequencePoint() { WinAPI::sysFreeString(document); }
     };
 
-    // Keep in sync with string[] basicTypes in SymbolReader.cs
+    // Keep in sync with string[] basicTypes in Evaluation.cs
     enum BasicTypes {
         TypeCorValue = -1,
         TypeObject = 0, //     "System.Object",
@@ -122,12 +123,12 @@ public:
         TypeString,  //        "System.String"
     };
 
-    SymbolReader()
+    ManagedPart()
     {
         m_symbolReaderHandle = 0;
     }
 
-    ~SymbolReader()
+    ~ManagedPart()
     {
         if (m_symbolReaderHandle != 0)
         {

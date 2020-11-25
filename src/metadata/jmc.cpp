@@ -101,15 +101,15 @@ static bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const std::string &a
     return found;
 }
 
-static bool HasSourceLocation(SymbolReader *symbolReader, mdMethodDef methodDef)
+static bool HasSourceLocation(ManagedPart *managedPart, mdMethodDef methodDef)
 {
-    std::vector<SymbolReader::SequencePoint> points;
-    if (FAILED(symbolReader->GetSequencePoints(methodDef, points)))
+    std::vector<ManagedPart::SequencePoint> points;
+    if (FAILED(managedPart->GetSequencePoints(methodDef, points)))
         return false;
 
     for (auto &p : points)
     {
-        if (p.startLine != 0 && p.startLine != SymbolReader::HiddenLine)
+        if (p.startLine != 0 && p.startLine != ManagedPart::HiddenLine)
             return true;
     }
     return false;
@@ -117,7 +117,7 @@ static bool HasSourceLocation(SymbolReader *symbolReader, mdMethodDef methodDef)
 
 static HRESULT GetNonJMCMethodsForTypeDef(
     IMetaDataImport *pMD,
-    SymbolReader *sr,
+    ManagedPart *managedPart,
     mdTypeDef typeDef,
     std::vector<mdToken> &excludeMethods)
 {
@@ -142,7 +142,7 @@ static HRESULT GetNonJMCMethodsForTypeDef(
         if ((g_operatorMethodNames.find(to_utf8(szFunctionName)) != g_operatorMethodNames.end())
             || HasAttribute(pMD, methodDef, g_nonUserCode)
             || HasAttribute(pMD, methodDef, g_stepThrough)
-            || !HasSourceLocation(sr, methodDef))
+            || !HasSourceLocation(managedPart, methodDef))
         {
             excludeMethods.push_back(methodDef);
         }
@@ -184,7 +184,7 @@ static HRESULT GetNonJMCMethodsForTypeDef(
     return S_OK;
 }
 
-static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, SymbolReader *sr, std::vector<mdToken> &excludeTokens)
+static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, ManagedPart *managedPart, std::vector<mdToken> &excludeTokens)
 {
     HRESULT Status;
 
@@ -201,18 +201,18 @@ static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, SymbolReader
         if (HasAttribute(pMD, typeDef, g_nonUserCode))
             excludeTokens.push_back(typeDef);
         else
-            GetNonJMCMethodsForTypeDef(pMD, sr, typeDef, excludeTokens);
+            GetNonJMCMethodsForTypeDef(pMD, managedPart, typeDef, excludeTokens);
     }
     pMD->CloseEnum(fEnum);
 
     return S_OK;
 }
 
-HRESULT Modules::SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *symbolReader)
+HRESULT Modules::SetJMCFromAttributes(ICorDebugModule *pModule, ManagedPart *managedPart)
 {
     std::vector<mdToken> excludeTokens;
 
-    GetNonJMCClassesAndMethods(pModule, symbolReader, excludeTokens);
+    GetNonJMCClassesAndMethods(pModule, managedPart, excludeTokens);
 
     for (mdToken token : excludeTokens)
     {

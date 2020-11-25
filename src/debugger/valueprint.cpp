@@ -794,27 +794,27 @@ HRESULT PrintBasicValue(int typeId, const string &rawData, string &typeName, str
     std::ostringstream ss;
     switch(typeId)
     {
-        case SymbolReader::TypeCorValue:
+        case ManagedPart::TypeCorValue:
             ss << "null";
             typeName = "object";
             break;
-        case SymbolReader::TypeObject:
+        case ManagedPart::TypeObject:
             ss << "null";
             typeName = "object";
             break;
-        case SymbolReader::TypeBoolean:
+        case ManagedPart::TypeBoolean:
             ss << (rawData[0] == 0 ? "false" : "true");
             typeName = "bool";
             break;
-        case SymbolReader::TypeByte:
+        case ManagedPart::TypeByte:
             ss << (unsigned int) *(unsigned char*) &(rawData[0]);
             typeName = "byte";
             break;
-        case SymbolReader::TypeSByte:
+        case ManagedPart::TypeSByte:
             ss << (int) *(char*) &(rawData[0]);
             typeName = "sbyte";
             break;
-        case SymbolReader::TypeChar:
+        case ManagedPart::TypeChar:
             {
                 WCHAR wc = * (WCHAR *) &(rawData[0]);
                 string printableVal = to_utf8(wc);
@@ -823,51 +823,51 @@ HRESULT PrintBasicValue(int typeId, const string &rawData, string &typeName, str
                 typeName = "char";
             }
             break;
-        case SymbolReader::TypeDouble:
+        case ManagedPart::TypeDouble:
             ss << std::setprecision(16) << *(double*) &(rawData[0]);
             typeName = "double";
             break;
-        case SymbolReader::TypeSingle:
+        case ManagedPart::TypeSingle:
             ss << std::setprecision(8) << *(float*) &(rawData[0]);
             typeName = "float";
             break;
-        case SymbolReader::TypeInt32:
+        case ManagedPart::TypeInt32:
             ss << *(int*) &(rawData[0]);
             typeName = "int";
             break;
-        case SymbolReader::TypeUInt32:
+        case ManagedPart::TypeUInt32:
             ss << *(unsigned int*) &(rawData[0]);
             typeName = "uint";
             break;
-        case SymbolReader::TypeInt64:
+        case ManagedPart::TypeInt64:
             ss << *(__int64*) &(rawData[0]);
             typeName = "long";
             break;
-        case SymbolReader::TypeUInt64:
+        case ManagedPart::TypeUInt64:
             typeName = "ulong";
             ss << *(unsigned __int64*) &(rawData[0]);
             break;
-        case SymbolReader::TypeInt16:
+        case ManagedPart::TypeInt16:
             ss << *(short*) &(rawData[0]);
             typeName = "short";
             break;
-        case SymbolReader::TypeUInt16:
+        case ManagedPart::TypeUInt16:
             ss << *(unsigned short*) &(rawData[0]);
             typeName = "ushort";
             break;
-        case SymbolReader::TypeIntPtr:
+        case ManagedPart::TypeIntPtr:
             ss << "0x" << std::hex << *(intptr_t*) &(rawData[0]);
             typeName = "IntPtr";
             break;
-        case SymbolReader::TypeUIntPtr:
+        case ManagedPart::TypeUIntPtr:
             ss << "0x" << std::hex << *(intptr_t*) &(rawData[0]);
             typeName = "UIntPtr";
             break;
-        case SymbolReader::TypeDecimal:
+        case ManagedPart::TypeDecimal:
             PrintDecimalValue(rawData, value);
             typeName = "decimal";
             return S_OK;
-        case SymbolReader::TypeString:
+        case ManagedPart::TypeString:
             {
                 string rawStr = rawData;
                 EscapeString(rawStr, '"');
@@ -890,7 +890,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
     if (isNull)
     {
         *data = nullptr;
-        *typeId = SymbolReader::TypeObject;
+        *typeId = ManagedPart::TypeObject;
         return S_OK;
     }
 
@@ -916,7 +916,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
 
         if (!raw_str.empty())
         {
-            *data = SymbolReader::AllocString(raw_str);
+            *data = ManagedPart::AllocString(raw_str);
             if (*data == nullptr)
                 return E_FAIL;
         }
@@ -925,7 +925,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
             *data = nullptr;
         }
 
-        *typeId = SymbolReader::TypeString;
+        *typeId = ManagedPart::TypeString;
         return S_OK;
     }
 
@@ -933,7 +933,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
     {
         pInputValue->AddRef();
         *data = pInputValue;
-        *typeId = SymbolReader::TypeCorValue;
+        *typeId = ManagedPart::TypeCorValue;
         return S_OK;
     }
 
@@ -953,7 +953,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
         return E_FAIL;
 
     case ELEMENT_TYPE_PTR:
-        *typeId = SymbolReader::TypeIntPtr;
+        *typeId = ManagedPart::TypeIntPtr;
         break;
 
     case ELEMENT_TYPE_FNPTR:
@@ -963,7 +963,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
             if(SUCCEEDED(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue)))
                 pReferenceValue->GetValue(&addr);
             *(CORDB_ADDRESS*) &(rgbValue[0]) = addr;
-            *typeId = SymbolReader::TypeIntPtr;
+            *typeId = ManagedPart::TypeIntPtr;
         }
         break;
 
@@ -976,67 +976,67 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
             {
                 pInputValue->AddRef();
                 *data = pInputValue;
-                *typeId = SymbolReader::TypeCorValue;
+                *typeId = ManagedPart::TypeCorValue;
                 return S_OK;
             }
-            *typeId = SymbolReader::TypeDecimal;
+            *typeId = ManagedPart::TypeDecimal;
         }
         break;
 
     case ELEMENT_TYPE_BOOLEAN:
-        *typeId = SymbolReader::TypeBoolean;
+        *typeId = ManagedPart::TypeBoolean;
         break;
 
     case ELEMENT_TYPE_CHAR:
-        *typeId = SymbolReader::TypeChar;
+        *typeId = ManagedPart::TypeChar;
         break;
 
     case ELEMENT_TYPE_I1:
-        *typeId = SymbolReader::TypeSByte;
+        *typeId = ManagedPart::TypeSByte;
         break;
 
     case ELEMENT_TYPE_U1:
-        *typeId = SymbolReader::TypeByte;
+        *typeId = ManagedPart::TypeByte;
         break;
 
     case ELEMENT_TYPE_I2:
-        *typeId = SymbolReader::TypeInt16;
+        *typeId = ManagedPart::TypeInt16;
         break;
 
     case ELEMENT_TYPE_U2:
-        *typeId = SymbolReader::TypeUInt16;
+        *typeId = ManagedPart::TypeUInt16;
         break;
 
     case ELEMENT_TYPE_I:
-        *typeId = SymbolReader::TypeIntPtr;
+        *typeId = ManagedPart::TypeIntPtr;
         break;
 
     case ELEMENT_TYPE_U:
-        *typeId = SymbolReader::TypeUIntPtr;
+        *typeId = ManagedPart::TypeUIntPtr;
         break;
 
     case ELEMENT_TYPE_I4:
-        *typeId = SymbolReader::TypeInt32;
+        *typeId = ManagedPart::TypeInt32;
         break;
 
     case ELEMENT_TYPE_U4:
-        *typeId = SymbolReader::TypeUInt32;
+        *typeId = ManagedPart::TypeUInt32;
         break;
 
     case ELEMENT_TYPE_I8:
-        *typeId = SymbolReader::TypeInt64;
+        *typeId = ManagedPart::TypeInt64;
         break;
 
     case ELEMENT_TYPE_U8:
-        *typeId = SymbolReader::TypeUInt64;
+        *typeId = ManagedPart::TypeUInt64;
         break;
 
     case ELEMENT_TYPE_R4:
-        *typeId = SymbolReader::TypeSingle;
+        *typeId = ManagedPart::TypeSingle;
         break;
 
     case ELEMENT_TYPE_R8:
-        *typeId = SymbolReader::TypeDouble;
+        *typeId = ManagedPart::TypeDouble;
         break;
 
     case ELEMENT_TYPE_OBJECT:
@@ -1044,7 +1044,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
 
     }
 
-    *data = SymbolReader::AllocBytes(cbSize);
+    *data = ManagedPart::AllocBytes(cbSize);
     if (*data == nullptr)
     {
         return E_FAIL;
