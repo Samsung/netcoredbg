@@ -19,6 +19,9 @@
 #include "pal_mstypes.h"
 #endif
 
+namespace netcoredbg
+{
+
 // Types commonly used in the debugger:
 
 // Process identifier.
@@ -643,3 +646,5 @@ struct ExceptionInfoResponse
 
     std::string getVSCodeBreakMode() const;
 };
+
+} // namespace netcoredbg

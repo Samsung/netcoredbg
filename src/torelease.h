@@ -9,6 +9,9 @@
 #include <assert.h>
 #include "utils/logger.h"
 
+namespace netcoredbg
+{
+
 // This class acts a smart pointer which calls the Release method on any object
 // you place in it when the ToRelease class falls out of scope.  You may use it
 // just like you would a standard pointer to a COM object (including if (foo),
@@ -131,3 +134,5 @@ const int mdNameLen = 2048;
 #define PACK_BEGIN
 #define PACK_END __attribute__((packed))
 #endif
+
+} // namespace netcoredbg

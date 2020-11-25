@@ -17,6 +17,9 @@
 
 using std::string;
 
+namespace netcoredbg
+{
+
 void Evaluator::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)
 {
     std::lock_guard<std::mutex> lock(m_evalMutex);
@@ -1074,3 +1077,5 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
 
     return S_OK;
 }
+
+} // namespace netcoredbg

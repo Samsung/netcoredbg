@@ -13,6 +13,8 @@
 #include "debugger/debugger.h"
 #include "iprotocol.h"
 
+namespace netcoredbg
+{
 
 class CLIProtocol : public IProtocol
 {
@@ -91,3 +93,5 @@ private:
 
     std::string m_lastPrintArg;
 };
+
+} // namespace netcoredbg

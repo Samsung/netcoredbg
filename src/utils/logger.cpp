@@ -21,6 +21,9 @@ namespace
 }
 
 
+namespace netcoredbg
+{
+
 #ifdef DEBUGGER_FOR_TIZEN
 #include "dlog/dlog.h"
 
@@ -201,3 +204,5 @@ void FuncLogger::log(LoggerImpl *logger, LogLevel level, const char *fmt, ...)
     logger->vlog(level, fmt, args);
     va_end(args);
 }
+
+} // namespace netcoredbg

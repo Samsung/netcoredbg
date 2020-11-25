@@ -15,6 +15,9 @@
 
 #include "debugger/debugger.h"
 
+namespace netcoredbg
+{
+
 namespace VSCodeExceptionBreakModeKeyWord
 {
     static const std::string ALL = "all";
@@ -80,3 +83,5 @@ public:
 
     void EmitCapabilitiesEvent();
 };
+
+} // namespace netcoredbg

@@ -19,6 +19,9 @@
 
 using std::string;
 
+namespace netcoredbg
+{
+
 // From strike.cpp
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull)
 {
@@ -1148,3 +1151,5 @@ HRESULT PrintStringField(ICorDebugValue *pValue, const WCHAR *fieldName, string 
 
     return E_FAIL;
 }
+
+} // namespace netcoredbg

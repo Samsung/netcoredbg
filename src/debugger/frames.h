@@ -13,7 +13,12 @@
 #include <vector>
 #include "protocols/protocol.h"
 
+namespace netcoredbg
+{
+
 struct Thread;
 
 HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **ppFrame);
 HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads);
+
+} // namespace netcoredbg

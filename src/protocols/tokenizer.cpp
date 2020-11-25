@@ -6,6 +6,9 @@
 
 using std::string;
 
+namespace netcoredbg
+{
+
 Tokenizer::Tokenizer(const std::string &str, const std::string &delimiters)
     : m_str(str), m_delimiters(delimiters), m_next(0)
 {
@@ -67,3 +70,5 @@ std::string Tokenizer::Remain() const
 {
     return m_str.substr(m_next);
 }
+
+} // namespace netcoredbg

@@ -21,6 +21,9 @@ using std::unordered_set;
 using std::string;
 using std::vector;
 
+namespace netcoredbg
+{
+
 typedef std::function<HRESULT(
     const std::vector<std::string> &args,
     std::string &output)> CommandCallback;
@@ -1234,3 +1237,5 @@ std::string MIProtocol::EscapeMIValue(const std::string &str)
 
     return s;
 }
+
+} // namespace netcoredbg

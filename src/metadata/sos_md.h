@@ -893,7 +893,7 @@ const char* PrettyPrintClass(
 // TODO: Refactor the code in PrettyPrintClassFromToken, NameForTypeDef_s,
 // TODO: NameForToken_s, MDInfo::TypeDef/RefName
 void PrettyPrintClassFromToken(
-    TADDR moduleAddr,                   // the module containing the token
+    netcoredbg::TADDR moduleAddr,       // the module containing the token
     mdToken tok,                        // the class token to look up
     __out_ecount(cbName) WCHAR* mdName, // where to put the pretty printed string
     size_t cbName,                      // the capacity of the buffer

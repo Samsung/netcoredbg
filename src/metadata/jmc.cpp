@@ -14,6 +14,8 @@
 #include "managed/interop.h"
 #include "utils/utf.h"
 
+namespace netcoredbg
+{
 
 static const char *g_nonUserCode = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";
 static const char *g_stepThrough = "System.Diagnostics.DebuggerStepThroughAttribute..ctor";
@@ -240,3 +242,5 @@ HRESULT Modules::SetJMCFromAttributes(ICorDebugModule *pModule, SymbolReader *sy
 
     return S_OK;
 }
+
+} // namespace netcoredbg

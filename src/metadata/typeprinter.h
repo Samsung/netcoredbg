@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+namespace netcoredbg
+{
 
 class TypePrinter
 {
@@ -34,3 +36,5 @@ public:
     static std::string RenameToSystem(const std::string &typeName);
     static std::string RenameToCSharp(const std::string &typeName);
 };
+
+} // namespace netcoredbg

@@ -17,6 +17,9 @@
 
 #include "protocols/protocol.h"
 
+namespace netcoredbg
+{
+
 class Debugger
 {
 public:
@@ -90,3 +93,5 @@ public:
     virtual void CommandLoop() = 0;
     virtual ~Protocol() {}
 };
+
+} // namespace netcoredbg

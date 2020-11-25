@@ -15,9 +15,14 @@
 
 #include "debugger/manageddebugger.h"
 
+namespace netcoredbg
+{
+
 HRESULT WriteValue(
     ICorDebugValue *pValue,
     const std::string &value,
     ICorDebugThread *pThread,
     Evaluator &evaluator,
     std::string &errorText);
+
+} // namespace netcoredbg

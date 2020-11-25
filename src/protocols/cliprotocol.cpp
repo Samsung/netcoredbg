@@ -24,6 +24,9 @@ using std::unordered_set;
 using std::string;
 using std::vector;
 
+namespace netcoredbg
+{
+
 typedef HRESULT (CLIProtocol::*DoCommand)(const std::vector<std::string> &args, std::string &output);
 
 HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
@@ -751,3 +754,5 @@ void CLIProtocol::CommandLoop()
     linenoiseHistorySave(history.c_str());
     linenoiseHistoryFree();
 }
+
+} // namespace netcoredbg

@@ -12,6 +12,9 @@
 #include <corerror.h>
 #pragma GCC diagnostic pop
 
+namespace netcoredbg
+{
+
 #ifdef _MSC_VER
 std::string to_utf8(const wchar_t *wstr);
 std::wstring to_utf16(const std::string &utf8);
@@ -25,3 +28,4 @@ std::vector<std::string> split_on_tokens(const std::string &str, const char deli
 
 const char* errormessage(HRESULT hr);
 
+} // namespace netcoredbg

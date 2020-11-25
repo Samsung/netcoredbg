@@ -4,6 +4,9 @@
 
 #include <string>
 
+namespace netcoredbg
+{
+
 class Tokenizer
 {
     std::string m_str;
@@ -15,3 +18,5 @@ public:
     bool Next(std::string &token);
     std::string Remain() const;
 };
+
+} // namespace netcoredbg

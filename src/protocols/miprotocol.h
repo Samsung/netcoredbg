@@ -12,6 +12,8 @@
 #include "debugger/debugger.h"
 #include "iprotocol.h"
 
+namespace netcoredbg
+{
 
 class MIProtocol : public IProtocol
 {
@@ -85,3 +87,5 @@ private:
     HRESULT DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids, std::string &output);
     bool MIProtocol::ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
 };
+
+} // namespace netcoredbg

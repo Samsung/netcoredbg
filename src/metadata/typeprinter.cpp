@@ -19,6 +19,8 @@ typedef LPCSTR  LPCUTF8;
 #define MAX_CLASSNAME_LENGTH    1024
 #define MAX_NAMESPACE_LENGTH    1024
 
+namespace netcoredbg 
+{
 
 static std::string ConsumeGenericArgs(const std::string &name, std::list<std::string> &args)
 {
@@ -821,3 +823,5 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     output = ss.str();
     return S_OK;
 }
+
+} // namespace netcoredbg

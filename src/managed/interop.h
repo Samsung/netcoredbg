@@ -20,6 +20,8 @@
 /// FIXME: Definition of `TADDR`
 #include "torelease.h"
 
+namespace netcoredbg
+{
 
 typedef  int (*ReadMemoryDelegate)(ULONG64, char *, int);
 typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, ULONG64, int, ULONG64, int, ReadMemoryDelegate);
@@ -152,3 +154,5 @@ public:
     static PVOID AllocString(const std::string &str);
     static HRESULT StringToUpper(std::string &String);
 };
+
+} // namespace netcoredbg

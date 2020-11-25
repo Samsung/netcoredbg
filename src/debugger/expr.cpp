@@ -11,6 +11,8 @@
 #include "metadata/typeprinter.h"
 #include "valueprint.h"
 
+namespace netcoredbg
+{
 
 static HRESULT ParseIndices(const std::string &s, std::vector<ULONG32> &indices)
 {
@@ -728,3 +730,5 @@ HRESULT Evaluator::CreateString(ICorDebugThread *pThread, const std::string &val
 
     return WaitEvalResult(pThread, pEval, ppNewString);
 }
+
+} // namespace netcoredbg

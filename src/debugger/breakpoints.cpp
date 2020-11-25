@@ -15,6 +15,9 @@
 
 using std::string;
 
+namespace netcoredbg
+{
+
 static HRESULT IsSameFunctionBreakpoint(
     ICorDebugFunctionBreakpoint *pBreakpoint1,
     ICorDebugFunctionBreakpoint *pBreakpoint2)
@@ -980,3 +983,5 @@ HRESULT ExceptionBreakpointStorage::GetExceptionBreakMode(ExceptionBreakMode &ou
 
     return S_OK;
 }
+
+} // namespace netcoredbg

@@ -14,10 +14,6 @@
 #include "torelease.h"
 #include "utils/utf.h"
 
-
-static const char *SymbolReaderDllName = "ManagedPart";
-static const char *SymbolReaderClassName = "SOS.SymbolReader";
-
 #ifdef FEATURE_PAL
 // Suppress undefined reference
 // `_invalid_parameter(char16_t const*, char16_t const*, char16_t const*, unsigned int, unsigned long)':
@@ -28,6 +24,15 @@ static void RaiseException(DWORD dwExceptionCode,
                CONST ULONG_PTR *lpArguments)
 {
 }
+#endif
+
+namespace netcoredbg
+{
+
+const char SymbolReaderDllName[] = "ManagedPart";
+const char SymbolReaderClassName[] = "SOS.SymbolReader";
+
+#ifdef FEATURE_PAL
 
 #define ULONG_ERROR     (0xffffffffUL)
 #define INTSAFE_E_ARITHMETIC_OVERFLOW       ((HRESULT)0x80070216L)  // 0x216 = 534 = ERROR_ARITHMETIC_OVERFLOW
@@ -622,3 +627,5 @@ HRESULT SymbolReader::StringToUpper(std::string &String)
 
     return S_OK;
 }
+
+} // namespace netcoredbg

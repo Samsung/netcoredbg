@@ -8,6 +8,9 @@
 
 #include "debugger/debugger.h"
 
+namespace netcoredbg
+{
+
 enum BreakType
 {
     LineBreak,
@@ -46,3 +49,5 @@ protected:
     bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb);
     static std::string AddrToString(uint64_t addr);
 };
+
+} // namespace netcoredbg

@@ -10,6 +10,9 @@
 
 #include <palclr.h>
 
+namespace netcoredbg
+{
+
 unsigned long OSPageSize();
 void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &tpaList);
 std::string GetExeAbsPath();
@@ -45,3 +48,5 @@ public:
     ~IORedirectServer();
     operator bool() const;
 };
+
+} // namespace netcoredbg

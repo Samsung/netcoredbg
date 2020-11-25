@@ -22,6 +22,8 @@
 #include "protocols/protocol.h"
 #include "torelease.h"
 
+namespace netcoredbg
+{
 
 class SymbolReader;
 typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
@@ -136,3 +138,5 @@ public:
 
     HRESULT ResolveBreakpointFileAndLine(std::string &filename, int &linenum, int &endLine);
 };
+
+} // namespace netcoredbg

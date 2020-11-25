@@ -23,12 +23,18 @@
 #include "debugger/frames.h"
 #include "utils/logger.h"
 
+#ifdef FEATURE_PAL
+#include <dlfcn.h>
+#endif
+
 using std::string;
 using std::vector;
 using std::map;
 
+namespace netcoredbg
+{
+
 #ifdef FEATURE_PAL
-#include <dlfcn.h>
 
 // as alternative, libuuid should be linked...
 // (the problem is, that in CoreClr > 3.x, in pal/inc/rt/rpc.h,
@@ -2055,3 +2061,4 @@ HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
     return pProcess3->SetEnableCustomNotification(pClass, fEnable);
 }
 
+} // namespace netcoredbg

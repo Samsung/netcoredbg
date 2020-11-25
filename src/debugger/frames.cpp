@@ -12,6 +12,8 @@
 #include "debugger/manageddebugger.h"
 #include "utils/logger.h"
 
+namespace netcoredbg
+{
 
 HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads)
 {
@@ -450,3 +452,5 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel star
 
     return S_OK;
 }
+
+} // namespace netcoredbg

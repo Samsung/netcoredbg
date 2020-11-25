@@ -19,6 +19,8 @@
 #include "metadata/typeprinter.h"
 #include "managed/interop.h"
 
+namespace netcoredbg
+{
 
 HRESULT WriteValue(
     ICorDebugValue *pValue,
@@ -106,3 +108,5 @@ HRESULT WriteValue(
 
     return S_OK;
 }
+
+} // namespace netcoredbg

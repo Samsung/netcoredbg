@@ -10,6 +10,9 @@
 #include <algorithm>
 #include <type_traits>
 
+namespace netcoredbg
+{
+
 namespace Utility
 {
 
@@ -170,3 +173,4 @@ private:
 
 } // Utility namespace
 
+} // namespace netcoredbg

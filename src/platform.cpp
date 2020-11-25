@@ -31,6 +31,7 @@
 #include <crt_externs.h>
 #else
 #include <linux/limits.h>
+extern char** environ;
 #endif
 
 #else
@@ -40,6 +41,9 @@
 
 using std::string;
 using std::map;
+
+namespace netcoredbg
+{
 
 unsigned long OSPageSize()
 {
@@ -851,7 +855,6 @@ char** GetSystemEnvironment()
 #if __APPLE__
     sysEnviron = *(_NSGetEnviron());
 #else   // __APPLE__
-    extern char** environ;
     sysEnviron = environ;
 #endif  // __APPLE__
 
@@ -922,3 +925,5 @@ IORedirectServer::~IORedirectServer()
     delete m_in;
     delete m_handles;
 }
+
+} // namespace netcoredbg

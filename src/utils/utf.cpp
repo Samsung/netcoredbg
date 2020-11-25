@@ -7,6 +7,9 @@
 #include <codecvt>
 #include <locale>
 
+namespace netcoredbg
+{
+
 #ifdef _MSC_VER
 
 static std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>,wchar_t> convert;
@@ -62,3 +65,5 @@ std::vector<std::string> split_on_tokens(const std::string &str, const char deli
 
     return res;
 }
+
+} // namespace netcoredbg

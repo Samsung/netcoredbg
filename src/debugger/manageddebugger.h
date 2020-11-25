@@ -17,6 +17,8 @@
 #include <list>
 #include <set>
 
+namespace netcoredbg
+{
 
 enum ValueKind
 {
@@ -678,3 +680,5 @@ private:
     HRESULT Stop(ThreadId threadId, const StoppedEvent &event);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 };
+
+} // namespace netcoredbg

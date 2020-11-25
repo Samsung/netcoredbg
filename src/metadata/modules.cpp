@@ -14,6 +14,8 @@
 #include "utils/utf.h"
 #include "metadata/typeprinter.h"
 
+namespace netcoredbg
+{
 
 bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)
 {
@@ -760,3 +762,5 @@ HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenu
 
     return S_OK;
 }
+
+} // namespace netcoredbg

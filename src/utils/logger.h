@@ -17,6 +17,8 @@ enum LogLevel {
     LOG_ERROR,
 };
 
+namespace netcoredbg
+{
 
 class LoggerImpl
 {
@@ -99,3 +101,4 @@ namespace LoggerInternal
 #define LogLevelWithLine(level, fmt, ...) (false ? (void)printf((fmt), ##__VA_ARGS__) : \
     Logger::levelLog(level, ("[%s:%u] " fmt),&__FILE__[LoggerInternal::path_len(__FILE__)], __LINE__, ##__VA_ARGS__))
 
+} // namespace netcoredbg

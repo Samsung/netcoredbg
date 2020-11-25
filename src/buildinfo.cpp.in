@@ -1,7 +1,8 @@
 #include <string>
 #include "buildinfo.h"
 
-using namespace netcoredbg_buildinfo_constant;
+namespace netcoredbg
+{
 
 const std::string BUILDINFO::BUILD_NETCOREDBG_GIT_REFSPEC = "@BUILD_NETCOREDBG_GIT_REFSPEC@";
 const std::string BUILDINFO::BUILD_NETCOREDBG_GIT_HEAD = "@BUILD_NETCOREDBG_GIT_HEAD@";
@@ -17,3 +18,5 @@ const std::string BUILDINFO::BUILD_NETCOREDBG_DATE = "@BUILD_NETCOREDBG_DATE@";
 
 const std::string BUILDINFO::CMAKE_SYSTEM_NAME = "@CMAKE_SYSTEM_NAME@";
 const std::string BUILDINFO::CLR_CMAKE_TARGET_ARCH = "@CLR_CMAKE_TARGET_ARCH@";
+
+} // namespace netcoredbg

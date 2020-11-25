@@ -11,6 +11,9 @@
 using std::string;
 using std::vector;
 
+namespace netcoredbg
+{
+
 int IProtocol::ParseInt(const std::string &s, bool &ok)
 {
     ok = false;
@@ -262,3 +265,5 @@ public:
         return m_str.substr(m_next);
     }
 };
+
+} // namespace netcoredbg

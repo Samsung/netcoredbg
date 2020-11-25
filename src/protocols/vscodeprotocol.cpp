@@ -30,6 +30,8 @@ using std::min;
 // for convenience
 using json = nlohmann::json;
 
+namespace netcoredbg
+{
 
 void to_json(json &j, const Source &s) {
     j = json{{"name", s.name},
@@ -881,3 +883,5 @@ string ExceptionInfoResponse::getVSCodeBreakMode() const
     // Logical Error
     return "undefined";
 }
+
+} // namespace netcoredbg

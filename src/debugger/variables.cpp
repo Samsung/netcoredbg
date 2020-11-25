@@ -23,6 +23,9 @@
 using std::string;
 using std::vector;
 
+namespace netcoredbg
+{
+
 HRESULT Variables::GetNumChild(
     ICorDebugValue *pValue,
     unsigned int &numchild,
@@ -753,3 +756,5 @@ HRESULT Variables::SetVariable(
     PrintValue(pVariable, output, escape);
     return S_OK;
 }
+
+} // namespace netcoredbg

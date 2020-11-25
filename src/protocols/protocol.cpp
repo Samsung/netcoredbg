@@ -12,6 +12,8 @@
 #include "protocol.h"
 #include "utility.h"
 
+namespace netcoredbg
+{
 
 // ThreadId == 0 is invalid for Win32 API and PAL library.
 /*static*/ const ThreadId ThreadId::Invalid {InvalidValue};
@@ -92,3 +94,4 @@ FrameLevel FrameId::getLevel() const noexcept
     KnownFrames::instance().get()->clear();
 }
 
+} // namespace netcoredbg

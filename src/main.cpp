@@ -17,6 +17,9 @@
 
 #include "buildinfo.cpp"
 
+namespace netcoredbg
+{
+
 static const uint16_t DEFAULT_SERVER_PORT = 4711;
 
 static void print_help()
@@ -84,6 +87,10 @@ static void print_buildinfo()
         , BUILDINFO::BUILD_CORECLR_GIT_REFSPEC.c_str()
     );
 }
+
+} // namespace netcoredbg
+
+using namespace netcoredbg;
 
 int main(int argc, char *argv[])
 {
