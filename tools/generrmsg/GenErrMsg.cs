@@ -130,8 +130,8 @@ namespace generrmsg
             PrintFooterH(hfile);
             outfile.Close();
             hfile.Close();
-            System.IO.File.Move("temp.cpp", outputfilename);
-            System.IO.File.Move("temp.h", hfilename);
+            System.IO.File.Move("temp.cpp", outputfilename, true);
+            System.IO.File.Move("temp.h", hfilename, true);
         }
 
         private static void PrintHeader(StreamWriter sw) {

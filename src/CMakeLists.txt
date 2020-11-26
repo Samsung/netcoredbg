@@ -46,7 +46,7 @@ find_program(DOTNETCLI dotnet PATHS "${DOTNET_DIR}" ENV PATH NO_DEFAULT_PATH)
 
 add_custom_command(
   OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generrmsg/generrmsg.csproj"
-  COMMAND ${DOTNETCLI} new console -n generrmsg
+  COMMAND ${CMAKE_COMMAND} -E env DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NEW_LOCAL_SEARCH_FILE_ONLY=1 ${DOTNETCLI} new console -n generrmsg
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
   COMMENT "Creating new dotnet project"
   VERBATIM
@@ -123,6 +123,14 @@ if (CLR_CMAKE_TARGET_TIZEN_LINUX)
     target_link_libraries(netcoredbg dlog)
 endif (CLR_CMAKE_TARGET_TIZEN_LINUX)
 
+add_custom_command(
+  TARGET netcoredbg
+  PRE_BUILD
+  COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${ERRORMESSAGE_DLL_NAME}
+  COMMAND ${CMAKE_COMMAND} -E remove -f obj/project.assets.json
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 install(TARGETS netcoredbg DESTINATION ${CMAKE_INSTALL_PREFIX})
 if (DBGSHIM_LOCATION)
     install(FILES ${DBGSHIM_LOCATION} DESTINATION ${CMAKE_INSTALL_PREFIX})
@@ -138,7 +146,7 @@ if (BUILD_MANAGED)
     find_program(DOTNETCLI dotnet PATHS "${DOTNET_DIR}" ENV PATH NO_DEFAULT_PATH)
 
     add_custom_command(OUTPUT ${DOTNET_BUILD_RESULT}
-      COMMAND ${DOTNETCLI} publish ${MANAGEDPART_PROJECT} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/
+      COMMAND ${DOTNETCLI} publish ${MANAGEDPART_PROJECT} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/ /p:BaseOutputPath=${CMAKE_CURRENT_BINARY_DIR}/bin/
       WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
       DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/managed/SymbolReader.cs" "${MANAGEDPART_PROJECT}"
       COMMENT "Compiling ${MANAGEDPART_DLL_NAME}"
