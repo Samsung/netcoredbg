@@ -28,6 +28,8 @@ namespace netcoredbg
 class ManagedPart;
 typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
 
+HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module);
+
 class Modules
 {
     struct ModuleInfo

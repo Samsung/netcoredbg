@@ -49,84 +49,13 @@ HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &th
     return S_OK;
 }
 
-static uint64_t GetFrameAddr(ICorDebugFrame *pFrame)
+uint64_t GetFrameAddr(ICorDebugFrame *pFrame)
 {
     CORDB_ADDRESS startAddr = 0;
     CORDB_ADDRESS endAddr = 0;
     pFrame->GetStackRange(&startAddr, &endAddr);
     return startAddr;
 }
-
-HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
-{
-    HRESULT Status;
-
-    stackFrame = StackFrame(threadId, level, "");
-
-    ULONG32 ilOffset;
-    Modules::SequencePoint sp;
-
-    if (SUCCEEDED(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
-    {
-        stackFrame.source = Source(sp.document);
-        stackFrame.line = sp.startLine;
-        stackFrame.column = sp.startColumn;
-        stackFrame.endLine = sp.endLine;
-        stackFrame.endColumn = sp.endColumn;
-    }
-
-    mdMethodDef methodToken;
-    IfFailRet(pFrame->GetFunctionToken(&methodToken));
-
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
-    ULONG32 nOffset = 0;
-    ToRelease<ICorDebugNativeFrame> pNativeFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugNativeFrame, (LPVOID*) &pNativeFrame));
-    IfFailRet(pNativeFrame->GetIP(&nOffset));
-
-    CorDebugMappingResult mappingResult;
-    IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
-
-    IfFailRet(Modules::GetModuleId(pModule, stackFrame.moduleId));
-
-    stackFrame.clrAddr.methodToken = methodToken;
-    stackFrame.clrAddr.ilOffset = ilOffset;
-    stackFrame.clrAddr.nativeOffset = nOffset;
-
-    stackFrame.addr = GetFrameAddr(pFrame);
-
-    TypePrinter::GetMethodName(pFrame, stackFrame.name);
-
-    return stackFrame.source.IsNull() ? S_FALSE : S_OK;
-}
-
-struct NativeFrame
-{
-    uint64_t addr;
-    std::string symbol;
-    std::string file;
-    std::string fullname;
-    int linenum;
-    int tid;
-    NativeFrame() : addr(0), linenum(0), tid(0) {}
-};
-
-enum FrameType
-{
-    FrameUnknown,
-    FrameNative,
-    FrameCLRNative,
-    FrameCLRInternal,
-    FrameCLRManaged
-};
 
 static uint64_t GetSP(CONTEXT *context)
 {
@@ -147,8 +76,6 @@ HRESULT UnwindNativeFrames(ICorDebugThread *pThread, uint64_t startValue, uint64
 {
     return S_OK;
 }
-
-typedef std::function<HRESULT(FrameType,ICorDebugFrame*,NativeFrame*,ICorDebugFunction*)> WalkFramesCallback;
 
 HRESULT StitchInternalFrames(
     ICorDebugThread *pThread,
@@ -365,7 +292,7 @@ HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **
     return Status;
 }
 
-static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
+const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
 {
     switch(frameType)
     {
@@ -381,76 +308,6 @@ static const char *GetInternalTypeName(CorDebugInternalFrameType frameType)
         case STUBFRAME_JIT_COMPILATION:      return "JIT Compilation";
         default:                             return "Unknown";
     }
-}
-
-HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
-{
-    LogFuncEntry();
-
-    HRESULT Status;
-
-    DWORD tid = 0;
-    pThread->GetID(&tid);
-    ThreadId threadId{tid};
-
-    int currentFrame = -1;
-
-    IfFailRet(WalkFrames(pThread, [&](
-        FrameType frameType,
-        ICorDebugFrame *pFrame,
-        NativeFrame *pNative,
-        ICorDebugFunction *pFunction)
-    {
-        currentFrame++;
-
-        if (currentFrame < int(startFrame))
-            return S_OK;
-        if (maxFrames != 0 && currentFrame >= int(startFrame) + int(maxFrames))
-            return S_OK;
-
-        switch(frameType)
-        {
-            case FrameUnknown:
-                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "?");
-                stackFrames.back().addr = GetFrameAddr(pFrame);
-                break;
-            case FrameNative:
-                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, pNative->symbol);
-                stackFrames.back().addr = pNative->addr;
-                stackFrames.back().source = Source(pNative->file);
-                stackFrames.back().line = pNative->linenum;
-                break;
-            case FrameCLRNative:
-                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "[Native Frame]");
-                stackFrames.back().addr = GetFrameAddr(pFrame);
-                break;
-            case FrameCLRInternal:
-                {
-                    ToRelease<ICorDebugInternalFrame> pInternalFrame;
-                    IfFailRet(pFrame->QueryInterface(IID_ICorDebugInternalFrame, (LPVOID*) &pInternalFrame));
-                    CorDebugInternalFrameType corFrameType;
-                    IfFailRet(pInternalFrame->GetFrameType(&corFrameType));
-                    std::string name = "[";
-                    name += GetInternalTypeName(corFrameType);
-                    name += "]";
-                    stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, name);
-                    stackFrames.back().addr = GetFrameAddr(pFrame);
-                }
-                break;
-            case FrameCLRManaged:
-                {
-                    StackFrame stackFrame;
-                    GetFrameLocation(pFrame, threadId, FrameLevel{currentFrame}, stackFrame);
-                    stackFrames.push_back(stackFrame);
-                }
-                break;
-        }
-        return S_OK;
-    }));
-
-    totalFrames = currentFrame + 1;
-
-    return S_OK;
 }
 
 } // namespace netcoredbg

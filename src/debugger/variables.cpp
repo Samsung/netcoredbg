@@ -13,7 +13,6 @@
 
 #include "metadata/typeprinter.h"
 #include "valueprint.h"
-#include "valuewrite.h"
 #include "debugger/frames.h"
 #include "managed/interop.h"
 #include "utils/logger.h"
@@ -25,6 +24,93 @@ using std::vector;
 
 namespace netcoredbg
 {
+
+static HRESULT WriteValue(
+    ICorDebugValue *pValue,
+    const std::string &value,
+    ICorDebugThread *pThread,
+    Evaluator &evaluator,
+    std::string &errorText)
+{
+    HRESULT Status;
+
+    ULONG32 size;
+    IfFailRet(pValue->GetSize(&size));
+
+    std::string data;
+
+    CorElementType corType;
+    IfFailRet(pValue->GetType(&corType));
+
+    static const std::unordered_map<int, std::string> cor2name = {
+        {ELEMENT_TYPE_BOOLEAN, "System.Boolean"},
+        {ELEMENT_TYPE_U1,      "System.Byte"},
+        {ELEMENT_TYPE_I1,      "System.SByte"},
+        {ELEMENT_TYPE_CHAR,    "System.Char"},
+        {ELEMENT_TYPE_R8,      "System.Double"},
+        {ELEMENT_TYPE_R4,      "System.Single"},
+        {ELEMENT_TYPE_I4,      "System.Int32"},
+        {ELEMENT_TYPE_U4,      "System.UInt32"},
+        {ELEMENT_TYPE_I8,      "System.Int64"},
+        {ELEMENT_TYPE_U8,      "System.UInt64"},
+        {ELEMENT_TYPE_I2,      "System.Int16"},
+        {ELEMENT_TYPE_U2,      "System.UInt16"},
+        {ELEMENT_TYPE_I,       "System.IntPtr"},
+        {ELEMENT_TYPE_U,       "System.UIntPtr"}
+    };
+    auto renamed = cor2name.find(corType);
+    if (renamed != cor2name.end())
+    {
+        IfFailRet(ManagedPart::ParseExpression(value, renamed->second, data, errorText));
+    }
+    else if (corType == ELEMENT_TYPE_STRING)
+    {
+        IfFailRet(ManagedPart::ParseExpression(value, "System.String", data, errorText));
+
+        ToRelease<ICorDebugValue> pNewString;
+        IfFailRet(evaluator.CreateString(pThread, data, &pNewString));
+
+        // Switch object addresses
+        ToRelease<ICorDebugReferenceValue> pRefNew;
+        IfFailRet(pNewString->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefNew));
+        ToRelease<ICorDebugReferenceValue> pRefOld;
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefOld));
+
+        CORDB_ADDRESS addr;
+        IfFailRet(pRefNew->GetValue(&addr));
+        IfFailRet(pRefOld->SetValue(addr));
+
+        return S_OK;
+    }
+    else if (corType == ELEMENT_TYPE_VALUETYPE || corType == ELEMENT_TYPE_CLASS)
+    {
+        std::string typeName;
+        TypePrinter::GetTypeOfValue(pValue, typeName);
+        if (typeName != "decimal")
+        {
+            errorText = "Unable to set value of type '" + typeName + "'";
+            return E_FAIL;
+        }
+        IfFailRet(ManagedPart::ParseExpression(value, "System.Decimal", data, errorText));
+    }
+    else
+    {
+        errorText = "Unable to set value";
+        return E_FAIL;
+    }
+
+    if (size != data.size())
+    {
+        errorText = "Marshalling size mismatch: " + std::to_string(size) + " != " + std::to_string(data.size());
+        return E_FAIL;
+    }
+
+    ToRelease<ICorDebugGenericValue> pGenValue;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID *) &pGenValue));
+    IfFailRet(pGenValue->SetValue((LPVOID) &data[0]));
+
+    return S_OK;
+}
 
 HRESULT Variables::GetNumChild(
     ICorDebugValue *pValue,
@@ -157,31 +243,12 @@ HRESULT Variables::FetchFieldsAndProperties(
     return S_OK;
 }
 
-int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)
-{
-    LogFuncEntry();
-
-    return m_variables.GetNamedVariables(variablesReference);
-}
-
 int Variables::GetNamedVariables(uint32_t variablesReference)
 {
     auto it = m_variables.find(variablesReference);
     if (it == m_variables.end())
         return 0;
     return it->second.namedVariables;
-}
-
-HRESULT ManagedDebugger::GetVariables(
-    uint32_t variablesReference,
-    VariablesFilter filter,
-    int start,
-    int count,
-    std::vector<Variable> &variables)
-{
-    LogFuncEntry();
-
-    return m_variables.GetVariables(m_pProcess, variablesReference, filter, start, count, variables);
 }
 
 HRESULT Variables::GetVariables(
@@ -236,33 +303,6 @@ void Variables::AddVariableReference(Variable &variable, FrameId frameId, ICorDe
     value->AddRef();
     VariableReference variableReference(variable, frameId, value, valueKind);
     m_variables.emplace(std::make_pair(variable.variablesReference, std::move(variableReference)));
-}
-
-static HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module) {
-    HRESULT Status;
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-
-    if (pFrame == nullptr)
-        return E_FAIL;
-
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*)&pMDImport));
-
-    WCHAR mdName[mdNameLen];
-    ULONG nameLen;
-    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
-    module = to_utf8(mdName);
-
-    return S_OK;
 }
 
 HRESULT Variables::GetExceptionVariable(
@@ -330,13 +370,6 @@ HRESULT Variables::GetStackVariables(
     }));
 
     return S_OK;
-}
-
-HRESULT ManagedDebugger::GetScopes(FrameId frameId, std::vector<Scope> &scopes)
-{
-    LogFuncEntry();
-
-    return m_variables.GetScopes(m_pProcess, frameId, scopes);
 }
 
 HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::vector<Scope> &scopes)
@@ -457,13 +490,6 @@ HRESULT Variables::GetChildren(
     }
 
     return S_OK;
-}
-
-HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output)
-{
-    LogFuncEntry();
-
-    return m_variables.Evaluate(m_pProcess, frameId, expression, variable, output);
 }
 
 HRESULT Variables::Evaluate(
@@ -595,11 +621,6 @@ HRESULT Variables::Evaluate(
     return S_OK;
 }
 
-HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output)
-{
-    return m_variables.SetVariable(m_pProcess, name, value, ref, output);
-}
-
 HRESULT Variables::SetVariable(
     ICorDebugProcess *pProcess,
     const std::string &name,
@@ -703,19 +724,6 @@ HRESULT Variables::SetChild(
     }));
 
     return S_OK;
-}
-
-HRESULT ManagedDebugger::SetVariableByExpression(
-    FrameId frameId,
-    const Variable &variable,
-    const std::string &value,
-    std::string &output)
-{
-    HRESULT Status;
-    ToRelease<ICorDebugValue> pResultValue;
-
-    IfFailRet(m_variables.GetValueByExpression(m_pProcess, frameId, variable, &pResultValue));
-    return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
 }
 
 HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId frameId, const Variable &variable,

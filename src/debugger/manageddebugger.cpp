@@ -12,8 +12,10 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include "debugger/dbgshim.h"
 #include "debugger/manageddebugger.h"
+#include "debugger/managedcallback.h"
+
 
 #include "valueprint.h"
 #include "managed/interop.h"
@@ -22,10 +24,7 @@
 #include "metadata/typeprinter.h"
 #include "debugger/frames.h"
 #include "utils/logger.h"
-
-#ifdef FEATURE_PAL
-#include <dlfcn.h>
-#endif
+#include "debugger/waitpid.h"
 
 using std::string;
 using std::vector;
@@ -41,180 +40,16 @@ namespace netcoredbg
 // MIDL_INTERFACE uses DECLSPEC_UUID, which has empty definition.
 extern "C" const IID IID_IUnknown = { 0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 }};
 
-namespace {
-namespace hook {
-
-class waitpid_t
-{
-private:
-    typedef pid_t (*Signature)(pid_t pid, int *status, int options);
-    Signature original = nullptr;
-    static constexpr pid_t notConfigured = -1;
-    pid_t trackPID = notConfigured;
-    int exitCode = 0; // same behaviour as CoreCLR have, by default exit code is 0
-    std::recursive_mutex interlock;
-
-    waitpid_t(const waitpid_t&) = delete;
-    waitpid_t& operator=(const waitpid_t&) = delete;
-
-    void init() noexcept
-    {
-        auto ret = dlsym(RTLD_NEXT, "waitpid");
-        if (!ret)
-        {
-            LOGE("Could not find original function waitpid");
-            abort();
-        }
-        original = reinterpret_cast<Signature>(ret);
-    }
-
-public:
-    waitpid_t() = default;
-    ~waitpid_t() = default;
-
-    pid_t operator() (pid_t pid, int *status, int options)
-    {
-        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
-        if (!original)
-        {
-            init();
-        }
-        return original(pid, status, options);
-    }
-
-    void SetupTrackingPID(pid_t PID)
-    {
-        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
-        trackPID = PID;
-        exitCode = 0; // same behaviour as CoreCLR have, by default exit code is 0
-    }
-
-    int GetExitCode()
-    {
-        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
-        return exitCode;
-    }
-
-    void SetExitCode(pid_t PID, int Code)
-    {
-        std::lock_guard<std::recursive_mutex> mutex_guard(interlock);
-        if (trackPID == notConfigured || PID != trackPID)
-        {
-            return;
-        }
-        exitCode = Code;
-    }
-
-} waitpid;
-
-}
-}
-
-// Note, we guaranty waitpid hook works only during debuggee process execution, it aimed to work only for PAL's waitpid calls interception.
-extern "C" pid_t waitpid(pid_t pid, int *status, int options) noexcept
-{
-    pid_t pidWaitRetval = hook::waitpid(pid, status, options);
-
-    // same logic as PAL have, see PROCGetProcessStatus() and CPalSynchronizationManager::HasProcessExited()
-    if (pidWaitRetval == pid)
-    {
-        if (WIFEXITED(*status))
-        {
-            hook::waitpid.SetExitCode(pid, WEXITSTATUS(*status));
-        }
-        else if (WIFSIGNALED(*status))
-        {
-            LOGW("Process terminated without exiting; can't get exit code. Killed by signal %d. Assuming EXIT_FAILURE.", WTERMSIG(*status));
-            hook::waitpid.SetExitCode(pid, EXIT_FAILURE);
-        }
-    }
-
-    return pidWaitRetval;
-}
 #endif // FEATURE_PAL
 
+dbgshim_t g_dbgshim;
 
-// From dbgshim.h
-struct dbgshim_t
+ThreadId getThreadId(ICorDebugThread *pThread)
 {
-    typedef VOID (*PSTARTUP_CALLBACK)(IUnknown *pCordb, PVOID parameter, HRESULT hr);
-    HRESULT (*CreateProcessForLaunch)(LPWSTR lpCommandLine, BOOL bSuspendProcess, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory, PDWORD pProcessId, HANDLE *pResumeHandle);
-    HRESULT (*ResumeProcess)(HANDLE hResumeHandle);
-    HRESULT (*CloseResumeHandle)(HANDLE hResumeHandle);
-    HRESULT (*RegisterForRuntimeStartup)(DWORD dwProcessId, PSTARTUP_CALLBACK pfnCallback, PVOID parameter, PVOID *ppUnregisterToken);
-    HRESULT (*UnregisterForRuntimeStartup)(PVOID pUnregisterToken);
-    HRESULT (*EnumerateCLRs)(DWORD debuggeePID, HANDLE** ppHandleArrayOut, LPWSTR** ppStringArrayOut, DWORD* pdwArrayLengthOut);
-    HRESULT (*CloseCLREnumeration)(HANDLE* pHandleArray, LPWSTR* pStringArray, DWORD dwArrayLength);
-    HRESULT (*CreateVersionStringFromModule)(DWORD pidDebuggee, LPCWSTR szModuleName, LPWSTR pBuffer, DWORD cchBuffer, DWORD* pdwLength);
-    HRESULT (*CreateDebuggingInterfaceFromVersionEx)(int iDebuggerVersion, LPCWSTR szDebuggeeVersion, IUnknown ** ppCordb);
-
-    dbgshim_t() :
-        CreateProcessForLaunch(nullptr),
-        ResumeProcess(nullptr),
-        CloseResumeHandle(nullptr),
-        RegisterForRuntimeStartup(nullptr),
-        UnregisterForRuntimeStartup(nullptr),
-        EnumerateCLRs(nullptr),
-        CloseCLREnumeration(nullptr),
-        CreateVersionStringFromModule(nullptr),
-        CreateDebuggingInterfaceFromVersionEx(nullptr),
-        m_module(nullptr)
-    {
-#ifdef DBGSHIM_RUNTIME_DIR
-        string libName(DBGSHIM_RUNTIME_DIR);
-        libName += DIRECTORY_SEPARATOR_STR_A;
-#else
-        string exe = GetExeAbsPath();
-        std::size_t dirSepIndex = exe.rfind(DIRECTORY_SEPARATOR_STR_A);
-        if (dirSepIndex == string::npos)
-            return;
-        string libName = exe.substr(0, dirSepIndex + 1);
-#endif
-
-#ifdef WIN32
-        libName += "dbgshim.dll";
-#elif defined(__APPLE__)
-        libName += "libdbgshim.dylib";
-#else
-        libName += "libdbgshim.so";
-#endif
-
-        m_module = DLOpen(libName);
-        if (!m_module)
-            throw std::invalid_argument("Unable to load " + libName);
-
-        *((void**)&CreateProcessForLaunch) = DLSym(m_module, "CreateProcessForLaunch");
-        *((void**)&ResumeProcess) = DLSym(m_module, "ResumeProcess");
-        *((void**)&CloseResumeHandle) = DLSym(m_module, "CloseResumeHandle");
-        *((void**)&RegisterForRuntimeStartup) = DLSym(m_module, "RegisterForRuntimeStartup");
-        *((void**)&UnregisterForRuntimeStartup) = DLSym(m_module, "UnregisterForRuntimeStartup");
-        *((void**)&EnumerateCLRs) = DLSym(m_module, "EnumerateCLRs");
-        *((void**)&CloseCLREnumeration) = DLSym(m_module, "CloseCLREnumeration");
-        *((void**)&CreateVersionStringFromModule) = DLSym(m_module, "CreateVersionStringFromModule");
-        *((void**)&CreateDebuggingInterfaceFromVersionEx) = DLSym(m_module, "CreateDebuggingInterfaceFromVersionEx");
-    }
-    ~dbgshim_t()
-    {
-        // if (m_module)
-        //     DLClose(m_module);
-    }
-private:
-    void *m_module;
-};
-
-static dbgshim_t g_dbgshim;
-
-
-namespace
-{
-    ThreadId getThreadId(ICorDebugThread *pThread)
-    {
-        DWORD threadId = 0;  // invalid value for Win32
-        HRESULT res = pThread->GetID(&threadId);
-        return res == S_OK && threadId != 0 ? ThreadId{threadId} : ThreadId{};
-    }
+    DWORD threadId = 0;  // invalid value for Win32
+    HRESULT res = pThread->GetID(&threadId);
+    return res == S_OK && threadId != 0 ? ThreadId{threadId} : ThreadId{};
 }
-
 
 void ManagedDebugger::NotifyProcessCreated()
 {
@@ -235,12 +70,6 @@ void ManagedDebugger::WaitProcessExited()
     std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     if (m_processAttachedState != ProcessUnattached)
         m_processAttachedCV.wait(lock, [this]{return m_processAttachedState == ProcessUnattached;});
-}
-
-size_t NextOSPageAddress (size_t addr)
-{
-    size_t pageSize = OSPageSize();
-    return (addr+pageSize)&(~(pageSize-1));
 }
 
 static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
@@ -328,806 +157,6 @@ ThreadId ManagedDebugger::GetLastStoppedThreadId()
     std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
     return m_lastStoppedThreadId;
 }
-
-static HRESULT GetExceptionInfo(ICorDebugThread *pThread,
-                                string &excType,
-                                string &excModule)
-{
-    HRESULT Status;
-
-    ToRelease<ICorDebugValue> pExceptionValue;
-    IfFailRet(pThread->GetCurrentException(&pExceptionValue));
-
-    TypePrinter::GetTypeOfValue(pExceptionValue, excType);
-
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-    if (pFrame == nullptr)
-        return E_FAIL;
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
-
-    WCHAR mdName[mdNameLen];
-    ULONG nameLen;
-    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
-    excModule = to_utf8(mdName);
-    return S_OK;
-}
-
-class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2, ICorDebugManagedCallback3
-{
-    ULONG m_refCount;
-    ManagedDebugger &m_debugger;
-public:
-
-        void HandleEvent(ICorDebugController *controller, const string &eventName)
-        {
-            LogFuncEntry();
-
-            string text = "Event received: '" + eventName + "'\n";
-            m_debugger.m_protocol->EmitOutputEvent(OutputEvent(OutputConsole, text));
-            controller->Continue(0);
-        }
-
-        ManagedCallback(ManagedDebugger &debugger) : m_refCount(1), m_debugger(debugger) {}
-        virtual ~ManagedCallback() {}
-
-        // IUnknown
-
-        virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, VOID** ppInterface)
-        {
-            LogFuncEntry();
-
-            if(riid == __uuidof(ICorDebugManagedCallback))
-            {
-                *ppInterface = static_cast<ICorDebugManagedCallback*>(this);
-                AddRef();
-                return S_OK;
-            }
-            else if(riid == __uuidof(ICorDebugManagedCallback2))
-            {
-                *ppInterface = static_cast<ICorDebugManagedCallback2*>(this);
-                AddRef();
-                return S_OK;
-            }
-            else if(riid == __uuidof(ICorDebugManagedCallback3))
-            {
-                *ppInterface = static_cast<ICorDebugManagedCallback3*>(this);
-                AddRef();
-                return S_OK;
-            }
-            else if(riid == __uuidof(IUnknown))
-            {
-                *ppInterface = static_cast<IUnknown*>(static_cast<ICorDebugManagedCallback*>(this));
-                AddRef();
-                return S_OK;
-            }
-            else
-            {
-                return E_NOINTERFACE;
-            }
-        }
-
-        virtual ULONG STDMETHODCALLTYPE AddRef()
-        {
-            LogFuncEntry();
-
-            return InterlockedIncrement((volatile LONG *) &m_refCount);
-        }
-
-        virtual ULONG STDMETHODCALLTYPE Release()
-        {
-            LogFuncEntry();
-
-            ULONG count = InterlockedDecrement((volatile LONG *) &m_refCount);
-            if(count == 0)
-            {
-                delete this;
-            }
-            return count;
-        }
-
-        // ICorDebugManagedCallback
-
-        virtual HRESULT STDMETHODCALLTYPE Breakpoint(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugBreakpoint *pBreakpoint)
-        {
-            LogFuncEntry();
-            ThreadId threadId(getThreadId(pThread));
-
-            if (m_debugger.m_evaluator.IsEvalRunning())
-            {
-                pAppDomain->Continue(0);
-                return S_OK;
-            }
-
-            auto stepForcedIgnoreBP = [&] () {
-                {
-                    std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
-                    auto stepSettedUpForThread = m_debugger.m_stepSettedUp.find(int(threadId));
-                    if (stepSettedUpForThread == m_debugger.m_stepSettedUp.end() || !stepSettedUpForThread->second)
-                    {
-                        return false;
-                    }
-                }
-
-                ToRelease<ICorDebugStepperEnum> steppers;
-                if (FAILED(pAppDomain->EnumerateSteppers(&steppers)))
-                    return false;
-
-                ICorDebugStepper *curStepper;
-                ULONG steppersFetched;
-                while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
-                {
-                    BOOL pbActive;
-                    ToRelease<ICorDebugStepper> pStepper(curStepper);
-                    if (SUCCEEDED(pStepper->IsActive(&pbActive)) && pbActive)
-                        return false;
-                }
-
-                return true;
-            };
-
-            if (stepForcedIgnoreBP())
-            {
-                pAppDomain->Continue(0);
-                return S_OK;  
-            }
-
-            ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);
-            pAppDomain->AddRef();
-            ToRelease<ICorDebugThread> callbackThread(pThread);
-            pThread->AddRef();
-            ToRelease<ICorDebugBreakpoint> callbackBreakpoint(pBreakpoint);
-            pBreakpoint->AddRef();
-
-            std::thread([this](
-                ICorDebugAppDomain *pAppDomain,
-                ICorDebugThread *pThread,
-                ICorDebugBreakpoint *pBreakpoint)
-            {
-                ThreadId threadId(getThreadId(pThread));
-                bool atEntry = false;
-                StoppedEvent event(StopBreakpoint, threadId);
-                if (FAILED(m_debugger.m_breakpoints.HitBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)))
-                {
-                    pAppDomain->Continue(0);
-                    return;
-                }
-
-                if (atEntry)
-                    event.reason = StopEntry;
-
-                ToRelease<ICorDebugFrame> pFrame;
-                if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                    m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), event.frame);
-
-                m_debugger.SetLastStoppedThread(pThread);
-                m_debugger.m_protocol->EmitStoppedEvent(event);
-
-            },
-                std::move(callbackAppDomain),
-                std::move(callbackThread),
-                std::move(callbackBreakpoint)
-            ).detach();
-
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE StepComplete(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugStepper *pStepper,
-            /* [in] */ CorDebugStepReason reason)
-        {
-            LogFuncEntry();
-            ThreadId threadId(getThreadId(pThread));
-
-            StackFrame stackFrame;
-            ToRelease<ICorDebugFrame> pFrame;
-            HRESULT Status = S_FALSE;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-                Status = m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
-
-            const bool no_source = Status == S_FALSE;
-
-            if (m_debugger.IsJustMyCode() && no_source)
-            {
-                m_debugger.SetupStep(pThread, Debugger::STEP_OVER);
-                pAppDomain->Continue(0);
-            }
-            else
-            {
-                StoppedEvent event(StopStep, threadId);
-                event.frame = stackFrame;
-
-                m_debugger.SetLastStoppedThread(pThread);
-                m_debugger.m_protocol->EmitStoppedEvent(event);
-            }
-
-            std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
-            m_debugger.m_stepSettedUp[int(threadId)] = false;
-
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE Break(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *thread)
-        {
-            LogFuncEntry();
-            ThreadId threadId(getThreadId(thread));
-
-            m_debugger.SetLastStoppedThread(thread);
-
-            StoppedEvent event(StopBreak, threadId);
-
-            ToRelease<ICorDebugFrame> pFrame;
-            if (SUCCEEDED(thread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-            {
-                StackFrame stackFrame;
-                if (m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel{0}, stackFrame) == S_OK)
-                    event.frame = stackFrame;
-            }
-
-            m_debugger.m_protocol->EmitStoppedEvent(event);
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE Exception(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ BOOL unhandled)
-        {
-            // Obsolete callback
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE EvalComplete(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugEval *pEval)
-        {
-            LogFuncEntry();
-            ThreadId currentThreadId = getThreadId(pThread);
-
-            HRESULT Status = S_OK;
-
-            m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
-
-            if (m_debugger.m_evaluator.is_empty_eval_queue())
-            {
-                pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
-            }
-            else
-            {
-                ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
-                if (evalThreadId == currentThreadId)
-                {
-                    LOGI("Complete eval threadid = '%d'", int(currentThreadId));
-                    m_debugger.m_evaluator.pop_eval_queue();
-
-                    if (m_debugger.m_evaluator.is_empty_eval_queue())
-                    {
-                        pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
-                    }
-                    else
-                    {
-                        evalThreadId = m_debugger.m_evaluator.front_eval_queue();
-                        ToRelease<ICorDebugThread> pThreadEval;
-                        IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
-                        IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
-                        IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
-                    }
-                }
-                else
-                {
-                    LOGE("Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
-                }
-            }
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE EvalException(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugEval *pEval)
-        {
-            LogFuncEntry();
-            ThreadId currentThreadId = getThreadId(pThread);
-
-            HRESULT Status = S_OK;
-
-            // TODO: Need implementation
-            //
-            // This is callback EvalException invoked on evaluation interruption event.
-            // And, evaluated results has inconsistent states. Notify is not enough for this point.
-
-            m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
-
-            // NOTE
-            // In case of unhandled exception inside implicit function call (for example, getter),
-            // ICorDebugManagedCallback::EvalException() is exit point for eval routine, make sure,
-            // that proper threads states are setted up.
-            if (m_debugger.m_evaluator.is_empty_eval_queue())
-            {
-                pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
-            }
-            else
-            {
-                ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
-                if (evalThreadId == currentThreadId)
-                {
-                    m_debugger.m_evaluator.pop_eval_queue();
-                    LOGI("Eval exception, threadid = '%d'", int(currentThreadId));
-
-                    if (m_debugger.m_evaluator.is_empty_eval_queue())
-                    {
-                        pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
-                    }
-                    else
-                    {
-                        evalThreadId = m_debugger.m_evaluator.front_eval_queue();
-                        ToRelease<ICorDebugThread> pThreadEval;
-                        IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
-                        IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
-                        IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
-                    }
-                }
-                else
-                {
-                    LOGE("Logical error: eval queue '%d' != '%d'", int(currentThreadId), int(evalThreadId));
-                }
-            }
-
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE CreateProcess(
-            /* [in] */ ICorDebugProcess *pProcess)
-        {
-            LogFuncEntry();
-            m_debugger.NotifyProcessCreated();
-            pProcess->Continue(0);
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE ExitProcess(
-            /* [in] */ ICorDebugProcess *pProcess)
-        {
-            LogFuncEntry();
-
-            if (m_debugger.m_evaluator.IsEvalRunning())
-            {
-                LOGW("The target process exited while evaluating the function.");
-            }
-
-            m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
-
-            while (!m_debugger.m_evaluator.is_empty_eval_queue())
-                m_debugger.m_evaluator.pop_eval_queue();
-
-            // Linux: exit() and _exit() argument is int (signed int)
-            // Windows: ExitProcess() and TerminateProcess() argument is UINT (unsigned int)
-            // Windows: GetExitCodeProcess() argument is DWORD (unsigned long)
-            // internal CoreCLR variable LatchedExitCode is INT32 (signed int)
-            // C# Main() return values is int (signed int) or void (return 0)
-            int exitCode = 0;
-#ifdef FEATURE_PAL
-            exitCode = hook::waitpid.GetExitCode();
-#else
-            HRESULT Status = S_OK;
-            HPROCESS hProcess;
-            DWORD dwExitCode = 0;
-            if (SUCCEEDED(pProcess->GetHandle(&hProcess)))
-            {
-                GetExitCodeProcess(hProcess, &dwExitCode);
-                exitCode = static_cast<int>(dwExitCode);
-            }
-#endif // FEATURE_PAL
-
-            m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(exitCode));
-            m_debugger.NotifyProcessExited();
-            m_debugger.m_protocol->EmitTerminatedEvent();
-
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE CreateThread(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread)
-        {
-            LogFuncEntry();
-            ThreadId threadId(getThreadId(pThread));
-            m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
-            pAppDomain->Continue(0);
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE ExitThread(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread)
-        {
-            LogFuncEntry();
-            ThreadId threadId(getThreadId(pThread));
-
-            // TODO: clean evaluations and exceptions queues for current thread
-            m_debugger.m_evaluator.NotifyEvalComplete(pThread, nullptr);
-
-            m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
-            pAppDomain->Continue(0);
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE LoadModule(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugModule *pModule)
-        {
-            LogFuncEntry();
-
-            Module module;
-
-            m_debugger.m_modules.TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode());
-            m_debugger.m_protocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
-
-            if (module.symbolStatus == SymbolsLoaded)
-            {
-                std::vector<BreakpointEvent> events;
-                m_debugger.m_breakpoints.TryResolveBreakpointsForModule(pModule, events);
-                for (const BreakpointEvent &event : events)
-                    m_debugger.m_protocol->EmitBreakpointEvent(event);
-            }
-
-            // enable Debugger.NotifyOfCrossThreadDependency after System.Private.CoreLib.dll loaded (trigger for 1 time call only)
-            if (module.name == "System.Private.CoreLib.dll")
-                m_debugger.SetEnableCustomNotification(TRUE);
-
-            pAppDomain->Continue(0);
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE UnloadModule(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugModule *pModule)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE LoadClass(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugClass *c)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE UnloadClass(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugClass *c)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE DebuggerError(
-            /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ HRESULT errorHR,
-            /* [in] */ DWORD errorCode)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE LogMessage(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ LONG lLevel,
-            /* [in] */ WCHAR *pLogSwitchName,
-            /* [in] */ WCHAR *pMessage)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE LogSwitch(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ LONG lLevel,
-            /* [in] */ ULONG ulReason,
-            /* [in] */ WCHAR *pLogSwitchName,
-            /* [in] */ WCHAR *pParentName)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE CreateAppDomain(
-            /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ ICorDebugAppDomain *pAppDomain)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE ExitAppDomain(
-            /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ ICorDebugAppDomain *pAppDomain)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE LoadAssembly(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugAssembly *pAssembly)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE UnloadAssembly(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugAssembly *pAssembly)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE ControlCTrap(
-            /* [in] */ ICorDebugProcess *pProcess)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE NameChange(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE UpdateModuleSymbols(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugModule *pModule,
-            /* [in] */ IStream *pSymbolStream)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE EditAndContinueRemap(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugFunction *pFunction,
-            /* [in] */ BOOL fAccurate)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE BreakpointSetError(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugBreakpoint *pBreakpoint,
-            /* [in] */ DWORD dwError)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-
-        // ICorDebugManagedCallback2
-
-        virtual HRESULT STDMETHODCALLTYPE FunctionRemapOpportunity(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugFunction *pOldFunction,
-            /* [in] */ ICorDebugFunction *pNewFunction,
-            /* [in] */ ULONG32 oldILOffset)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE CreateConnection(
-            /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ CONNID dwConnectionId,
-            /* [in] */ WCHAR *pConnName)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE ChangeConnection(
-            /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ CONNID dwConnectionId)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE DestroyConnection(
-            /* [in] */ ICorDebugProcess *pProcess,
-            /* [in] */ CONNID dwConnectionId)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE Exception(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugFrame *pFrame,
-            /* [in] */ ULONG32 nOffset,
-            /* [in] */ CorDebugExceptionCallbackType dwEventType,
-            /* [in] */ DWORD dwFlags)
-        {
-            LogFuncEntry();
-            ThreadId threadId(getThreadId(pThread));
-
-            // In case we inside evaluation (exception during implicit function execution), make sure we continue process execution.
-            // This is internal CoreCLR routine, should not be interrupted by debugger. CoreCLR will care about exception in this case
-            // and provide exception data as evaluation result in case of unhandled exception.
-            if (m_debugger.m_evaluator.IsEvalRunning() && m_debugger.m_evaluator.FindEvalForThread(pThread))
-            {
-                return pAppDomain->Continue(0);
-            }
-
-            // INFO: Exception event callbacks produce Stop process and managed threads in coreCLR
-            // After emit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
-            // For answer on ExceptionInfo are needed long FuncEval() with asynchronous EvalComplete event.
-            // Of course evaluations is not atomic for coreCLR. Before EvalComplete we can get a new
-            // ExceptionEvent if we allow to running of current thread.
-            //
-            // Current implementation stops all threads while EvalComplete waiting. But, unfortunately,
-            // it's not helps in any cases. Exceptions can be throws in the same time from some threads.
-            // And in this case threads thread suspend is not guaranteed, becase thread can stay in
-            // "GC unsafe mode" or "Optimized code". And also, same time exceptions puts in priority queue event,
-            // and all next events one by one will transport each exception.
-            // For "GC unsafe mode" or "Optimized code" we cannot invoke CreateEval() function.
-
-            HRESULT Status = S_OK;
-            string excType, excModule;
-            IfFailRet(GetExceptionInfo(pThread, excType, excModule));
-
-            ExceptionBreakMode mode;
-            m_debugger.m_breakpoints.GetExceptionBreakMode(mode, "*");
-            bool unhandled = (dwEventType == DEBUG_EXCEPTION_UNHANDLED && mode.Unhandled());
-            bool not_matched = !(unhandled || m_debugger.MatchExceptionBreakpoint(dwEventType, excType, ExceptionBreakCategory::CLR));
-
-            if (not_matched) {
-                string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
-                OutputEvent event(OutputConsole, text);
-                event.source = "target-exception";
-                m_debugger.m_protocol->EmitOutputEvent(event);
-                IfFailRet(pAppDomain->Continue(0));
-                return S_OK;
-            }
-
-            StoppedEvent event(StopException, threadId);
-
-            string details;
-            if (unhandled) {
-                details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
-                std::lock_guard<std::mutex> lock(m_debugger.m_lastUnhandledExceptionThreadIdsMutex);
-                m_debugger.m_lastUnhandledExceptionThreadIds.insert(threadId);
-            }
-            else {
-                details = "Exception thrown: '" + excType + "' in " + excModule;
-            }
-
-            string message;
-            WCHAR fieldName[] = W("_message\0");
-            ToRelease<ICorDebugValue> pExceptionValue;
-            IfFailRet(pThread->GetCurrentException(&pExceptionValue));
-            IfFailRet(PrintStringField(pExceptionValue, fieldName, message));
-
-            StackFrame stackFrame;
-            ToRelease<ICorDebugFrame> pActiveFrame;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
-                m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), stackFrame);
-
-            m_debugger.SetLastStoppedThread(pThread);
-
-            event.text = excType;
-            event.description = message.empty() ? details : message;
-            event.frame = stackFrame;
-
-            if (m_debugger.m_evaluator.IsEvalRunning() && !m_debugger.m_evaluator.is_empty_eval_queue()) {
-                ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
-                ToRelease<ICorDebugThread> pThreadEval;
-                IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
-                IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
-                IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
-                IfFailRet(pAppDomain->Continue(0));
-                ToRelease<ICorDebugThread2> pThread2;
-                IfFailRet(pThread->QueryInterface(IID_ICorDebugThread2, (LPVOID *)&pThread2));
-                // Intercept exceptions from frame for resending. Its allow to avoid problem with
-                // wrong state:"GS unsafe" and "optimized code" for evaluation of CallParametricFunc()
-                IfFailRet(pThread2->InterceptCurrentException(pActiveFrame));
-                return S_OK;
-            }
-
-            m_debugger.Stop(threadId, event);
-            return S_OK;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE ExceptionUnwind(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
-            /* [in] */ DWORD dwFlags)
-        {
-            ThreadId threadId(getThreadId(pThread));
-            // We produce DEBUG_EXCEPTION_INTERCEPTED from Exception() callback.
-            // TODO: we should waiting this unwinding on exit().
-            LOGI("ExceptionUnwind:threadId:%d,dwEventType:%d,dwFlags:%d", int(threadId), dwEventType, dwFlags);
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE FunctionRemapComplete(
-            /* [in] */ ICorDebugAppDomain *pAppDomain,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugFunction *pFunction)
-        {
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        virtual HRESULT STDMETHODCALLTYPE MDANotification(
-            /* [in] */ ICorDebugController *pController,
-            /* [in] */ ICorDebugThread *pThread,
-            /* [in] */ ICorDebugMDA *pMDA)
-        {
-            // TODO: MDA notification should be supported with exception breakpoint feature (MDA enabled only under Microsoft Windows OS)
-            // https://docs.microsoft.com/ru-ru/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback2-mdanotification-method
-            // https://docs.microsoft.com/ru-ru/dotnet/framework/debug-trace-profile/diagnosing-errors-with-managed-debugging-assistants#enable-and-disable-mdas
-            //
-
-            LogFuncEntry();
-            return E_NOTIMPL;
-        }
-
-        // ICorDebugManagedCallback3
-
-        virtual HRESULT STDMETHODCALLTYPE CustomNotification(
-            /* [in] */ ICorDebugThread *pThread,  
-            /* [in] */ ICorDebugAppDomain *pAppDomain)
-        {
-            LogFuncEntry();
-
-            HRESULT Status = S_OK;
-
-            if (m_debugger.m_evaluator.IsEvalRunning())
-            {
-                // NOTE
-                // All CoreCLR releases at least till version 3.1.3, don't have proper x86 implementation for ICorDebugEval::Abort().
-                // This issue looks like CoreCLR terminate managed process execution instead of abort evaluation.
-
-                ICorDebugEval *threadEval = m_debugger.m_evaluator.FindEvalForThread(pThread);
-                if (threadEval != nullptr) {
-                    IfFailRet(threadEval->Abort());
-                }
-            }
-
-            IfFailRet(pAppDomain->Continue(false));
-            return S_OK;
-        }
-};
 
 ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
@@ -1629,7 +658,7 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     m_processId = pid;
 
 #ifdef FEATURE_PAL
-    hook::waitpid.SetupTrackingPID(m_processId);
+    GetWaitpid().SetupTrackingPID(m_processId);
 #endif // FEATURE_PAL
 
     return S_OK;
@@ -1726,7 +755,7 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
                                      &m_processId, &resumeHandle));
 
 #ifdef FEATURE_PAL
-    hook::waitpid.SetupTrackingPID(m_processId);
+    GetWaitpid().SetupTrackingPID(m_processId);
 #endif // FEATURE_PAL
 
     IfFailRet(g_dbgshim.RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
@@ -2023,6 +1052,197 @@ HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
     ToRelease<ICorDebugProcess3> pProcess3;
     IfFailRet(pProcess->QueryInterface(IID_ICorDebugProcess3, (LPVOID*) &pProcess3));
     return pProcess3->SetEnableCustomNotification(pClass, fEnable);
+}
+
+HRESULT ManagedDebugger::SetBreakpoints(
+    const std::string& filename,
+    const std::vector<SourceBreakpoint> &srcBreakpoints,
+    std::vector<Breakpoint> &breakpoints)
+{
+    LogFuncEntry();
+
+    return m_breakpoints.SetBreakpoints(m_pProcess, filename, srcBreakpoints, breakpoints);
+}
+
+HRESULT ManagedDebugger::SetFunctionBreakpoints(
+    const std::vector<FunctionBreakpoint> &funcBreakpoints,
+    std::vector<Breakpoint> &breakpoints)
+{
+    LogFuncEntry();
+
+    return m_breakpoints.SetFunctionBreakpoints(m_pProcess, funcBreakpoints, breakpoints);
+}
+
+HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
+{
+    HRESULT Status;
+
+    stackFrame = StackFrame(threadId, level, "");
+
+    ULONG32 ilOffset;
+    Modules::SequencePoint sp;
+
+    if (SUCCEEDED(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
+    {
+        stackFrame.source = Source(sp.document);
+        stackFrame.line = sp.startLine;
+        stackFrame.column = sp.startColumn;
+        stackFrame.endLine = sp.endLine;
+        stackFrame.endColumn = sp.endColumn;
+    }
+
+    mdMethodDef methodToken;
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    ULONG32 nOffset = 0;
+    ToRelease<ICorDebugNativeFrame> pNativeFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugNativeFrame, (LPVOID*) &pNativeFrame));
+    IfFailRet(pNativeFrame->GetIP(&nOffset));
+
+    CorDebugMappingResult mappingResult;
+    IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+
+    IfFailRet(Modules::GetModuleId(pModule, stackFrame.moduleId));
+
+    stackFrame.clrAddr.methodToken = methodToken;
+    stackFrame.clrAddr.ilOffset = ilOffset;
+    stackFrame.clrAddr.nativeOffset = nOffset;
+
+    stackFrame.addr = GetFrameAddr(pFrame);
+
+    TypePrinter::GetMethodName(pFrame, stackFrame.name);
+
+    return stackFrame.source.IsNull() ? S_FALSE : S_OK;
+}
+
+HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
+{
+    LogFuncEntry();
+
+    HRESULT Status;
+
+    DWORD tid = 0;
+    pThread->GetID(&tid);
+    ThreadId threadId{tid};
+
+    int currentFrame = -1;
+
+    IfFailRet(WalkFrames(pThread, [&](
+        FrameType frameType,
+        ICorDebugFrame *pFrame,
+        NativeFrame *pNative,
+        ICorDebugFunction *pFunction)
+    {
+        currentFrame++;
+
+        if (currentFrame < int(startFrame))
+            return S_OK;
+        if (maxFrames != 0 && currentFrame >= int(startFrame) + int(maxFrames))
+            return S_OK;
+
+        switch(frameType)
+        {
+            case FrameUnknown:
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "?");
+                stackFrames.back().addr = GetFrameAddr(pFrame);
+                break;
+            case FrameNative:
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, pNative->symbol);
+                stackFrames.back().addr = pNative->addr;
+                stackFrames.back().source = Source(pNative->file);
+                stackFrames.back().line = pNative->linenum;
+                break;
+            case FrameCLRNative:
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "[Native Frame]");
+                stackFrames.back().addr = GetFrameAddr(pFrame);
+                break;
+            case FrameCLRInternal:
+                {
+                    ToRelease<ICorDebugInternalFrame> pInternalFrame;
+                    IfFailRet(pFrame->QueryInterface(IID_ICorDebugInternalFrame, (LPVOID*) &pInternalFrame));
+                    CorDebugInternalFrameType corFrameType;
+                    IfFailRet(pInternalFrame->GetFrameType(&corFrameType));
+                    std::string name = "[";
+                    name += GetInternalTypeName(corFrameType);
+                    name += "]";
+                    stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, name);
+                    stackFrames.back().addr = GetFrameAddr(pFrame);
+                }
+                break;
+            case FrameCLRManaged:
+                {
+                    StackFrame stackFrame;
+                    GetFrameLocation(pFrame, threadId, FrameLevel{currentFrame}, stackFrame);
+                    stackFrames.push_back(stackFrame);
+                }
+                break;
+        }
+        return S_OK;
+    }));
+
+    totalFrames = currentFrame + 1;
+
+    return S_OK;
+}
+
+int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)
+{
+    LogFuncEntry();
+
+    return m_variables.GetNamedVariables(variablesReference);
+}
+
+HRESULT ManagedDebugger::GetVariables(
+    uint32_t variablesReference,
+    VariablesFilter filter,
+    int start,
+    int count,
+    std::vector<Variable> &variables)
+{
+    LogFuncEntry();
+
+    return m_variables.GetVariables(m_pProcess, variablesReference, filter, start, count, variables);
+}
+
+HRESULT ManagedDebugger::GetScopes(FrameId frameId, std::vector<Scope> &scopes)
+{
+    LogFuncEntry();
+
+    return m_variables.GetScopes(m_pProcess, frameId, scopes);
+}
+
+HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output)
+{
+    LogFuncEntry();
+
+    return m_variables.Evaluate(m_pProcess, frameId, expression, variable, output);
+}
+
+HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output)
+{
+    return m_variables.SetVariable(m_pProcess, name, value, ref, output);
+}
+
+HRESULT ManagedDebugger::SetVariableByExpression(
+    FrameId frameId,
+    const Variable &variable,
+    const std::string &value,
+    std::string &output)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue> pResultValue;
+
+    IfFailRet(m_variables.GetValueByExpression(m_pProcess, frameId, variable, &pResultValue));
+    return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
 }
 
 } // namespace netcoredbg

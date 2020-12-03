@@ -231,6 +231,14 @@ HRESULT ManagedPart::LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule)
     );
 }
 
+/*
+static size_t NextOSPageAddress(size_t addr)
+{
+    size_t pageSize = OSPageSize();
+    return (addr+pageSize)&(~(pageSize-1));
+}
+*/
+
 /**********************************************************************\
 * Routine Description:                                                 *
 *                                                                      *
