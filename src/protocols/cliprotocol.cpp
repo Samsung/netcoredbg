@@ -513,6 +513,7 @@ HRESULT CLIProtocol::PrintVariable(ThreadId threadId, FrameId frameId, std::list
         {
             ss << ": {";
         }
+        m_debugger->GetVariables(v.variablesReference, VariablesBoth, 0, v.namedVariables, children);
         int count = 0;
         for (auto &child : children)
         {
