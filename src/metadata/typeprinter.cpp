@@ -283,6 +283,7 @@ HRESULT TypePrinter::AddGenericArgs(ICorDebugType *pType, std::list<std::string>
             std::string name;
             GetTypeOfValue(pCurrentTypeParam, name);
             args.emplace_back(name);
+            pCurrentTypeParam.Free();
         }
     }
 
@@ -308,6 +309,7 @@ HRESULT TypePrinter::AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::strin
             std::string name;
             GetTypeOfValue(pCurrentTypeParam, name);
             args.emplace_back(name);
+            pCurrentTypeParam.Free();
         }
     }
 
@@ -715,6 +717,7 @@ void TypePrinter::NameForTypeSig(
             std::string name;
             GetTypeOfValue(pCurrentTypeParam, name);
             args.emplace_back(name);
+            pCurrentTypeParam.Free();
         }
     }
 
