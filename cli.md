@@ -33,7 +33,7 @@ cli> set-args hello.dll param1 param2
 ```
 
 ### Running debugging program
-Now the debugger is ready to run your assembly. The debugging information is not loaded at this moment and will be available after your program starts. Anyway you can set any breakpoint here using "break" command (see below). Please keep in mind that all the breakpoints set here will have "pending" status until "hit entry point" event will occur. Example:
+Now the debugger is ready to run your assembly. The debugging information is not loaded at this moment and will be available after your program starts. Anyway you can set any breakpoint here using "break" command (see below). Please keep in mind that all the breakpoints set here will have "pending" status until "hit entry point" event will occur. Debugging information is provided by `*.pdb` file. If the debugger can't find the correspoinding `*.pdb` the debugging will not be possible, even hitting the entry point will not pause the debugee process. Example:
 ```
 cli> run
 library loaded: /usr/share/dotnet/shared/Microsoft.NETCore.App/3.1.6/System.Private.CoreLib.dll
