@@ -21,4 +21,4 @@ find_package (Threads)
 
 # currently defined unit tests
 deftest(string_view string_view_test.cpp)
-
+deftest(span span_test.cpp)
