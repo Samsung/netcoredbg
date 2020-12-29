@@ -20,4 +20,5 @@ add_library(testsuite STATIC Catch2.cpp)
 find_package (Threads)
 
 # currently defined unit tests
-# none
+deftest(string_view string_view_test.cpp)
+
