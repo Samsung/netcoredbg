@@ -43,6 +43,9 @@ include_directories(${CORECLR_SRC_DIR}/hosts/inc)
 include_directories(${PROJECT_SOURCE_DIR}/third_party)
 include_directories(${PROJECT_SOURCE_DIR}/third_party/linenoise-ng/include)
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${PROJECT_BINARY_DIR}/generated)
+
 # Generate error messages from corerror.xml
 
 set(ERRORMESSAGE_DLL_NAME generrmsg/bin/generrmsg.dll)
@@ -97,13 +100,12 @@ set(netcoredbg_SRC
     protocols/tokenizer.cpp
     protocols/vscodeprotocol.cpp
     utils/utf.cpp
-    buildinfo.cpp
     errormessage.cpp
     main.cpp
     platform.cpp
     )
 
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_INCLUDE_CURRENT_DIR OFF)
 
 if (NOT WIN32)
     add_definitions(-DPAL_STDCPP_COMPAT)
@@ -194,3 +196,9 @@ else()
     message("Doxygen need to be installed to generate documentation")
 endif()
 endif()
+
+# unit tests
+if (BUILD_TESTING)
+    add_subdirectory(unittests)
+endif()
+

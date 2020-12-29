@@ -32,6 +32,7 @@ BuildRequires: libdlog-devel
 Requires: coreclr
 
 %{!?build_type:%define build_type Release}
+%{!?build_testing:%define build_testing OFF}
 
 # .NET Core Runtime
 %define dotnetdir       dotnet
@@ -95,7 +96,8 @@ cmake .. \
     -DCMAKE_BUILD_TYPE=%{build_type} \
     -DCLR_CMAKE_LINUX_ID=tizen \
     -DDBGSHIM_RUNTIME_DIR=$NETCOREAPPDIR \
-    -DBUILD_MANAGED=OFF
+    -DBUILD_MANAGED=OFF \
+    -DBUILD_TESTING=%{build_testing}
 
 make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 

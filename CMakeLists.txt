@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 2.8.12.2)
+
 project(netcoredbg)
 
 set(CORECLR_DIR "" CACHE FILEPATH "Path to CoreCLR source directory")
@@ -94,4 +95,4 @@ execute_process(COMMAND date OUTPUT_VARIABLE BUILD_NETCOREDBG_DATE
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/buildinfo.cpp.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/src/buildinfo.cpp" @ONLY)
+    "${PROJECT_BINARY_DIR}/generated/buildinfo.cpp" @ONLY)
