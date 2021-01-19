@@ -15,7 +15,7 @@ if (NOT WIN32)
     add_compile_options(-Wno-extra-tokens)
 endif()
 add_compile_options(-D_MIDL_USE_GUIDDEF_)
-file(GLOB CORGUIDS_SOURCES "${CORECLR_DIR}/src/pal/prebuilt/idl/*_i.cpp")
+file(GLOB CORGUIDS_SOURCES "${CORECLR_SRC_DIR}/pal/prebuilt/idl/*_i.cpp")
 add_library(corguids STATIC ${CORGUIDS_SOURCES})
 if (NOT WIN32)
     target_compile_options(corguids PRIVATE -Wno-unused-parameter)
@@ -24,18 +24,18 @@ endif()
 # Include coreclr headers
 
 if (NOT WIN32)
-    include_directories(${CORECLR_DIR}/src/pal/inc)
-    include_directories(${CORECLR_DIR}/src/pal/inc/rt)
-    include_directories(${CORECLR_DIR}/src/pal/prebuilt/inc)
+    include_directories(${CORECLR_SRC_DIR}/pal/inc)
+    include_directories(${CORECLR_SRC_DIR}/pal/inc/rt)
+    include_directories(${CORECLR_SRC_DIR}/pal/prebuilt/inc)
 endif()
-include_directories(${CORECLR_DIR}/src/inc)
-include_directories(${CORECLR_DIR}/src/debug/inc)
-include_directories(${CORECLR_DIR}/src/debug/shim)
-include_directories(${CORECLR_DIR}/src/dlls/dbgshim)
+include_directories(${CORECLR_SRC_DIR}/inc)
+include_directories(${CORECLR_SRC_DIR}/debug/inc)
+include_directories(${CORECLR_SRC_DIR}/debug/shim)
+include_directories(${CORECLR_SRC_DIR}/dlls/dbgshim)
 # for CoreCLR <= 3.x
-include_directories(${CORECLR_DIR}/src/coreclr/hosts/inc)
+include_directories(${CORECLR_SRC_DIR}/coreclr/hosts/inc)
 # for dotnet-runtime (> 3.x)
-include_directories(${CORECLR_DIR}/src/hosts/inc)
+include_directories(${CORECLR_SRC_DIR}/hosts/inc)
 
 # Build native part of the debugger
 
@@ -68,10 +68,10 @@ add_custom_command(
 
 add_custom_command(
   OUTPUT errormessage.cpp
-  COMMAND ${DOTNETCLI} generrmsg/bin/generrmsg.dll ${CORECLR_DIR}/src/inc/corerror.xml ${CMAKE_CURRENT_BINARY_DIR}/errormessage.cpp ${CMAKE_CURRENT_BINARY_DIR}/errormessage.h
+  COMMAND ${DOTNETCLI} generrmsg/bin/generrmsg.dll ${CORECLR_SRC_DIR}/inc/corerror.xml ${CMAKE_CURRENT_BINARY_DIR}/errormessage.cpp ${CMAKE_CURRENT_BINARY_DIR}/errormessage.h
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-  DEPENDS "${CORECLR_DIR}/src/inc/corerror.xml" ${ERRORMESSAGE_DLL_NAME}
-  COMMENT "Extracting ${CORECLR_DIR}/src/inc/corerror.xml"
+  DEPENDS "${CORECLR_SRC_DIR}/inc/corerror.xml" ${ERRORMESSAGE_DLL_NAME}
+  COMMENT "Extracting ${CORECLR_SRC_DIR}/inc/corerror.xml"
   VERBATIM
 )
 

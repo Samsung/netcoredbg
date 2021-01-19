@@ -33,8 +33,13 @@ include(clrdefinitions.cmake)
 
 include(fetchdeps.cmake)
 
+set(CORECLR_SRC_DIR "${CORECLR_DIR}/src")
+if (NOT EXISTS "${CORECLR_SRC_DIR}/pal")
+  set(CORECLR_SRC_DIR "${CORECLR_DIR}")
+endif()
+
 # Basic checks for valid paths
-if (NOT IS_DIRECTORY "${CORECLR_DIR}/src/pal")
+if (NOT IS_DIRECTORY "${CORECLR_SRC_DIR}/pal")
     message(FATAL_ERROR "Invalid CoreCLR source directory")
 endif()
 if (NOT "${DOTNET_DIR}" STREQUAL "")
