@@ -4,6 +4,9 @@
 # Visual Studio Code
 /.vscode/
 
+# Visual Studio (directories)
+.vs
+
 # Qt Creator files
 CMakeLists.txt.user
 *.config
@@ -20,5 +23,27 @@ CMakeLists.txt.user
 *.pdb
 bin/
 obj/
+
+# .NET and CoreCLR downloaded by build system
 /.dotnet/
 /.coreclr/
+
+# GDB-related
+.gdb_history
+
+# Vim swap files
+.*.sw?
+.sw?
+
+# miscellaneous backup files
+*~
+
+# core dumps
+core
+core.*
+
+# ctags index (used to navigate in source code)
+tags
+
+# netcoregdb's command history
+.netcoredbg_hist
