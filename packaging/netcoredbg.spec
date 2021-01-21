@@ -62,7 +62,7 @@ Requires: coreclr
 This is a CoreCLR debugger for Tizen.
 
 %prep
-gzip -dc %{SOURCE0} | tar -xvf -
+gzip -dc %{SOURCE0} | tar -xvf %{SOURCE0}
 cd netcoredbg
 cp %{SOURCE1001} ..
 mkdir packaging/pkgs
