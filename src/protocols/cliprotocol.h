@@ -16,6 +16,8 @@
 namespace netcoredbg
 {
 
+const char HistoryFileName[] = ".netcoredbg_hist";
+
 class CLIProtocol : public IProtocol
 {
     std::string m_fileExec;
@@ -36,7 +38,7 @@ class CLIProtocol : public IProtocol
     
 public:
 
-    CLIProtocol() : IProtocol(), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(".history"),
+    CLIProtocol() : IProtocol(), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(HistoryFileName),
 #ifndef WIN32
                                  redOn("\033[1;31m"), colorOff("\033[0m") {}
 #else
