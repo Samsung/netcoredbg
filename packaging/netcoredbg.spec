@@ -4,8 +4,8 @@ Version:   1.2.0
 Release:   5
 Group:     Development/Toolchain
 License:   MIT
-Source0:   netcoredbg.tar.gz
-Source1001: netcoredbg.manifest
+Source0:   %{name}-%{version}.tar.gz
+Source1001: %{name}.manifest
 AutoReqProv: no
 
 # Accelerate clang
@@ -39,7 +39,7 @@ Requires: coreclr
 %define netcoreapp      %{netshareddir}/Microsoft.NETCore.App/
 %define netcoreappalias dotnet.tizen/netcoreapp
 %define sdktoolsdir     /home/owner/share/tmp/sdk_tools
-%define install_prefix /usr/
+%define install_prefix /usr
 %define sdk_install_prefix /home/owner/share/tmp/sdk_tools/netcoredbg
 
 %ifarch x86_64
@@ -62,9 +62,9 @@ Requires: coreclr
 This is a CoreCLR debugger for Tizen.
 
 %prep
-gzip -dc %{SOURCE0} | tar -xvf %{SOURCE0}
-cd netcoredbg
-cp %{SOURCE1001} ..
+%setup -q
+cp %{SOURCE1001} .
+
 mkdir packaging/pkgs
 ln -s /nuget packaging/pkgs/nuget
 
@@ -87,7 +87,7 @@ export NETCOREAPPDIR=$(if [ -d %{_datarootdir}/%{netcoreappalias} ]; then echo %
 
 mkdir build
 cd build
-cmake ../netcoredbg \
+cmake .. \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
     -DCORECLR_DIR=$NETCOREAPPDIR \
@@ -99,22 +99,22 @@ cmake ../netcoredbg \
 
 make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 
-%dotnet_build -s ../netcoredbg/packaging/pkgs ../netcoredbg/src/managed
+%dotnet_build -s ../packaging/pkgs ../src/managed
 
 %install
 cd build
 %make_install
 mkdir -p %{buildroot}%{sdk_install_prefix}
 mv %{buildroot}%{install_prefix}/netcoredbg %{buildroot}%{sdk_install_prefix}
-install -p -m 644 ../netcoredbg/src/managed/bin/*/*/ManagedPart.dll %{buildroot}%{sdk_install_prefix}
+install -p -m 644 ../src/managed/bin/*/*/ManagedPart.dll %{buildroot}%{sdk_install_prefix}
 
 export CSVER=$(ls /nuget/microsoft.codeanalysis.common.*.nupkg | sort -n | tail -1 | cut -d "." -f4-6)
 export SYSCODEPAGES=$(ls /nuget/system.text.encoding.codepages.4.*.nupkg | sort -n | tail -1)
 
 unzip /nuget/microsoft.codeanalysis.common.$CSVER.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.dll
 unzip /nuget/microsoft.codeanalysis.csharp.$CSVER.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.dll
-unzip ../netcoredbg/packaging/microsoft.codeanalysis.scripting.common.$CSVER.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.Scripting.dll
-unzip ../netcoredbg/packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.Scripting.dll
+unzip ../packaging/microsoft.codeanalysis.scripting.common.$CSVER.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.Scripting.dll
+unzip ../packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nupkg lib/netstandard1.3/Microsoft.CodeAnalysis.CSharp.Scripting.dll
 unzip $SYSCODEPAGES lib/netstandard1.3/System.Text.Encoding.CodePages.dll
 
 find lib/netstandard1.3/ -name '*.dll' -exec chmod 644 {} \;
