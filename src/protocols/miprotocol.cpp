@@ -630,17 +630,26 @@ void MIProtocol::EmitModuleEvent(ModuleEvent event)
     }
 }
 
-void MIProtocol::EmitOutputEvent(OutputEvent event)
+void MIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
 {
-    LogFuncEntry();
+#if 0 
+    static const string_view categories[] = {"console", "stdout", "stderr"};
 
-    if (event.source.empty())
-        MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\"\n",
-            MIProtocol::EscapeMIValue(event.output).c_str());
-    else
-        MIProtocol::Printf("=message,text=\"%s\",send-to=\"output-window\",source=\"%s\"\n",
-            MIProtocol::EscapeMIValue(event.output).c_str(),
-            MIProtocol::EscapeMIValue(event.source).c_str());
+    assert(category == OutputConsole || category == OutputStdOut || category == OutputStdErr);
+    const string_view& name = categories[category];
+
+    cout << name...   // TODO enable this after fixing plugin
+#endif
+
+    std::lock_guard<std::mutex> lock(m_outMutex);
+
+    cout << "=message,text=\"" << EscapeMIValue(output) << "\",send-to=\"output-window\"";
+
+    if (!source.empty())
+        cout << ",source=\"" << EscapeMIValue(source) << "\"";
+
+    cout << "\n";
+    cout.flush();
 }
 
 HRESULT MIProtocol::HandleCommand(const std::string& command,
@@ -1122,8 +1131,8 @@ void MIProtocol::CommandLoop()
         token.clear();
         std::string input;
 
-        std::getline(std::cin, input);
-        if (input.empty() && std::cin.eof())
+        std::getline(cin, input);
+        if (input.empty() && cin.eof())
             break;
 
         std::vector<std::string> args;
@@ -1210,29 +1219,30 @@ void MIProtocol::Printf(const char *fmt, ...)
     }
 
     std::lock_guard<std::mutex> lock(m_outMutex);
-    std::cout << out;
-    std::cout.flush();
+    cout << out;
+    cout.flush(); // TODO too frequent flush
 }
 
 
 struct MIProtocol::MIProtocolChars
 {
     // list of characters to be replaced
-    static constexpr const char forbidden_chars[] = "\"\\\0\a\b\f\n\r\t\v";
+    static const char forbidden_chars[];
 
     // substitutions (except of '\\' prefix)
-    static constexpr const char subst_chars[] = "\"\\0abfnrtv";
+    static const char subst_chars[];
 
     static constexpr const char escape_char = '\\';
 };
 
 
-const char MIProtocol::MIProtocolChars::forbidden_chars[];
-const char MIProtocol::MIProtocolChars::subst_chars[];
+const char MIProtocol::MIProtocolChars::forbidden_chars[] = "\"\\\0\a\b\f\n\r\t\v";
+const char MIProtocol::MIProtocolChars::subst_chars[] = "\"\\0abfnrtv";
 const char MIProtocol::MIProtocolChars::escape_char;
 
 
 template class EscapedString<MIProtocol::MIProtocolChars>;
 template std::ostream& operator<<(std::ostream& os, const EscapedString<MIProtocol::MIProtocolChars>& estr);
+
 
 } // namespace netcoredbg

@@ -14,9 +14,11 @@
 #include "protocols/vscodeprotocol.h"
 #include "winerror.h"
 
+#include "streams.h"
 #include "torelease.h"
 #include "utils/utf.h"
 #include "utils/logger.h"
+#include "utils/escaped_string.h"
 
 using std::string;
 using std::vector;
@@ -248,27 +250,60 @@ void VSCodeProtocol::EmitModuleEvent(ModuleEvent event)
     EmitEvent("module", body);
 }
 
-void VSCodeProtocol::EmitOutputEvent(OutputEvent event)
+
+namespace
 {
-    LogFuncEntry();
-    json body;
-
-    switch(event.category)
+    // Rules to escape characters in strings, in JSON.
+    struct JSON_escape_rules
     {
-        case OutputConsole:
-            body["category"] = "console";
-            break;
-        case OutputStdOut:
-            body["category"] = "stdout";
-            break;
-        case OutputStdErr:
-            body["category"] = "stderr";
-            break;
-    }
+       static const char forbidden_chars[];
+       static const char subst_chars[];
+       constexpr static const char escape_char = '\\';
+    };
 
-    body["output"] = event.output;
+    // Allocate static memory for strings declared above.
+    const char JSON_escape_rules::forbidden_chars[] = "\b\f\n\r\t\"\\";
+    const char JSON_escape_rules::subst_chars[] = "bfnrt\"\\";
 
-    EmitEvent("output", body);
+    // This function serializes "OutputEvent" to specified output stream and used for two
+    // purposes: to compute output size, and to perform the output directly.
+    template <typename T>
+    void serialize_output(std::ostream& stream, uint64_t counter, string_view name, T& text)
+    {
+        stream << "{\"seq\":" << counter 
+            << ", \"event\":\"output\",\"type\":\"event\",\"body\":{\"category\":\"" << name
+            << "\",\"output\":\"" << text << "\"}}";
+
+        stream.flush();
+    };
+}
+
+void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view)
+{
+    static const string_view categories[] = {"console", "stdout", "stderr"};
+
+    // determine "category name"
+    assert(category == OutputConsole || category == OutputStdOut || category == OutputStdErr);
+    const string_view& name = categories[category];
+
+    // compute size of escaped "output" string
+    EscapedString<JSON_escape_rules> escaped_text(output);
+    size_t const text_size = escaped_text.size();
+
+    std::lock_guard<std::mutex> lock(m_outMutex);
+
+    // compute size of headers without text
+    CountingStream count;
+    serialize_output(count, m_seqCounter, name, "");
+
+    // compute total size of headers + text
+    size_t const total_size = count.size() + text_size;
+
+    // perform output
+    cout << CONTENT_LENGTH << total_size << TWO_CRLF;
+    serialize_output(cout, m_seqCounter, name, escaped_text);
+
+    ++m_seqCounter;
 }
 
 void VSCodeProtocol::EmitBreakpointEvent(BreakpointEvent event)
@@ -346,8 +381,8 @@ void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &bo
     output = VSCodeSeq(m_seqCounter) + output.substr(1);
     ++m_seqCounter;
 
-    std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
-    std::cout.flush();
+    cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
+    cout.flush();
     Log(LOG_EVENT, output);
 }
 
@@ -683,10 +718,10 @@ std::string VSCodeProtocol::ReadData()
     while (true)
     {
         std::string line;
-        std::getline(std::cin, line);
-        if (!std::cin.good())
+        std::getline(cin, line);
+        if (!cin.good())
         {
-            if (std::cin.eof()) LOGI("EOF");
+            if (cin.eof()) LOGI("EOF");
             else LOGE("input stream reading error");
             return {};
         }
@@ -724,9 +759,9 @@ std::string VSCodeProtocol::ReadData()
     }
 
     std::string result(content_len, 0);
-    if (!std::cin.read(&result[0], content_len))
+    if (!cin.read(&result[0], content_len))
     {
-        if (std::cin.eof()) LOGE("Unexpected EOF!");
+        if (cin.eof()) LOGE("Unexpected EOF!");
         else LOGE("input stream reading error");
         return {};
     }
@@ -823,8 +858,8 @@ void VSCodeProtocol::CommandLoop()
             std::lock_guard<std::mutex> lock(m_outMutex);
             ++m_seqCounter;
 
-            std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
-            std::cout.flush();
+            cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
+            cout.flush();
             Log(LOG_RESPONSE, output);
         }
     }
@@ -874,8 +909,8 @@ void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
             std::string output = response.dump();
             output = VSCodeSeq(m_seqCounter) + output.substr(1);
             ++m_seqCounter;
-            std::cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
-            std::cout.flush();
+            cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
+            cout.flush();
             return;
         }
     }

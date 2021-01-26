@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -36,7 +37,7 @@ struct FuncBreak
 class IProtocol : public Protocol
 {
 public:
-    IProtocol() : Protocol() {}
+    IProtocol(std::istream& input, std::ostream& output) : Protocol(input, output) {}
 
 protected:
     int ParseInt(const std::string &s, bool &ok);

@@ -6,6 +6,7 @@
 #include "cor.h"
 #include "cordebug.h"
 
+#include <functional>
 #include <vector>
 #include "protocols/protocol.h"
 

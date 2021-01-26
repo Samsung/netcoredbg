@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <iostream>
 #include <string>
 #include <vector>
 #include <functional>
@@ -18,9 +19,11 @@
 #endif
 
 #include "protocols/protocol.h"
+#include "string_view.h"
 
 namespace netcoredbg
 {
+using Utility::string_view;
 
 using Utility::string_view;
 
@@ -84,8 +87,12 @@ protected:
     bool m_exit;
     Debugger *m_debugger;
 
+    // File streams used to read commands and write responses.
+    std::istream& cin;
+    std::ostream& cout;
+
 public:
-    Protocol() : m_exit(false), m_debugger(nullptr) {}
+    Protocol(std::istream& input, std::ostream& output) : m_exit(false), m_debugger(nullptr), cin(input), cout(output)  {}
     void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
 
     virtual void EmitInitializedEvent() = 0;
@@ -96,9 +103,10 @@ public:
     virtual void EmitContinuedEvent(ThreadId threadId) = 0;
     virtual void EmitThreadEvent(ThreadEvent event) = 0;
     virtual void EmitModuleEvent(ModuleEvent event) = 0;
-    virtual void EmitOutputEvent(OutputEvent event) = 0;
+    virtual void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") = 0;
     virtual void EmitBreakpointEvent(BreakpointEvent event) = 0;
     virtual void Cleanup() = 0;
+    virtual void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) = 0;
     virtual void CommandLoop() = 0;
     virtual ~Protocol() {}
 };

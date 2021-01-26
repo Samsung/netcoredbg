@@ -16,11 +16,14 @@
 #include "protocols/cliprotocol.h"
 #include "linenoise.h"
 #include "utils/utf.h"
+#include "filesystem.h"
 
+#include "limits.h"
 #include <sstream>
 #include <functional>
 #include <algorithm>
 #include <numeric>
+#include <memory>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -36,10 +39,27 @@
 #include "completions.h"
 
 
+// Each protocol receives input/output streams as arguments and should use these streams
+// for receiving commands and printing responses. Standard IO streams should not be used
+// for this purpose.
+#undef stdout
+#define stdout "standard IO files shouldn't be used as protocol input/output streams"
+#undef stderr
+#define stderr "standard IO files shouldn't be used as protocol input/output streams"
+
+// Check printf arguments and call printf_checked() function which will print
+// not to stdout, but to `cout` stream, which was passed to CLIProtocol constructor.
+#define printf(fmt, ...) (false ? printf(fmt, ##__VA_ARGS__) : printf_checked(fmt, ##__VA_ARGS__))
+
+#ifdef _MSC_VER
+// This should never be called and need only to avoid warning from Visual Studio.
+static int printf_checked(const char *, ...) { return -1; }
+#endif
+
+
 namespace netcoredbg
 {
 
-//using namespace std::placeholders;
 using std::unordered_set;
 using std::string;
 using std::vector;
@@ -350,12 +370,51 @@ CLIProtocol::TermSettings::~TermSettings()
 }
 
 
-CLIProtocol::CLIProtocol()
-: IProtocol(),
+CLIProtocol::CLIProtocol(InStream& input, OutStream& output) :
+  IProtocol(input, output),
+  m_input(input),
+  m_output(output),
   m_processStatus(NotStarted),
   m_varCounter(0),
   line_reader()
-{}
+{
+    (void)m_input, (void)m_output;  // TODO start usint std::iostream in future
+}
+
+
+int CLIProtocol::printf_checked(const char *fmt, ...)
+{
+    int len;
+    va_list args;
+
+    {
+        char buf[2*LINE_MAX];
+        va_start(args, fmt);
+        len = vsnprintf(buf, sizeof(buf), fmt, args);
+        va_end(args);
+        if (len < 0)
+            return -1;
+
+        if (size_t(len) < sizeof(buf))
+        {
+            cout << buf;
+            cout.flush();
+            return len;
+        }
+    }
+
+    std::unique_ptr<char> dbuf(static_cast<char*>(operator new(len + 1)));
+
+    va_start(args, fmt);
+    int len2 = vsnprintf(dbuf.get(), len + 1, fmt, args);
+    va_end(args);
+    if (len < 0 || len > len2)
+        return -1;
+
+    cout << dbuf.get();
+    cout.flush();
+    return len;
+}
 
 
 HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
@@ -706,14 +765,12 @@ void CLIProtocol::EmitModuleEvent(ModuleEvent event)
     }
 }
 
-void CLIProtocol::EmitOutputEvent(OutputEvent event)
+void CLIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
 {
-    LogFuncEntry();
-
-    if (event.source.empty())
-        printf("\n%s\n", event.output.c_str());
-    else
-        printf("\n%s, source: %s\n", event.output.c_str(), event.source.c_str());
+    (void)source, (void)category;  // TODO What we should do with category and source?
+    
+    cout << output;
+    cout.flush();
 }
 
 template <>
@@ -1397,6 +1454,21 @@ void CLIProtocol::Source(span<const string_view> init_commands)
     execCommands(MemoryLineReader(init_commands));
 }
 
+
+// callback for linenoise library
+static unsigned completion_callback(const char *input, unsigned cursor, linenoiseCompletions *lc, void *context)
+{
+    LOGD("completion: '%s', cursor=%u", input, cursor);
+    unsigned result = static_cast<CLIProtocol*>(context)->completeInput({input}, cursor,
+                        [&](const char *str) {
+                            LOGD("completion variant '%s'\n", str);
+                            linenoiseAddCompletion(lc, str); 
+                        });
+    LOGD("completion substring: [%u, %u)", result, cursor);
+    return result;
+};
+
+
 void CLIProtocol::CommandLoop()
 {
 #ifndef WIN32
@@ -1405,18 +1477,6 @@ void CLIProtocol::CommandLoop()
     linenoiseInstallWindowChangeHandler();
     linenoiseHistorySetMaxLen(DefaultHistoryDepth);
     linenoiseHistoryLoad(HistoryFileName);
-
-    auto completion_callback = [](const char *input, unsigned cursor, linenoiseCompletions *lc, void *context)
-    {
-        LOGD("completion: '%s', cursor=%u", input, cursor);
-        unsigned result = static_cast<CLIProtocol*>(context)->completeInput({input}, cursor,
-                            [&](const char *str) {
-                                LOGD("completion variant '%s'\n", str);
-                                linenoiseAddCompletion(lc, str); 
-                            });
-        LOGD("completion substring: [%u, %u)", result, cursor);
-        return result;
-    };
 
     linenoiseSetCompletionCallbackEx(completion_callback, this);
 

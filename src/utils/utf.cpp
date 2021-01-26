@@ -40,9 +40,9 @@ std::wstring
 #else
 std::u16string
 #endif
-to_utf16(const std::string &utf8)
+to_utf16(string_view utf8)
 {
-    return convert.from_bytes(utf8);
+    return convert.from_bytes(utf8.data(), utf8.data() + utf8.size());
 }
 
 } // namespace netcoredbg

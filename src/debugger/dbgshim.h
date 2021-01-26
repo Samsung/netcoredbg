@@ -11,9 +11,11 @@
 #include <pal_mstypes.h>
 #else
 #include <windows.h>
+#include "palclr.h"
 #endif
 
-#include "platform.h"
+#include "filesystem.h"
+#include "dynlibs.h"
 #include <string>
 
 
@@ -85,7 +87,7 @@ struct dbgshim_t
         //     DLClose(m_module);
     }
 private:
-    void *m_module;
+    DLHandle m_module;
 };
 
 } // namespace netcoredbg

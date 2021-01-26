@@ -15,13 +15,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <limits.h>
 #include <assert.h>
 #include <mutex>
+#include "limits.h"
 
 #ifdef _WIN32
 #include <windows.h>
-#define LINE_MAX 2048
 #endif
 
 #ifdef __unix__

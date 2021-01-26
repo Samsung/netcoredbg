@@ -12,8 +12,9 @@
 #include <cassert>
 #include <climits>
 #include <new>
-#include "platform.h"
+#include "filesystem.h"
 #include "utility.h"
+#include "string_view.h"
 
 #ifdef FEATURE_PAL
 #include "pal_mstypes.h"
@@ -21,6 +22,8 @@
 
 namespace netcoredbg
 {
+
+using Utility::string_view;
 
 // Types commonly used in the debugger:
 
@@ -134,7 +137,7 @@ struct Source
     std::string name;
     std::string path;
 
-    Source(const std::string& path = std::string()) : name(GetFileName(path)), path(path) {}
+    Source(string_view path = {});
     bool IsNull() const { return name.empty() && path.empty(); }
 };
 
@@ -304,16 +307,6 @@ enum OutputCategory
     OutputConsole,
     OutputStdOut,
     OutputStdErr
-};
-
-struct OutputEvent
-{
-    OutputCategory category;
-    std::string output;
-
-    std::string source; // exposed for MI protocol
-
-    OutputEvent(OutputCategory category, const std::string& output) : category(category), output(output) {}
 };
 
 enum ModuleReason

@@ -45,6 +45,7 @@ include_directories(${PROJECT_SOURCE_DIR}/third_party/linenoise-ng/include)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${PROJECT_BINARY_DIR}/generated)
+include_directories(${PROJECT_SOURCE_DIR}/src/windows ${PROJECT_SOURCE_DIR}/src/unix)
 
 # Generate error messages from corerror.xml
 
@@ -102,8 +103,20 @@ set(netcoredbg_SRC
     utils/utf.cpp
     errormessage.cpp
     main.cpp
-    platform.cpp
     utils/escaped_string.cpp
+    filesystem.cpp
+    ioredirect.cpp
+    streams.cpp
+    unix/interop_unix.cpp
+    unix/dynlibs_unix.cpp
+    unix/filesystem_unix.cpp
+    unix/iosystem_unix.cpp
+    unix/platform_unix.cpp
+    windows/interop_win32.cpp
+    windows/dynlibs_win32.cpp
+    windows/filesystem_win32.cpp
+    windows/iosystem_win32.cpp
+    windows/platform_win32.cpp
     )
 
 set(CMAKE_INCLUDE_CURRENT_DIR OFF)

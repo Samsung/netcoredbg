@@ -19,11 +19,14 @@
 
 #include <list>
 #include <set>
+#include "span.h"
+#include "ioredirect.h"
 
 namespace netcoredbg
 {
 
 using Utility::string_view;
+template <typename T> using span = Utility::span<T>;
 
 ThreadId getThreadId(ICorDebugThread *pThread);
 
@@ -256,6 +259,10 @@ private:
     PVOID m_unregisterToken;
     DWORD m_processId;
     std::string m_clrPath;
+
+    IORedirectHelper m_ioredirect;
+
+    void InputCallback(IORedirectHelper::StreamType, span<char> text);
 
     static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
     HRESULT Startup(IUnknown *punk, DWORD pid);

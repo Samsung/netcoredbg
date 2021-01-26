@@ -3,23 +3,24 @@
 // See the LICENSE file in the project root for more information.
 
 #include <string>
+#include <exception>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
-#ifdef __linux__
-#include <linux/limits.h>
-#endif
+#include "limits.h"
 
 #include "protocols/vscodeprotocol.h"
 #include "debugger/manageddebugger.h"
 #include "protocols/miprotocol.h"
 #include "protocols/cliprotocol.h"
+#include "utils/utf.h"
 #include "utils/logger.h"
 #include "version.h"
 
 #ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
 #include <windows.h>
 #define PATH_MAX MAX_PATH
 static void setenv(const char* var, const char* val, int) { _putenv_s(var, val); }
@@ -51,6 +52,7 @@ static void print_help()
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
         "--command=<file>                      Interpret commands file at the start.\n"
         "-ex \"<command>\"                       Execute command at the start\n"
+        "--run                                 Run program without waiting commands\n"
         "--engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.\n"
         "                                      Only supported by the VsCode interpreter.\n"
         "--server[=port_num]                   Start the debugger listening for requests on the\n"
@@ -106,7 +108,73 @@ static void print_buildinfo()
     );
 }
 
+// protocol names for logging
+template <typename ProtocolType> struct ProtocolDetails { static const char name[]; };
+template <> const char ProtocolDetails<MIProtocol>::name[] = "MIProtocol";
+template <> const char ProtocolDetails<VSCodeProtocol>::name[] = "VSCodeProtocol";
+template <> const char ProtocolDetails<CLIProtocol>::name[] = "CLIProtocol";
+
+// argument needed for protocol creation
+using Streams = std::pair<std::istream&, std::ostream&>;
+
+using ProtocolHolder = std::unique_ptr<Protocol>;
+using ProtocolConstructor = ProtocolHolder (*)(Streams);
+
+// static functions which used to create protocol instance (like class fabric)
+template <typename ProtocolType>
+ProtocolHolder instantiate_protocol(Streams streams)
+{
+    LOGI("Creating protocol %s", ProtocolDetails<ProtocolType>::name);
+    return ProtocolHolder{new ProtocolType(streams.first, streams.second)};
+}
+
+template <>
+ProtocolHolder instantiate_protocol<CLIProtocol>(Streams streams)
+{
+    using ProtocolType = CLIProtocol;
+    LOGI("Creating protocol %s", ProtocolDetails<ProtocolType>::name);
+    return ProtocolHolder{new ProtocolType(dynamic_cast<InStream&>(streams.first), dynamic_cast<OutStream&>(streams.second))};
+}
+
+
+// function creates pair of input/output streams for debugger protocol
+template <typename Holder>
+Streams open_streams(Holder& holder, unsigned server_port, ProtocolConstructor constructor)
+{
+    if (server_port != 0)
+    {
+        IOSystem::FileHandle socket = IOSystem::listen_socket(server_port);
+        if (! socket)
+        {
+            fprintf(stderr, "can't open listening socket for port %u\n", server_port);
+            exit(EXIT_FAILURE);
+        }
+
+        std::iostream *stream = new IOStream(StreamBuf(socket));
+        holder.push_back(typename Holder::value_type{stream});
+        return {*stream, *stream};
+    }
+
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
+
+    if (constructor == instantiate_protocol<CLIProtocol>)
+    {
+        IOSystem::StdFiles stdio = IOSystem::get_std_files();
+        auto cin = new InStream(InStreamBuf(std::get<IOSystem::Stdin>(stdio)));
+        auto cout = new OutStream(OutStreamBuf(std::get<IOSystem::Stdout>(stdio)));
+        holder.push_back(typename Holder::value_type{cin}),
+        holder.push_back(typename Holder::value_type{cout});
+        return {*cin, *cout};
+    }
+
+    return {std::cin, std::cout};
+}
+
 } // namespace netcoredbg
+
 
 using namespace netcoredbg;
 
@@ -116,12 +184,7 @@ int main(int argc, char *argv[])
     // prevent std::cout flush triggered by read operation on std::cin
     std::cin.tie(nullptr);
 
-    enum InterpreterType
-    {
-        InterpreterMI,
-        InterpreterVSCode,
-        InterpreterCLI
-    } interpreterType = InterpreterMI;
+    ProtocolConstructor protocol_constructor = &instantiate_protocol<MIProtocol>;
 
     bool engineLogging = false;
     std::string logFilePath;
@@ -133,6 +196,8 @@ int main(int argc, char *argv[])
 
     std::string execFile;
     std::vector<std::string> execArgs;
+
+    bool run = false;
 
     for (int i = 1; i < argc; i++)
     {
@@ -154,17 +219,22 @@ int main(int argc, char *argv[])
         }
         else if (strcmp(argv[i], "--interpreter=mi") == 0)
         {
-            interpreterType = InterpreterMI;
+            protocol_constructor = &instantiate_protocol<MIProtocol>;
             continue;
         }
         else if (strcmp(argv[i], "--interpreter=vscode") == 0)
         {
-            interpreterType = InterpreterVSCode;
+            protocol_constructor = &instantiate_protocol<VSCodeProtocol>;
             continue;
         }
         else if (strcmp(argv[i], "--interpreter=cli") == 0)
         {
-            interpreterType = InterpreterCLI;
+            protocol_constructor = &instantiate_protocol<CLIProtocol>;
+            continue;
+        }
+        else if (strcmp(argv[i], "--run") == 0)
+        {
+            run = true;
             continue;
         }
         else if (string_view{argv[i]}.starts_with("--command="))
@@ -223,7 +293,8 @@ int main(int argc, char *argv[])
             while (s > argv[0] && !strchr(path_separator, s[-1])) s--;
 
             char tmp[PATH_MAX];
-            snprintf(tmp, sizeof(tmp), "%s/%s.%u.log", GetTempFolder().c_str(), s, getpid());
+            auto tempdir = GetTempDir();
+            snprintf(tmp, sizeof(tmp), "%.*s/%s.%u.log", int(tempdir.size()), tempdir.data(), s, getpid());
             setenv("LOG_OUTPUT", tmp, 1);
         }
         else if (strstr(argv[i], "--log=") == argv[i])
@@ -271,79 +342,44 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (interpreterType != InterpreterCLI && !initCommands.empty())
+    if (protocol_constructor != &instantiate_protocol<CLIProtocol> && !initCommands.empty())
     {
         fprintf(stderr, "%s: options -ex and --command can be used only with CLI interpreter!\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    LOGI("Start logging");
+    if (run && execFile.empty())
+    {
+        fprintf(stderr, "--run option was given, but no executable file specified!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    LOGI("Netcoredbg started");
+    // Note: there is no possibility to know which exception caused call to std::terminate
+    std::set_terminate([]{ LOGF("Netcoredbg is terminated due to call to std::terminate: see stderr..."); });
 
     ManagedDebugger debugger;
-    std::unique_ptr<Protocol> protocol;
+    std::vector<std::unique_ptr<std::ios_base> > streams;
+    auto protocol = protocol_constructor(open_streams(streams, serverPort, protocol_constructor));
 
-    switch(interpreterType)
+    if (engineLogging)
     {
-        case InterpreterMI:
+        auto p = dynamic_cast<VSCodeProtocol*>(protocol.get());
+        if (!p)
         {
-            LOGI("InterpreterMI selected");
-            if (engineLogging)
-            {
-                fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
-                LOGI("Error: Engine logging is only supported in VsCode interpreter mode.");
-                return EXIT_FAILURE;
-            }
-            MIProtocol *miProtocol = new MIProtocol();
-            protocol.reset(miProtocol);
-            miProtocol->SetDebugger(&debugger);
-            LOGI("SetDebugger for InterpreterMI");
-            if (!execFile.empty())
-                miProtocol->SetLaunchCommand(execFile, execArgs);
-            break;
+            fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
+            LOGE("Engine logging is only supported in VsCode interpreter mode.");
+            exit(EXIT_FAILURE);
         }
-        case InterpreterVSCode:
-        {
-            LOGI("InterpreterVSCode selected");
-            VSCodeProtocol *vsCodeProtocol = new VSCodeProtocol();
-            protocol.reset(vsCodeProtocol);
-            vsCodeProtocol->SetDebugger(&debugger);
-            LOGI("SetDebugger for InterpreterVSCode");
-            if (engineLogging)
-                vsCodeProtocol->EngineLogging(logFilePath);
-            if (!execFile.empty())
-                vsCodeProtocol->OverrideLaunchCommand(execFile, execArgs);
-            break;
-        }
-        case InterpreterCLI:
-        {
-            LOGI("InterpreterCLI selected");
-            if (engineLogging)
-            {
-                fprintf(stderr, "Error: Engine logging is only supported in VsCode interpreter mode.\n");
-                LOGI("Error: Engine logging is only supported in VsCode interpreter mode.");
-                return EXIT_FAILURE;
-            }
-            CLIProtocol *cliProtocol = new CLIProtocol();
-            protocol.reset(cliProtocol);
-            cliProtocol->SetDebugger(&debugger);
-            LOGI("SetDebugger for InterpreterCLI");
-            if (!execFile.empty())
-                cliProtocol->SetLaunchCommand(execFile, execArgs);
-            break;
-        }
+
+        p->EngineLogging(logFilePath);
     }
 
+    protocol->SetDebugger(&debugger);
     debugger.SetProtocol(protocol.get());
 
-    std::unique_ptr<IORedirectServer> server;
-    if (interpreterType != InterpreterCLI)
-    {
-        server.reset(new IORedirectServer (
-            serverPort,
-            [&protocol](const std::string& text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); },
-            [&protocol](const std::string& text) { protocol->EmitOutputEvent(OutputEvent(OutputStdOut, text)); }
-        ));
-    }
+    if (!execFile.empty())
+        protocol->SetLaunchCommand(execFile, execArgs);
 
     LOGI("pidDebugee %d", pidDebuggee);
     if (pidDebuggee != 0)
@@ -357,10 +393,30 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
     }
+    else if (run)
+    {
+        HRESULT hr;
+        do {
+            hr = debugger.Initialize();
+            if (FAILED(hr)) break;
+
+            hr = debugger.Launch(execFile, execArgs, {}, {}, false);
+            if (FAILED(hr)) break;
+
+            hr = debugger.ConfigurationDone();
+        } while(0);
+
+        if (FAILED(hr))
+        {
+            fprintf(stderr, "Error: %#x %s\n", hr, errormessage(hr));
+            exit(EXIT_FAILURE);
+        }
+    }
 
 
-    if (interpreterType == InterpreterCLI)
-        static_cast<CLIProtocol&>(*protocol).Source({initCommands});
+    auto cliProtocol = dynamic_cast<CLIProtocol*>(protocol.get());
+    if (cliProtocol)
+        cliProtocol->Source({initCommands});
 
     protocol->CommandLoop();
     return EXIT_SUCCESS;

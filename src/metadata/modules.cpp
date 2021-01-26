@@ -213,6 +213,12 @@ std::string Modules::GetModuleFileName(ICorDebugModule *pModule)
     return ss.str();
 }
 
+string_view Modules::GetFileName(string_view path)
+{
+    size_t i = path.find_last_of("/\\");
+    return i == string_view::npos ? path : path.substr(i + 1);
+}
+
 HRESULT Modules::GetLocationInAny(
     std::string filename,
     ULONG linenum,

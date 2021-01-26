@@ -16,10 +16,12 @@
 
 #include "string_view.h"
 #include "protocols/protocol.h"
+#include "string_view.h"
 #include "torelease.h"
 
 namespace netcoredbg
 {
+using Utility::string_view;
 
 using Utility::string_view;
 
@@ -78,6 +80,9 @@ public:
 
     static HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
     static std::string GetModuleFileName(ICorDebugModule *pModule);
+
+    // This function strips directory path from file name.
+    static string_view GetFileName(string_view path);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
 

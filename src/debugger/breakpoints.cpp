@@ -13,6 +13,8 @@
 #include "utils/utf.h"
 #include "managed/interop.h"
 
+#include <palclr.h>
+
 using std::string;
 
 namespace netcoredbg

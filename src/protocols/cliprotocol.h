@@ -11,6 +11,8 @@
 #include <list>
 #include <memory>
 
+#include "string_view.h"
+#include "streams.h"
 #include "debugger/debugger.h"
 #include "iprotocol.h"
 #include "string_view.h"
@@ -20,10 +22,13 @@ namespace netcoredbg
 {
 
 using Utility::string_view;
-using Utility::span;
+template <typename T> using span = Utility::span<T>;
 
 class CLIProtocol : public IProtocol
 {
+    std::istream& m_input;
+    std::ostream& m_output;
+
     enum ProcessStatus
     {
         NotStarted,
@@ -52,10 +57,12 @@ class CLIProtocol : public IProtocol
     };
     TermSettings ts;
 
+    int printf_checked(const char *fmt, ...);
+
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
     
 public:
-    CLIProtocol();
+    CLIProtocol(InStream& input, OutStream& output);
 
     void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv) override {}
@@ -65,14 +72,14 @@ public:
     void EmitContinuedEvent(ThreadId threadId) override;
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitModuleEvent(ModuleEvent event) override;
-    void EmitOutputEvent(OutputEvent event) override;
+    void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") override;
     void EmitBreakpointEvent(BreakpointEvent event) override;
     void Cleanup() override;
     void CommandLoop() override;
 
     void Source(span<const string_view> init_commands = {});
 
-    void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args)
+    void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) override
     {
         m_fileExec = fileExec;
         m_execArgs = args;
@@ -118,11 +125,13 @@ private:
         constexpr static void(CLIProtocol::*const handler)(string_view, const std::function<void(const char*)>&) = 
             &CLIProtocol::completion_handler<Tag>;
     };
-   
+
+public:
     // This function tries to complete command `str`, where the cursor position is `cursor`:
     // functor `func` will be called for each possible completion variant.
     unsigned completeInput(string_view str, unsigned cursor, const std::function<void(const char*)>& func);
 
+private:
     // This function prints help for specified (sub)command list.
     template <typename CommandList> HRESULT printHelp(const CommandList *, string_view args = {});
 

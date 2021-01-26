@@ -1,52 +1,44 @@
 // Copyright (c) 2017 Samsung Electronics Co., LTD
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
+
+/// \file platform.h  This file contains platform-specific (Windows/Unix) definitions.
+
 #pragma once
 
-#include <iostream>
-#include <functional>
-#include <string>
-#include <map>
+// TODO replace in code, remove this macros
+#ifdef _MSC_VER
+#define W(s) L##s
+#else
+#define W(s) u##s
+#endif
 
-#include <palclr.h>
+/// @{ PLATFORM_TAG is the macros, which defines a platform, for which code is currently compiling,
+/// macros value should expand to C++ type, which defines platform too (see below).
+#ifdef WIN32
+#define PLATFORM_TAG Win32PlatformTag
+#else
+#define PLATFORM_TAG UnixPlatformTag
+#endif
+/// @}
 
 namespace netcoredbg
 {
 
-unsigned long OSPageSize();
-void AddFilesFromDirectoryToTpaList(const std::string &directory, std::string &tpaList);
-std::string GetExeAbsPath();
-std::string GetFileName(const std::string &path);
-bool SetWorkDir(const std::string &path);
-void USleep(uint32_t duration);
-void *DLOpen(const std::string &path);
-void *DLSym(void *handle, const std::string &name);
-void UnsetCoreCLREnv();
-std::string GetTempFolder();
-std::string GetBasename(const std::string &path);
-bool IsFullPath(const std::string &path);
-char** GetSystemEnvironment();
-int GetSystemEnvironmentAsMap(std::map<std::string, std::string> &out);
+    struct Win32PlatformTag {};  /// PlatformTag for Windows (see below)
+    struct UnixPlatformTag {};   /// PlatformTAg for Unix and MacOS.
+   
+    /// PlatformTag is the type, which determines platform, for which code is currenly compilih.
+    /// This tag might be used to select proper template specialization.
+    using PlatformTag = PLATFORM_TAG;
 
-class IORedirectServerHandles;
+    /// Function returns memory mapping page size (like sysconf(_SC_PAGESIZE) on Unix).
+    unsigned long OSPageSize();
 
-class IORedirectServer
-{
-    std::streambuf *m_in;
-    std::streambuf *m_out;
-    std::streambuf *m_err;
-    std::streambuf *m_prevIn;
-    std::streambuf *m_prevOut;
-    std::streambuf *m_prevErr;
-    IORedirectServerHandles *m_handles;
+    /// Function suspends process execution for specified amount of time (in microseconds)
+    void USleep(unsigned long usec);
 
-public:
-    IORedirectServer(
-        uint16_t port,
-        std::function<void(std::string)> onStdOut,
-        std::function<void(std::string)> onStdErr);
-    ~IORedirectServer();
-    operator bool() const;
-};
+    /// Function returns list of environment variables (like char **environ).
+    char** GetSystemEnvironment();
 
-} // namespace netcoredbg
+} // ::netcoredbg

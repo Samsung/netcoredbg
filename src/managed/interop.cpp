@@ -8,11 +8,18 @@
 
 #include <coreclrhost.h>
 #include <thread>
+#include <string>
+#include <map>
 
-#include "metadata/modules.h"
+#include "palclr.h"
 #include "platform.h"
+#include "metadata/modules.h"
+#include "dynlibs.h"
 #include "torelease.h"
 #include "utils/utf.h"
+
+
+
 
 #ifdef FEATURE_PAL
 // Suppress undefined reference
@@ -348,9 +355,9 @@ HRESULT ManagedPart::PrepareManagedPart()
 
     HRESULT Status;
 
-    UnsetCoreCLREnv();
+    Interop::UnsetCoreCLREnv();
 
-    void *coreclrLib = DLOpen(coreClrPath);
+    DLHandle coreclrLib = DLOpen(coreClrPath);   // FIXME!  Handle leak!
     if (coreclrLib == nullptr)
     {
         // TODO: Messages like this break VSCode debugger protocol. They should be reported through Protocol class.
@@ -368,7 +375,7 @@ HRESULT ManagedPart::PrepareManagedPart()
     }
 
     std::string tpaList;
-    AddFilesFromDirectoryToTpaList(clrDir, tpaList);
+    Interop::AddFilesFromDirectoryToTpaList(clrDir, tpaList);
 
     const char *propertyKeys[] = {
         "TRUSTED_PLATFORM_ASSEMBLIES",
@@ -450,7 +457,7 @@ HRESULT ManagedPart::ResolveSequencePoint(const char *filename, ULONG32 lineNumb
     {
         assert(resolveSequencePointDelegate != nullptr);
 
-        if (resolveSequencePointDelegate(m_symbolReaderHandle, to_utf16(filename).c_str(), lineNumber, pToken, pIlOffset) == FALSE)
+        if (resolveSequencePointDelegate(m_symbolReaderHandle, to_utf16({filename}).c_str(), lineNumber, pToken, pIlOffset) == FALSE)
         {
             return E_FAIL;
         }

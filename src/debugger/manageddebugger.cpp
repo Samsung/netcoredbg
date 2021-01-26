@@ -15,16 +15,17 @@
 #include "debugger/dbgshim.h"
 #include "debugger/manageddebugger.h"
 #include "debugger/managedcallback.h"
-
-
 #include "valueprint.h"
 #include "managed/interop.h"
 #include "utils/utf.h"
-#include "platform.h"
+#include "dynlibs.h"
 #include "metadata/typeprinter.h"
 #include "debugger/frames.h"
 #include "utils/logger.h"
 #include "debugger/waitpid.h"
+#include "iosystem.h"
+
+#include "palclr.h"
 
 using std::string;
 using std::vector;
@@ -41,6 +42,30 @@ namespace netcoredbg
 extern "C" const IID IID_IUnknown = { 0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 }};
 
 #endif // FEATURE_PAL
+
+namespace 
+{
+    int GetSystemEnvironmentAsMap(map<string, string>& outMap)
+    {
+        char*const*const pEnv = GetSystemEnvironment();
+
+        if (pEnv == nullptr)
+            return -1;
+
+        int counter = 0;
+        while (pEnv[counter] != nullptr)
+        {
+            const string env = pEnv[counter];
+            size_t pos = env.find_first_of("=");
+            if (pos != string::npos && pos != 0)
+                outMap.emplace(env.substr(0, pos), env.substr(pos+1));
+
+            ++counter;
+        }
+
+        return 0;
+    }
+}
 
 dbgshim_t g_dbgshim;
 
@@ -184,7 +209,11 @@ ManagedDebugger::ManagedDebugger() :
     m_startupReady(false),
     m_startupResult(S_OK),
     m_unregisterToken(nullptr),
-    m_processId(0)
+    m_processId(0),
+    m_ioredirect(
+        { IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe() },
+        std::bind(&ManagedDebugger::InputCallback, this, std::placeholders::_1, std::placeholders::_2)
+    )
 {
 }
 
@@ -757,11 +786,17 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
         if (!IsDirExists(m_cwd.c_str()) || !SetWorkDir(m_cwd))
             m_cwd.clear();
 
-    IfFailRet(g_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
+    Status = m_ioredirect.exec([&]() -> HRESULT {
+            IfFailRet(g_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
                                      /* Suspend process */ TRUE,
                                      outEnv.empty() ? NULL : &outEnv[0],
                                      m_cwd.empty() ? NULL : reinterpret_cast<LPCWSTR>(to_utf16(m_cwd).c_str()),
                                      &m_processId, &resumeHandle));
+            return Status;
+        });
+
+    if (FAILED(Status))
+        return Status;
 
 #ifdef FEATURE_PAL
     GetWaitpid().SetupTrackingPID(m_processId);
@@ -1304,6 +1339,12 @@ void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, stri
             cb(var.name.c_str());
         }
     }
+}
+
+
+void ManagedDebugger::InputCallback(IORedirectHelper::StreamType type, span<char> text)
+{
+    m_protocol->EmitOutputEvent(type == IOSystem::Stderr ? OutputStdErr : OutputStdOut, {text.begin(), text.size()});
 }
 
 } // namespace netcoredbg

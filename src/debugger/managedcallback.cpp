@@ -50,8 +50,9 @@ void ManagedCallback::HandleEvent(ICorDebugController *controller, const std::st
 {
     LogFuncEntry();
 
-    std::string text = "Event received: '" + eventName + "'\n";
-    m_debugger.m_protocol->EmitOutputEvent(OutputEvent(OutputConsole, text));
+    // TODO why we mixing debugger's output with user application output???
+    std::string text = "Event received: '" + eventName + "'\n"; 
+    m_debugger.m_protocol->EmitOutputEvent(OutputConsole, {&text[0], text.size()});
     controller->Continue(0);
 }
 
@@ -686,10 +687,9 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
 
     if (not_matched)
     {
+        // TODO why we mixing debugger's output with user application output???
         std::string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
-        OutputEvent event(OutputConsole, text);
-        event.source = "target-exception";
-        m_debugger.m_protocol->EmitOutputEvent(event);
+        m_debugger.m_protocol->EmitOutputEvent(OutputConsole, {&text[0], text.size()}, "target-exception");
         IfFailRet(pAppDomain->Continue(0));
         return S_OK;
     }

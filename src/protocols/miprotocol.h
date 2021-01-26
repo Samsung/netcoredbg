@@ -8,13 +8,17 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
+#include <iostream>
+#include <memory>
+#include "string_view.h"
 #include "utils/escaped_string.h"
 #include "debugger/debugger.h"
 #include "iprotocol.h"
 
 namespace netcoredbg
 {
+
+using Utility::string_view;
 
 class MIProtocol : public IProtocol
 {
@@ -35,17 +39,19 @@ class MIProtocol : public IProtocol
 
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
     static void PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
+
 #ifdef _MSC_VER
-    static void Printf(_Printf_format_string_ const char *fmt, ...);
+    void Printf(_Printf_format_string_ const char *fmt, ...);
 #else
-    static void Printf(const char *fmt, ...) __attribute__((format (printf, 1, 2)));
+    void Printf(const char *fmt, ...) __attribute__((format (printf, 2, 3)));
 #endif
 
     static bool IsEditable(const std::string &type);
 
 public:
 
-    MIProtocol() : IProtocol(), m_varCounter(0) {}
+    MIProtocol(std::istream& input, std::ostream& output) : IProtocol(input, output), m_varCounter(0) {}
+
     void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv0) override {}
     void EmitStoppedEvent(StoppedEvent event) override;
@@ -54,12 +60,12 @@ public:
     void EmitContinuedEvent(ThreadId threadId) override;
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitModuleEvent(ModuleEvent event) override;
-    void EmitOutputEvent(OutputEvent event) override;
+    void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") override;
     void EmitBreakpointEvent(BreakpointEvent event) override;
     void Cleanup() override;
     void CommandLoop() override;
 
-    void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args)
+    void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) override
     {
         m_fileExec = fileExec;
         m_execArgs = args;

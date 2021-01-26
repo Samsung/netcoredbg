@@ -50,7 +50,7 @@ class VSCodeProtocol : public Protocol
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
-    static std::string ReadData();
+    std::string ReadData();
 
     void AddCapabilitiesTo(nlohmann::json &capabilities);
     void EmitEvent(const std::string &name, const nlohmann::json &body);
@@ -60,9 +60,9 @@ class VSCodeProtocol : public Protocol
 
 public:
 
-    VSCodeProtocol() : Protocol(), m_engineLogOutput(LogNone), m_seqCounter(1) {}
+    VSCodeProtocol(std::istream& input, std::ostream& output) : Protocol(input, output), m_engineLogOutput(LogNone), m_seqCounter(1) {}
     void EngineLogging(const std::string &path);
-    void OverrideLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args)
+    void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) override
     {
         m_fileExec = fileExec;
         m_execArgs = args;
@@ -76,7 +76,7 @@ public:
     void EmitContinuedEvent(ThreadId threadId) override;
     void EmitThreadEvent(ThreadEvent event) override;
     void EmitModuleEvent(ModuleEvent event) override;
-    void EmitOutputEvent(OutputEvent event) override;
+    void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") override;
     void EmitBreakpointEvent(BreakpointEvent event) override;
     void Cleanup() override;
     void CommandLoop() override;
