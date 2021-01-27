@@ -17,6 +17,31 @@
 namespace netcoredbg
 {
 
+namespace
+{
+    std::vector<std::string> split_on_tokens(const std::string &str, const char delim)
+    {
+        std::vector<std::string> res;
+        size_t pos = 0, prev = 0;
+
+        while (true)
+        {
+            pos = str.find(delim, prev);
+            if (pos == std::string::npos)
+            {
+                res.push_back(std::string(str, prev));
+                break;
+            }
+
+            res.push_back(std::string(str, prev, pos - prev));
+            prev = pos + 1;
+        }
+
+        return res;
+    }
+}
+
+
 bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)
 {
     // Function should be matched by substring, i.e. received target function name should fully or partly equal with the

@@ -45,25 +45,4 @@ to_utf16(const std::string &utf8)
     return convert.from_bytes(utf8);
 }
 
-std::vector<std::string> split_on_tokens(const std::string &str, const char delim)
-{
-    std::vector<std::string> res;
-    size_t pos = 0, prev = 0;
-
-    while (true)
-    {
-        pos = str.find(delim, prev);
-        if (pos == std::string::npos)
-        {
-            res.push_back(std::string(str, prev));
-            break;
-        }
-
-        res.push_back(std::string(str, prev, pos - prev));
-        prev = pos + 1;
-    }
-
-    return res;
-}
-
 } // namespace netcoredbg
