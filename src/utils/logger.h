@@ -111,7 +111,7 @@ namespace DLogInternal
             int(sizeof(__FILE__) - DLogInternal::path_len(__FILE__)), &__FILE__[DLogInternal::path_len(__FILE__)], \
             int(DLogInternal::funcname_len(__func__)), __func__, \
             int(sizeof(LOG_S_(__LINE))), LOG_S_(__LINE__), \
-            ##__VA_ARGS__));
+            ##__VA_ARGS__))
 
 // These macros intendent to send a main log message using the current LOG_TAG.
 // Similar macros defined in original Tizen's dlog.h.
