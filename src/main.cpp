@@ -12,9 +12,9 @@
 #include <linux/limits.h>
 #endif
 
+#include "protocols/vscodeprotocol.h"
 #include "debugger/manageddebugger.h"
 #include "protocols/miprotocol.h"
-#include "protocols/vscodeprotocol.h"
 #include "protocols/cliprotocol.h"
 #include "utils/logger.h"
 #include "version.h"

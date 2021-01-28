@@ -6,11 +6,7 @@
 
 #include <string>
 
-#pragma warning (disable:4068)  // Visual Studio should ignore GCC pragmas
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <cor.h>
-#pragma GCC diagnostic pop
+#include "cor.h"
 
 namespace netcoredbg
 {

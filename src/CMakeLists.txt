@@ -10,7 +10,6 @@ else()
 endif()
 
 # Build corguids static library from coreclr source files
-
 if (NOT WIN32)
     add_compile_options(-Wno-extra-tokens)
 endif()
@@ -19,17 +18,19 @@ file(GLOB CORGUIDS_SOURCES "${CORECLR_SRC_DIR}/pal/prebuilt/idl/*_i.cpp")
 add_library(corguids STATIC ${CORGUIDS_SOURCES})
 if (NOT WIN32)
     target_compile_options(corguids PRIVATE -Wno-unused-parameter)
+    target_include_directories(corguids PRIVATE ${CORECLR_SRC_DIR}/pal/inc ${CORECLR_SRC_DIR}/pal/inc/rt)
+    target_include_directories(corguids PRIVATE ${CORECLR_SRC_DIR}/inc ${CORECLR_SRC_DIR}/debug/inc)
 endif()
 
 # Include coreclr headers
 
 if (NOT WIN32)
-    include_directories(${CORECLR_SRC_DIR}/pal/inc)
-    include_directories(${CORECLR_SRC_DIR}/pal/inc/rt)
     include_directories(${CORECLR_SRC_DIR}/pal/prebuilt/inc)
+    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/coreclr)
+else()
+    include_directories(${CORECLR_SRC_DIR}/inc ${CORECLR_SRC_DIR}/debug/inc)
 endif()
-include_directories(${CORECLR_SRC_DIR}/inc)
-include_directories(${CORECLR_SRC_DIR}/debug/inc)
+include_directories(${CORECLR_SRC_DIR})
 include_directories(${CORECLR_SRC_DIR}/debug/shim)
 include_directories(${CORECLR_SRC_DIR}/dlls/dbgshim)
 # for CoreCLR <= 3.x
