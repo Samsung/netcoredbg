@@ -213,6 +213,7 @@ private:
     std::set<ThreadId> m_lastUnhandledExceptionThreadIds;
 
     void SetLastStoppedThread(ICorDebugThread *pThread);
+    void SetLastStoppedThreadId(ThreadId threadId);
 
     std::atomic_int m_stopCounter;
 
@@ -292,6 +293,7 @@ public:
     HRESULT Disconnect(DisconnectAction action = DisconnectDefault) override;
 
     ThreadId GetLastStoppedThreadId() override;
+    void InvalidateLastStoppedThreadId();
     HRESULT Continue(ThreadId threadId) override;
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;

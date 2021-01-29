@@ -435,7 +435,10 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitThread(
 
     // TODO: clean evaluations and exceptions queues for current thread
     m_debugger.m_evaluator.NotifyEvalComplete(pThread, nullptr);
-
+    if (m_debugger.GetLastStoppedThreadId() == threadId)
+    {
+        m_debugger.InvalidateLastStoppedThreadId();
+    }
     m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
     pAppDomain->Continue(0);
     return S_OK;

@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 #include <list>
+#include <memory>
 
 #include "debugger/debugger.h"
 #include "iprotocol.h"
@@ -34,6 +35,19 @@ class CLIProtocol : public IProtocol
 #ifndef WIN32
     pthread_t tid;
 #endif
+
+    struct TermSettings
+    {
+#ifdef WIN32
+        DWORD oldmode;
+#else
+        std::unique_ptr<char> data;
+#endif
+        TermSettings();
+        ~TermSettings();
+    };
+    TermSettings ts;
+
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
     
 public:
@@ -71,6 +85,7 @@ private:
     HRESULT doFile(const std::vector<std::string> &args, std::string &);
     HRESULT doFinish(const std::vector<std::string> &args, std::string &output);
     HRESULT doHelp(const std::vector<std::string> &args, std::string &output);
+    HRESULT doInterrupt(const std::vector<std::string> &args, std::string &output);
     HRESULT doNext(const std::vector<std::string> &args, std::string &output);
     HRESULT doPrint(const std::vector<std::string> &args, std::string &output);
     HRESULT doQuit(const std::vector<std::string> &, std::string &);

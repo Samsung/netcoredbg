@@ -144,10 +144,18 @@ HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
 
 void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
 {
-    ThreadId threadId(getThreadId(pThread));
+    SetLastStoppedThreadId(getThreadId(pThread));
+}
 
+void ManagedDebugger::SetLastStoppedThreadId(ThreadId threadId)
+{
     std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
     m_lastStoppedThreadId = threadId;
+}
+
+void ManagedDebugger::InvalidateLastStoppedThreadId()
+{
+    SetLastStoppedThreadId(ThreadId::AllThreads);
 }
 
 ThreadId ManagedDebugger::GetLastStoppedThreadId()
@@ -483,6 +491,7 @@ HRESULT ManagedDebugger::Pause()
 
             StoppedEvent event(StopPause, thread.id);
             event.frame = stackFrame;
+            SetLastStoppedThreadId(thread.id);
             m_protocol->EmitStoppedEvent(event);
 
             return Status;

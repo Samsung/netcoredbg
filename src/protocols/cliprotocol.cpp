@@ -2,6 +2,14 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
+#ifdef _WIN32
+#include <ConsoleApi.h>
+#include <ProcessEnv.h>
+#else
+#include <termios.h>
+#include <unistd.h>
+#endif
+
 #include "debugger/frames.h"
 #include "platform.h"
 #include "torelease.h"
@@ -28,6 +36,45 @@ namespace netcoredbg
 {
 
 typedef HRESULT (CLIProtocol::*DoCommand)(const std::vector<std::string> &args, std::string &output);
+
+CLIProtocol::TermSettings::TermSettings()
+{
+#ifdef WIN32
+    auto in = GetStdHandle(STD_INPUT_HANDLE);
+    if (in == INVALID_HANDLE_VALUE)
+        return;
+
+    DWORD mode;
+    if (!GetConsoleMode(in, &mode))
+        return;
+
+    oldmode = mode;
+    SetConsoleMode(in, mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT));
+#else
+    if (!isatty(fileno(stdin)))
+        return;
+
+    struct termios ts;
+    if (tcgetattr(fileno(stdin), &ts) < 0)
+        return;
+
+    data.reset(reinterpret_cast<char*>(new termios {ts}));
+    ts.c_lflag &= ~ISIG;
+    tcsetattr(fileno(stdin), TCSADRAIN, &ts);
+#endif
+}
+
+CLIProtocol::TermSettings::~TermSettings()
+{
+#ifdef WIN32
+    auto in = GetStdHandle(STD_INPUT_HANDLE);
+    if (in == INVALID_HANDLE_VALUE)
+        return;
+    SetConsoleMode(in, oldmode);
+#else
+    tcsetattr(fileno(stdin), TCSADRAIN, reinterpret_cast<termios*>(data.get()));
+#endif
+}
 
 HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
 {
@@ -296,6 +343,12 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
                   int(event.threadId), frameLocation.c_str());
             break;
         }
+        case StopPause:
+        {
+            printf("\nstopped, reason: interrupted, thread id: %i, stopped threads: all, frame={%s\n}\n",
+                  int(event.threadId), frameLocation.c_str());
+            break;
+        }
         default:
             return;
     }
@@ -473,6 +526,7 @@ HRESULT CLIProtocol::doHelp(const std::vector<std::string> &args, std::string &o
         "file <filename>                       Load executable to debug.\n"
         "finish                                Continue execution until the current stack frame returns.\n"
         "help                       h          Print this help message.\n"
+        "interrupt                             Interrupt debugging program\n"          
         "next                       n          Step program.\n"
         "print <name>               p          Print variable's value.\n"
         "quit                       q          Quit the debugging session.\n"
@@ -481,6 +535,14 @@ HRESULT CLIProtocol::doHelp(const std::vector<std::string> &args, std::string &o
         "set-args                              Set the debugging program arguments.\n\n"
     // todo:    "* Press <Enter> to repeat the previous command.\n\n"
     );
+    return S_OK;
+}
+
+HRESULT CLIProtocol::doInterrupt(const std::vector<std::string> &, std::string &output)
+{
+    HRESULT Status;
+    IfFailRet(m_debugger->Pause());
+    output = "^done";
     return S_OK;
 }
 
@@ -630,6 +692,7 @@ HRESULT CLIProtocol::HandleCommand(const std::string& command,
         {"finish", &CLIProtocol::doFinish},
         {"help", &CLIProtocol::doHelp},
         {"h", &CLIProtocol::doHelp},
+        {"interrupt", &CLIProtocol::doInterrupt},
         {"n", &CLIProtocol::doNext},
         {"next", &CLIProtocol::doNext},
         {"p", &CLIProtocol::doPrint},
@@ -695,10 +758,16 @@ void CLIProtocol::CommandLoop()
         std::unique_ptr<char[]> cmdline;
         token.clear();
         input.clear();
+        errno = 0;
 
         cmdline.reset(linenoise(prompt.c_str()));
         if (cmdline.get() == NULL)
-            break;
+        {
+            if (errno != EAGAIN)
+                break;
+            m_debugger->Pause();
+            continue;
+        }
 
         input = cmdline.get();
 
