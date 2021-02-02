@@ -755,7 +755,8 @@ void CLIProtocol::CommandLoop()
 
     while (!m_exit)
     {
-        std::unique_ptr<char[]> cmdline;
+        auto deleter = [](void *s) { ::free(s); };
+        std::unique_ptr<char, decltype(deleter)> cmdline {nullptr, deleter};
         token.clear();
         input.clear();
         errno = 0;
