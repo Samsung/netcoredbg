@@ -50,7 +50,7 @@ CLIProtocol::TermSettings::TermSettings()
     if (!GetConsoleMode(in, &mode))
         return;
 
-    oldmode = mode;
+    data.reset(reinterpret_cast<char*>(new DWORD {mode}));
     SetConsoleMode(in, mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT));
 #else
     if (!isatty(fileno(stdin)))
@@ -68,11 +68,13 @@ CLIProtocol::TermSettings::TermSettings()
 
 CLIProtocol::TermSettings::~TermSettings()
 {
+    if (!data) return;
+
 #ifdef WIN32
     auto in = GetStdHandle(STD_INPUT_HANDLE);
     if (in == INVALID_HANDLE_VALUE)
         return;
-    SetConsoleMode(in, oldmode);
+    SetConsoleMode(in, *reinterpret_cast<DWORD*>(data.get()));
 #else
     tcsetattr(fileno(stdin), TCSADRAIN, reinterpret_cast<termios*>(data.get()));
 #endif

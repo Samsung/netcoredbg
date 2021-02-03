@@ -38,11 +38,8 @@ class CLIProtocol : public IProtocol
 
     struct TermSettings
     {
-#ifdef WIN32
-        DWORD oldmode;
-#else
         std::unique_ptr<char> data;
-#endif
+
         TermSettings();
         ~TermSettings();
     };
