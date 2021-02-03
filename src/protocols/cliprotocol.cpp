@@ -35,6 +35,8 @@ using std::vector;
 namespace netcoredbg
 {
 
+const size_t DefaultHistoryDepth = 1024;
+
 typedef HRESULT (CLIProtocol::*DoCommand)(const std::vector<std::string> &args, std::string &output);
 
 CLIProtocol::TermSettings::TermSettings()
@@ -751,6 +753,7 @@ void CLIProtocol::CommandLoop()
     tid = pthread_self();
 #endif
     linenoiseInstallWindowChangeHandler();
+    linenoiseHistorySetMaxLen(DefaultHistoryDepth);
     linenoiseHistoryLoad(history.c_str());
 
     while (!m_exit)
