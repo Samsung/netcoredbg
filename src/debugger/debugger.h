@@ -6,7 +6,9 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 #include <map>
+#include "string_view.h"
 
 // For `HRESULT` definition
 #ifdef FEATURE_PAL
@@ -19,6 +21,8 @@
 
 namespace netcoredbg
 {
+
+using Utility::string_view;
 
 class Debugger
 {
@@ -67,6 +71,11 @@ public:
     virtual HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) = 0;
     virtual HRESULT DeleteExceptionBreakpoint(const uint32_t id) = 0;
     virtual HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string& names, uint32_t &id) = 0;
+
+    typedef std::function<void(const char *)> SearchCallback;
+    virtual void FindFileNames(string_view pattern, unsigned limit, SearchCallback) = 0;
+    virtual void FindFunctions(string_view pattern, unsigned limit, SearchCallback) = 0;
+    virtual void FindVariables(ThreadId, FrameLevel, string_view, unsigned limit, SearchCallback) = 0;
 };
 
 class Protocol

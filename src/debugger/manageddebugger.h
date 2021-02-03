@@ -8,6 +8,7 @@
 #include "protocols/protocol.h"
 #include "debugger/breakpoints.h"
 #include "debugger/evaluator.h"
+#include "string_view.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -21,6 +22,8 @@
 
 namespace netcoredbg
 {
+
+using Utility::string_view;
 
 ThreadId getThreadId(ICorDebugThread *pThread);
 
@@ -310,6 +313,10 @@ public:
     HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) override;
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
+
+    void FindFileNames(string_view pattern, unsigned limit, SearchCallback) override;
+    void FindFunctions(string_view pattern, unsigned limit, SearchCallback) override;
+    void FindVariables(ThreadId, FrameLevel, string_view pattern, unsigned limit, SearchCallback) override;
 
     // Functions which converts FrameId to ThreadId and FrameLevel and vice versa.
     FrameId getFrameId(ThreadId, FrameLevel);

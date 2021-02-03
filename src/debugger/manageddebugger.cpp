@@ -1254,4 +1254,56 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
 }
 
+
+void ManagedDebugger::FindFileNames(string_view pattern, unsigned limit, SearchCallback cb)
+{
+    m_modules.FindFileNames(pattern, limit, cb);
+}
+
+void ManagedDebugger::FindFunctions(string_view pattern, unsigned limit, SearchCallback cb)
+{
+    m_modules.FindFunctions(pattern, limit, cb);
+}
+
+void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, string_view pattern, unsigned limit, SearchCallback cb)
+{
+    StackFrame frame{thread, framelevel, ""};
+    std::vector<Scope> scopes;
+    std::vector<Variable> variables;
+    HRESULT status = GetScopes(frame.id, scopes);
+    if (FAILED(status))
+    {
+        LOGW("GetScopes failed: %s", errormessage(status));
+        return;
+    }
+
+    if (scopes.empty() || scopes[0].variablesReference == 0)
+    {
+        LOGW("no variables in visible scopes");
+        return;
+    }
+
+    status = GetVariables(scopes[0].variablesReference, VariablesNamed, 0, 0, variables);
+    if (FAILED(status))
+    {
+        LOGW("GetVariables failed: %s", errormessage(status));
+        return;
+    }
+
+    for (const Variable& var : variables)
+    {
+        LOGD("var: '%s'", var.name.c_str());
+
+        if (limit == 0)
+            break;
+
+        auto pos = var.name.find(pattern.data(), 0, pattern.size());
+        if (pos != std::string::npos && (pos == 0 || var.name[pos-1] == '.'))
+        {
+            limit--;
+            cb(var.name.c_str());
+        }
+    }
+}
+
 } // namespace netcoredbg

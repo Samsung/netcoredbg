@@ -14,11 +14,14 @@
 #include <mutex>
 #include <memory>
 
+#include "string_view.h"
 #include "protocols/protocol.h"
 #include "torelease.h"
 
 namespace netcoredbg
 {
+
+using Utility::string_view;
 
 class ManagedPart;
 typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
@@ -40,10 +43,14 @@ class Modules
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
 
     static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, ManagedPart *managedPart);
+
     static HRESULT ResolveMethodInModule(
         ICorDebugModule *pModule,
         const std::string &funcName,
         ResolveFunctionBreakpointCallback cb);
+
+    static HRESULT ForEachMethod(ICorDebugModule *pModule, std::function<bool(const std::string&, mdMethodDef&)>);
+
     static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName);
 
     // map of source full path to all sequence point's startLine and endLine in this source file,
@@ -134,6 +141,9 @@ public:
     HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
 
     HRESULT ResolveBreakpointFileAndLine(std::string &filename, int &linenum, int &endLine);
+
+    void FindFileNames(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
+    void FindFunctions(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
 };
 
 } // namespace netcoredbg

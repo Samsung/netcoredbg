@@ -68,11 +68,33 @@ bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const s
     return true;
 }
 
+
 HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName,
                                        ResolveFunctionBreakpointCallback cb)
 {
-    HRESULT Status;
     std::vector<std::string> splittedName = split_on_tokens(funcName, '.');
+
+    auto functor = [&](const std::string& fullName, mdMethodDef& mdMethod) -> bool
+    {
+        std::vector<std::string> splittedFullName = split_on_tokens(fullName, '.');
+
+        // If we've found the target function
+        if (IsTargetFunction(splittedFullName, splittedName))
+        {
+            if (FAILED(cb(pModule, mdMethod)))
+                return false; // abort operation
+        }
+
+        return true;  // continue for other functions with matching name
+    };
+
+    return ForEachMethod(pModule, functor);
+}
+
+
+HRESULT Modules::ForEachMethod(ICorDebugModule *pModule, std::function<bool(const std::string&, mdMethodDef&)> functor)
+{
+    HRESULT Status;
     ToRelease<IUnknown> pMDUnknown;
     ToRelease<IMetaDataImport> pMDImport;
 
@@ -139,18 +161,11 @@ HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::stri
                 fullName += "<" + genParams + ">";
             }
 
-            std::vector<std::string> splittedFullName = split_on_tokens(typeName + "." + fullName, '.');
-
-            // If we've found the target function
-            if (IsTargetFunction(splittedFullName, splittedName))
+            if (!functor(typeName + "." + fullName, mdMethod))
             {
-                if (FAILED(cb(pModule, mdMethod)))
-                {
-                    pMDImport->CloseEnum(fFuncEnum);
-                    pMDImport->CloseEnum(fTypeEnum);
-
-                    return E_FAIL;
-                }
+                pMDImport->CloseEnum(fFuncEnum);
+                pMDImport->CloseEnum(fTypeEnum);
+                return E_FAIL;
             }
         }
 
@@ -784,6 +799,7 @@ HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenu
     return S_OK;
 }
 
+
 HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module)
 {
     HRESULT Status;
@@ -810,6 +826,79 @@ HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module)
     module = to_utf8(mdName);
 
     return S_OK;
+}
+
+
+void Modules::FindFileNames(string_view pattern, unsigned limit, std::function<void(const char *)> cb)
+{
+#ifdef WIN32
+    HRESULT Status = S_OK;
+    std::string uppercase {pattern};
+    if (FAILED(ManagedPart::StringToUpper(uppercase)))
+        return;
+    pattern = uppercase;
+#endif
+
+    auto check = [&](const std::string& str)
+    {
+        if (limit == 0)
+            return false;
+
+        auto pos = str.find(pattern);
+        if (pos != std::string::npos && (pos == 0 || str[pos-1] == '/' || str[pos-1] == '\\'))
+        {
+            limit--;
+#ifndef _WIN32
+            cb(str.c_str());
+#else
+            auto it = m_sourceCaseSensitiveFullPaths.find(str);
+            cb (it != m_sourceCaseSensitiveFullPaths.end() ? it->second.c_str() : str.c_str());
+#endif
+        }
+
+        return true;
+    };
+
+    // TODO need mutex
+    for (const auto& pair : m_sourcesFullPaths)
+    {
+        LOGD("first '%s'", pair.first.c_str());
+        if (!check(pair.first))
+            return;
+
+        for (const std::string& str : pair.second)
+        {
+            LOGD("second '%s'", str.c_str());
+            if (!check(str))
+                return;
+        }
+    }
+}
+
+void Modules::FindFunctions(string_view pattern, unsigned limit, std::function<void(const char *)> cb)
+{
+    auto functor = [&](const std::string& fullName, mdMethodDef &)
+    {
+        if (limit == 0)
+            return false; // limit exceeded
+
+        auto pos = fullName.find(pattern);
+        if (pos != std::string::npos && (pos == 0 || fullName[pos-1] == '.'))
+        {
+            limit--;
+            cb(fullName.c_str());
+        }
+
+        return true;  // continue for next functions
+    }; 
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    for (const auto& modpair : m_modulesInfo)
+    {
+        HRESULT Status = ForEachMethod(modpair.second.module, functor);
+        if (FAILED(Status))
+            break;
+    }
 }
 
 } // namespace netcoredbg
