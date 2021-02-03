@@ -10,7 +10,7 @@
 #include <functional>
 #include <unordered_map>
 #include <map>
-#include <list>
+#include <set>
 #include <mutex>
 #include <memory>
 
@@ -51,7 +51,7 @@ class Modules
     std::unordered_map<std::string, std::map<int32_t, std::tuple<int32_t, int32_t> > > m_sourcesCodeLines;
     // map of source file name to list of source full paths from loaded assemblies,
     // need it order to resolve source full path by requested breakpoint relative source path
-    std::unordered_map<std::string, std::list<std::string> > m_sourcesFullPaths;
+    std::unordered_map<std::string, std::set<std::string> > m_sourcesFullPaths;
     HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, ManagedPart *managedPart);
     HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename);
 #ifdef WIN32

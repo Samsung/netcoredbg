@@ -614,7 +614,7 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Manag
                 for (int i = point.startLine; i <= point.endLine; i++)
                     codeLinesFullPath[i] = std::make_tuple(point.startLine, point.endLine);
 
-                m_sourcesFullPaths[GetFileName(fullPath)].push_back(std::move(fullPath));
+                m_sourcesFullPaths[GetFileName(fullPath)].insert(std::move(fullPath));
             }
         }
         pMDImport->CloseEnum(fEnum);
@@ -630,7 +630,7 @@ HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
     if (searchByFileName == m_sourcesFullPaths.end())
         return E_FAIL;
 
-    std::list<std::string> &possiblePaths = searchByFileName->second;
+    auto const& possiblePaths = searchByFileName->second;
     std::string result = filename;
 
     // Care about all "./" and "../" first.
@@ -658,19 +658,15 @@ HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
     // We don't really have a lot of options here, so, we assume, that all possible sources paths have same root and just find the shortest.
     if (result == GetFileName(result))
     {
-        result = possiblePaths.front();
-        for (const auto& path : possiblePaths)
-        {
-            if (result.length() > path.length())
-                result = path;
-        }
+        auto it = std::min_element(possiblePaths.begin(), possiblePaths.end(),
+                        [](const std::string a, const std::string b){ return a.size() < b.size(); } );
 
-        filename = result;
+        filename = it == possiblePaths.end() ? result : *it;
         return S_OK;
     }
 
     std::list<std::string> possibleResults;
-    for (auto &path : possiblePaths)
+    for (auto const& path : possiblePaths)
     {
         if (result.size() > path.size())
             continue;
@@ -685,9 +681,9 @@ HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
         // since C++17
         //if (std::equal(result.begin(), result.end(), path.end() - result.size(), BinaryPredicate))
         //    possibleResults.push_back(path);
-        std::string::iterator first1 = result.begin();
-        std::string::iterator last1 = result.end();
-        std::string::iterator first2 = path.end() - result.size();
+        auto first1 = result.begin();
+        auto last1 = result.end();
+        auto first2 = path.end() - result.size();
         auto equal = [&]()
         {
             for (; first1 != last1; ++first1, ++first2)

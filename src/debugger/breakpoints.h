@@ -4,6 +4,9 @@
 
 #pragma once
 
+#include <cstdint>
+#include <string>
+#include <list>
 #include "metadata/modules.h"
 #include "debugger/debugger.h"
 #include "protocols/protocol.h"
