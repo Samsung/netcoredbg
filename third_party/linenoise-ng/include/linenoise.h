@@ -44,10 +44,26 @@
 extern "C" {
 #endif
 
+/* opaque structure, which allows to pass context from linenoise to
+ * completion callback and back (bia linenoiseAddCompletion). */
 typedef struct linenoiseCompletions linenoiseCompletions;
 
+/* old way to install completion callback */
 typedef void(linenoiseCompletionCallback)(const char*, linenoiseCompletions*);
 void linenoiseSetCompletionCallback(linenoiseCompletionCallback* fn);
+
+/* another way to install completion callback: now it's possible to
+ * pass some `context' to the callback, also linenoise provides
+ * full text line and cursor position to the callback, which allows
+ * to implement context-sensitive completions. */
+typedef void(linenoiseCompletionCallbackEx)(const char* line,
+                                            unsigned cursor_pos,
+                                            linenoiseCompletions*,
+                                            void* context);
+
+void linenoiseSetCompletionCallbackEx(linenoiseCompletionCallbackEx* fn, void *context);
+
+/* following function should be called from completion callback */
 void linenoiseAddCompletion(linenoiseCompletions* lc, const char* str);
 
 char* linenoise(const char* prompt);

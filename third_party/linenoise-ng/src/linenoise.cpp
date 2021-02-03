@@ -117,6 +117,7 @@
 
 #endif /* _WIN32 */
 
+#include <assert.h>
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -928,7 +929,10 @@ static const int PAGE_UP_KEY = 0x11000000;
 static const int PAGE_DOWN_KEY = 0x11200000;
 
 static const char* unsupported_term[] = {"dumb", "cons25", "emacs", NULL};
-static linenoiseCompletionCallback* completionCallback = NULL;
+
+static bool extendedCompletionCallback;
+static void* completionContext;
+static void (*completionCallback)() = NULL;
 
 #ifdef _WIN32
 static HANDLE console_in, console_out;
@@ -1952,10 +1956,9 @@ int InputBuffer::completeLine(PromptBase& pi) {
   linenoiseCompletions lc;
   char32_t c = 0;
 
-  // completionCallback() expects a parsable entity, so find the previous break
-  // character and
-  // extract a copy to parse.  we also handle the case where tab is hit while
-  // not at end-of-line.
+  // At this point it is assumed, that completionCallback will complete separate
+  // words. Now computing start position and length of the word preceeding the
+  // cursor.
   int startIndex = pos;
   while (--startIndex >= 0) {
     if (strchr(breakChars, buf32[startIndex])) {
@@ -1964,11 +1967,27 @@ int InputBuffer::completeLine(PromptBase& pi) {
   }
   ++startIndex;
   int itemLength = pos - startIndex;
-  Utf32String unicodeCopy(&buf32[startIndex], itemLength);
-  Utf8String parseItem(unicodeCopy);
 
-  // get a list of completions
-  completionCallback(parseItem.get(), &lc);
+  if (!extendedCompletionCallback) {
+    // completionCallback() expects a parsable entity, so extracting a copy to
+    // parse.
+    Utf32String unicodeCopy(&buf32[startIndex], itemLength);
+    Utf8String parseItem(unicodeCopy);
+
+    // get a list of completions
+    reinterpret_cast<linenoiseCompletionCallback*>(completionCallback)(
+        parseItem.get(), &lc);
+
+  } else /* extendedCompletionCallback */ {
+    // create UTF-8 copy of the input buffer
+    size_t bufSize = sizeof(char32_t) * len + 1;
+    unique_ptr<char[]> utf8(new char[bufSize]);
+    copyString32to8(utf8.get(), bufSize, buf32);
+    // call extended completion callback
+    assert(0 <= pos <= len);
+    reinterpret_cast<linenoiseCompletionCallbackEx*>(completionCallback)(
+        utf8.get(), pos, &lc, completionContext);
+  }
 
   // if no completions, we are done
   if (lc.completionStrings.size() == 0) {
@@ -3245,7 +3264,16 @@ char* linenoise(const char* prompt) {
 
 /* Register a callback function to be called for tab-completion. */
 void linenoiseSetCompletionCallback(linenoiseCompletionCallback* fn) {
-  completionCallback = fn;
+  extendedCompletionCallback = false;
+  completionCallback = reinterpret_cast<void (*)()>(fn);
+}
+
+/* Extended version of the previous function. */
+void linenoiseSetCompletionCallbackEx(linenoiseCompletionCallbackEx* fn,
+                                      void* context) {
+  extendedCompletionCallback = true;
+  completionContext = context;
+  completionCallback = reinterpret_cast<void (*)()>(fn);
 }
 
 void linenoiseAddCompletion(linenoiseCompletions* lc, const char* str) {
