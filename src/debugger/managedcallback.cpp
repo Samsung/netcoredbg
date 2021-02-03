@@ -247,8 +247,9 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     if (SUCCEEDED(thread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
     {
         StackFrame stackFrame;
-        if (m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel{0}, stackFrame) == S_OK)
-            event.frame = stackFrame;
+        if (m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel{0}, stackFrame) == E_FAIL)
+            stackFrame = StackFrame(threadId, FrameLevel{0}, "");
+        event.frame = stackFrame;
     }
 
     m_debugger.m_protocol->EmitStoppedEvent(event);
