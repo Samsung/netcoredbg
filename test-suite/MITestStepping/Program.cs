@@ -114,6 +114,19 @@ namespace NetcoreDbgTest.Script
                 throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void EnableBreakpoint(string bpName)
+        {
+            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+
+            Assert.Equal(BreakpointType.Line, bp.Type);
+
+            var lbp = (LineBreakpoint)bp;
+
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-break-insert -f "
+                                            + lbp.FileName + ":" + lbp.NumLine).Class);
+        }
+
         public static void DebuggerExit()
         {
             Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
@@ -135,21 +148,19 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static bool IsStoppedThreadInList(MIList threads, MIConst threadId)
+        public static void StepOver()
         {
-            var threadsArray = threads.ToArray();
-            foreach (var thread in threadsArray) {
-                if (((MIConst)((MITuple)thread)["id"]).CString == threadId.CString
-                    && ((MIConst)((MITuple)thread)["state"]).CString == "stopped") {
-                    return true;
-                };
-            }
-            return false;
+            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-next").Class);
         }
 
-        public static void Continue()
+        public static void StepIn()
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-step").Class);
+        }
+
+        public static void StepOut()
+        {
+            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-finish").Class);
         }
 
         public static MIDebugger MIDebugger = new MIDebugger();
@@ -163,35 +174,38 @@ namespace MITestStepping
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "test_steps", () => {
+            Label.Checkpoint("init", "step1", () => {
                 Context.Prepare();
                 Context.WasEntryPointHit();
-
-                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("4-exec-step").Class);
+                Context.EnableBreakpoint("inside_func0"); // check, that step-in and breakpoint at same line will generate only one event - step
+                Context.StepOver();
             });
 
-            Console.WriteLine("Hello World!");      Label.Breakpoint("STEP1");
+            Console.WriteLine("step 1");                        Label.Breakpoint("step1");
 
-            Label.Checkpoint("test_steps", "finish", () => {
-                MIConst threadId = Context.WasStep("STEP1");
-
-                // test for "thread-info"
-                var res = Context.MIDebugger.Request("5-thread-info");
-                Assert.Equal(MIResultClass.Done, res.Class);
-                Assert.True(Context.IsStoppedThreadInList((MIList)res["threads"], threadId));
-
-                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("6-exec-step").Class);
-
-                Context.WasStep("STEP2");
-
-                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("7-exec-step").Class);
-
-                Context.WasStep("STEP3");
-
-                Context.Continue();
+            Label.Checkpoint("step1", "step2", () => {
+                Context.WasStep("step1");
+                Context.StepOver();
             });
 
-            func_test();                            Label.Breakpoint("STEP2");
+            Console.WriteLine("step 2");                        Label.Breakpoint("step2");
+
+            Label.Checkpoint("step2", "step_in", () => {
+                Context.WasStep("step2");
+                Context.StepIn();
+            });
+
+            Label.Checkpoint("step_in", "step_in_func", () => {
+                Context.WasStep("step_func");
+                Context.StepIn();
+            });
+
+            test_func();                                        Label.Breakpoint("step_func");
+
+            Label.Checkpoint("step_out_check", "finish", () => {
+                Context.WasStep("step_func");
+                Context.StepOut();
+            });
 
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
@@ -199,9 +213,19 @@ namespace MITestStepping
             });
         }
 
-       static void func_test()
-       {                                            Label.Breakpoint("STEP3");
-           Console.WriteLine("Hello World!");
-       }
+        static public void test_func()
+        {                                                       Label.Breakpoint("inside_func0");
+            Console.WriteLine("test_func");                     Label.Breakpoint("inside_func1");
+
+            Label.Checkpoint("step_in_func", "step_out_func", () => {
+                Context.WasStep("inside_func0");
+                Context.StepOver();
+            });
+
+            Label.Checkpoint("step_out_func", "step_out_check", () => {
+                Context.WasStep("inside_func1");
+                Context.StepOut();
+            });
+        }
     }
 }

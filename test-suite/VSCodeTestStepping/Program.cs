@@ -118,13 +118,11 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success);
         }
 
-        public static void WasStopped(string Reason, Breakpoint breakpoint)
+        public static void WasStep(string BpName)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
-                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", Reason)) {
-                    if (Reason == "breakpoint")
-                        threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "step")) {
 
                     return true;
                 }
@@ -141,6 +139,7 @@ namespace NetcoreDbgTest.Script
             var ret = VSCodeDebugger.Request(stackTraceRequest);
             Assert.True(ret.Success);
 
+            Breakpoint breakpoint = DebuggeeInfo.Breakpoints[BpName];
             Assert.Equal(BreakpointType.Line, breakpoint.Type);
             var lbp = (LineBreakpoint)breakpoint;
 
@@ -158,14 +157,7 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
-        public static void Continue()
-        {
-            ContinueRequest continueRequest = new ContinueRequest();
-            continueRequest.arguments.threadId = threadId;
-            Assert.True(VSCodeDebugger.Request(continueRequest).Success);
-        }
-
-        public static void StepNext()
+        public static void StepOver()
         {
             NextRequest nextRequest = new NextRequest();
             nextRequest.arguments.threadId = threadId;
@@ -202,37 +194,37 @@ namespace VSCodeTestStepping
         {
             Label.Checkpoint("init", "step1", () => {
                 Context.PrepareStart();
-                Context.AddBreakpoint("bp");
+                Context.AddBreakpoint("inside_func0"); // check, that step-in and breakpoint at same line will generate only one event - step
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
                 Context.WasEntryPointHit();
-                Context.StepNext();
+                Context.StepOver();
             });
 
             Console.WriteLine("step 1");                        Label.Breakpoint("step1");
 
             Label.Checkpoint("step1", "step2", () => {
-                Context.WasStopped("step", DebuggeeInfo.Breakpoints["step1"]);
-                Context.StepNext();
+                Context.WasStep("step1");
+                Context.StepOver();
             });
 
             Console.WriteLine("step 2");                        Label.Breakpoint("step2");
 
             Label.Checkpoint("step2", "step_in", () => {
-                Context.WasStopped("step", DebuggeeInfo.Breakpoints["step2"]);
+                Context.WasStep("step2");
+                Context.StepIn();
+            });
+
+            Label.Checkpoint("step_in", "step_in_func", () => {
+                Context.WasStep("step_func");
                 Context.StepIn();
             });
 
             test_func();                                        Label.Breakpoint("step_func");
 
-            Label.Checkpoint("step_in", "step_out_func", () => {
-                Context.WasStopped("step", DebuggeeInfo.Breakpoints["step_func"]);
-                Context.Continue();
-            });
-
             Label.Checkpoint("step_out_check", "finish", () => {
-                Context.WasStopped("step", DebuggeeInfo.Breakpoints["step_func"]);
-                Context.Continue();
+                Context.WasStep("step_func");
+                Context.StepOut();
             });
 
             Label.Checkpoint("finish", "", () => {
@@ -242,11 +234,16 @@ namespace VSCodeTestStepping
         }
 
         static public void test_func()
-        {                                                       Label.Breakpoint("bp");
-            Console.WriteLine("test_func");
+        {                                                       Label.Breakpoint("inside_func0");
+            Console.WriteLine("test_func");                     Label.Breakpoint("inside_func1");
+
+            Label.Checkpoint("step_in_func", "step_out_func", () => {
+                Context.WasStep("inside_func0");
+                Context.StepOver();
+            });
 
             Label.Checkpoint("step_out_func", "step_out_check", () => {
-                Context.WasStopped("breakpoint", DebuggeeInfo.Breakpoints["bp"]);
+                Context.WasStep("inside_func1");
                 Context.StepOut();
             });
         }
