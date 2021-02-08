@@ -427,7 +427,13 @@ void CLIProtocol::EmitOutputEvent(OutputEvent event)
 HRESULT CLIProtocol::doBacktrace(const std::vector<std::string> &args_orig, std::string &output)
 {
     std::vector<std::string> args = args_orig;
-    ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+    ThreadId tid = m_debugger->GetLastStoppedThreadId();
+    if (tid == ThreadId::AllThreads)
+    {
+        output ="No stack.";
+        return E_FAIL;
+    }
+    ThreadId threadId{ GetIntArg(args, "--thread", int(tid)) };
     int lowFrame = 0;
     int highFrame = FrameLevel::MaxFrameLevel;
     StripArgs(args);
