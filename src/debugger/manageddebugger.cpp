@@ -822,13 +822,7 @@ HRESULT ManagedDebugger::DetachFromProcess()
     }
 
     Cleanup();
-
-    m_pProcess->Release();
-    m_pProcess = nullptr;
-
-    m_pDebug->Terminate();
-    m_pDebug = nullptr;
-
+    TerminateDebug();
     return S_OK;
 }
 
@@ -847,13 +841,7 @@ HRESULT ManagedDebugger::TerminateProcess()
 
     m_pProcess->Terminate(0);
     WaitProcessExited();
-
-    m_pProcess->Release();
-    m_pProcess = nullptr;
-
-    m_pDebug->Terminate();
-    m_pDebug = nullptr;
-
+    TerminateDebug();
     return S_OK;
 }
 
@@ -863,6 +851,21 @@ void ManagedDebugger::Cleanup()
     m_evaluator.Cleanup();
     m_protocol->Cleanup();
     // TODO: Cleanup libcoreclr.so instance
+}
+
+void ManagedDebugger::TerminateDebug()
+{
+    if (m_pProcess)
+    {
+        m_pProcess->Release();
+        m_pProcess = nullptr;
+    }
+
+    if (m_pDebug)
+    {
+        m_pDebug->Terminate();
+        m_pDebug = nullptr;
+    }
 }
 
 HRESULT ManagedDebugger::AttachToProcess(DWORD pid)

@@ -79,9 +79,11 @@ private:
     HRESULT doBreak(const std::vector<std::string> &args, std::string &output);
     HRESULT doContinue(const std::vector<std::string> &, std::string &output);
     HRESULT doDelete(const std::vector<std::string> &args, std::string &);
+    HRESULT doDetach(const std::vector<std::string> &args, std::string &);
     HRESULT doFile(const std::vector<std::string> &args, std::string &);
     HRESULT doFinish(const std::vector<std::string> &args, std::string &output);
     HRESULT doHelp(const std::vector<std::string> &args, std::string &output);
+    HRESULT doInfoThread(const std::vector<std::string> &, std::string &output);
     HRESULT doInterrupt(const std::vector<std::string> &args, std::string &output);
     HRESULT doNext(const std::vector<std::string> &args, std::string &output);
     HRESULT doPrint(const std::vector<std::string> &args, std::string &output);

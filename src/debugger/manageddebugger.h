@@ -258,6 +258,7 @@ private:
     HRESULT Startup(IUnknown *punk, DWORD pid);
 
     void Cleanup();
+    void TerminateDebug();
 
     static HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
 

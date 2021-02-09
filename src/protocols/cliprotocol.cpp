@@ -505,6 +505,12 @@ HRESULT CLIProtocol::doDelete(const std::vector<std::string> &args, std::string 
     return S_OK;
 }
 
+HRESULT CLIProtocol::doDetach(const std::vector<std::string> &args, std::string &)
+{
+    m_debugger->Disconnect();
+    return S_OK;
+}
+
 HRESULT CLIProtocol::doFile(const std::vector<std::string> &args, std::string &output)
 {
     if (args.empty())
@@ -533,9 +539,11 @@ HRESULT CLIProtocol::doHelp(const std::vector<std::string> &args, std::string &o
         "break <func_name>          b          Set breakpoint at function func_name().\n"
         "continue                   c          Continue debugging after stop/pause.\n"
         "delete <X>                 d          Delete breakpoint number X.\n"
+        "detach                                Detach from the debugging process.\n"
         "file <filename>                       Load executable to debug.\n"
         "finish                                Continue execution until the current stack frame returns.\n"
         "help                       h          Print this help message.\n"
+        "info-thread                           Print threads info. \n"
         "interrupt                             Interrupt debugging program\n"          
         "next                       n          Step program.\n"
         "print <name>               p          Print variable's value.\n"
@@ -545,6 +553,32 @@ HRESULT CLIProtocol::doHelp(const std::vector<std::string> &args, std::string &o
         "set-args                              Set the debugging program arguments.\n\n"
     // todo:    "* Press <Enter> to repeat the previous command.\n\n"
     );
+    return S_OK;
+}
+
+HRESULT CLIProtocol::doInfoThread(const std::vector<std::string> &, std::string &output)
+{
+    std::vector<Thread> threads;
+    if (m_debugger->GetThreads(threads) != S_OK)
+    {
+        output = "No threads.";
+        return E_FAIL;
+    }
+    std::ostringstream ss;
+
+    ss << "\nthreads=[\n";
+
+    const char *sep = "";
+    for (const Thread& thread : threads)
+    {
+        ss << sep << "{id=\"" << int(thread.id)
+           << "\", name=\"" << thread.name << "\", state=\""
+           << (thread.running ? "running" : "stopped") << "\"}";
+        sep = ",\n";
+    }
+
+    ss << "]";
+    output = ss.str();
     return S_OK;
 }
 
@@ -698,10 +732,12 @@ HRESULT CLIProtocol::HandleCommand(const std::string& command,
         {"continue", &CLIProtocol::doContinue},
         {"delete", &CLIProtocol::doDelete},
         {"d", &CLIProtocol::doDelete},
+        {"detach", &CLIProtocol::doDetach},
         {"file", &CLIProtocol::doFile},
         {"finish", &CLIProtocol::doFinish},
         {"help", &CLIProtocol::doHelp},
         {"h", &CLIProtocol::doHelp},
+        {"info-thread", &CLIProtocol::doInfoThread},
         {"interrupt", &CLIProtocol::doInterrupt},
         {"n", &CLIProtocol::doNext},
         {"next", &CLIProtocol::doNext},
