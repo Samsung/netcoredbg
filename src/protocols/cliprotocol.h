@@ -13,9 +13,12 @@
 
 #include "debugger/debugger.h"
 #include "iprotocol.h"
+#include "string_view.h"
 
 namespace netcoredbg
 {
+
+using Utility::string_view;
 
 const char HistoryFileName[] = ".netcoredbg_hist";
 
@@ -81,26 +84,54 @@ public:
         m_execArgs = args;
     }
 
+    // Forward declaration of command tags (each distinct command have unique tag)
+    // and completion tags. The tags itself defined in cliprotocol.cpp file.
+    enum class CommandTag;
+    enum class CompletionTag;
+
 private:
-    HRESULT doBacktrace(const std::vector<std::string> &args, std::string &output);
-    HRESULT doBreak(const std::vector<std::string> &args, std::string &output);
-    HRESULT doContinue(const std::vector<std::string> &, std::string &output);
-    HRESULT doDelete(const std::vector<std::string> &args, std::string &);
-    HRESULT doDetach(const std::vector<std::string> &args, std::string &);
-    HRESULT doFile(const std::vector<std::string> &args, std::string &);
-    HRESULT doFinish(const std::vector<std::string> &args, std::string &output);
-    HRESULT doHelp(const std::vector<std::string> &args, std::string &output);
-    HRESULT doInfoThread(const std::vector<std::string> &, std::string &output);
-    HRESULT doInterrupt(const std::vector<std::string> &args, std::string &output);
-    HRESULT doNext(const std::vector<std::string> &args, std::string &output);
-    HRESULT doPrint(const std::vector<std::string> &args, std::string &output);
-    HRESULT doQuit(const std::vector<std::string> &, std::string &);
-    HRESULT doRun(const std::vector<std::string> &args, std::string &output);
-    HRESULT doStep(const std::vector<std::string> &args, std::string &output);
-    HRESULT doSetArgs(const std::vector<std::string> &args, std::string &output);
-    HRESULT HandleCommand(const std::string& command,
-                          const std::vector<std::string> &args,
-                          std::string &output);
+    struct CommandsList;
+
+    template <typename T> struct Expose
+    {
+        using CommandInfo = typename T::CLIParams::CommandInfo;
+    };
+
+    using CLIParams = Expose<CommandsList>;
+
+    // Type of the member function pointer, which handles every user command.
+    typedef HRESULT (CLIProtocol::*HandlerFunc)(const std::vector<std::string> &args, std::string &output);
+
+    // This function template should be explicitly specialized by command tag
+    // to handle each particular user command.
+    template <CommandTag> HRESULT doCommand(const std::vector<std::string> &, std::string &);
+
+    // This type maps particular command tag to particular specialization
+    // of `doCommand<Tag>` function. This is required to dispatch commands handlers.
+    template <CommandTag Tag> struct BindHandler
+    {
+        static const constexpr CLIProtocol::HandlerFunc handler = &CLIProtocol::doCommand<Tag>;
+    };
+
+    // Declaring set of functions, which will hadle completions for each particular `CompletionTag` value.
+    template <CompletionTag> void completion_handler(string_view str, const std::function<void (const char*)>& func);
+
+    // This template binds completion `Tag` value with `completion_handler<Tag>` function.
+    // This template should be passed to `DispatchTable` template to generate array, which
+    // resolves any `Tag` value to corresponding `completion_handler<Tag>` function.
+    template <CompletionTag Tag> struct BindCompletions
+    {
+        constexpr static void(CLIProtocol::*const handler)(string_view, const std::function<void(const char*)>&) = 
+            &CLIProtocol::completion_handler<Tag>;
+    };
+   
+    // This function tries to complete command `str`, where the cursor position is `cursor`:
+    // functor `func` will be called for each possible completion variant.
+    unsigned completeInput(string_view str, unsigned cursor, const std::function<void(const char*)>& func);
+
+    // This function prints help for specified (sub)command list.
+    template <typename CommandList> HRESULT printHelp(const CommandList *, string_view args = {});
+
 
     HRESULT StepCommand(const std::vector<std::string> &args,
                         std::string &output,
