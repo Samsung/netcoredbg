@@ -16,6 +16,14 @@ namespace netcoredbg
 namespace Utility
 {
 
+/// @{ This function is similar to `std::size()` from C++17 and allows to determine
+/// the object size as number of elements, which might be stored within object
+/// (opposed to sizeof(), which returns object sizes in bytes). Typically these
+/// functions applicable to arrays and to classes like std::array.
+template <typename T> constexpr auto Size(const T& v) -> decltype(v.size()) { return v.size(); }
+template <class T, size_t N> constexpr size_t Size(const T (&)[N]) noexcept { return N; }
+/// @}
+
 // This is helper class which simplifies implementation of singleton classes.
 //
 // Usage example:
