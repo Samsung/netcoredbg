@@ -44,6 +44,12 @@ namespace Internals
 template <size_t Size> using MakeSequence = typename Internals::MakeSequence<Size>::type;
 
 
+/// @{ This is similar to std:void_t which is defined in c++17.
+template <typename... Args> struct MakeVoid { typedef void type; };
+template <typename... Args> using Void = typename MakeVoid<Args...>::type;
+/// @}
+
+
 // This is helper class which simplifies implementation of singleton classes.
 //
 // Usage example:
