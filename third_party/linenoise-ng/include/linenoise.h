@@ -52,11 +52,13 @@ typedef struct linenoiseCompletions linenoiseCompletions;
 typedef void(linenoiseCompletionCallback)(const char*, linenoiseCompletions*);
 void linenoiseSetCompletionCallback(linenoiseCompletionCallback* fn);
 
-/* another way to install completion callback: now it's possible to
+/* Another way to install completion callback: now it's possible to
  * pass some `context' to the callback, also linenoise provides
  * full text line and cursor position to the callback, which allows
- * to implement context-sensitive completions. */
-typedef void(linenoiseCompletionCallbackEx)(const char* line,
+ * to implement context-sensitive completions. Callback function
+ * returns position, from which and till cursor_pos, text might be
+ * replaced by any of the completion variants. */
+typedef unsigned(linenoiseCompletionCallbackEx)(const char* line,
                                             unsigned cursor_pos,
                                             linenoiseCompletions*,
                                             void* context);

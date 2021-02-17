@@ -1984,9 +1984,10 @@ int InputBuffer::completeLine(PromptBase& pi) {
     unique_ptr<char[]> utf8(new char[bufSize]);
     copyString32to8(utf8.get(), bufSize, buf32);
     // call extended completion callback
-    assert(0 <= pos <= len);
-    reinterpret_cast<linenoiseCompletionCallbackEx*>(completionCallback)(
+    assert(0 <= pos && pos <= len);
+    startIndex = reinterpret_cast<linenoiseCompletionCallbackEx*>(completionCallback)(
         utf8.get(), pos, &lc, completionContext);
+    itemLength = pos - startIndex;
   }
 
   // if no completions, we are done
