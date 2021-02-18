@@ -412,7 +412,6 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(
     m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(exitCode));
     m_debugger.NotifyProcessExited();
     m_debugger.m_protocol->EmitTerminatedEvent();
-    m_debugger.TerminateDebug();
 
     return S_OK;
 }

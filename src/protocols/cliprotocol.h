@@ -21,6 +21,13 @@ const char HistoryFileName[] = ".netcoredbg_hist";
 
 class CLIProtocol : public IProtocol
 {
+    enum ProcessStatus
+    {
+        NotStarted,
+        Running,
+        Exited
+    } m_processStatus;
+    
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
@@ -49,7 +56,7 @@ class CLIProtocol : public IProtocol
     
 public:
 
-    CLIProtocol() : IProtocol(), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(HistoryFileName),
+    CLIProtocol() : IProtocol(), m_processStatus(NotStarted), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(HistoryFileName),
 #ifndef WIN32
                                  redOn("\033[1;31m"), colorOff("\033[0m") {}
 #else

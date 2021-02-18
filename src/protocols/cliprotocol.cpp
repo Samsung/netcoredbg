@@ -131,10 +131,23 @@ HRESULT CLIProtocol::StepCommand(const std::vector<std::string> &args,
                                 Debugger::StepType stepType)
 {
     HRESULT Status;
-    ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
-    IfFailRet(m_debugger->StepCommand(threadId, stepType));
-    output = "^running";
-    return S_OK;
+    switch (m_processStatus) 
+    {
+        case Running:
+        {
+            ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+            IfFailRet(m_debugger->StepCommand(threadId, stepType));
+            output = "^running";
+            break;
+        }
+
+        default:
+            output = "No process.";
+            Status = E_FAIL;
+            break;
+    }
+
+    return Status;
 }
 
 HRESULT CLIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
@@ -364,7 +377,7 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
 void CLIProtocol::EmitExitedEvent(ExitedEvent event)
 {
     LogFuncEntry();
-
+    m_processStatus = Exited;
     printf("\nstopped, reason: exited, exit-code: %i\n", event.exitCode);
 #ifndef WIN32
     pthread_kill(tid, SIGWINCH);
@@ -385,6 +398,7 @@ void CLIProtocol::EmitThreadEvent(ThreadEvent event)
     {
         case ThreadStarted:
             reasonText = "thread created";
+            m_processStatus = Running;
             break;
         case ThreadExited:
             reasonText = "thread exited";
@@ -815,6 +829,12 @@ void CLIProtocol::CommandLoop()
                 break;
             m_debugger->Pause();
             continue;
+        }
+
+        if(m_processStatus == Exited)
+        {
+            m_debugger->Disconnect();
+            m_processStatus = NotStarted;
         }
 
         input = cmdline.get();
