@@ -590,13 +590,13 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
                     std::vector<int> sizes(rank, 0);
 
                     unsigned numSizes = CorSigUncompressData(typePtr);
-                    _ASSERTE(numSizes <= rank);
+                    assert(numSizes <= rank);
                         unsigned i;
                     for(i =0; i < numSizes; i++)
                         sizes[i] = CorSigUncompressData(typePtr);
 
                     unsigned numLowBounds = CorSigUncompressData(typePtr);
-                    _ASSERTE(numLowBounds <= rank);
+                    assert(numLowBounds <= rank);
                     for(i = 0; i < numLowBounds; i++)
                         typePtr += CorSigUncompressSignedInt(typePtr,&lowerBounds[i]);
 
@@ -686,7 +686,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
         default:
         case ELEMENT_TYPE_SENTINEL      :
         case ELEMENT_TYPE_END           :
-            //_ASSERTE(!"Unknown Type");
+            //assert(!"Unknown Type");
             if(typ)
             {
                 out = "/* UNKNOWN TYPE (0x%X)*/" + std::to_string(typ);

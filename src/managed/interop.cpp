@@ -448,7 +448,7 @@ HRESULT ManagedPart::ResolveSequencePoint(const char *filename, ULONG32 lineNumb
 {
     if (m_symbolReaderHandle != 0)
     {
-        _ASSERTE(resolveSequencePointDelegate != nullptr);
+        assert(resolveSequencePointDelegate != nullptr);
 
         if (resolveSequencePointDelegate(m_symbolReaderHandle, to_utf16(filename).c_str(), lineNumber, pToken, pIlOffset) == FALSE)
         {
@@ -467,7 +467,7 @@ HRESULT ManagedPart::GetSequencePointByILOffset(
 {
     if (m_symbolReaderHandle != 0)
     {
-        _ASSERTE(getSequencePointByILOffsetDelegate != nullptr);
+        assert(getSequencePointByILOffsetDelegate != nullptr);
 
         // Sequence points with startLine equal to 0xFEEFEE marker are filtered out on the managed side.
         if (getSequencePointByILOffsetDelegate(m_symbolReaderHandle, methodToken, ilOffset, sequencePoint) == FALSE)
@@ -485,7 +485,7 @@ HRESULT ManagedPart::GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, UL
 {
     if (m_symbolReaderHandle != 0)
     {
-        _ASSERTE(getStepRangesFromIPDelegate != nullptr);
+        assert(getStepRangesFromIPDelegate != nullptr);
 
         if (getStepRangesFromIPDelegate(m_symbolReaderHandle, ip, MethodToken, ilStartOffset, ilEndOffset) == FALSE)
         {
@@ -511,7 +511,7 @@ HRESULT ManagedPart::GetNamedLocalVariableAndScope(
     if (!m_symbolReaderHandle)
         return E_FAIL;
 
-    _ASSERTE(getLocalVariableNameAndScopeDelegate != nullptr);
+    assert(getLocalVariableNameAndScopeDelegate != nullptr);
 
     BSTR wszParamName = WinAPI::sysAllocStringLen(0, mdNameLen);
     if (WinAPI::sysStringLen(wszParamName) == 0)
@@ -540,7 +540,7 @@ HRESULT ManagedPart::GetSequencePoints(mdMethodDef methodToken, std::vector<Sequ
 {
     if (m_symbolReaderHandle != 0)
     {
-        _ASSERTE(getSequencePointsDelegate != nullptr);
+        assert(getSequencePointsDelegate != nullptr);
 
         SequencePoint *allocatedPoints = nullptr;
         int pointsCount = 0;
