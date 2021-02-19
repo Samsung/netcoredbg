@@ -114,7 +114,12 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
         {
             ToRelease<ICorDebugFunction> pFunc;
             if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
-                EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResult, evalFlags);
+            {
+                if (is_static)
+                    EvalFunction(pThread, pFunc, &pType, 1, nullptr, 0, &pResult, evalFlags);
+                else
+                    EvalFunction(pThread, pFunc, &pType, 1, &pInputValue, 1, &pResult, evalFlags);
+            }
         }
         else
         {
@@ -219,10 +224,10 @@ HRESULT Evaluator::RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue 
     }
 
     ToRelease<ICorDebugValue> pRuntimeHandleValue;
-    IfFailRet(EvalFunction(pThread, m_pGetTypeHandle, nullptr, pNewValue ? pNewValue.GetPtr() : pValue, &pRuntimeHandleValue, evalFlags));
+    IfFailRet(EvalFunction(pThread, m_pGetTypeHandle, nullptr, 0, pNewValue ? pNewValue.GetRef() : &pValue, 1, &pRuntimeHandleValue, evalFlags));
 
     ToRelease<ICorDebugValue> pResultValue;
-    IfFailRet(EvalFunction(pThread, m_pRunClassConstructor, nullptr, pRuntimeHandleValue, &pResultValue, evalFlags));
+    IfFailRet(EvalFunction(pThread, m_pRunClassConstructor, nullptr, 0, pRuntimeHandleValue.GetRef(), 1, &pResultValue, evalFlags));
 
     return S_OK;
 }
@@ -878,15 +883,29 @@ HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
     return S_OK;
 }
 
+// Call managed function in debuggee process.
+// [in] pThread - managed thread for evaluation;
+// [in] pFunc - function to call;
+// [in] ppArgsType - pointer to args Type array, could be nullptr;
+// [in] ArgsTypeCount - size of args Type array;
+// [in] ppArgsValue - pointer to args Value array, could be nullptr;
+// [in] ArgsValueCount - size of args Value array;
+// [out] ppEvalResult - return value;
+// [in] evalFlags - evaluation flags.
 HRESULT Evaluator::EvalFunction(
     ICorDebugThread *pThread,
     ICorDebugFunction *pFunc,
-    ICorDebugType *pType, // may be nullptr
-    ICorDebugValue *pArgValue, // may be nullptr
+    ICorDebugType **ppArgsType,
+    ULONG32 ArgsTypeCount,
+    ICorDebugValue **ppArgsValue,
+    ULONG32 ArgsValueCount,
     ICorDebugValue **ppEvalResult,
     int evalFlags)
 {
     LogFuncEntry();
+
+    assert((!ppArgsType && ArgsTypeCount == 0) || (ppArgsType && ArgsTypeCount > 0));
+    assert((!ppArgsValue && ArgsValueCount == 0) || (ppArgsValue && ArgsValueCount > 0));
 
     if (evalFlags & EVAL_NOFUNCEVAL)
         return S_OK;
@@ -897,11 +916,13 @@ HRESULT Evaluator::EvalFunction(
     IfFailRet(pThread->CreateEval(&pEval));
 
     std::vector< ToRelease<ICorDebugType> > typeParams;
+    // Reserve memory from the beginning, since typeParams will have ArgsTypeCount or more count of elements for sure.
+    typeParams.reserve(ArgsTypeCount);
 
-    if (pType)
+    for (ULONG32 i = 0; i < ArgsTypeCount; i++)
     {
         ToRelease<ICorDebugTypeEnum> pTypeEnum;
-        if (SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
+        if (SUCCEEDED(ppArgsType[i]->EnumerateTypeParameters(&pTypeEnum)))
         {
             ICorDebugType *curType;
             ULONG fetched = 0;
@@ -919,8 +940,8 @@ HRESULT Evaluator::EvalFunction(
         pFunc,
         static_cast<uint32_t>(typeParams.size()),
         (ICorDebugType **)typeParams.data(),
-        pArgValue ? 1 : 0,
-        pArgValue ? &pArgValue : nullptr
+        ArgsValueCount,
+        ppArgsValue
     );
 
     switch (res) {
@@ -1036,7 +1057,7 @@ HRESULT Evaluator::EvalObjectNoConstructor(
         if (!m_pSuppressFinalize)
             return E_FAIL;
 
-        IfFailRet(EvalFunction(pThread, m_pSuppressFinalize, nullptr, *ppEvalResult, nullptr /* void method */, evalFlags));
+        IfFailRet(EvalFunction(pThread, m_pSuppressFinalize, nullptr, 0, ppEvalResult, 1, nullptr /* void method */, evalFlags));
     }
 
     return S_OK;
@@ -1105,7 +1126,7 @@ HRESULT Evaluator::getObjectByFunction(
     auto methodName = to_utf16(func);
     IfFailRet(FindMethod(pType, methodName.c_str(), &pFunc));
 
-    return EvalFunction(pThread, pFunc, pType, pInValue, ppOutValue, evalFlags);
+    return EvalFunction(pThread, pFunc, pType.GetRef(), 1, &pInValue, 1, ppOutValue, evalFlags);
 }
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)
@@ -1412,6 +1433,12 @@ HRESULT Evaluator::WalkMembers(
                                          &rawValueLength)))
         {
             std::string name = to_utf8(mdName /*, nameLen*/);
+
+            // Prevent access to internal compiler added fields (without visible name).
+            // Should be accessed by debugger routine only and hidden from user/ide.
+            // Note, uncontrolled access to internal compiler added field or its properties may break debugger work.
+            if (name.size() > 1 && name[0] == '<' && name[1] == '>')
+                continue;
 
             bool is_static = (fieldAttr & fdStatic);
 

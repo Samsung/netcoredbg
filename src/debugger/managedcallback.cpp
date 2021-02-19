@@ -123,6 +123,11 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
         return S_OK;
     }
 
+    // Check async stepping related breakpoints first, since user can't setup breakpoints to await block yield or resume offsets manually,
+    // so, async stepping related breakpoints not a part of any user breakpoints related data (that will be checked in separate thread. see code below).
+    if (m_debugger.HitAsyncStepBreakpoint(pAppDomain, pThread, pBreakpoint))
+        return S_OK;
+
     auto stepForcedIgnoreBP = [&] () {
         {
             std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
@@ -177,6 +182,11 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
             return;
         }
 
+        // Disable all steppers if we stop at breakpoint during step.
+        ToRelease<ICorDebugProcess> pProcess;
+        if (SUCCEEDED(pThread->GetProcess(&pProcess)))
+            m_debugger.DisableAllSteppers(pProcess);
+
         if (atEntry)
             event.reason = StopEntry;
 
@@ -205,6 +215,12 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
     LogFuncEntry();
     ThreadId threadId(getThreadId(pThread));
 
+    // In case we have async method and first await breakpoint (yield_offset) was enabled, but not reached.
+    m_debugger.m_asyncStepMutex.lock();
+    if (m_debugger.m_asyncStep)
+        m_debugger.m_asyncStep.reset(nullptr);
+    m_debugger.m_asyncStepMutex.unlock();
+
     StackFrame stackFrame;
     ToRelease<ICorDebugFrame> pFrame;
     HRESULT Status = S_FALSE;
@@ -215,11 +231,34 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
 
     if (m_debugger.IsJustMyCode() && no_source)
     {
-        m_debugger.SetupStep(pThread, Debugger::STEP_OVER);
+        m_debugger.SetupSimpleStep(pThread, Debugger::STEP_OVER);
         pAppDomain->Continue(0);
     }
     else
     {
+        // Note, step-in stop at the beginning of a newly called function at 0 IL offset.
+        // But, for example, async function don't have user code at 0 IL offset, so,
+        // we need additional step-over to real user code.
+        if (reason == CorDebugStepReason::STEP_CALL)
+        {
+            ToRelease<ICorDebugFrame> pFrame;
+            ToRelease<ICorDebugILFrame> pILFrame;
+            ULONG32 ipOffset;
+            CorDebugMappingResult mappingResult;
+            Modules::SequencePoint sequencePoint;
+            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr &&
+                SUCCEEDED(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)) &&
+                SUCCEEDED(pILFrame->GetIP(&ipOffset, &mappingResult)) &&
+                SUCCEEDED(m_debugger.m_modules.GetFrameILAndSequencePoint(pFrame, ipOffset, sequencePoint)) &&
+                // Current IL offset less than real offset of first user code line.
+                ipOffset < (ULONG32)sequencePoint.offset)
+            {
+                IfFailRet(m_debugger.SetupSimpleStep(pThread, Debugger::STEP_OVER));
+                pAppDomain->Continue(0);
+                return S_OK;
+            }
+        }
+
         StoppedEvent event(StopStep, threadId);
         event.frame = stackFrame;
 

@@ -272,6 +272,7 @@ private:
     static HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
 
     HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
+    HRESULT SetupSimpleStep(ICorDebugThread *pThread, StepType stepType);
 
     HRESULT GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame);
@@ -333,6 +334,63 @@ public:
 private:
     HRESULT Stop(ThreadId threadId, const StoppedEvent &event);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
+
+    enum class asyncStepStatus
+    {
+        yield_offset_breakpoint,
+        resume_offset_breakpoint
+    };
+
+    struct asyncBreakpoint_t
+    {
+        ToRelease<ICorDebugBreakpoint> iCorBreakpoint;
+        CORDB_ADDRESS modAddress;
+        mdMethodDef methodToken;
+        ULONG32 ilOffset;
+
+        asyncBreakpoint_t() :
+            iCorBreakpoint(nullptr),
+            modAddress(0),
+            methodToken(0),
+            ilOffset(0)
+        {}
+
+        ~asyncBreakpoint_t()
+        {
+            if (iCorBreakpoint)
+                iCorBreakpoint->Activate(0);
+        }
+    };
+
+    struct asyncStep_t
+    {
+        ThreadId m_threadId;
+        Debugger::StepType m_initialStepType;
+        uint32_t m_resume_offset;
+        asyncStepStatus m_stepStatus;
+        std::unique_ptr<asyncBreakpoint_t> m_Breakpoint;
+        ToRelease<ICorDebugReferenceValue> pValueAsyncIdRef;
+
+        asyncStep_t() :
+            m_threadId(ThreadId::Invalid),
+            m_initialStepType(Debugger::StepType::STEP_OVER),
+            m_resume_offset(0),
+            m_stepStatus(asyncStepStatus::yield_offset_breakpoint),
+            m_Breakpoint(nullptr),
+            pValueAsyncIdRef(nullptr)
+        {}
+    };
+
+    std::mutex m_asyncStepMutex;
+    // Pointer to object, that provide all active async step related data. Object will be created only in case of active async method stepping.
+    std::unique_ptr<asyncStep_t> m_asyncStep;
+    // System.Threading.Tasks.Task.NotifyDebuggerOfWaitCompletion() method data,
+    // will be configured at async method step-out setup.
+    CORDB_ADDRESS modAddressNotifyDebuggerOfWaitCompletion = 0;
+    mdMethodDef methodTokenNotifyDebuggerOfWaitCompletion = mdMethodDefNil;
+
+    bool HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
+    HRESULT SetBreakpointIntoNotifyDebuggerOfWaitCompletion();
 };
 
 } // namespace netcoredbg

@@ -227,7 +227,12 @@ HRESULT Variables::FetchFieldsAndProperties(
         {
             ToRelease<ICorDebugFunction> pFunc;
             if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
-                m_evaluator.EvalFunction(pThread, pFunc, pType, is_static ? nullptr : pInputValue, &pResultValue, evalFlags);
+            {
+                if (is_static)
+                    m_evaluator.EvalFunction(pThread, pFunc, &pType, 1, nullptr, 0, &pResultValue, evalFlags);
+                else
+                    m_evaluator.EvalFunction(pThread, pFunc, &pType, 1, &pInputValue, 1, &pResultValue, evalFlags);
+            }
         }
         else
         {

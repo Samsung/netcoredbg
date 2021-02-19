@@ -180,8 +180,10 @@ public:
     HRESULT EvalFunction(
         ICorDebugThread *pThread,
         ICorDebugFunction *pFunc,
-        ICorDebugType *pType, // may be nullptr
-        ICorDebugValue *pArgValue, // may be nullptr
+        ICorDebugType **ppArgsType,
+        ULONG32 ArgsTypeCount,
+        ICorDebugValue **ppArgsValue,
+        ULONG32 ArgsValueCount,
         ICorDebugValue **ppEvalResult,
         int evalFlags);
 
