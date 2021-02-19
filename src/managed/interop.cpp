@@ -198,6 +198,7 @@ GetLocalVariableNameAndScope ManagedPart::getLocalVariableNameAndScopeDelegate;
 GetSequencePointByILOffsetDelegate ManagedPart::getSequencePointByILOffsetDelegate;
 GetStepRangesFromIPDelegate ManagedPart::getStepRangesFromIPDelegate;
 GetSequencePointsDelegate ManagedPart::getSequencePointsDelegate;
+GetAsyncMethodsSteppingInfoDelegate ManagedPart::getAsyncMethodsSteppingInfoDelegate = nullptr;
 ParseExpressionDelegate ManagedPart::parseExpressionDelegate = nullptr;
 EvalExpressionDelegate ManagedPart::evalExpressionDelegate = nullptr;
 RegisterGetChildDelegate ManagedPart::registerGetChildDelegate = nullptr;
@@ -442,6 +443,7 @@ HRESULT ManagedPart::PrepareManagedPart()
     IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate));
+    IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodsSteppingInfo", (void **)&getAsyncMethodsSteppingInfoDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate));
     IfFailRet(createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "RegisterGetChild", (void **)&registerGetChildDelegate));
@@ -569,6 +571,30 @@ HRESULT ManagedPart::GetSequencePoints(mdMethodDef methodToken, std::vector<Sequ
     }
 
     return E_FAIL;
+}
+
+HRESULT ManagedPart::GetAsyncMethodsSteppingInfo(std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo)
+{
+    if (!m_symbolReaderHandle)
+        return E_FAIL;
+
+    assert(getAsyncMethodsSteppingInfoDelegate != nullptr);
+
+    AsyncAwaitInfoBlock *allocatedAsyncInfo = nullptr;
+    int asyncInfoCount = 0;
+
+    getAsyncMethodsSteppingInfoDelegate(m_symbolReaderHandle, (PVOID*)&allocatedAsyncInfo, &asyncInfoCount);
+
+    if (asyncInfoCount == 0)
+    {
+        assert(allocatedAsyncInfo == nullptr);
+        return S_OK;
+    }
+
+    AsyncAwaitInfo.assign(allocatedAsyncInfo, allocatedAsyncInfo + asyncInfoCount);
+
+    WinAPI::coTaskMemFree(allocatedAsyncInfo);
+    return S_OK;
 }
 
 HRESULT ManagedPart::ParseExpression(

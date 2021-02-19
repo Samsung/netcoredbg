@@ -997,5 +997,83 @@ namespace NetCoreDbg
                 return null;
             }
         }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct AsyncAwaitInfoBlock
+        {
+            public uint catch_handler_offset;
+            public uint yield_offset;
+            public uint resume_offset;
+            public uint token;
+        }
+
+        /// <summary>
+        /// Helper method to return all async methods stepping information.
+        /// </summary>
+        /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
+        /// <param name="asyncInfo">array with all async methods stepping information</param>
+        /// <param name="asyncInfoCount">entry's count in asyncInfo</param>
+        internal static void GetAsyncMethodsSteppingInfo(IntPtr symbolReaderHandle, out IntPtr asyncInfo, out int asyncInfoCount)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+
+            asyncInfo = IntPtr.Zero;
+            asyncInfoCount = 0;
+            var list = new List<AsyncAwaitInfoBlock>();
+
+            GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+            MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+            // Guid is taken from Roslyn source code:
+            // https://github.com/dotnet/roslyn/blob/afd10305a37c0ffb2cfb2c2d8446154c68cfa87a/src/Dependencies/CodeAnalysis.Debugging/PortableCustomDebugInfoKinds.cs#L13
+            Guid asyncMethodSteppingInformationBlob = new Guid("54FD2AC5-E925-401A-9C2A-F94F171072F8");
+
+            foreach (MethodDebugInformationHandle methodDebugInformationHandle in reader.MethodDebugInformation)
+            {
+                var entityHandle = MetadataTokens.EntityHandle(MetadataTokens.GetToken(methodDebugInformationHandle.ToDefinitionHandle()));
+
+                foreach (var cdiHandle in reader.GetCustomDebugInformation(entityHandle))
+                {
+                    var cdi = reader.GetCustomDebugInformation(cdiHandle);
+
+                    if (reader.GetGuid(cdi.Kind) == asyncMethodSteppingInformationBlob)
+                    {
+                        // Format of this blob is taken from Roslyn source code:
+                        // https://github.com/dotnet/roslyn/blob/afd10305a37c0ffb2cfb2c2d8446154c68cfa87a/src/Compilers/Core/Portable/PEWriter/MetadataWriter.PortablePdb.cs#L575
+
+                        var blobReader = reader.GetBlobReader(cdi.Value);
+                        var catchHandlerOffset = blobReader.ReadUInt32();
+
+                        while (blobReader.Offset < blobReader.Length)
+                        {
+                            list.Add(new AsyncAwaitInfoBlock() {
+                                catch_handler_offset = catchHandlerOffset,
+                                yield_offset = blobReader.ReadUInt32(),
+                                resume_offset = blobReader.ReadUInt32(),
+                                // explicit conversion from int into uint here, see:
+                                // https://docs.microsoft.com/en-us/dotnet/api/system.reflection.metadata.blobreader.readcompressedinteger
+                                token = (uint)blobReader.ReadCompressedInteger()
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (list.Count == 0)
+                return;
+
+            var structSize = Marshal.SizeOf<AsyncAwaitInfoBlock>();
+            IntPtr allInfo = Marshal.AllocCoTaskMem(list.Count * structSize);
+            var currentPtr = allInfo;
+
+            foreach (var p in list)
+            {
+                Marshal.StructureToPtr(p, currentPtr, false);
+                currentPtr = (IntPtr)(currentPtr.ToInt64() + structSize);
+            }
+
+            asyncInfo = allInfo;
+            asyncInfoCount = list.Count;
+        }
     }
 }

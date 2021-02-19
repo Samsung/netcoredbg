@@ -65,8 +65,8 @@ class Modules
     // map of source file name to list of source full paths from loaded assemblies,
     // need it order to resolve source full path by requested breakpoint relative source path
     std::unordered_map<std::string, std::set<std::string> > m_sourcesFullPaths;
-    HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, ManagedPart *managedPart);
-    HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename);
+    HRESULT FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, ManagedPart *managedPart);
+    HRESULT ResolveRelativeSourceFileName(std::string &filename);
 #ifdef WIN32
     // all internal breakpoint routine are case sensitive, proper source full name for Windows must be used (same as in module)
     std::unordered_map<std::string, std::string> m_sourceCaseSensitiveFullPaths;
@@ -141,6 +141,12 @@ public:
         ULONG32 *pIlStart,
         ULONG32 *pIlEnd);
 
+    HRESULT Modules::GetNextSequencePointInMethod(
+        ICorDebugModule *pModule,
+        mdMethodDef methodToken,
+        ULONG32 ilOffset,
+        Modules::SequencePoint &sequencePoint);
+
     HRESULT GetSequencePointByILOffset(
         ManagedPart *managedPart,
         mdMethodDef methodToken,
@@ -153,6 +159,50 @@ public:
 
     void FindFileNames(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
     void FindFunctions(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
+
+    struct AwaitInfo
+    {
+        uint32_t yield_offset;
+        uint32_t resume_offset;
+
+        AwaitInfo() :
+            yield_offset(0), resume_offset(0)
+        {};
+        AwaitInfo(uint32_t offset1, uint32_t offset2) :
+            yield_offset(offset1), resume_offset(offset2)
+        {};
+    };
+
+    struct AsyncMethodInfo
+    {
+        uint32_t catch_handler_offset;
+        std::vector<AwaitInfo> awaits;
+        // Part of NotifyDebuggerOfWaitCompletion magic, see ManagedDebugger::SetupAsyncStep().
+        ULONG32 lastIlOffset;
+
+        AsyncMethodInfo() :
+            catch_handler_offset(0), awaits(), lastIlOffset(0)
+        {};
+    };
+
+    bool IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken);
+    bool FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 ipOffset, AwaitInfo **awaitInfo);
+    bool FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 &lastIlOffset);
+
+private:
+
+    struct PairHash
+    {
+        template <class T1, class T2>
+        size_t operator()(const std::pair<T1, T2> &pair) const
+        {
+            return std::hash<T1>{}(pair.first) ^ std::hash<T2>{}(pair.second);
+        }
+    };
+    // All async methods stepping information for all loaded (with symbols) modules.
+    std::unordered_map<std::pair<CORDB_ADDRESS, mdMethodDef>, AsyncMethodInfo, PairHash> m_asyncMethodsSteppingInfo;
+    std::mutex m_asyncMethodsSteppingInfoMutex;
+    HRESULT FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, ManagedPart *managedPart);
 };
 
 } // namespace netcoredbg

@@ -478,6 +478,103 @@ HRESULT Modules::GetModuleId(ICorDebugModule *pModule, std::string &id)
     return S_OK;
 }
 
+// Fill m_asyncMethodsSteppingInfo by data from module. Called on callback during module load.
+// [in] pModule - object that represents the CLR module;
+// [in] managedPart - object that represents debugger's managed part with preloaded PDB for pModule.
+HRESULT Modules::FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, ManagedPart *managedPart)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    std::vector<ManagedPart::AsyncAwaitInfoBlock> AsyncAwaitInfo;
+    IfFailRet(managedPart->GetAsyncMethodsSteppingInfo(AsyncAwaitInfo));
+
+    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+
+    for (const auto &entry : AsyncAwaitInfo)
+    {
+        mdMethodDef realToken = mdMethodDefNil + entry.token;
+        std::pair<CORDB_ADDRESS, mdMethodDef> newKey = std::make_pair(modAddress, realToken);
+        m_asyncMethodsSteppingInfo[newKey].catch_handler_offset = entry.catch_handler_offset; // same for all awaits in async method
+        m_asyncMethodsSteppingInfo[newKey].awaits.emplace_back(entry.yield_offset, entry.resume_offset);
+
+        std::vector<ManagedPart::SequencePoint> points;
+        IfFailRet(managedPart->GetSequencePoints(realToken, points));
+        for (auto it = points.rbegin(); it != points.rend(); ++it)
+        {
+            if (it->startLine == 0 || it->startLine == ManagedPart::HiddenLine)
+                continue;
+            
+            m_asyncMethodsSteppingInfo[newKey].lastIlOffset = it->offset;
+            break;
+        }
+    }
+
+    return S_OK;
+}
+
+// Check if method have await block. In this way we detect async method with awaits.
+// [in] modAddress - module address;
+// [in] methodToken - method token (from module with address modAddress).
+bool Modules::IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken)
+{
+    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+
+    auto searchAsyncInfo = m_asyncMethodsSteppingInfo.find(std::make_pair(modAddress, methodToken));
+    return searchAsyncInfo != m_asyncMethodsSteppingInfo.end();
+}
+
+// Find await block after IL offset in particular async method and return await info, if present.
+// In case of async stepping, we need await info from PDB in order to setup breakpoints in proper places (yield and resume offsets).
+// [in] modAddress - module address;
+// [in] methodToken - method token (from module with address modAddress).
+// [in] ipOffset - IL offset;
+// [out] awaitInfo - result, next await info.
+bool Modules::FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 ipOffset, AwaitInfo **awaitInfo)
+{
+    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+
+    auto searchAsyncInfo = m_asyncMethodsSteppingInfo.find(std::make_pair(modAddress, methodToken));
+    if (searchAsyncInfo == m_asyncMethodsSteppingInfo.end())
+        return false;
+
+    for (auto &await : searchAsyncInfo->second.awaits)
+    {
+        if (ipOffset <= await.yield_offset)
+        {
+            if (awaitInfo)
+                *awaitInfo = &await;
+            return true;
+        }
+        // Stop search, if IP inside 'await' routine.
+        else if (ipOffset < await.resume_offset)
+        {
+            break;
+        }
+    }
+
+    return false;
+}
+
+// Find last IL offset for user code in async method, if present.
+// In case of step-in and step-over we must detect last user code line in order to "emulate"
+// step-out (DebuggerOfWaitCompletion magic) instead.
+// [in] modAddress - module address;
+// [in] methodToken - method token (from module with address modAddress).
+// [out] lastIlOffset - result, IL offset for last user code line in async method.
+bool Modules::FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 &lastIlOffset)
+{
+    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+
+    auto searchAsyncInfo = m_asyncMethodsSteppingInfo.find(std::make_pair(modAddress, methodToken));
+    if (searchAsyncInfo == m_asyncMethodsSteppingInfo.end())
+        return false;
+
+    lastIlOffset = searchAsyncInfo->second.lastIlOffset;
+    return true;
+}
+
 HRESULT Modules::TryLoadModuleSymbols(
     ICorDebugModule *pModule,
     Module &module,
@@ -517,7 +614,12 @@ HRESULT Modules::TryLoadModuleSymbols(
     }
 
     if (module.symbolStatus == SymbolsLoaded)
-        IfFailRet(Modules::FillSourcesCodeLinesForModule(pMDImport, managedPart.get()));
+    {
+        if (FAILED(FillSourcesCodeLinesForModule(pMDImport, managedPart.get())))
+            LOGE("Could not load source lines related info from PDB file. Could produce failures during breakpoint's source path resolve in future.");
+        if (FAILED(FillAsyncMethodsSteppingInfo(pModule, managedPart.get())))
+            LOGE("Could not load async methods related info from PDB file. Could produce failures during stepping in async methods in future.");
+    }
 
     IfFailRet(GetModuleId(pModule, module.id));
 
@@ -589,6 +691,28 @@ HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **pp
         }
     }
     return E_FAIL;
+}
+
+HRESULT Modules::GetNextSequencePointInMethod(
+    ICorDebugModule *pModule,
+    mdMethodDef methodToken,
+    ULONG32 ilOffset,
+    Modules::SequencePoint &sequencePoint)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+    {
+        return E_FAIL;
+    }
+
+    IfFailRet(GetSequencePointByILOffset(info_pair->second.managedPart.get(), methodToken, ilOffset, &sequencePoint));
+
+    return S_OK;
 }
 
 HRESULT Modules::GetSequencePointByILOffset(

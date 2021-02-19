@@ -28,6 +28,7 @@ typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned i
 typedef  BOOL (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, PVOID);
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
 typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
+typedef  void (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int*);
 typedef  BOOL (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int *, BSTR*);
 typedef  BOOL (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int*, int*, PVOID*);
 typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int *, PVOID*);
@@ -63,6 +64,7 @@ private:
     static GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate;
     static GetStepRangesFromIPDelegate getStepRangesFromIPDelegate;
     static GetSequencePointsDelegate getSequencePointsDelegate;
+    static GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate;
     static ParseExpressionDelegate parseExpressionDelegate;
     static EvalExpressionDelegate evalExpressionDelegate;
     static RegisterGetChildDelegate registerGetChildDelegate;
@@ -120,6 +122,18 @@ public:
         TypeString,  //        "System.String"
     };
 
+    struct AsyncAwaitInfoBlock
+    {
+        uint32_t catch_handler_offset;
+        uint32_t yield_offset;
+        uint32_t resume_offset;
+        uint32_t token; // note, this is internal token number, runtime method token for module should be calculated as "mdMethodDefNil + token"
+        
+        AsyncAwaitInfoBlock() :
+            catch_handler_offset(0), yield_offset(0), resume_offset(0), token(0)
+        {}
+    };
+
     ManagedPart()
     {
         m_symbolReaderHandle = 0;
@@ -146,6 +160,7 @@ public:
     HRESULT ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset);
     HRESULT GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
     HRESULT GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points);
+    HRESULT GetAsyncMethodsSteppingInfo(std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo);
     static HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
     static HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
     static PVOID AllocBytes(size_t size);
