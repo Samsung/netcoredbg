@@ -28,6 +28,18 @@ std::u16string to_utf16(string_view utf8);
 
 std::string to_utf8(char16_t wch);
 
+template <typename CharT, size_t Size>
+bool starts_with(const CharT *left, const CharT (&right)[Size])
+{
+    return std::char_traits<CharT>::compare(left, right, Size-1) == 0;
+}
+
+template <typename CharT, size_t Size>
+bool str_equal(const CharT *left, const CharT (&right)[Size])
+{
+    return std::char_traits<CharT>::compare(left, right, Size) == 0;
+}
+
 // TODO move this function definition to separate header file.
 const char* errormessage(HRESULT hr);
 
