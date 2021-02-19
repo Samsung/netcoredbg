@@ -24,6 +24,7 @@ $ALL_TEST_NAMES = @(
     "MITestEvalNotEnglish"
     "MITestSrcBreakpointResolve"
     "MITestEnum"
+    "MITestAsyncStepping"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -38,6 +39,7 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestEvalNotEnglish"
     "VSCodeTestSrcBreakpointResolve"
     "VSCodeTestEnum"
+    "VSCodeTestAsyncStepping"
 )
 
 # Skipped tests:

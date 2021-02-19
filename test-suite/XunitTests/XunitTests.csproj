@@ -37,6 +37,7 @@
     <ProjectReference Include="..\MITest中文目录\MITest中文目录.csproj" />
     <ProjectReference Include="..\MITestSrcBreakpointResolve\MITestSrcBreakpointResolve.csproj" />
     <ProjectReference Include="..\MITestEnum\MITestEnum.csproj" />
+    <ProjectReference Include="..\MITestAsyncStepping\MITestAsyncStepping.csproj" />
     <ProjectReference Include="..\VSCodeExampleTest\VSCodeExampleTest.csproj" />
     <ProjectReference Include="..\VSCodeTestBreakpoint\VSCodeTestBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeTestFuncBreak\VSCodeTestFuncBreak.csproj" />
@@ -53,6 +54,7 @@
     <ProjectReference Include="..\VSCodeTest中文目录\VSCodeTest中文目录.csproj" />
     <ProjectReference Include="..\VSCodeTestSrcBreakpointResolve\VSCodeTestSrcBreakpointResolve.csproj" />
     <ProjectReference Include="..\VSCodeTestEnum\VSCodeTestEnum.csproj" />
+    <ProjectReference Include="..\VSCodeTestAsyncStepping\VSCodeTestAsyncStepping.csproj" />
   </ItemGroup>
 
 </Project>

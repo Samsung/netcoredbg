@@ -37,6 +37,7 @@ ALL_TEST_NAMES=(
     "MITest中文目录"
     "MITestSrcBreakpointResolve"
     "MITestEnum"
+    "MITestAsyncStepping"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -52,6 +53,7 @@ ALL_TEST_NAMES=(
     "VSCodeTest中文目录"
     "VSCodeTestSrcBreakpointResolve"
     "VSCodeTestEnum"
+    "VSCodeTestAsyncStepping"
 )
 
 SDB=${SDB:-sdb}
