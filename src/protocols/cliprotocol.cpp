@@ -43,15 +43,21 @@ CLIProtocol::TermSettings::TermSettings()
 {
 #ifdef WIN32
     auto in = GetStdHandle(STD_INPUT_HANDLE);
-    if (in == INVALID_HANDLE_VALUE)
+    auto out = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    std::pair<DWORD, DWORD> modes;
+
+    if (!GetConsoleMode(in, &modes.first))
         return;
 
-    DWORD mode;
-    if (!GetConsoleMode(in, &mode))
+    if (!GetConsoleMode(out, &modes.second))
         return;
 
-    data.reset(reinterpret_cast<char*>(new DWORD {mode}));
-    SetConsoleMode(in, mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT));
+    data.reset(reinterpret_cast<char*>(new decltype(modes) {modes}));
+
+    SetConsoleMode(in, modes.first & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT));
+    SetConsoleMode(out, modes.second | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+
 #else
     if (!isatty(fileno(stdin)))
         return;
@@ -66,15 +72,16 @@ CLIProtocol::TermSettings::TermSettings()
 #endif
 }
 
+
 CLIProtocol::TermSettings::~TermSettings()
 {
     if (!data) return;
 
 #ifdef WIN32
-    auto in = GetStdHandle(STD_INPUT_HANDLE);
-    if (in == INVALID_HANDLE_VALUE)
-        return;
-    SetConsoleMode(in, *reinterpret_cast<DWORD*>(data.get()));
+    auto modes = reinterpret_cast<std::pair<DWORD, DWORD>*>(data.get());
+    SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), modes->first);
+    SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), modes->second);
+
 #else
     tcsetattr(fileno(stdin), TCSADRAIN, reinterpret_cast<termios*>(data.get()));
 #endif
