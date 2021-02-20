@@ -104,8 +104,8 @@ private:
 		}
 	};
 
-	template <> struct Traits<char, void> : public CharTraits<char> {};
-	template <> struct Traits<unsigned char, void> : public CharTraits<unsigned char> {};
+	template <typename Dummy> struct Traits<char, Dummy> : public CharTraits<char> {};
+	template <typename Dummy> struct Traits<unsigned char, Dummy> : public CharTraits<unsigned char> {};
 
 	const_pointer _data;
 	const_pointer _end;
