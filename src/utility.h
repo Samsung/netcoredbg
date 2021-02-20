@@ -6,6 +6,7 @@
 
 #pragma once
 #include <stddef.h>
+#include <vector>
 #include <utility>
 #include <algorithm>
 #include <type_traits>
