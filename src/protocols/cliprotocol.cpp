@@ -22,28 +22,36 @@
 #include <algorithm>
 #include <numeric>
 #include <iostream>
+#include <fstream>
 #include <iomanip>
 #include <csignal>
 #include "limits.h"
 
 #include "string_view.h"
+#include "span.h"
 #include "utils/logger.h"
 #include "tokenizer.h"
 
+#include "tty.h"
 #include "completions.h"
 
-using namespace std::placeholders;
-using std::unordered_set;
-using std::string;
-using std::vector;
 
 namespace netcoredbg
 {
 
-const size_t DefaultHistoryDepth = 1024;
-
+//using namespace std::placeholders;
+using std::unordered_set;
+using std::string;
+using std::vector;
+using Utility::literal;
 using CommandTag = CLIProtocol::CommandTag;
 using CompletionTag = CLIProtocol::CompletionTag;
+
+// Prompt which displayed when netcoredbg expects next command:
+const auto Prompt = tty::bold + tty::green + literal("cli>") + tty::reset + literal(" ");
+
+const char HistoryFileName[] = ".netcoredbg_hist";
+const size_t DefaultHistoryDepth = 1024;
 
 // Tags for all commands (including compound ones, like "info breakpoints")
 // known to the command interpreter.
@@ -63,6 +71,7 @@ enum class CLIProtocol::CommandTag
     Quit,
     Run,
     Step,
+    Source,
 
     // set subcommands
     Set,
@@ -183,6 +192,9 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
     {CommandTag::Step, {}, {}, {{"step", "s"}},
         {{}, "Step program until a different source line."}},
 
+    {CommandTag::Source, {}, {{{1, CompletionTag::File}}}, {{"source"}},
+        {"<file>", "Read commands from a file."}},
+
     {CommandTag::Set, set_commands, {}, {{"set"}},
         {"args...", "Set miscellaneous options (see 'help set')"}},
 
@@ -218,6 +230,75 @@ CLIProtocol::CommandsList::cli_helper{CLIProtocol::CommandsList::commands_list};
 template <>
 HRESULT CLIProtocol::printHelp<CLIProtocol::CLIParams::CommandInfo>(
         const CLIProtocol::CLIParams::CommandInfo *, string_view args);
+
+
+// This class reads input lines from console.
+class ConsoleLineReader : public CLIProtocol::LineReader
+{
+public:
+    ConsoleLineReader() : cmdline(nullptr, deleter) {}
+
+    virtual std::tuple<string_view, Result> get_line(const char *prompt) override
+    {
+        errno = 0;
+        cmdline.reset(linenoise(prompt));
+        if (!cmdline)
+            return {{}, errno == EAGAIN ? Interrupt : Eof};
+
+        linenoiseHistoryAdd(cmdline.get());
+        return {string_view{cmdline.get()}, Success};
+    }
+
+private:
+    static void deleter(void *s) { ::free(s); };
+    std::unique_ptr<char, decltype(&deleter)> cmdline;
+};
+
+// This class reads lines from arbitrary input stream (file, pipe, etc...)
+class FileLineReader : public CLIProtocol::LineReader
+{
+public:
+    FileLineReader(std::unique_ptr<std::istream> stream)
+    : stream(std::move(stream))
+    {
+        assert(this->stream);
+    }
+
+    virtual std::tuple<string_view, Result> get_line(const char *) override
+    {
+        std::getline(*stream, line);
+        if (!stream->good())
+            return {{}, stream->eof() ? Eof : Error};
+
+        return {line, Success};
+    }
+
+private:
+    std::unique_ptr<std::istream> stream;
+    std::string line;
+};
+
+// This class reads commands from in memory array...
+class MemoryLineReader : public CLIProtocol::LineReader
+{
+public:
+    MemoryLineReader(span<const string_view> commands)
+    : commands(commands)
+    {}
+
+    virtual std::tuple<string_view, Result> get_line(const char *) override
+    {
+        if (commands.empty())
+            return {{}, Eof};
+
+        auto line = commands.front();
+        commands = commands.subspan(1);
+        return {line, Success};
+    }
+
+private:
+    span<const string_view> commands;
+};
 
 
 CLIProtocol::TermSettings::TermSettings()
@@ -267,6 +348,14 @@ CLIProtocol::TermSettings::~TermSettings()
     tcsetattr(fileno(stdin), TCSADRAIN, reinterpret_cast<termios*>(data.get()));
 #endif
 }
+
+
+CLIProtocol::CLIProtocol()
+: IProtocol(),
+  m_processStatus(NotStarted),
+  m_varCounter(0),
+  line_reader()
+{}
 
 
 HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
@@ -908,6 +997,29 @@ HRESULT CLIProtocol::doCommand<CommandTag::Step>(const std::vector<std::string> 
     return StepCommand(args, output, Debugger::STEP_IN);    
 }
 
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::vector<std::string> &args, std::string &output)
+{
+    // check arguments
+    if (args.empty())
+    {
+        output = "Argument required (file name).";
+        return E_INVALIDARG;
+    }
+
+    // open the file
+    std::unique_ptr<std::istream> file {new std::ifstream(args[0].c_str())};
+    if (file->fail())
+    {
+        output = args[0] + ": " + ::strerror(errno);
+        return E_FAIL;
+    }
+
+    return execCommands(FileLineReader(std::move(file)));
+}
+
+
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Set>(const std::vector<std::string> &args, std::string &output)
 {
@@ -1172,50 +1284,45 @@ HRESULT CLIProtocol::printHelp<CLIProtocol::CLIParams::CommandInfo>(
 }
 
 
-void CLIProtocol::CommandLoop()
+std::tuple<string_view, CLIProtocol::LineReader::Result> CLIProtocol::getLine(const char *prompt)
 {
-#ifndef WIN32
-    tid = pthread_self();
-#endif
-    linenoiseInstallWindowChangeHandler();
-    linenoiseHistorySetMaxLen(DefaultHistoryDepth);
-    linenoiseHistoryLoad(history.c_str());
+    assert(line_reader);
+    return line_reader->get_line(prompt);
+}
 
-    auto completion_callback = [](const char *input, unsigned cursor, linenoiseCompletions *lc, void *context)
-    {
-        LOGD("completion: '%s', cursor=%u", input, cursor);
-        unsigned result = static_cast<CLIProtocol*>(context)->completeInput({input}, cursor,
-                            [&](const char *str) {
-                                LOGD("completion variant '%s'\n", str);
-                                linenoiseAddCompletion(lc, str); 
-                            });
-        LOGD("completion substring: [%u, %u)", result, cursor);
-        return result;
-    };
 
-    linenoiseSetCompletionCallbackEx(completion_callback, this);
+HRESULT CLIProtocol::execCommands(LineReader&& lr)
+{
+    // preserve currently existing line reader and restore it on exit
+    auto restorer = [&](LineReader* save) { line_reader = save; };
+    std::unique_ptr<LineReader, decltype(restorer)> save = {line_reader, restorer};
+    line_reader = &lr;
 
+    // Loop in which we read and execute next command.
     string_view input;
     string_view prefix;
-
     while (!m_exit)
     {
-        auto deleter = [](void *s) { ::free(s); };
-        std::unique_ptr<char, decltype(deleter)> cmdline {nullptr, deleter};
-        errno = 0;
+        LineReader::Result result;
+        std::tie(input, result) = getLine(Prompt.c_str());
 
-        cmdline.reset(linenoise(prompt.c_str()));
-
-        if(m_processStatus == Exited)
+        if(m_processStatus == Exited)    // TODO move this from here...
         {
             m_debugger->Disconnect();
             m_processStatus = NotStarted;
         }
 
-        if (cmdline.get() == NULL)
+        if (result == LineReader::Eof)
+            break;
+
+        if (result ==  LineReader::Error)
         {
-            if (errno != EAGAIN)
-                break;
+            // io error
+            return E_FAIL;
+        }
+
+        if (result == LineReader::Interrupt)
+        {
             m_debugger->Pause();
             continue;
         }
@@ -1237,13 +1344,13 @@ void CLIProtocol::CommandLoop()
             have_result = true;
         };
 
-        input = {cmdline.get()};
+        LOGD("evaluating: '%.*s'", int(input.size()), input.data());
         auto unparsed = CommandsList::cli_helper.eval(input, handler);
         if (!have_result)
         {
             if (unparsed.empty())
                 continue;
-        
+
             output = "Unknown command: '" + std::string(unparsed) + "'";
             hr = E_FAIL;
         }
@@ -1267,26 +1374,63 @@ void CLIProtocol::CommandLoop()
         {
             if (output.empty())
             {
-                printf("%s", redOn.c_str());
-                printf("%.*s Error: 0x%08x: %s\n", int(prefix.size()), prefix.data(), hr, errormessage(hr));
-                printf("%s", colorOff.c_str());
+                printf("%s" "%.*s Error: 0x%08x: %s" "%s\n",
+                    tty::red.c_str(),
+                    int(prefix.size()), prefix.data(), hr, errormessage(hr),
+                    tty::reset.c_str());
             }
             else
             {
-                printf("%s", redOn.c_str());
-                printf("%.*s %s\n", int(prefix.size()), prefix.data(), output.c_str());
-                printf("%s", colorOff.c_str());
+                printf("%s" "%.*s %s" "%s\n",
+                    tty::red.c_str(),
+                    int(prefix.size()), prefix.data(), output.c_str(),
+                    tty::reset.c_str());
             }
         }
-        linenoiseHistoryAdd(cmdline.get());
     }
+    return S_OK;
+}
 
-    if (!m_exit)
-        m_debugger->Disconnect(Debugger::DisconnectTerminate);
 
-    printf("%.*s^exit\n", int(prefix.size()), prefix.data());
-    linenoiseHistorySave(history.c_str());
+void CLIProtocol::Source(span<const string_view> init_commands)
+{
+    execCommands(MemoryLineReader(init_commands));
+}
+
+void CLIProtocol::CommandLoop()
+{
+#ifndef WIN32
+    tid = pthread_self();
+#endif
+    linenoiseInstallWindowChangeHandler();
+    linenoiseHistorySetMaxLen(DefaultHistoryDepth);
+    linenoiseHistoryLoad(HistoryFileName);
+
+    auto completion_callback = [](const char *input, unsigned cursor, linenoiseCompletions *lc, void *context)
+    {
+        LOGD("completion: '%s', cursor=%u", input, cursor);
+        unsigned result = static_cast<CLIProtocol*>(context)->completeInput({input}, cursor,
+                            [&](const char *str) {
+                                LOGD("completion variant '%s'\n", str);
+                                linenoiseAddCompletion(lc, str); 
+                            });
+        LOGD("completion substring: [%u, %u)", result, cursor);
+        return result;
+    };
+
+    linenoiseSetCompletionCallbackEx(completion_callback, this);
+
+    // loop till eof, error, or exit request.
+    execCommands(ConsoleLineReader());
+
+    printf("^exit\n");
+
+    m_debugger->Disconnect(Debugger::DisconnectTerminate);
+
+    linenoiseHistorySave(HistoryFileName);
     linenoiseHistoryFree();
 }
+
+
 
 } // namespace netcoredbg

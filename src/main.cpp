@@ -49,6 +49,8 @@ static void print_help()
         "--interpreter=cli                     Runs the debugger with Command Line Interface. \n"
         "--interpreter=mi                      Puts the debugger into MI mode.\n"
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
+        "--command=<file>                      Interpret commands file at the start.\n"
+        "-ex \"<command>\"                       Execute command at the start\n"
         "--engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.\n"
         "                                      Only supported by the VsCode interpreter.\n"
         "--server[=port_num]                   Start the debugger listening for requests on the\n"
@@ -124,6 +126,9 @@ int main(int argc, char *argv[])
     bool engineLogging = false;
     std::string logFilePath;
 
+    std::vector<std::string> initTexts;
+    std::vector<string_view> initCommands;
+
     uint16_t serverPort = 0;
 
     std::string execFile;
@@ -161,6 +166,20 @@ int main(int argc, char *argv[])
         {
             interpreterType = InterpreterCLI;
             continue;
+        }
+        else if (string_view{argv[i]}.starts_with("--command="))
+        {
+            initTexts.push_back(std::string() + "source " + (strchr(argv[i], '=') + 1));
+            initCommands.push_back(initTexts.back());
+        }
+        else if (strcmp(argv[i], "-ex") == 0)
+        {
+            if (++i >= argc)
+            {
+                fprintf(stderr, "%s: -ex option requires an argument!\n", argv[0]);
+                exit(EXIT_FAILURE);
+            }
+            initCommands.emplace_back(argv[i]);
         }
         else if (strcmp(argv[i], "--engineLogging") == 0)
         {
@@ -252,6 +271,12 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (interpreterType != InterpreterCLI && !initCommands.empty())
+    {
+        fprintf(stderr, "%s: options -ex and --command can be used only with CLI interpreter!\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
     LOGI("Start logging");
 
     ManagedDebugger debugger;
@@ -332,6 +357,10 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
     }
+
+
+    if (interpreterType == InterpreterCLI)
+        static_cast<CLIProtocol&>(*protocol).Source({initCommands});
 
     protocol->CommandLoop();
     return EXIT_SUCCESS;

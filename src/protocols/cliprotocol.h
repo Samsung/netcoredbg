@@ -14,13 +14,13 @@
 #include "debugger/debugger.h"
 #include "iprotocol.h"
 #include "string_view.h"
+#include "span.h"
 
 namespace netcoredbg
 {
 
 using Utility::string_view;
-
-const char HistoryFileName[] = ".netcoredbg_hist";
+using Utility::span;
 
 class CLIProtocol : public IProtocol
 {
@@ -38,10 +38,7 @@ class CLIProtocol : public IProtocol
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
     std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
-    std::string prompt;
-    std::string history;
-    std::string redOn;
-    std::string colorOff;
+
 #ifndef WIN32
     pthread_t tid;
 #endif
@@ -58,13 +55,8 @@ class CLIProtocol : public IProtocol
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
     
 public:
+    CLIProtocol();
 
-    CLIProtocol() : IProtocol(), m_processStatus(NotStarted), m_varCounter(0), prompt("\x1b[1;32mcli\x1b[0m> "), history(HistoryFileName),
-#ifndef WIN32
-                                 redOn("\033[1;31m"), colorOff("\033[0m") {}
-#else
-                                 redOn(""), colorOff("") {}
-#endif                                
     void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv) override {}
     void EmitStoppedEvent(StoppedEvent event) override;
@@ -77,6 +69,8 @@ public:
     void EmitBreakpointEvent(BreakpointEvent event) override;
     void Cleanup() override;
     void CommandLoop() override;
+
+    void Source(span<const string_view> init_commands = {});
 
     void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args)
     {
@@ -144,6 +138,38 @@ private:
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
     bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
+
+public:
+    // The interface used to read lines from console or a file.
+    class LineReader
+    {
+    public:
+        enum Result
+        {
+            Eof,        // end of file
+            Error,      // can't read file
+            Interrupt,  // user request to interrupt debugee (from console)
+            Success     // line was read succesfully
+        };
+
+        // This function reads next line (LineReader retain ownership
+        // of just read line till next call to get_line).
+        virtual std::tuple<string_view, Result> get_line(const char *prompt) = 0;
+
+        virtual ~LineReader() {}
+    };
+
+private:
+    // This function should be used by any others CLIProtocol's functions
+    // to read input lines for interpreting (commands, etc...)
+    std::tuple<string_view, LineReader::Result> getLine(const char *prompt);
+
+    // This function interprets commands from the input till reaching Eof or Error.
+    // Function returns E_FAIL in case of input error.
+    HRESULT execCommands(LineReader&&);
+   
+    // Currently active LineReader class, used by getLine() function.
+    LineReader *line_reader;
 
     std::string m_lastPrintArg;
 };
