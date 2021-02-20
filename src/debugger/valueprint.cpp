@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sstream>
 #include <vector>
+#include <map>
 #include <iomanip>
 #include <type_traits>
 
@@ -106,7 +107,7 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
 
 
     //First, we need to figure out the underlying enum type so that we can correctly type cast the raw values of each enum constant
-    //We get that from the non-static field of the enum variable (I think the field is called __value or something similar)
+    //We get that from the non-static field of the enum variable (I think the field is called "value__" or something similar)
     ULONG numFields = 0;
     HCORENUM fEnum = NULL;
     mdFieldDef fieldDef;
@@ -128,12 +129,68 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
     }
     pMD->CloseEnum(fEnum);
 
-    std::ostringstream ss;
-    const char *sep = "";
+    auto getValue = [&enumUnderlyingType] (const void *data)
+    {
+        switch (enumUnderlyingType)
+        {
+            case ELEMENT_TYPE_CHAR:
+            case ELEMENT_TYPE_I1:
+                return (ULONG64)(*((CHAR*)data));
+            case ELEMENT_TYPE_U1:
+                return (ULONG64)(*((BYTE*)data));
+            case ELEMENT_TYPE_I2:
+                return (ULONG64)(*((SHORT*)data));
+            case ELEMENT_TYPE_U2:
+                return (ULONG64)(*((USHORT*)data));
+            case ELEMENT_TYPE_I4:
+                return (ULONG64)(*((INT32*)data));
+            case ELEMENT_TYPE_U4:
+                return (ULONG64)(*((UINT32*)data));
+            case ELEMENT_TYPE_I8:
+                return (ULONG64)(*((LONG*)data));
+            case ELEMENT_TYPE_U8:
+                return (ULONG64)(*((ULONG*)data));
+            case ELEMENT_TYPE_I:
+                return (ULONG64)(*((int*)data));
+            case ELEMENT_TYPE_U:
+            case ELEMENT_TYPE_R4:
+            case ELEMENT_TYPE_R8:
+            // Technically U and the floating-point ones are options in the CLI, but not in the CLS or C#, so these are NYI
+            default:
+                return (ULONG64)0;
+        }
+    };
 
-    //Now that we know the underlying enum type, let's decode the enum variable into OR-ed, human readable enum constants
+    // Enum could have explicitly specified any integral numeric type. enumValue type same as enumUnderlyingType.
+    ULONG64 curValue = getValue(enumValue);
+
+    // Care about Flags attribute (https://docs.microsoft.com/en-us/dotnet/api/system.flagsattribute),
+    // that "Indicates that an enumeration can be treated as a bit field; that is, a set of flags".
+    bool foundFlagsAttr = false;
+    ULONG numAttributes = 0;
     fEnum = NULL;
-    ULONG64 remainingValue = *((ULONG64*)enumValue);
+    mdCustomAttribute attr;
+    while(SUCCEEDED(pMD->EnumCustomAttributes(&fEnum, currentTypeDef, 0, &attr, 1, &numAttributes)) && numAttributes != 0)
+    {
+        mdToken ptkObj = mdTokenNil;
+        mdToken ptkType = mdTokenNil;
+        pMD->GetCustomAttributeProps(attr, &ptkObj, &ptkType, nullptr, nullptr);
+
+        std::string mdName;
+        std::list<std::string> emptyArgs;
+        TypePrinter::NameForToken(ptkType, pMD, mdName, true, emptyArgs);
+
+        if (mdName == "System.FlagsAttribute..ctor")
+        {
+            foundFlagsAttr = true;
+            break;
+        }
+    }
+    pMD->CloseEnum(fEnum);
+
+    ULONG64 remainingValue = curValue;
+    std::map<ULONG64, std::string> OrderedFlags;
+    fEnum = NULL;
     while(SUCCEEDED(pMD->EnumFields(&fEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
     {
         ULONG             nameLen = 0;
@@ -147,58 +204,45 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
             if((fieldAttr & enumValueRequiredAttributes) != enumValueRequiredAttributes)
                 continue;
 
-            ULONG64 currentConstValue = 0;
-            switch (enumUnderlyingType)
+            ULONG64 currentConstValue = getValue(pRawValue);
+            if (currentConstValue == curValue)
             {
-                case ELEMENT_TYPE_CHAR:
-                case ELEMENT_TYPE_I1:
-                    currentConstValue = (ULONG64)(*((CHAR*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_U1:
-                    currentConstValue = (ULONG64)(*((BYTE*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_I2:
-                    currentConstValue = (ULONG64)(*((SHORT*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_U2:
-                    currentConstValue = (ULONG64)(*((USHORT*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_I4:
-                    currentConstValue = (ULONG64)(*((INT32*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_U4:
-                    currentConstValue = (ULONG64)(*((UINT32*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_I8:
-                    currentConstValue = (ULONG64)(*((LONG*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_U8:
-                    currentConstValue = (ULONG64)(*((ULONG*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_I:
-                    currentConstValue = (ULONG64)(*((int*)pRawValue));
-                    break;
-                case ELEMENT_TYPE_U:
-                case ELEMENT_TYPE_R4:
-                case ELEMENT_TYPE_R8:
-                // Technically U and the floating-point ones are options in the CLI, but not in the CLS or C#, so these are NYI
-                default:
-                    currentConstValue = 0;
+                pMD->CloseEnum(fEnum);
+                output = to_utf8(mdName);
+
+                return S_OK;
             }
-
-            if((currentConstValue == remainingValue) || ((currentConstValue != 0) && ((currentConstValue & remainingValue) == currentConstValue)))
+            if (foundFlagsAttr)
             {
-                remainingValue &= ~currentConstValue;
+                // Flag enumerated constant whose value is zero must be excluded from OR-ed expression.
+                if (currentConstValue == 0)
+                    continue;
 
-                ss << sep;
-                sep = " | ";
-                ss << to_utf8(mdName);
+                if ((currentConstValue == remainingValue) || ((currentConstValue != 0) && ((currentConstValue & remainingValue) == currentConstValue)))
+                {
+                    OrderedFlags.emplace(std::make_pair(currentConstValue, to_utf8(mdName)));
+                    remainingValue &= ~currentConstValue;
+                }
             }
         }
     }
     pMD->CloseEnum(fEnum);
 
-    output = ss.str();
+    // Don't lose data, provide number as-is instead.
+    if (!OrderedFlags.empty() && !remainingValue)
+    {
+        std::ostringstream ss;
+        for (const auto &Flag : OrderedFlags)
+        {
+            if (ss.tellp() > 0)
+                ss << " | ";
+
+            ss  << Flag.second;
+        }
+        output = ss.str();
+    }
+    else
+        output = std::to_string(curValue);
 
     return S_OK;
 }
