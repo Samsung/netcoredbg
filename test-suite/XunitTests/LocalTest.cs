@@ -38,6 +38,7 @@ namespace XUnitTests
         [InlineData("MITestEvalNotEnglish", "Program.cs")]
         [InlineData("MITest中文目录", "中文文件名.cs")]
         [InlineData("MITestSrcBreakpointResolve", "Program.cs;folder/Program.cs")]
+        [InlineData("MITestEnum", "Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestFuncBreak", "Program.cs")]
@@ -53,6 +54,7 @@ namespace XUnitTests
         [InlineData("VSCodeTestEvalNotEnglish", "Program.cs")]
         [InlineData("VSCodeTest中文目录", "中文文件名.cs")]
         [InlineData("VSCodeTestSrcBreakpointResolve", "Program.cs;folder/Program.cs")]
+        [InlineData("VSCodeTestEnum", "Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             string testSuiteRoot = Path.GetFullPath(
