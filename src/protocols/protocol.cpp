@@ -11,6 +11,7 @@
 #include <mutex>
 #include "protocol.h"
 #include "utility.h"
+#include "utils/indexed_storage.h"
 
 namespace netcoredbg
 {
@@ -24,7 +25,7 @@ namespace
 {
     struct FramesList
     {
-        typedef Utility::IndexedStorage<unsigned, std::tuple<ThreadId, FrameLevel> > ListType;
+        typedef IndexedStorage<unsigned, std::tuple<ThreadId, FrameLevel> > ListType;
 
         struct ScopeGuard
         {
