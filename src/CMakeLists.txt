@@ -103,6 +103,7 @@ set(netcoredbg_SRC
     errormessage.cpp
     main.cpp
     platform.cpp
+    utils/escaped_string.cpp
     )
 
 set(CMAKE_INCLUDE_CURRENT_DIR OFF)

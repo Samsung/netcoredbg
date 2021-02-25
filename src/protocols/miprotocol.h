@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "utils/escaped_string.h"
 #include "debugger/debugger.h"
 #include "iprotocol.h"
 
@@ -27,7 +28,11 @@ class MIProtocol : public IProtocol
     std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
     std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
 
-    static std::string EscapeMIValue(const std::string &str);
+
+    struct MIProtocolChars;
+    using EscapeMIValue = EscapedString<MIProtocolChars>;
+
+
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
     static void PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
 #ifdef _MSC_VER

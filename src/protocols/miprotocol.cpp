@@ -24,6 +24,9 @@ using std::vector;
 namespace netcoredbg
 {
 
+extern template class EscapedString<MIProtocol::MIProtocolChars>;
+extern template std::ostream& operator<<(std::ostream&, const EscapedString<MIProtocol::MIProtocolChars>&);
+
 typedef std::function<HRESULT(
     const std::vector<std::string> &args,
     std::string &output)> CommandCallback;
@@ -1211,31 +1214,25 @@ void MIProtocol::Printf(const char *fmt, ...)
     std::cout.flush();
 }
 
-std::string MIProtocol::EscapeMIValue(const std::string &str)
+
+struct MIProtocol::MIProtocolChars
 {
-    std::string s(str);
+    // list of characters to be replaced
+    static constexpr const char forbidden_chars[] = "\"\\\0\a\b\f\n\r\t\v";
 
-    for (std::size_t i = 0; i < s.size(); ++i)
-    {
-        int count = 0;
-        char c = s.at(i);
-        switch (c)
-        {
-            case '\"': count = 1; s.insert(i, count, '\\'); s[i + count] = '\"'; break;
-            case '\\': count = 1; s.insert(i, count, '\\'); s[i + count] = '\\'; break;
-            case '\0': count = 1; s.insert(i, count, '\\'); s[i + count] = '0'; break;
-            case '\a': count = 1; s.insert(i, count, '\\'); s[i + count] = 'a'; break;
-            case '\b': count = 1; s.insert(i, count, '\\'); s[i + count] = 'b'; break;
-            case '\f': count = 1; s.insert(i, count, '\\'); s[i + count] = 'f'; break;
-            case '\n': count = 1; s.insert(i, count, '\\'); s[i + count] = 'n'; break;
-            case '\r': count = 1; s.insert(i, count, '\\'); s[i + count] = 'r'; break;
-            case '\t': count = 1; s.insert(i, count, '\\'); s[i + count] = 't'; break;
-            case '\v': count = 1; s.insert(i, count, '\\'); s[i + count] = 'v'; break;
-        }
-        i += count;
-    }
+    // substitutions (except of '\\' prefix)
+    static constexpr const char subst_chars[] = "\"\\0abfnrtv";
 
-    return s;
-}
+    static constexpr const char escape_char = '\\';
+};
+
+
+const char MIProtocol::MIProtocolChars::forbidden_chars[];
+const char MIProtocol::MIProtocolChars::subst_chars[];
+const char MIProtocol::MIProtocolChars::escape_char;
+
+
+template class EscapedString<MIProtocol::MIProtocolChars>;
+template std::ostream& operator<<(std::ostream& os, const EscapedString<MIProtocol::MIProtocolChars>& estr);
 
 } // namespace netcoredbg
