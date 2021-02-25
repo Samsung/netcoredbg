@@ -25,6 +25,25 @@ template <typename T> constexpr auto Size(const T& v) -> decltype(v.size()) { re
 template <class T, size_t N> constexpr size_t Size(const T (&)[N]) noexcept { return N; }
 /// @}
 
+  
+/// This type is similar to `std::index_sequence` from C++14 and typically
+/// should be used in pair with `MakeSequence` type to create sequence of
+/// indices usable in template metaprogramming techniques.
+template <size_t... Index> struct Sequence {};
+
+// Actual implementation of MakeSequence type.
+namespace Internals
+{
+    template <size_t Size, size_t... Index> struct MakeSequence : MakeSequence<Size-1, Size-1, Index...> {};
+    template <size_t... Index> struct MakeSequence<0, Index...> { typedef Sequence<Index...> type; };
+}
+
+/// MakeSequence type is similar to `std::make_index_sequence<N>` from C++14.
+/// Instantination of this type exapands to `Sequence<size_t...N>` type, where
+/// `N` have values from 0 to `Size-1`.
+template <size_t Size> using MakeSequence = typename Internals::MakeSequence<Size>::type;
+
+
 // This is helper class which simplifies implementation of singleton classes.
 //
 // Usage example:
