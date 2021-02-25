@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 2.8.12.2)
 
+if (BUILD_TESTING)
+    enable_testing()
+endif()
+
 project(netcoredbg)
 
 set(CORECLR_DIR "" CACHE FILEPATH "Path to CoreCLR source directory")
