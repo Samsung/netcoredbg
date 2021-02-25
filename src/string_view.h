@@ -33,7 +33,7 @@ private:
 		constexpr c_str_wrapper(const_pointer str) : str(str) {}
 	};
 
-	template <typename U, typename Dummy = void> struct Traits
+	template <typename U, typename = void, typename = void> struct Traits
 	{
 		static size_type length(const U *ptr)
 		{
@@ -104,8 +104,8 @@ private:
 		}
 	};
 
-	template <typename Dummy> struct Traits<char, Dummy> : public CharTraits<char> {};
-	template <typename Dummy> struct Traits<unsigned char, Dummy> : public CharTraits<unsigned char> {};
+	template <typename Dummy> struct Traits<char, void, Dummy> : public CharTraits<char> {};
+	template <typename Dummy> struct Traits<unsigned char, void, Dummy> : public CharTraits<unsigned char> {};
 
 	const_pointer _data;
 	const_pointer _end;
