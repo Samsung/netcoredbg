@@ -55,8 +55,7 @@ namespace NetcoreDbgTest.Script
         {
             var res = MIDebugger.Request("-var-create - * " +
                                          "\"" + variable + "\"" +
-                                         (setEvalFlags ? (" --evalFlags " + (int)evalFlags) : "" ),
-                                         2000);
+                                         (setEvalFlags ? (" --evalFlags " + (int)evalFlags) : "" ));
             Assert.Equal(MIResultClass.Done, res.Class);
 
             string struct2 = ((MIConst)res["name"]).CString;
