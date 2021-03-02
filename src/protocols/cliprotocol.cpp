@@ -104,9 +104,15 @@ enum class CLIProtocol::CommandTag
     InfoBreakpoints,
     InfoHelp,
 
+    // save subcommand
+    Save,
+    SaveBreakpoints,
+    SaveHelp,
+
     // help subcommands
     HelpInfo,
     HelpSet,
+    HelpSave,
 
     // These two definitons should end command list.
     CommandsCount,  // Total number of the commands.
@@ -142,6 +148,16 @@ using CLIParams = CLIHelperParams<
     CLIProtocol::CommandTag, CLIProtocol::BindHandler,
     CLIProtocol::CompletionTag, CLIProtocol::BindCompletions>;
 
+// Subcommand for "save" command.
+constexpr static const CLIParams::CommandInfo save_commands[] =
+{
+    {CommandTag::SaveBreakpoints,{}, {}, {{"breakpoints", "break"}}, {{"file"}, "Save breakpoints to the file."}},
+    {CommandTag::SaveHelp,       {}, {}, {{"help"}}, {{}, {}}},
+
+    // This should be placed at end of command (sub)lists.
+    {CommandTag::End, {}, {}, {}, {}}
+};
+
 // Subcommands for "info" command.
 constexpr static const CLIParams::CommandInfo info_commands[] =
 {
@@ -169,8 +185,9 @@ constexpr static const CLIParams::CommandInfo set_commands[] =
 // Subcommands for "help" command.
 constexpr static const CLIParams::CommandInfo help_commands[] =
 {
-    {CommandTag::HelpInfo, {}, {}, {{"info"}}, {{}, {}}},
-    {CommandTag::HelpSet,  {}, {}, {{"set"}}, {{}, {}}},
+    {CommandTag::HelpInfo, {}, {},  {{"info"}}, {{}, {}}},
+    {CommandTag::HelpSet,  {}, {},  {{"set"}},  {{}, {}}},
+    {CommandTag::HelpSave, {}, {},  {{"save"}}, {{}, {}}},
 
     // This should be placed at end of command (sub)lists.
     {CommandTag::End, {}, {}, {}, {}}
@@ -228,6 +245,9 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
     {CommandTag::Info, info_commands, {}, {{"info"}},
         {"<topic>", "Show misc. things about the program being debugged."}},
 
+    {CommandTag::Save, save_commands, {}, {{"save"}},
+        {"args...", "Save misc. things to the files."}},
+
     {CommandTag::Help, help_commands, {}, {{"help"}},
         {"[topic]", "Show help on specified topic or print\n"
                     "this help message (if no argument specified)."}},
@@ -248,6 +268,7 @@ constexpr const CLIProtocol::CLIParams::CommandInfo CLIProtocol::CommandsList::c
 constexpr const CLIProtocol::CLIParams::CommandInfo CLIProtocol::CommandsList::help_commands[];
 constexpr const CLIProtocol::CLIParams::CommandInfo CLIProtocol::CommandsList::info_commands[];
 constexpr const CLIProtocol::CLIParams::CommandInfo CLIProtocol::CommandsList::set_commands[];
+constexpr const CLIProtocol::CLIParams::CommandInfo CLIProtocol::CommandsList::save_commands[];
 
 // instantiate cli_helper class which allows to parse command line, dispatch
 // appropriate command or perform command completons
@@ -1195,6 +1216,81 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoHelp>(const std::vector<std::stri
     return S_OK;
 }
 
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Save>(const std::vector<std::string> &args, std::string &output)
+{
+    printf("Argument(s) required: see 'help save' for details.\n");
+    return S_FALSE;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::SaveBreakpoints>(const std::vector<std::string> &args, std::string &output)
+{
+    if (args.empty())
+    {
+        output = "Argument required (file name in which to save).";
+        return E_INVALIDARG;
+    }
+
+    HRESULT result = S_OK;
+    const std::string& filename = args[0];
+
+    std::unique_ptr<FILE, std::function<void(FILE*)> >
+        file {nullptr, [](FILE *file){ fclose(file); }};
+
+    auto printer = [&](const Debugger::BreakpointInfo& bp) -> bool
+    {
+        if (!file)
+        {
+            file.reset(fopen(filename.c_str(), "w"));
+            if (!file)
+            {
+                output = filename + ": " + strerror(errno);
+                result = E_FAIL;
+                return false;
+            }
+        }
+
+        fputs("break ", file.get());
+
+        if (!bp.condition.empty())
+            fprintf(file.get(), "-c \"%.*s\" ", int(bp.condition.size()), bp.condition.data());
+
+        if (!bp.module.empty())
+        {
+            fwrite(bp.module.data(), bp.module.size(), 1, file.get());
+            fputc('!', file.get());
+        }
+
+        fwrite(bp.name.data(), bp.name.size(), 1, file.get());
+
+        // TODO function signature and module name may contains spaces!
+        if (!bp.funcsig.empty())
+        {
+            fwrite(bp.funcsig.data(), bp.funcsig.size(), 1, file.get());
+        }
+        else if (bp.line)
+        {
+            fprintf(file.get(), ":%u", bp.line);
+        }
+
+        fputc('\n', file.get());
+        return true;
+    };
+
+    m_debugger->EnumerateBreakpoints(printer);
+    return result;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::SaveHelp>(const std::vector<std::string> &args, std::string &output)
+{
+    printHelp(CommandsList::save_commands, args.empty() ? string_view{} : string_view{args[0]});
+    return S_OK;
+}
+
+
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::SetArgs>(const std::vector<std::string> &args, std::string &output)
 {
@@ -1219,6 +1315,12 @@ template <>
 HRESULT CLIProtocol::doCommand<CommandTag::HelpSet>(const std::vector<std::string> &args, std::string &output)
 {
     return doCommand<CommandTag::SetHelp>(args, output);
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::HelpSave>(const std::vector<std::string> &args, std::string &output)
+{
+    return doCommand<CommandTag::SaveHelp>(args, output);
 }
 
 
