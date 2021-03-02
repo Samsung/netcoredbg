@@ -1087,14 +1087,14 @@ HRESULT CLIProtocol::doCommand<CommandTag::Set>(const std::vector<std::string> &
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Info>(const std::vector<std::string> &args, std::string &output)
 {
-    printHelp(CommandsList::info_commands);
+    printHelp(CommandsList::info_commands, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
 }
 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::InfoHelp>(const std::vector<std::string> &args, std::string &output)
 {
-    printHelp(CommandsList::info_commands);
+    printHelp(CommandsList::info_commands, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
 }
 
@@ -1108,7 +1108,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::SetArgs>(const std::vector<std::strin
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::SetHelp>(const std::vector<std::string> &args, std::string &output)
 {
-    printHelp(CommandsList::set_commands);
+    printHelp(CommandsList::set_commands, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
 }
 
@@ -1269,6 +1269,13 @@ HRESULT CLIProtocol::printHelp<CLIProtocol::CLIParams::CommandInfo>(
     {
         if (ci->aux.help.empty()) continue;
 
+        // filter-out unwanted commands
+        if (!args.empty())
+        {
+            if (std::find(ci->names.begin(), ci->names.end(), args) == ci->names.end())
+                continue;
+        }
+
         // print header, if needed
         if (nlines % HeaderLines == 0)
         {
@@ -1284,13 +1291,6 @@ HRESULT CLIProtocol::printHelp<CLIProtocol::CLIParams::CommandInfo>(
             printf("%.*s\n", len, line);
         }
         nlines++;
-
-        // filter-out unwanted commands
-        if (!args.empty())
-        {
-            if (std::find(ci->names.begin(), ci->names.end(), args) == ci->names.end())
-                continue;
-        }
 
         // print command name
         printf("%-*.*s" "%*s",
@@ -1336,6 +1336,9 @@ HRESULT CLIProtocol::printHelp<CLIProtocol::CLIParams::CommandInfo>(
             pspaces = offset;
         }
     }
+
+    if (nlines == 0 && !args.empty())
+        printf("No such command or topic: %.*s\n", int(args.size()), args.data());
 
     return S_OK;
 }
