@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <string>
 #include <list>
+#include <functional>
+#include "string_view.h"
 #include "metadata/modules.h"
 #include "debugger/debugger.h"
 #include "protocols/protocol.h"
@@ -15,8 +17,12 @@
 namespace netcoredbg
 {
 
+using Utility::string_view;
+
 class Breakpoints
 {
+    class AnyBPReference;
+
     struct ManagedBreakpoint {
         uint32_t id;
         CORDB_ADDRESS modAddress;
@@ -166,6 +172,11 @@ public:
     HRESULT DeleteExceptionBreakpoint(const uint32_t id);
     HRESULT GetExceptionBreakMode(ExceptionBreakMode &mode, const std::string &name);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
+
+    // This function allows to enumerate breakpoints (sorted by number).
+    // Callback which is called for each breakpoint might return `false` to stop iteration
+    // over breakpoints list.
+    void EnumerateBreakpoints(std::function<bool (const Debugger::BreakpointInfo&)>&& callback);
 };
 
 } // namespace netcoredbg

@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <fstream>
 #include <algorithm>
+#include <iterator>
 #include "metadata/typeprinter.h"
 #include "utils/logger.h"
 #include "utils/utf.h"
@@ -800,6 +801,109 @@ HRESULT Breakpoints::SetBreakpoints(
 
     return S_OK;
 }
+
+
+// This is lightweight (it occupies only space for three pointers) class which
+// accepts in constructor a reference to one of the classes which store information
+// about breakpoints, erases the type (but stores type information within function
+// pointer) and allows later to get breakpoint information via `get` function,
+// which retursn universal structure describing the breakpoint: BreakpointInfo.
+// This structure is generated on demand.
+//
+// This class is indentent for getting sorted list of the breakpoints.
+//
+// On input this class accepts the reference to one of the following classes:
+// ManagedBreakpoint, SourceBreakpointMapping, ManagedFunctionBreakpoint.
+// Such classes is stored in one of the following member variables of Breakpoints class:
+// m_srcResolvedBreakpoints, m_srcInitialBreakpoints.size() or m_funcBreakpoints.size().
+//
+class Breakpoints::AnyBPReference
+{
+    using BreakpointInfo = Debugger::BreakpointInfo;
+    using Key = const std::string *;
+
+    const void *ptr;  // pointer to class which store breakpoint info
+    Key key;          // additional key which is required for SourceBreakpointMapping
+    BreakpointInfo (*getter)(Key, const void *); // getter function (stores the type for `ptr`)
+
+public:
+    AnyBPReference(const ManagedBreakpoint& val) : ptr(&val), key(nullptr)
+    {
+        getter = [](Key, const void *ptr) -> BreakpointInfo {
+            const auto& bp = *reinterpret_cast<const ManagedBreakpoint*>(ptr);
+            return { bp.id, true, bp.enabled, bp.times, {}, bp.fullname, bp.linenum, bp.endLine, {}, {} };
+        };
+    }
+
+    // case for SourceBreakpointMapping: additionaly key is passed
+    AnyBPReference(std::tuple<const std::string&, const SourceBreakpointMapping&> val)
+    : ptr(&std::get<1>(val)), key(&std::get<0>(val))
+    {
+        getter = [](Key key, const void *ptr) -> BreakpointInfo {
+            const auto& bp = *reinterpret_cast<const SourceBreakpointMapping*>(ptr);
+            return { bp.id, false, true, 0, {}, string_view{*key}, bp.breakpoint.line, 0, {}, {} };
+        };
+    }
+
+    // case for using with std::copy (accepting std::map and similar containers)
+    AnyBPReference(const std::pair<const std::string, ManagedFunctionBreakpoint>& pair)
+    : ptr(&pair.second), key(nullptr)
+    {
+        getter = [](Key, const void *ptr) -> BreakpointInfo {
+            const auto& bp = *reinterpret_cast<const ManagedFunctionBreakpoint*>(ptr);
+            return { bp.id, !bp.breakpoints.empty(), bp.enabled, bp.times, bp.condition, 
+                        bp.name, 0, 0, bp.module, bp.params };
+        };
+    }
+
+    // This function restores the type via call to stored getter function and generates
+    // the result from each particular input class pointer to which is stored within this class.
+    BreakpointInfo get() const { return getter(key, ptr); }
+
+    // Comparator functions which allow to sort container of `AnyBPReference`.
+    bool operator<(const AnyBPReference& other) const { return get().id < other.get().id; }
+    bool operator==(const AnyBPReference& other) const { return get().id == other.get().id; }
+};
+
+
+void Breakpoints::EnumerateBreakpoints(std::function<bool (const Debugger::BreakpointInfo&)>&& callback)
+{
+    // create (empty) list of references to all three types of input data, reserve memory
+    std::vector<AnyBPReference> list;
+    list.reserve(m_srcResolvedBreakpoints.size()
+                  + m_srcInitialBreakpoints.size() + m_funcBreakpoints.size());
+
+    // put contents of m_srcResolvedBreakpoints (should be first), m_srcInitialBreakpoints
+    // and m_funcBreakpoints in common unsorted list `list`:
+    for (const auto& outer : m_srcResolvedBreakpoints)
+    {
+        for (const auto& inner : outer.second)
+            std::copy(inner.second.begin(), inner.second.end(), std::back_inserter(list));
+    }
+
+    for (const auto& outer : m_srcInitialBreakpoints)
+    {
+        for (const auto& inner : outer.second)
+            list.emplace_back(std::forward_as_tuple(outer.first, inner));
+    }
+
+    std::copy(m_funcBreakpoints.begin(), m_funcBreakpoints.end(), std::back_inserter(list));
+
+    // sort breakpoint list by ascending order, preserve order of elements with same number
+    std::stable_sort(list.begin(), list.end());
+
+    // remove duplicates (ones from m_srcInitialBreakpoints which have
+    // resolved pair in m_srcResolvedBreakpoints)
+    list.erase(std::unique(list.begin(), list.end()), list.end());
+
+    // apply callback function for each breakpoint
+    for (const auto& item : list)
+    {
+        if (!callback(item.get()))
+            break;
+    }
+}
+
 
 HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
 {

@@ -101,6 +101,7 @@ enum class CLIProtocol::CommandTag
     // info subcommand
     Info,
     InfoThreads,
+    InfoBreakpoints,
     InfoHelp,
 
     // help subcommands
@@ -144,9 +145,9 @@ using CLIParams = CLIHelperParams<
 // Subcommands for "info" command.
 constexpr static const CLIParams::CommandInfo info_commands[] =
 {
-    {CommandTag::InfoThreads, {}, {}, {{"threads"}}, {{}, "Display currently known threads."}},
-
-    {CommandTag::InfoHelp,    {}, {}, {{"help"}}, {{}, {}}},
+    {CommandTag::InfoThreads,    {}, {}, {{"threads"}}, {{}, "Display currently known threads."}},
+    {CommandTag::InfoBreakpoints,{}, {}, {{"breakpoints", "break"}}, {{}, "Display existing breakpoints."}},
+    {CommandTag::InfoHelp,       {}, {}, {{"help"}}, {{}, {}}},
 
     // This should be placed at end of command (sub)lists.
     {CommandTag::End, {}, {}, {}, {}}
@@ -923,6 +924,95 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoThreads>(const std::vector<std::s
     output = ss.str();
     return S_OK;
 }
+
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::InfoBreakpoints>(const std::vector<std::string>& args, std::string& output)
+{
+    const static string_view header[] {"#", "Enb", "Rslvd", "Hits", "Source/Function"};
+    const static string_view data[] { "99999", "Y", "N", "999999999", "" };
+    const static int justify[] = {+1, +1, -1, -1, -1};
+    const static char gap[] = "  ";
+
+    static_assert(Utility::Size(header) == Utility::Size(data)
+                    && Utility::Size(justify) == Utility::Size(header), "logic error");
+
+    // compute width for each column (excluding gaps between columns)
+    static const std::array<unsigned, Utility::Size(header)> widths = []{
+            std::array<unsigned, Utility::Size(header)> result {};
+            for (unsigned n = 0; n < result.size(); ++n)
+                result[n] = unsigned(std::max(header[n].size(), data[n].size()));
+            return result;
+        }();
+
+    // dashed line length (after the header)
+    unsigned static const dashlen = std::accumulate(widths.begin(), widths.end(), 0)
+                    + unsigned(Utility::Size(gap)-1) * unsigned(Utility::Size(header) - 1);
+
+    // offset, number of spaces for module name and condition
+    unsigned const static offset = dashlen - widths[Utility::Size(widths)-1]
+                                    + unsigned(Utility::Size(gap)) - 1;
+   
+    // prepare dashed line for the header
+    char *dashline = static_cast<char*>(alloca(dashlen + 1));
+    memset(dashline, '-', dashlen), dashline[dashlen] = 0;
+
+    unsigned nlines = 0;
+
+    // function which prints each particular breakpoint
+    auto printer = [&](const Debugger::BreakpointInfo& bp) -> bool
+    {
+        // print header each few lines
+        if (nlines % 24 == 0)
+        {
+            for (unsigned n = 0; n < Utility::Size(header); n++)
+            {
+                printf("%s%*.*s",
+                    n == 0 ? "" : gap,
+                    widths[n]*justify[n], int(header[n].size()), header[n].data());
+            }
+
+            printf("\n%.*s\n", dashlen, dashline);
+        }
+
+        nlines++;
+
+        // common information for each breakpoint
+        printf("%*u%s%*s%s%*s%s%*u%s%.*s",
+            widths[0]*justify[0], bp.id, gap,
+            widths[1]*justify[1], (bp.enabled ? "y" : "n"), gap,
+            widths[2]*justify[2], (bp.resolved ? "y" : "n"), gap,
+            widths[3]*justify[3], bp.hit_count, gap,
+            int(bp.name.size()), bp.name.data());
+
+        if (!bp.funcsig.empty())
+        {
+            printf("%.*s", int(bp.funcsig.size()), bp.funcsig.data());
+        }
+        else if (bp.line)
+        {
+            printf(":%u", bp.line);
+        }
+
+        if (!bp.module.empty())
+            printf("\n%*s[in %.*s]", offset, "", int(bp.module.size()), bp.module.data());
+
+        if (!bp.condition.empty())
+            printf("\n%*sif (%.*s)", offset, "", int(bp.condition.size()), bp.condition.data());
+
+        printf("\n");
+
+        return true;  // return false to stop enumerating breakpoints
+    };
+
+    m_debugger->EnumerateBreakpoints(printer);
+
+    if (nlines == 0)
+        output = "No breakpoints.";
+
+    return S_OK;
+}
+
 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::string> &, std::string &output)

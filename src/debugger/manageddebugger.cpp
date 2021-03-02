@@ -1953,4 +1953,9 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
     return true;
 }
 
+void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback)
+{
+    return m_breakpoints.EnumerateBreakpoints(std::move(callback));
+}
+
 } // namespace netcoredbg

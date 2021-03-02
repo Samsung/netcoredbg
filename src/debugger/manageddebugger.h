@@ -326,6 +326,8 @@ public:
     void FindFunctions(string_view pattern, unsigned limit, SearchCallback) override;
     void FindVariables(ThreadId, FrameLevel, string_view pattern, unsigned limit, SearchCallback) override;
 
+    void EnumerateBreakpoints(std::function<bool (const Debugger::BreakpointInfo&)>&& callback) override;
+
     // Functions which converts FrameId to ThreadId and FrameLevel and vice versa.
     FrameId getFrameId(ThreadId, FrameLevel);
     ThreadId threadByFrameId(FrameId) const;
