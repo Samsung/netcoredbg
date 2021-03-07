@@ -57,6 +57,11 @@ namespace XUnitTests
         [InlineData("VSCodeTestEnum", "Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
+            // Explicit encoding setup, since system console encoding could be not utf8 (Windows OS).
+            // Note, netcoredbg aimed to interact with utf8 encoding usage only for all protocols.
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+
             string testSuiteRoot = Path.GetFullPath(
                 Path.Combine(Directory.GetCurrentDirectory(), "../../../..")
             );
