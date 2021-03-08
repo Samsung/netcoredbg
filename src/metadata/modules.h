@@ -97,13 +97,13 @@ public:
 
     HRESULT GetLocationInModule(
         ICorDebugModule *pModule,
-        std::string filename,
+        const std::string& filename,
         ULONG linenum,
         ULONG32 &ilOffset,
         mdMethodDef &methodToken);
 
     HRESULT GetLocationInAny(
-        std::string filename,
+        const std::string& filename,
         ULONG linenum,
         ULONG32 &ilOffset,
         mdMethodDef &methodToken,

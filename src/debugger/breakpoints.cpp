@@ -635,7 +635,7 @@ HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
 
 HRESULT Breakpoints::SetBreakpoints(
     ICorDebugProcess *pProcess,
-    std::string filename,
+    const std::string& filename,
     const std::vector<SourceBreakpoint> &srcBreakpoints,
     std::vector<Breakpoint> &breakpoints)
 {

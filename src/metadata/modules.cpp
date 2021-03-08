@@ -220,7 +220,7 @@ string_view Modules::GetFileName(string_view path)
 }
 
 HRESULT Modules::GetLocationInAny(
-    std::string filename,
+    const std::string& filename,
     ULONG linenum,
     ULONG32 &ilOffset,
     mdMethodDef &methodToken,
@@ -252,7 +252,7 @@ HRESULT Modules::GetLocationInAny(
 
 HRESULT Modules::GetLocationInModule(
     ICorDebugModule *pModule,
-    std::string filename,
+    const std::string& filename,
     ULONG linenum,
     ULONG32 &ilOffset,
     mdMethodDef &methodToken)
@@ -833,7 +833,7 @@ HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
     if (result == GetFileName(result))
     {
         auto it = std::min_element(possiblePaths.begin(), possiblePaths.end(),
-                        [](const std::string a, const std::string b){ return a.size() < b.size(); } );
+                        [](const std::string& a, const std::string& b){ return a.size() < b.size(); } );
 
         filename = it == possiblePaths.end() ? result : *it;
         return S_OK;
