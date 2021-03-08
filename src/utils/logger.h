@@ -145,7 +145,7 @@ namespace DLogInternal
 #endif
 
 // Macros for internal usage.
-#define LOG_IF_(prio, tag, expr, fmt, ...)  ((expr) ? true : \
+#define LOG_IF_(prio, tag, expr, fmt, ...)  (!(expr) ? true : \
         LOG_(prio, tag, "expression '%.*s' failed: " fmt, int(sizeof(#expr)), #expr, ##__VA_ARGS__), false)
 
 // Macros which is absent in dlog.h, added for Pavel Orekhov.
@@ -160,12 +160,12 @@ namespace DLogInternal
 //      return E_FAIL;
 //
 #ifdef DEBUG
-#define LOGD_IF(fmt, ...) LOG_IF_(DLOG_DEFAULT, LOG_TAG, fmt, ##__VA_ARGS__)
+#define LOGD_IF(expr, fmt, ...) LOG_IF_(DLOG_DEFAULT, LOG_TAG, expr, fmt, ##__VA_ARGS__)
 #else
-#define LOGD_IF(fmt, ...) LOG_CHECK_ARGS_(fmt, ##__VA_ARGS__)
+#define LOGD_IF(expr, fmt, ...) LOG_CHECK_ARGS_(fmt, ##__VA_ARGS__)
 #endif
 
-#define LOGI_IF(fmt, ...) LOG_IF(DLOG_INFO, LOG_TAG, fmt, ##__VA_ARGS__)
-#define LOGW_IF(fmt, ...) LOG_IF(DLOG_WARNING, LOG_TAG, fmt, ##__VA_ARGS__)
-#define LOGE_IF(fmt, ...) LOG_IF(DLOG_ERROR, LOG_TAG, fmt, ##__VA_ARGS__)
+#define LOGI_IF(expr, fmt, ...) LOG_IF_(DLOG_INFO, LOG_TAG, expr, fmt, ##__VA_ARGS__)
+#define LOGW_IF(expr, fmt, ...) LOG_IF_(DLOG_WARNING, LOG_TAG, expr, fmt, ##__VA_ARGS__)
+#define LOGE_IF(expr, fmt, ...) LOG_IF_(DLOG_ERROR, LOG_TAG, expr, fmt, ##__VA_ARGS__)
 
