@@ -304,11 +304,11 @@ HRESULT ManagedPart::LoadSymbolsForPortablePDB(
     ULONG64 inMemoryPdbAddress,
     ULONG64 inMemoryPdbSize)
 {
-    HRESULT Status = S_OK;
+    PrepareManagedPart();
 
     if (loadSymbolsForModuleDelegate == nullptr)
     {
-        IfFailRet(PrepareManagedPart());
+        return E_FAIL;
     }
 
     // The module name needs to be null for in-memory PE's.
@@ -327,7 +327,7 @@ HRESULT ManagedPart::LoadSymbolsForPortablePDB(
         return E_FAIL;
     }
 
-    return Status;
+    return S_OK;
 }
 
 struct GetChildProxy
@@ -342,10 +342,14 @@ struct GetChildProxy
 
 HRESULT ManagedPart::PrepareManagedPart()
 {
+    static std::mutex PrepareMutex;
+    std::lock_guard<std::mutex> lock(PrepareMutex);
+
     static bool attemptedManagedPartPreparation = false;
     if (attemptedManagedPartPreparation)
     {
         // If we already tried to set up the symbol reader, we won't try again.
+        // TODO we probably should return real exit code then or change ret to void, since we check delegate's pointers instead of ret code.
         return E_FAIL;
     }
 
