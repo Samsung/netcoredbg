@@ -19,7 +19,9 @@
 #include "filesystem.h"
 
 #include "limits.h"
+#include <cstddef>
 #include <sstream>
+#include <forward_list>
 #include <functional>
 #include <algorithm>
 #include <numeric>
@@ -67,11 +69,14 @@ using Utility::literal;
 using CommandTag = CLIProtocol::CommandTag;
 using CompletionTag = CLIProtocol::CompletionTag;
 
-// Prompt which displayed when netcoredbg expects next command:
-const auto Prompt = tty::bold + tty::green + literal("cli>") + tty::reset + literal(" ");
+// Prompts which displayed when netcoredbg expects next command:
+const auto CommandPrompt = tty::bold + tty::green + literal("ncdb>") + tty::reset + literal(" ");
 
 const char HistoryFileName[] = ".netcoredbg_hist";
 const size_t DefaultHistoryDepth = 1024;
+
+CLIProtocol* CLIProtocol::g_console_owner = nullptr;
+std::mutex CLIProtocol::g_console_mutex;
 
 // Tags for all commands (including compound ones, like "info breakpoints")
 // known to the command interpreter.
@@ -90,8 +95,10 @@ enum class CLIProtocol::CommandTag
     Print,
     Quit,
     Run,
+    Attach,
     Step,
     Source,
+    Wait,
 
     // set subcommands
     Set,
@@ -209,9 +216,6 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
     {CommandTag::Delete, {}, {{{1, CompletionTag::Delete}}}, {{"delete", "clear"}},
         {"<num>", "Delete breakpoint with specified number."}},
 
-    {CommandTag::Detach, {}, {}, {{"detach"}},
-        {{}, "Detach from the debugged process."}},
-
     {CommandTag::File, {}, {{{1, CompletionTag::File}}}, {{"file"}},
         {"<file>", "load executable file to debug."}},
 
@@ -233,11 +237,20 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
     {CommandTag::Run, {}, {}, {{"run", "r"}},
         {{}, "Start debugged program."}},
 
+    {CommandTag::Attach, {}, {}, {{"attach"}},
+        {{}, "Attach to the debugged process."}},
+
+    {CommandTag::Detach, {}, {}, {{"detach"}},
+        {{}, "Detach from the debugged process."}},
+
     {CommandTag::Step, {}, {}, {{"step", "s"}},
         {{}, "Step program until a different source line."}},
 
     {CommandTag::Source, {}, {{{1, CompletionTag::File}}}, {{"source"}},
         {"<file>", "Read commands from a file."}},
+
+    {CommandTag::Wait, {}, {}, {{"wait"}},
+        {{}, "Wait until debugee stops (in async. mode)"}},
 
     {CommandTag::Set, set_commands, {}, {{"set"}},
         {"args...", "Set miscellaneous options (see 'help set')"}},
@@ -350,7 +363,94 @@ private:
 };
 
 
-CLIProtocol::TermSettings::TermSettings()
+// Set of functions used to implement reasonable reaction to Ctrl-Z.
+#ifdef _WIN32
+class StopSignalHandler {};
+
+#else
+// This class implements the logic, which allows user to continue to work in
+// console after pressing Ctrl-Z (terminal settings should be restored) and then
+// after the user brings the process to foreground, user might continue to work
+// with interrupted program (for which, terminal settings must be again restored
+// to whose, which must be saved before stopping the program).
+class StopSignalHandler
+{
+public:
+    StopSignalHandler()
+    {
+        // Save original terminal settings (to restore after pressing Ctrl-Z)
+        // and set SIGTSTP handler (to catch Ctrl-Z). It's assumed, that 
+        // Linenoise is still not reconfigured terminal at this moment.
+        orig_ts_valid = tcgetattr(STDIN_FILENO, &orig_ts) == 0;
+        set_handler(&orig_handler);
+    }
+
+    ~StopSignalHandler()
+    {
+        // Restore original SIGTSTP handler (typically SIG_DFL) on exit
+        // (it's assumed, that Linenoise restored terminal settings in that moment).
+        sigaction(SIGTSTP, &orig_handler, NULL);
+    }
+
+private:
+    static bool orig_ts_valid;              // true if `orig_ts` is valid
+    static struct termios orig_ts;          // initial terminal settings
+    static struct sigaction orig_handler;   // initial SIGTSTP handler
+
+    // This function sets own SIGTSTP handler and, optionally, returns
+    // the handler, which was set originally (if `orig` isn't NULL).
+    static void set_handler(struct sigaction *orig)
+    {
+        struct sigaction sa;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        sa.sa_handler = signal_handler;
+        sigaction(SIGTSTP, &sa, orig);
+    }
+
+    static void signal_handler(int)
+    {
+        // errno might be corrupted by following functions
+        int saved_errno = errno;    
+
+        // save currently set terminal settings (raw mode)
+        struct termios ts;
+        bool ts_valid = tcgetattr(STDIN_FILENO, &ts) == 0;
+
+        // restore initially set terminal settings (canonical mode)
+        if (orig_ts_valid)
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_ts);
+
+        // set original SIGTSTP handler, unmask and raise signal again
+        sigaction(SIGTSTP, &orig_handler, NULL);
+        raise(SIGTSTP);
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGTSTP);
+        sigprocmask(SIG_UNBLOCK, &mask, NULL);
+
+        // execution will stop here and continues with SIGCONT after using bring process to foreground
+
+        sigprocmask(SIG_BLOCK, &mask, NULL);  // this is needed?
+        set_handler(NULL);  // again set own SIGTSTP handler
+        
+        // restore previously saved terminal settings
+        if (ts_valid)
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &ts);
+
+        errno = saved_errno;
+    }
+}; // StopSignalHandler
+
+
+bool StopSignalHandler::orig_ts_valid;              // true if `orig_ts` is valid
+struct termios StopSignalHandler::orig_ts;          // initial terminal settings
+struct sigaction StopSignalHandler::orig_handler;   // initial SIGTSTP handler
+
+#endif  // !_WIN32
+
+
+CLIProtocol::TermSettings::TermSettings(CLIProtocol& protocol)
 {
 #ifdef WIN32
     auto in = GetStdHandle(STD_INPUT_HANDLE);
@@ -366,7 +466,9 @@ CLIProtocol::TermSettings::TermSettings()
 
     data.reset(reinterpret_cast<char*>(new decltype(modes) {modes}));
 
-    SetConsoleMode(in, modes.first & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT));
+    // mode for IORedirect::async_input
+    modes.first |= ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+    SetConsoleMode(in, modes.first);
     SetConsoleMode(out, modes.second | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
 #else
@@ -378,14 +480,22 @@ CLIProtocol::TermSettings::TermSettings()
         return;
 
     data.reset(reinterpret_cast<char*>(new termios {ts}));
-    ts.c_lflag &= ~ISIG;
+
+    // mode for IORedirect::async_input
+    ts.c_lflag |= ICANON | ISIG | IEXTEN | ECHONL | ECHO;
     tcsetattr(fileno(stdin), TCSADRAIN, &ts);
 #endif
+
+    std::lock_guard<std::mutex> lock(g_console_mutex);
+    CLIProtocol::g_console_owner = &protocol;
 }
 
 
 CLIProtocol::TermSettings::~TermSettings()
 {
+    std::lock_guard<std::mutex> lock(g_console_mutex);
+    CLIProtocol::g_console_owner = nullptr;
+
     if (!data) return;
 
 #ifdef WIN32
@@ -405,9 +515,14 @@ CLIProtocol::CLIProtocol(InStream& input, OutStream& output) :
   m_output(output),
   m_processStatus(NotStarted),
   m_varCounter(0),
-  line_reader()
+  m_term_settings(*this), 
+  line_reader(),
+  m_commandMode(CommandMode::Unset)
 {
     (void)m_input, (void)m_output;  // TODO start usint std::iostream in future
+
+    // Handle Ctrl-Z.
+    Utility::Singleton<StopSignalHandler>::instance();
 }
 
 
@@ -426,6 +541,7 @@ int CLIProtocol::printf_checked(const char *fmt, ...)
 
         if (size_t(len) < sizeof(buf))
         {
+            lock_guard lock(m_cout_mutex);
             cout << buf;
             cout.flush();
             return len;
@@ -440,6 +556,7 @@ int CLIProtocol::printf_checked(const char *fmt, ...)
     if (len < 0 || len > len2)
         return -1;
 
+    lock_guard lock(m_cout_mutex);
     cout << dbuf.get();
     cout.flush();
     return len;
@@ -474,6 +591,9 @@ HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
     return Status;
 }
 
+
+// This function implements Debugger interface and called from ManagedDebugger, 
+// as callback function, in separate thread.
 void CLIProtocol::EmitBreakpointEvent(BreakpointEvent event)
 {
     LogFuncEntry();
@@ -496,25 +616,30 @@ HRESULT CLIProtocol::StepCommand(const std::vector<std::string> &args,
                                 std::string &output,
                                 Debugger::StepType stepType)
 {
-    HRESULT Status;
-    switch (m_processStatus) 
+    unique_lock lock(m_mutex);
+    switch (m_processStatus)
     {
-        case Running:
+        case NotStarted:
+        case Exited:
+            output = "No process.";
+            return E_FAIL;
+
+        case Paused:
         {
+            lock.unlock();  // debugger function must not be called with locked mutex
             ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+            HRESULT Status;
             IfFailRet(m_debugger->StepCommand(threadId, stepType));
             output = "^running";
-            break;
+            return Status;
         }
 
         default:
-            output = "No process.";
-            Status = E_FAIL;
-            break;
+            output = "Process is not stopped.";
+            return E_FAIL;
     }
-
-    return Status;
 }
+
 
 HRESULT CLIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 {
@@ -548,6 +673,7 @@ HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLe
 
     int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
+    
     IfFailRet(m_debugger->GetStackTrace(threadId, lowFrame, int(highFrame) - int(lowFrame), stackFrames, totalFrames));
 
     int currentFrame = int(lowFrame);
@@ -579,6 +705,8 @@ HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLe
 
 void CLIProtocol::Cleanup()
 {
+    lock_guard lock(m_mutex);
+
     m_vars.clear();
     m_varCounter = 0;
     m_breakpoints.clear();
@@ -590,20 +718,27 @@ HRESULT CLIProtocol::SetBreakpoint(
     const std::string &condition,
     Breakpoint &breakpoint)
 {
-    HRESULT Status;
-
-    auto &breakpointsInSource = m_breakpoints[filename];
     std::vector<SourceBreakpoint> srcBreakpoints;
-    for (auto it : breakpointsInSource)
-        srcBreakpoints.push_back(it.second);
+
+    {
+      lock_guard lock(m_mutex);
+
+      auto &breakpointsInSource = m_breakpoints[filename];
+      for (auto it : breakpointsInSource)
+          srcBreakpoints.push_back(it.second);
+    }
 
     srcBreakpoints.emplace_back(linenum, condition);
 
+    HRESULT Status;
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_debugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
 
     // Note, SetBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "srcBreakpoints".
     breakpoint = breakpoints.back();
+
+    // FIXME: m_breakpoints might be changed during call to m_debugger->SetBreakpoints
+    auto &breakpointsInSource = m_breakpoints[filename];
     breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(srcBreakpoints.back())));
     return S_OK;
 }
@@ -618,8 +753,11 @@ HRESULT CLIProtocol::SetFunctionBreakpoint(
     HRESULT Status;
     std::vector<FunctionBreakpoint> funcBreakpoints;
 
-    for (const auto &it : m_funcBreakpoints)
-        funcBreakpoints.push_back(it.second);
+    {
+      lock_guard lock(m_mutex);
+      for (const auto &it : m_funcBreakpoints)
+          funcBreakpoints.push_back(it.second);
+    }
 
     funcBreakpoints.emplace_back(module, funcname, params, condition);
 
@@ -628,16 +766,24 @@ HRESULT CLIProtocol::SetFunctionBreakpoint(
 
     // Note, SetFunctionBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
     breakpoint = breakpoints.back();
+
+    lock_guard lock(m_mutex);
     m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
     return S_OK;
 }
 
 void CLIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
-    for (auto &breakpointsIter : m_breakpoints)
+    std::forward_list<std::pair<const std::string&, std::vector<SourceBreakpoint> > > defer_args;
+
     {
+      unique_lock lock(m_mutex);
+
+      for (auto &breakpointsIter : m_breakpoints)
+      {
         std::size_t initialSize = breakpointsIter.second.size();
         std::vector<SourceBreakpoint> remainingBreakpoints;
+
         for (auto it = breakpointsIter.second.begin(); it != breakpointsIter.second.end();)
         {
             if (ids.find(it->first) == ids.end())
@@ -652,19 +798,28 @@ void CLIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
         if (initialSize == breakpointsIter.second.size())
             continue;
 
-        std::string filename = breakpointsIter.first;
+        defer_args.emplace_front(breakpointsIter.first, std::move(remainingBreakpoints));
+      }
+    }
 
+    // call m_debugger's function without lock
+    for (const auto& each : defer_args)
+    {
         std::vector<Breakpoint> tmpBreakpoints;
-        m_debugger->SetBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
+        m_debugger->SetBreakpoints(each.first, each.second, tmpBreakpoints);
     }
 }
 
 void CLIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
-    std::size_t initialSize = m_funcBreakpoints.size();
     std::vector<FunctionBreakpoint> remainingFuncBreakpoints;
-    for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
+
     {
+      lock_guard lock(m_mutex);
+
+      std::size_t initialSize = m_funcBreakpoints.size();
+      for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
+      {
         if (ids.find(it->first) == ids.end())
         {
             remainingFuncBreakpoints.push_back(it->second);
@@ -672,18 +827,33 @@ void CLIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &
         }
         else
             it = m_funcBreakpoints.erase(it);
-    }
+      }
 
-    if (initialSize == m_funcBreakpoints.size())
-        return;
+      if (initialSize == m_funcBreakpoints.size())
+          return;
+    }
 
     std::vector<Breakpoint> tmpBreakpoints;
     m_debugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
+
+// This function implements Debugger interface and called from ManagedDebugger, 
+// as callback function, in separate thread.
 void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
 {
     LogFuncEntry();
+
+    {
+      lock_guard lock(m_mutex);
+
+      m_processStatus = Paused;
+      m_state_cv.notify_all();
+    }
+
+    // call repaint() at function exit
+    std::unique_ptr<void, std::function<void(void*)> >
+        on_exit(this, [&](void *) { repaint(); });
 
     std::string frameLocation;
     PrintFrameLocation(event.frame, frameLocation);
@@ -735,26 +905,35 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
         default:
             return;
     }
-#ifndef WIN32
-    pthread_kill(tid, SIGWINCH);
-#endif
 }
 
+
+// This function implements Debugger interface and called from ManagedDebugger, 
+// as callback function, in separate thread.
 void CLIProtocol::EmitExitedEvent(ExitedEvent event)
 {
     LogFuncEntry();
+    lock_guard lock(m_mutex);
+
     m_processStatus = Exited;
+    m_state_cv.notify_all();
+
     printf("\nstopped, reason: exited, exit-code: %i\n", event.exitCode);
-#ifndef WIN32
-    pthread_kill(tid, SIGWINCH);
-#endif
+
+    repaint();
 }
 
+
+// This function implements Debugger interface and called from ManagedDebugger, 
+// as callback function, in separate thread.
 void CLIProtocol::EmitContinuedEvent(ThreadId threadId)
 {
     LogFuncEntry();
 }
 
+
+// This function implements Debugger interface and called from ManagedDebugger, 
+// as callback function, in separate thread.
 void CLIProtocol::EmitThreadEvent(ThreadEvent event)
 {
     LogFuncEntry();
@@ -764,7 +943,6 @@ void CLIProtocol::EmitThreadEvent(ThreadEvent event)
     {
         case ThreadStarted:
             reasonText = "thread created";
-            m_processStatus = Running;
             break;
         case ThreadExited:
             reasonText = "thread exited";
@@ -773,6 +951,9 @@ void CLIProtocol::EmitThreadEvent(ThreadEvent event)
     printf("\n%s, id: %i\n", reasonText, int(event.threadId));
 }
 
+
+// This function implements Debugger interface and called from ManagedDebugger, 
+// as callback function, in separate thread.
 void CLIProtocol::EmitModuleEvent(ModuleEvent event)
 {
     LogFuncEntry();
@@ -794,24 +975,45 @@ void CLIProtocol::EmitModuleEvent(ModuleEvent event)
     }
 }
 
+
+// This function implements Debugger interface and called from ManagedDebugger, 
+// (from IORedirect class) as callback function, in separate thread.
 void CLIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
 {
     (void)source, (void)category;  // TODO What we should do with category and source?
-    
+
+    lock_guard lock(m_cout_mutex);
     cout << output;
-    cout.flush();
+    cout.flush();   // not thread safe
 }
+
 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Backtrace>(const std::vector<std::string> &args_orig, std::string &output)
 {
-    std::vector<std::string> args = args_orig;
+    lock_guard lock(m_mutex);
+
+    if (m_processStatus == NotStarted || m_processStatus == Exited)
+    {
+        output = "No process.";
+        return E_FAIL;
+    }
+
+    if (m_processStatus != Paused)
+    {
+        output = "Can't get backtrace for running process.";
+        return E_FAIL;
+    }
+
+    // assuming call of m_debugger->GetAnything() with locked mutex not lead to deadlock
     ThreadId tid = m_debugger->GetLastStoppedThreadId();
     if (tid == ThreadId::AllThreads)
     {
         output ="No stack.";
         return E_FAIL;
     }
+
+    std::vector<std::string> args = args_orig;
     ThreadId threadId{ GetIntArg(args, "--thread", int(tid)) };
     int lowFrame = 0;
     int highFrame = FrameLevel::MaxFrameLevel;
@@ -865,8 +1067,32 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Continue>(const std::vector<std::string> &, std::string &output)
 {
+    {
+      lock_guard lock(m_mutex);
+
+      if (m_processStatus == NotStarted || m_processStatus == Exited)
+      {
+          output = "No process.";
+          return E_FAIL;
+      }
+
+      if (m_processStatus != Paused)
+      {
+          output = "Process is not stopped.";
+          return E_FAIL;
+      }
+    }
+
     HRESULT Status;
     IfFailRet(m_debugger->Continue(ThreadId::AllThreads));
+
+    {
+      lock_guard lock(m_mutex);
+
+      m_processStatus = Running;
+      m_state_cv.notify_all();
+    }
+
     output = "^running";
     return S_OK;
 }
@@ -888,8 +1114,18 @@ HRESULT CLIProtocol::doCommand<CommandTag::Delete>(const std::vector<std::string
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Detach>(const std::vector<std::string> &args, std::string &)
+HRESULT CLIProtocol::doCommand<CommandTag::Detach>(const std::vector<std::string> &args, std::string &output)
 {
+    {
+      lock_guard lock(m_mutex);
+
+      if (m_processStatus == NotStarted || m_processStatus == Exited)
+      {
+          output = "No process to detach.";
+          return E_FAIL;
+      }
+    }
+
     m_debugger->Disconnect();
     return S_OK;
 }
@@ -902,6 +1138,8 @@ HRESULT CLIProtocol::doCommand<CommandTag::File>(const std::vector<std::string> 
         output = "Invalid file name";
         return E_INVALIDARG;
     }
+
+    lock_guard lock(m_mutex);
     m_fileExec = args.at(0);
     return S_OK;
 }
@@ -922,6 +1160,16 @@ HRESULT CLIProtocol::doCommand<CommandTag::Help>(const std::vector<std::string> 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::InfoThreads>(const std::vector<std::string> &args, std::string &output)
 {
+    {
+      lock_guard lock(m_mutex);
+
+      if (m_processStatus == NotStarted || m_processStatus == Exited)
+      {
+          output = "No process.";
+          return E_FAIL;
+      }
+    }
+
     std::vector<Thread> threads;
     if (m_debugger->GetThreads(threads) != S_OK)
     {
@@ -1038,6 +1286,22 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoBreakpoints>(const std::vector<st
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::string> &, std::string &output)
 {
+    {
+      lock_guard lock(m_mutex);
+
+      if (m_processStatus == NotStarted || m_processStatus == Exited)
+      {
+          output = "No process.";
+          return E_FAIL;
+      }
+
+      if (m_processStatus == Paused)
+      {
+          output = "Process is already stopped.";
+          return S_OK;
+      }
+    }
+
     HRESULT Status;
     IfFailRet(m_debugger->Pause());
     output = "^done";
@@ -1106,39 +1370,46 @@ HRESULT CLIProtocol::PrintVariable(ThreadId threadId, FrameId frameId, std::list
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string> &args, std::string &output)
 {
-    if (!args.empty())
-    {
-        m_lastPrintArg = args[0];
-    }
-    else if (m_lastPrintArg.empty())
-    {
-        puts("The history is empty.");
-        return S_OK;
-    }
-
+    ThreadId threadId;
+    FrameId frameId;
+    Variable v(0);
+    std::list<std::string> tokens;
     std::ostringstream ss;
 
-    HRESULT Status;
-    std::string result;
-    std::list<std::string> tokens;
-
-    ss << "\n";
-    ThreadId threadId = m_debugger->GetLastStoppedThreadId();
-    FrameId frameId = StackFrame(threadId, FrameLevel{0}, "").id;
-    Variable v(0);
-    Tokenizer tokenizer(m_lastPrintArg, ".[");
-    while (tokenizer.Next(result))
     {
-        if (result.back() == ']')
+        lock_guard lock(m_mutex);
+
+        if (!args.empty())
         {
-            tokens.push_back('[' + result);
+            m_lastPrintArg = args[0];
         }
-        else {
-            tokens.push_back(result);
+        else if (m_lastPrintArg.empty())
+        {
+            puts("The history is empty.");
+            return S_OK;
         }
+
+        // call of getter should not fire callback, so we can call it with locked mutex
+        threadId = m_debugger->GetLastStoppedThreadId();
+        frameId = StackFrame(threadId, FrameLevel{0}, "").id;
+
+        ss << "\n";
+        std::string result;
+        Tokenizer tokenizer(m_lastPrintArg, ".[");
+        while (tokenizer.Next(result))
+        {
+            if (result.back() == ']')
+            {
+                tokens.push_back('[' + result);
+            }
+            else {
+                tokens.push_back(result);
+            }
+        }
+        tokens.push_back("");
     }
-    tokens.push_back("");
-    printf("\n");
+
+    HRESULT Status;
     IfFailRet(m_debugger->Evaluate(frameId, tokens.front(), v, output));
     v.name = tokens.front();
     PrintVariable (threadId, frameId, tokens.begin(), v, ss, true);
@@ -1149,6 +1420,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string>
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::vector<std::string> &, std::string &)
 {
+    // no mutex locking needed here
     this->m_exit = true;
     m_debugger->Disconnect(Debugger::DisconnectTerminate);
     return S_OK;
@@ -1157,13 +1429,86 @@ HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::vector<std::string> 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Run>(const std::vector<std::string> &args, std::string &output)
 {
-        HRESULT Status;
-        m_debugger->Initialize();
-        IfFailRet(m_debugger->Launch(m_fileExec, m_execArgs, {}, "", true));
-        Status = m_debugger->ConfigurationDone();
-        if (SUCCEEDED(Status))
-            output = "^running";
-        return Status;
+    unique_lock lock(m_mutex);
+
+    if (m_processStatus != NotStarted && m_processStatus != Exited)
+    {
+        output = "First you should detach from currently debugged process.";
+        return E_FAIL;
+    }
+
+    // child process should inherit these setting
+    removeInterruptHandler();
+
+    const auto& exec_file = m_fileExec;
+    const auto& exec_args = m_execArgs;
+    lock.unlock();
+
+    HRESULT Status;
+    m_debugger->Initialize();
+    IfFailRet(m_debugger->Launch(exec_file, exec_args, {}, "", false));
+
+    lock.lock();
+    m_commandMode = CommandMode::Synchronous;
+    applyCommandMode();
+    lock.unlock();
+
+    Status = m_debugger->ConfigurationDone();
+    if (SUCCEEDED(Status))
+    {
+        output = "^running";
+
+        lock.lock();
+        m_processStatus = Running;
+        m_state_cv.notify_all();
+
+        setupInterruptHandler();
+    }
+    return Status;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::vector<std::string>& args, std::string& output)
+{
+    unique_lock lock(m_mutex);
+
+    if (m_processStatus != NotStarted && m_processStatus != Exited)
+    {
+        output = "First you should detach from currently debugged process.";
+        return E_FAIL;
+    }
+
+    lock.unlock();
+
+    if (args.size() < 1)
+    {
+        output = "Argument required (pid of process to attach).";
+        return E_INVALIDARG;
+    }
+
+    bool ok;
+    int pid = ParseInt(args[0], ok);
+    if (!ok) return E_INVALIDARG;
+
+    HRESULT Status;
+    m_debugger->Initialize();
+    IfFailRet(m_debugger->Attach(pid));
+
+    lock.lock();
+    m_commandMode = CommandMode::Asynchronous;
+    applyCommandMode();
+    lock.unlock();
+
+    Status = m_debugger->ConfigurationDone();
+    if (SUCCEEDED(Status))
+    {
+        output = "^running";
+
+        lock.lock();
+        m_processStatus = Running;
+        m_state_cv.notify_all();
+    }
+    return Status;
 }
 
 template <>
@@ -1192,6 +1537,19 @@ HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::vector<std::string
     }
 
     return execCommands(FileLineReader(std::move(file)));
+}
+
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Wait>(const std::vector<std::string> &, std::string &)
+{
+    lock_guard lock(m_mutex);
+
+    // Wait until debugee isn't stopped.
+    do m_state_cv.wait(m_mutex);
+    while (m_processStatus == Running);
+
+    return S_OK;
 }
 
 
@@ -1294,6 +1652,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::SaveHelp>(const std::vector<std::stri
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::SetArgs>(const std::vector<std::string> &args, std::string &output)
 {
+    lock_guard lock(m_mutex);
     m_execArgs = args;
     return S_OK;
 }
@@ -1432,6 +1791,9 @@ HRESULT CLIProtocol::printHelp<CLIProtocol::CLIParams::CommandInfo>(
 {
     assert(clist != nullptr);
 
+    // avoid interruption from async. events
+    lock_guard lock(m_cout_mutex);
+
     // separator for aliases
     static const string_view alias_sep = ", ";
 
@@ -1557,19 +1919,71 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr)
     std::unique_ptr<LineReader, decltype(restorer)> save = {line_reader, restorer};
     line_reader = &lr;
 
-    // Loop in which we read and execute next command.
+    // Loop in which we read and execute next command, or pass input to the debugee.
     string_view input;
-    string_view prefix;
+    string_view prefix; // fixme
+    bool process_stdin = true;
+    bool exited = false;
     while (!m_exit)
     {
-        LineReader::Result result;
-        std::tie(input, result) = getLine(Prompt.c_str());
+        unique_lock lock(m_mutex);
 
-        if(m_processStatus == Exited)    // TODO move this from here...
+	// TODO move this out here
+        // deactivate debugger on process exit (deffered, can't call this in callback)
+        if(!exited && m_processStatus == Exited)
         {
+            lock.unlock();
+
             m_debugger->Disconnect();
+
+            lock.lock();
             m_processStatus = NotStarted;
+            m_state_cv.notify_all();
+            exited = 1;
         }
+
+        // should input be passed to debuggee stdin?
+        if (process_stdin && m_commandMode == CommandMode::Synchronous && m_processStatus == Running)
+        {
+            lock.unlock();
+
+            // blocking here on undefined time (till error, EOF or Ctrl-C).
+            auto result = m_debugger->ProcessStdin(dynamic_cast<InStream&>(m_input));
+            switch (result)
+            {
+            default:
+                // Debugger::AsyncResult::Canceled -- nothing to do
+                break;
+
+            case Debugger::AsyncResult::Eof:
+                {
+                static const auto ErrorMsg =
+                    tty::bold + tty::brown + literal("EOF") + tty::reset + literal("\n");
+
+                printf("%s\n", ErrorMsg.c_str());
+                process_stdin = false;
+                break;
+                }
+
+            case Debugger::AsyncResult::Error:
+                {
+                static const auto ErrorMsg =
+                    tty::bold + tty::red + literal("stdin reading error!") + tty::reset + literal("\n");
+
+                printf("%s\n", ErrorMsg.c_str());
+                process_stdin = false;
+                }
+                break;
+            }
+
+            continue;
+        }
+
+        lock.unlock();
+
+        // get command from user (blocking on undefined time)
+        LineReader::Result result;
+        std::tie(input, result) = getLine(CommandPrompt.c_str());
 
         if (result == LineReader::Eof)
             break;
@@ -1582,10 +1996,11 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr)
 
         if (result == LineReader::Interrupt)
         {
-            m_debugger->Pause();
+            Pause();
             continue;
         }
 
+        // interpret and execute the command...
         bool have_result = false;
         std::string output;
         HRESULT hr;
@@ -1603,7 +2018,7 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr)
             have_result = true;
         };
 
-        LOGD("evaluating: '%.*s'", int(input.size()), input.data());
+        LOGD("executing: '%.*s'", int(input.size()), input.data());
         auto unparsed = CommandsList::cli_helper.eval(input, handler);
         if (!have_result)
         {
@@ -1657,6 +2072,28 @@ void CLIProtocol::Source(span<const string_view> init_commands)
 }
 
 
+void CLIProtocol::repaint()
+{
+    lock_guard lock(m_mutex);
+    if (m_repaint_fn)
+        m_repaint_fn();
+}
+
+
+// set m_repaint_fn depending on m_commandMode
+void CLIProtocol::applyCommandMode()
+{
+    lock_guard lock(m_mutex);
+
+    // setup function which is called after Stop/Exit events to redraw screen, etc...
+#ifndef WIN32
+    m_repaint_fn = std::bind(pthread_kill, pthread_self(), SIGWINCH);
+#else
+    m_repaint_fn = []{ GenerateConsoleCtrlEvent(CTRL_C_EVENT , 0); };
+#endif
+}
+
+
 // callback for linenoise library
 static unsigned completion_callback(const char *input, unsigned cursor, linenoiseCompletions *lc, void *context)
 {
@@ -1673,14 +2110,18 @@ static unsigned completion_callback(const char *input, unsigned cursor, linenois
 
 void CLIProtocol::CommandLoop()
 {
-#ifndef WIN32
-    tid = pthread_self();
-#endif
-    linenoiseInstallWindowChangeHandler();
-    linenoiseHistorySetMaxLen(DefaultHistoryDepth);
-    linenoiseHistoryLoad(HistoryFileName);
+    {
+        unique_lock lock(m_mutex);
+        if (m_commandMode == CommandMode::Unset)
+            m_commandMode = CommandMode::Synchronous;
+        applyCommandMode();
 
-    linenoiseSetCompletionCallbackEx(completion_callback, this);
+        linenoiseInstallWindowChangeHandler();
+        linenoiseHistorySetMaxLen(DefaultHistoryDepth);
+        linenoiseHistoryLoad(HistoryFileName);
+
+        linenoiseSetCompletionCallbackEx(completion_callback, this);
+    }
 
     // loop till eof, error, or exit request.
     execCommands(ConsoleLineReader());
@@ -1691,8 +2132,87 @@ void CLIProtocol::CommandLoop()
 
     linenoiseHistorySave(HistoryFileName);
     linenoiseHistoryFree();
+
+    // At this point we assume, that no EmitStoppedEvent and
+    // no EmitExitEvent can occur anymore.
+
+    unique_lock lock(m_mutex);
+    m_repaint_fn = nullptr;
 }
 
 
+void CLIProtocol::SetCommandMode(CommandMode mode)
+{
+    lock_guard lock(m_mutex);
+    if (m_commandMode == CommandMode::Unset)
+        m_commandMode = mode;
+}
+
+void CLIProtocol::SetRunningState()
+{
+    lock_guard lock(m_mutex);
+    if (m_processStatus == NotStarted)
+    {
+        setupInterruptHandler();
+        m_processStatus = Running;
+    }
+}
+
+void CLIProtocol::Pause()
+{
+    unique_lock lock(m_mutex);
+    if (m_processStatus == Running)
+    {
+        lock.unlock();
+        m_debugger->Pause();
+    }
+}
+
+// process Ctrl-C events
+void CLIProtocol::interruptHandler()
+{
+    std::lock_guard<std::mutex> lock(g_console_mutex);
+    if (g_console_owner)
+        g_console_owner->Pause();
+}
+
+void CLIProtocol::removeInterruptHandler()
+{
+    std::lock_guard<std::mutex> lock(g_console_mutex);
+    if (g_console_owner != this)
+        return;
+    
+#ifdef _WIN32
+    SetConsoleCtrlHandler(NULL, FALSE);
+    SetConsoleCtrlHandler(NULL, TRUE);
+#else
+    signal(SIGINT, SIG_IGN);
+#endif
+}
+
+void CLIProtocol::setupInterruptHandler()
+{
+    std::lock_guard<std::mutex> lock(g_console_mutex);
+    if (g_console_owner != this)
+        return;
+    
+#ifdef _WIN32
+    // start handling Ctrl-C events
+    auto event_handler = [](DWORD signal) -> BOOL
+    {
+        if (signal == CTRL_C_EVENT)
+        {
+            CLIProtocol::interruptHandler();
+            return TRUE;
+        }
+        return FALSE;
+    };
+
+    SetConsoleCtrlHandler(NULL, FALSE);
+    SetConsoleCtrlHandler(event_handler, TRUE);
+#else
+    signal(SIGINT, [](int){ CLIProtocol::interruptHandler(); });
+#endif
+}
 
 } // namespace netcoredbg

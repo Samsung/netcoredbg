@@ -26,6 +26,9 @@
 #define PATH_MAX MAX_PATH
 static void setenv(const char* var, const char* val, int) { _putenv_s(var, val); }
 #define getpid() (GetCurrentProcessId())
+#else
+#define _isatty(fd) ::isatty(fd)
+#define _fileno(file) ::fileno(file)
 #endif
 
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
@@ -163,7 +166,12 @@ int main(int argc, char *argv[])
     // prevent std::cout flush triggered by read operation on std::cin
     std::cin.tie(nullptr);
 
-    ProtocolConstructor protocol_constructor = &instantiate_protocol<MIProtocol>;
+    ProtocolConstructor protocol_constructor =
+#ifdef DEBUGGER_FOR_TIZEN
+        &instantiate_protocol<MIProtocol>;
+#else
+        _isatty(_fileno(stdin)) ?  &instantiate_protocol<CLIProtocol> : &instantiate_protocol<MIProtocol>;
+#endif
 
     bool engineLogging = false;
     std::string logFilePath;
@@ -364,6 +372,7 @@ int main(int argc, char *argv[])
     LOGI("pidDebugee %d", pidDebuggee);
     if (pidDebuggee != 0)
     {
+        // try to attach to existing process
         debugger.Initialize();
         debugger.Attach(pidDebuggee);
         HRESULT Status = debugger.ConfigurationDone();
@@ -375,6 +384,7 @@ int main(int argc, char *argv[])
     }
     else if (run)
     {
+        // launch new process to debug
         HRESULT hr;
         do {
             hr = debugger.Initialize();
@@ -393,10 +403,20 @@ int main(int argc, char *argv[])
         }
     }
 
-
+    // switch CLIProtocol to asynchronous mode when attaching
     auto cliProtocol = dynamic_cast<CLIProtocol*>(protocol.get());
     if (cliProtocol)
+    {
+        if (pidDebuggee != 0)
+            cliProtocol->SetCommandMode(CLIProtocol::CommandMode::Asynchronous);
+
+        // inform CLIProtocol that process is already running
+        if (run || pidDebuggee)
+            cliProtocol->SetRunningState();
+
+        // run commands passed in command line via '-ex' option
         cliProtocol->Source({initCommands});
+    }
 
     protocol->CommandLoop();
     return EXIT_SUCCESS;

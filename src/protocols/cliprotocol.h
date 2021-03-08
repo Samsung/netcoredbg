@@ -4,12 +4,14 @@
 #pragma once
 
 #include <mutex>
+#include <condition_variable>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <list>
 #include <memory>
+#include <atomic>
 
 #include "string_view.h"
 #include "streams.h"
@@ -29,12 +31,28 @@ class CLIProtocol : public IProtocol
     std::istream& m_input;
     std::ostream& m_output;
 
+    // All function acessing m_output (calling cout << something or printf) must lock
+    // this mutex (because in control loop flush() function used which isn't thread safe).
+    std::recursive_mutex m_cout_mutex;
+
+    // This mutex protects all class variables which might be accessed from threads
+    // other than command loop. All function which read/modify m_processStatus
+    // and other local variables must lock the mutex. 
+    std::recursive_mutex m_mutex;
+
+    using lock_guard = std::lock_guard<std::recursive_mutex>;
+    using unique_lock = std::unique_lock<std::recursive_mutex>;
+
     enum ProcessStatus
     {
         NotStarted,
         Running,
+        Paused,
         Exited
     } m_processStatus;
+
+    // This signalled every time, when m_processStatus changes it's value.
+    std::condition_variable_any m_state_cv;
     
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
@@ -44,18 +62,17 @@ class CLIProtocol : public IProtocol
     std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
     std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
 
-#ifndef WIN32
-    pthread_t tid;
-#endif
+    // Functor which is called when UI repaint required.
+    std::function<void()> m_repaint_fn;
 
     struct TermSettings
     {
         std::unique_ptr<char> data;
 
-        TermSettings();
+        TermSettings(CLIProtocol&);
         ~TermSettings();
     };
-    TermSettings ts;
+    TermSettings m_term_settings;
 
     int printf_checked(const char *fmt, ...);
 
@@ -81,9 +98,26 @@ public:
 
     void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) override
     {
+        lock_guard lock(m_mutex);
         m_fileExec = fileExec;
         m_execArgs = args;
     }
+
+    enum class CommandMode
+    {
+        Asynchronous,
+        Synchronous,
+        Unset
+    };
+
+    // This function might be called only once, before entering command loop.
+    // SetCommandMode(Asynchronous) must be called if process is attached before
+    // entering the command loop.
+    void SetCommandMode(CommandMode mode);
+
+    // Inform the protocol class, that debugee is already exist (attached or started new).
+    // This function should be called before entering command loop.
+    void SetRunningState();
 
     // Forward declaration of command tags (each distinct command have unique tag)
     // and completion tags. The tags itself defined in cliprotocol.cpp file.
@@ -176,11 +210,33 @@ private:
     // This function interprets commands from the input till reaching Eof or Error.
     // Function returns E_FAIL in case of input error.
     HRESULT execCommands(LineReader&&);
+
+    // update screen (after asynchronous message printed)
+    void repaint();
+
+    // set m_repaint_fn depending on m_commandMode
+    void applyCommandMode();
    
     // Currently active LineReader class, used by getLine() function.
     LineReader *line_reader;
 
+    CommandMode m_commandMode;
+
     std::string m_lastPrintArg;
+
+    // CLIProtocol instance currently owning console
+    static CLIProtocol* g_console_owner;
+    static std::mutex g_console_mutex; // mutex which protect g_console_owner
+
+    // pause debugee execution
+    void Pause();
+
+    // process Ctrl-C events
+    static void interruptHandler();
+
+    // remove/set Ctrl-C handlers
+    void removeInterruptHandler();
+    void setupInterruptHandler();
 };
 
 } // namespace netcoredbg
