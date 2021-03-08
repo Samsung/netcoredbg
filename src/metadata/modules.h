@@ -55,6 +55,10 @@ class Modules
 
     static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName);
 
+    // sync access to m_sourcesCodeLines, m_sourcesFullPaths and m_sourceCaseSensitiveFullPaths,
+    // since breakpoint resolve and module load could be in the same time
+    // (breakpoints setup with ran debuggee's process in the same time, for example)
+    std::mutex m_sourcesInfoMutex;
     // map of source full path to all sequence point's startLine and endLine in this source file,
     // need it in order to resolve requested breakpoint line number to proper line number related to executable code
     std::unordered_map<std::string, std::map<int32_t, std::tuple<int32_t, int32_t> > > m_sourcesCodeLines;

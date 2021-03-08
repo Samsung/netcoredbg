@@ -628,6 +628,8 @@ HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> 
 
 HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, ManagedPart *managedPart)
 {
+    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
+
     ULONG numTypedefs = 0;
     HCORENUM fEnum = NULL;
     mdTypeDef typeDef;
@@ -672,6 +674,8 @@ HRESULT Modules::FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, Manag
 
 HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
 {
+    // IMPORTANT! Caller should care about m_sourcesInfoMutex.
+
     auto searchByFileName = m_sourcesFullPaths.find(GetFileName(filename));
     if (searchByFileName == m_sourcesFullPaths.end())
         return E_FAIL;
@@ -764,6 +768,8 @@ HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenu
 #ifdef WIN32
     IfFailRet(ManagedPart::StringToUpper(filename));
 #endif
+
+    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
 
     auto searchByFullPath = m_sourcesCodeLines.find(filename);
     if (searchByFullPath == m_sourcesCodeLines.end())
@@ -865,7 +871,7 @@ void Modules::FindFileNames(string_view pattern, unsigned limit, std::function<v
         return true;
     };
 
-    // TODO need mutex
+    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
     for (const auto& pair : m_sourcesFullPaths)
     {
         LOGD("first '%s'", pair.first.c_str());
