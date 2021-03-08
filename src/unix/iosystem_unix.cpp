@@ -247,7 +247,7 @@ Class::AsyncHandle Class::async_read(const FileHandle& fh, void *buf, size_t cou
     return fh.fd == -1 ? AsyncHandle() : AsyncHandle::create<AsyncRead>(fh.fd, buf, count);
 }
 
-Class::AsyncHandle Class::async_write(const FileHandle& fh, void *buf, size_t count)
+Class::AsyncHandle Class::async_write(const FileHandle& fh, const void *buf, size_t count)
 {
     return fh.fd == -1 ? AsyncHandle() : AsyncHandle::create<AsyncWrite>(fh.fd, buf, count);
 }
