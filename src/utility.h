@@ -46,6 +46,23 @@ template <typename... Args> using Void = typename MakeVoid<Args...>::type;
 /// @}
 
 
+/// This template is similar to `offsetof` macros in plain C. It allows
+/// to get offset of specified member in some particular class.
+template <typename Owner, typename Member>
+static inline constexpr size_t offset_of(const Member Owner::*mem)
+{
+    return reinterpret_cast<size_t>(&(reinterpret_cast<Owner*>(0)->*mem));
+}
+
+/// This template is similar to well known `container_of` macros. It allows
+/// to get pointer to owner class from pointer to member.
+template <typename Owner, typename Member>
+static inline constexpr Owner *container_of(Member *ptr, const Member Owner::*mem)
+{
+    return reinterpret_cast<Owner*>(reinterpret_cast<size_t>(ptr) - offset_of(mem));
+}
+
+
 // This is helper class which simplifies implementation of singleton classes.
 //
 // Usage example:
