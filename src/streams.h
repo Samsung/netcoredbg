@@ -179,8 +179,14 @@ public:
     /// Function returns the pointer one past the end of the free space in the buffer.
     char* epptr() const { return std::streambuf::epptr(); }
 
+    /// Function returns the pointer to beginning of the buffer.
+    char* pbase() const { return std::streambuf::pbase(); }
+
     /// Function function advances free space pointer by `count` characters.
     void  pbump(int count) { return std::streambuf::pbump(count); }
+
+    /// Function clears the buffer (pptr = pbase).
+    void clear() { return std::streambuf::setp(pbase(), epptr()); }
 
 private:
     std::vector<char> outbuf;  // underlying storage for the output buffer

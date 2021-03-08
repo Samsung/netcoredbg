@@ -333,6 +333,9 @@ public:
     ThreadId threadByFrameId(FrameId) const;
     FrameLevel frameByFrameId(FrameId) const;
 
+    // pass some data to debugee stdin
+    Debugger::AsyncResult ProcessStdin(InStream &) override;
+
 private:
     HRESULT Stop(ThreadId threadId, const StoppedEvent &event);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);

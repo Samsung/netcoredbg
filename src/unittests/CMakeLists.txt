@@ -50,4 +50,5 @@ deftest(ioredirect
     ${PROJECT_SOURCE_DIR}/src/streams.cpp
     ${PROJECT_SOURCE_DIR}/src/windows/iosystem_win32.cpp
     ${PROJECT_SOURCE_DIR}/src/unix/iosystem_unix.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/logger.cpp
 )

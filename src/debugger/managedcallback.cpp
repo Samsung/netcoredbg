@@ -196,7 +196,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
 
         m_debugger.SetLastStoppedThread(pThread);
         m_debugger.m_protocol->EmitStoppedEvent(event);
-
+        m_debugger.m_ioredirect.async_cancel();
     },
         std::move(callbackAppDomain),
         std::move(callbackThread),
@@ -264,6 +264,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
 
         m_debugger.SetLastStoppedThread(pThread);
         m_debugger.m_protocol->EmitStoppedEvent(event);
+        m_debugger.m_ioredirect.async_cancel();
     }
 
     std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
@@ -293,6 +294,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     }
 
     m_debugger.m_protocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }
 
@@ -452,7 +454,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(
     m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(exitCode));
     m_debugger.NotifyProcessExited();
     m_debugger.m_protocol->EmitTerminatedEvent();
-
+    m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }
 

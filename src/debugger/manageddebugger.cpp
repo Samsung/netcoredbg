@@ -617,6 +617,8 @@ HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
         HRESULT Status = DetachFromProcess();
         if (SUCCEEDED(Status))
             m_protocol->EmitTerminatedEvent();
+
+        m_ioredirect.async_cancel();
         return Status;
     }
 
@@ -794,7 +796,7 @@ HRESULT ManagedDebugger::Stop(ThreadId threadId, const StoppedEvent &event)
     // INFO: Double EmitStopEvent() produce blocked coreclr command reader
     m_stopCounter.store(1); // store zero and increment
     m_protocol->EmitStoppedEvent(event);
-
+    m_ioredirect.async_cancel();
     return Status;
 }
 
@@ -915,13 +917,13 @@ HRESULT ManagedDebugger::Pause()
             event.frame = stackFrame;
             SetLastStoppedThreadId(thread.id);
             m_protocol->EmitStoppedEvent(event);
-
+            m_ioredirect.async_cancel();
             return Status;
         }
     }
 
     m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, ThreadId::Invalid));
-
+    m_ioredirect.async_cancel();
     return Status;
 }
 
@@ -1953,9 +1955,16 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
     return true;
 }
 
+
 void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback)
 {
     return m_breakpoints.EnumerateBreakpoints(std::move(callback));
+}
+
+
+Debugger::AsyncResult ManagedDebugger::ProcessStdin(InStream& stream)
+{
+    return m_ioredirect.async_input(stream);
 }
 
 } // namespace netcoredbg

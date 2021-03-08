@@ -10,6 +10,7 @@
 #include <functional>
 #include <map>
 #include "string_view.h"
+#include "streams.h"
 
 // For `HRESULT` definition
 #ifdef FEATURE_PAL
@@ -19,7 +20,6 @@
 #endif
 
 #include "protocols/protocol.h"
-#include "string_view.h"
 
 namespace netcoredbg
 {
@@ -100,6 +100,15 @@ public:
     // Callback which is called for each breakpoint might return `false` to stop iteration
     // over breakpoints list.
     virtual void EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback) = 0;
+
+    enum class AsyncResult
+    {
+        Canceled,   // function canceled due to debugger interruption
+        Error,      // IO error
+        Eof         // EOF reached
+    };
+
+    virtual AsyncResult ProcessStdin(InStream &) { return AsyncResult::Eof; }
 };
 
 class Protocol

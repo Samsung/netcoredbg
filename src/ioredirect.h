@@ -11,11 +11,15 @@
 #include <thread>
 #include <functional>
 #include <memory>
+#include <atomic>
+
+#include "debugger/debugger.h"  // AsyncResult
 
 #include "iosystem.h"
 #include "streams.h"
 #include "platform.h"
 #include "span.h"
+#include "utils/rwlock.h"
 
 namespace netcoredbg
 {
@@ -54,8 +58,14 @@ public:
     ~IORedirectHelper();
 
     /// This function allows to write some data to pipe, which represents stdin stream.
-    /// Output is blocking...
-    void output(const char *data, size_t size);
+    /// Output IS NOT BLOCKING, function returns actual number of written bytes
+    /// (this number might be less than requested if output buffer is full).
+    using AsyncResult = Debugger::AsyncResult;
+    AsyncResult async_input(InStream &stream);
+
+    /// This function interrupts thread which is currently executing `async_input`
+    /// or thread which will call `async_input` next time.
+    void async_cancel();
 
     /// This function allows to execute some another function `func` with substituted
     /// standard input/output files. Typically function `func` should start some external
@@ -84,6 +94,9 @@ public:
     }
 
 private:
+    void wake_worker();
+    void wake_reader();
+
     void worker();    // worker thread function
 
     // remote side of the pipes
@@ -93,8 +106,25 @@ private:
     std::tuple<OutStream, InStream, InStream> m_streams;
 
     InputCallback m_callback;   // callback function (which in called on data receiving)
+
+    // pointers in our side stdin's the buffer (actually output)
+    // used to organize asynchronous IO
+    char *m_sent;       // start of region for which async. write request issued
+    char *m_unsent;     // end of such region, start region of unwritten data.
+
+    bool m_eof;  // EOF reached in async_input, worker should close writing end of pipe
+
+    // Synchronize access of async_input function and worker thread to 
+    // stdin's output buffer and two pointers listed above (m_sent and m_unsent).
+    Utility::RWLock m_rwlock;
+
+    PipePair m_worker_pipe; // pipe to wake worker thread
+    PipePair m_input_pipe;  // pipe to wake thread sleeping in async_input
+    
+    std::atomic<bool> m_cancel;  // atomic flag which prevents multiple calls to async_cancel()
+    volatile bool     m_finish;  // exit request for worker thread
+
     std::thread   m_thread;     // worker threead (which monitors received data)
-    volatile bool m_finish;     // set to true to signal worker thread to exit
 };
 
 }  // ::netcoredbg
