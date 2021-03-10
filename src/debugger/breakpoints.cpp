@@ -407,18 +407,25 @@ static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
     return mdMethodDefNil;
 }
 
-void Breakpoints::EnableOneICorBreakpointForLine(std::list<ManagedBreakpoint> &bList)
+HRESULT Breakpoints::EnableOneICorBreakpointForLine(std::list<ManagedBreakpoint> &bList)
 {
     // Same logic as provide vsdbg - only one breakpoint is active for one line.
     BOOL needEnable = TRUE;
+    HRESULT res = S_OK;
     for (auto it = bList.begin(); it != bList.end(); ++it)
     {
         if ((*it).iCorBreakpoint)
         {
-            (*it).iCorBreakpoint->Activate(needEnable);
-            needEnable = FALSE;
+            if((*it).enabled)
+            {
+                res = (*it).iCorBreakpoint->Activate(needEnable);
+                needEnable = FALSE;
+            } else {
+                (*it).iCorBreakpoint->Activate(FALSE);
+            }
         }
     }
+    return res;
 }
 
 // Try to setup proper entry breakpoint method token and IL offset for async Main method.
@@ -552,6 +559,7 @@ void Breakpoints::TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::
 
             ManagedBreakpoint bp;
             bp.id = initialBreakpoint.id;
+            bp.enabled = initialBreakpoint.enabled;
             bp.fullname = initialBreakpoints.first;
             bp.linenum = initialBreakpoint.breakpoint.line;
             bp.endLine = initialBreakpoint.breakpoint.line;
@@ -919,7 +927,7 @@ HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
 
         ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
         IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
-        IfFailRet(pFunctionBreakpoint->Activate(TRUE));
+        IfFailRet(pFunctionBreakpoint->Activate(fbp.enabled));
 
         CORDB_ADDRESS modAddress;
         IfFailRet(pModule->GetBaseAddress(&modAddress));
@@ -1069,6 +1077,108 @@ bool Breakpoints::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEvent
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
     return m_exceptionBreakpoints.Match(dwEventType, name, category);
+}
+
+HRESULT Breakpoints::BreakpointActivate(uint32_t id, bool act)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+    bool found = FALSE;
+    // source resolved breakpoints
+    for (auto fileit = m_srcResolvedBreakpoints.begin(); fileit != m_srcResolvedBreakpoints.end(); fileit++)
+    {
+        for(auto &it : fileit->second)
+        {
+            for (auto &rbp : it.second)
+            {
+                if (rbp.id == id)
+                {
+                    rbp.enabled = act;
+                    found = TRUE;
+                    break;
+                }
+            }
+            if (found)
+            {
+                return EnableOneICorBreakpointForLine(it.second);
+            }
+        }
+    }
+
+    // Source unresolved breakpoints
+    for (auto fileit = m_srcInitialBreakpoints.begin(); fileit != m_srcInitialBreakpoints.end(); fileit++)
+    {
+        for (auto &ubp: fileit->second)
+        {
+            if (ubp.id == id)
+            {
+                ubp.enabled = act;
+                return S_OK;
+            }
+        }
+    }
+
+    // Function breakpoints (resolved & unresolved)
+    HRESULT res = E_FAIL;
+    for (auto &fbp : m_funcBreakpoints)
+    {
+        if (fbp.second.id == id )
+        {
+            for (auto &fbel : fbp.second.breakpoints)
+            {
+                if (fbel.funcBreakpoint)
+                {
+                    if (SUCCEEDED(fbel.funcBreakpoint->Activate(act)))
+                    {
+                        res = S_OK;
+                    }
+                }
+            }
+            fbp.second.enabled = act;
+            return res;
+        }
+    }
+    return E_FAIL;
+}
+
+HRESULT Breakpoints::AllBreakpointsActivate(bool act)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+    HRESULT res = E_FAIL;
+    // source resolved breakpoints
+    for (auto fileit = m_srcResolvedBreakpoints.begin(); fileit != m_srcResolvedBreakpoints.end(); fileit++)
+    {
+        for(auto &it : fileit->second)
+        {
+            for (auto &rbp : it.second)
+            {
+                rbp.enabled = act;
+            }
+            res = EnableOneICorBreakpointForLine(it.second);
+        }
+    }
+
+    // Source unresolved breakpoints
+    for (auto fileit = m_srcInitialBreakpoints.begin(); fileit != m_srcInitialBreakpoints.end(); fileit++)
+    {
+        for (auto &ubp: fileit->second)
+        {
+            ubp.enabled = act;
+            res = S_OK;
+        }
+    }
+
+    // Function breakpoints (resolved & unresolved)
+    for (auto &fbp : m_funcBreakpoints)
+    {
+        for (auto &fbel : fbp.second.breakpoints)
+        {
+            if (fbel.funcBreakpoint)
+                fbel.funcBreakpoint->Activate(act);
+        }
+        fbp.second.enabled = act;
+        res = S_OK;
+    }
+    return res;
 }
 
 } // namespace netcoredbg

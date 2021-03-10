@@ -1561,6 +1561,16 @@ HRESULT ManagedDebugger::SetFunctionBreakpoints(
     return m_breakpoints.SetFunctionBreakpoints(m_pProcess, funcBreakpoints, breakpoints);
 }
 
+HRESULT ManagedDebugger::BreakpointActivate(int id, bool act)
+{
+    return m_breakpoints.BreakpointActivate(id, act);
+}
+
+HRESULT ManagedDebugger::AllBreakpointsActivate(bool act)
+{
+    return m_breakpoints.AllBreakpointsActivate(act);
+}
+
 HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
 {
     HRESULT Status;

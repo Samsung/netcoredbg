@@ -88,6 +88,8 @@ enum class CLIProtocol::CommandTag
     Continue,
     Delete,
     Detach,
+    Disable,
+    Enable,
     File,
     Finish,
     Interrupt,
@@ -215,6 +217,15 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
 
     {CommandTag::Delete, {}, {{{1, CompletionTag::Delete}}}, {{"delete", "clear"}},
         {"<num>", "Delete breakpoint with specified number."}},
+
+    {CommandTag::Detach, {}, {}, {{"detach"}},
+        {{}, "Detach from the debugged process."}},
+
+    {CommandTag::Disable, {}, {}, {{"disable"}},
+        {{}, "Disable breakpoint N."}},
+
+    {CommandTag::Enable, {}, {}, {{"enable"}},
+        {{}, "Enable breakpoint N."}},
 
     {CommandTag::File, {}, {{{1, CompletionTag::File}}}, {{"file"}},
         {"<file>", "load executable file to debug."}},
@@ -1123,6 +1134,78 @@ HRESULT CLIProtocol::doCommand<CommandTag::Detach>(const std::vector<std::string
     }
 
     m_debugger->Disconnect();
+    return S_OK;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Disable>(const std::vector<std::string> &args, std::string &)
+{
+    int count = 0, sub = 0;
+
+    for (auto it=args.begin(); it != args.end(); it++)
+    {
+        if(count == 0 && sub == 0 && !it->compare("breakpoints"))
+        {
+            count++;
+            sub++;
+            continue;
+        }
+        bool er;
+        int i = ParseInt(*it, er);
+        if (er)
+        {
+            if (S_OK != m_debugger->BreakpointActivate(i, false))
+                printf("No breakpoint number %d.\n", i);
+        }
+        else
+        {
+            printf("Bad breakpoint number %s.\n", it->c_str());
+        }
+        count++;
+    }
+    if (count - sub == 0)
+    {
+        if (S_OK != m_debugger->AllBreakpointsActivate(false))
+        {
+            printf("No breakpoints.\n");
+        }
+    }
+    return S_OK;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Enable>(const std::vector<std::string> &args, std::string &)
+{
+    int count = 0, sub = 0;
+
+    for (auto it=args.begin(); it != args.end(); it++)
+    {
+        if(count == 0 && sub == 0 && !it->compare("breakpoints"))
+        {
+            count++;
+            sub++;
+            continue;
+        }
+        bool er;
+        int i = ParseInt(*it, er);
+        if (er) 
+        {
+            if (S_OK != m_debugger->BreakpointActivate(i, true))
+                printf("No breakpoint number %d.\n", i);
+        }
+        else
+        {
+            printf("Bad breakpoint number %s.\n", it->c_str());
+        }
+        count++;
+    }
+    if (count - sub == 0)
+    {
+        if (S_OK != m_debugger->AllBreakpointsActivate(true))
+        {
+            printf("No breakpoints.\n");
+        }
+    }
     return S_OK;
 }
 

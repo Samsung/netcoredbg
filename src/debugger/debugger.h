@@ -63,6 +63,8 @@ public:
     virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
     virtual HRESULT SetBreakpoints(const std::string& filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
     virtual HRESULT SetFunctionBreakpoints(const std::vector<FunctionBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
+    virtual HRESULT BreakpointActivate(int id, bool act) = 0;
+    virtual HRESULT AllBreakpointsActivate(bool act) = 0;
     virtual HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames) = 0;
     virtual HRESULT StepCommand(ThreadId threadId, StepType stepType) = 0;
     virtual HRESULT GetScopes(FrameId frameId, std::vector<Scope> &scopes) = 0;

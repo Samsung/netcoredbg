@@ -93,10 +93,11 @@ class Breakpoints
     {
         SourceBreakpoint breakpoint;
         uint32_t id = 0;
+        bool enabled;
         std::string resolved_fullname; // if string is empty - no resolved breakpoint available in m_resolvedBreakpoints
         int resolved_linenum = 0;
 
-        SourceBreakpointMapping() : breakpoint(0, ""), id(0), resolved_fullname(), resolved_linenum(0) {}
+        SourceBreakpointMapping() : breakpoint(0, ""), id(0), enabled(true), resolved_fullname(), resolved_linenum(0) {}
         ~SourceBreakpointMapping() = default;
     };
 
@@ -119,7 +120,7 @@ class Breakpoints
     mdMethodDef m_entryPoint;
     ToRelease<ICorDebugFunctionBreakpoint> m_entryBreakpoint;
 
-    void EnableOneICorBreakpointForLine(std::list<ManagedBreakpoint> &bList);
+    HRESULT EnableOneICorBreakpointForLine(std::list<ManagedBreakpoint> &bList);
     HRESULT TrySetupEntryBreakpoint(ICorDebugModule *pModule);
     bool HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
 
@@ -172,11 +173,13 @@ public:
     HRESULT DeleteExceptionBreakpoint(const uint32_t id);
     HRESULT GetExceptionBreakMode(ExceptionBreakMode &mode, const std::string &name);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
-
     // This function allows to enumerate breakpoints (sorted by number).
     // Callback which is called for each breakpoint might return `false` to stop iteration
     // over breakpoints list.
     void EnumerateBreakpoints(std::function<bool (const Debugger::BreakpointInfo&)>&& callback);
+
+    HRESULT BreakpointActivate(uint32_t id, bool act);
+    HRESULT AllBreakpointsActivate(bool act);
 };
 
 } // namespace netcoredbg
