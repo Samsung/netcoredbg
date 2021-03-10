@@ -1918,21 +1918,25 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
 
             CORDB_ADDRESS currentAsyncId = 0;
             ToRelease<ICorDebugValue> pValue;
-            if (SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, nullptr)))
+            BOOL isNull = FALSE;
+            if (SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
                 pValue->GetAddress(&currentAsyncId);
+            else
+                LOGE("Could not calculate current async ID for await block");
 
             CORDB_ADDRESS prevAsyncId = 0;
             ToRelease<ICorDebugValue> pDereferencedValue;
             ToRelease<ICorDebugValue> pValueAsyncId;
-            if (SUCCEEDED(m_asyncStep->pValueAsyncIdRef->Dereference(&pDereferencedValue)) &&
-                SUCCEEDED(DereferenceAndUnboxValue(pDereferencedValue, &pValueAsyncId, nullptr)))
+            if (m_asyncStep->pValueAsyncIdRef && // Note, we could fail with pValueAsyncIdRef on previous breakpoint by some reason.
+                SUCCEEDED(m_asyncStep->pValueAsyncIdRef->Dereference(&pDereferencedValue)) &&
+                SUCCEEDED(DereferenceAndUnboxValue(pDereferencedValue, &pValueAsyncId, &isNull)) && !isNull)
                 pValueAsyncId->GetAddress(&prevAsyncId);
+            else
+                LOGE("Could not calculate previous async ID for await block");
 
             // Note, 'currentAsyncId' and 'prevAsyncId' is 64 bit addresses, in our case can't be 0.
-            if (currentAsyncId == 0 || prevAsyncId == 0)
-                LOGE("Could not calculate async ID for await block");
-
-            if (currentAsyncId == prevAsyncId)
+            // If we can't detect proper thread - continue stepping for this thread.
+            if (currentAsyncId == prevAsyncId || currentAsyncId == 0 || prevAsyncId == 0)
             {
                 SetupSimpleStep(pThread, m_asyncStep->m_initialStepType);
                 m_asyncStep.reset(nullptr);
