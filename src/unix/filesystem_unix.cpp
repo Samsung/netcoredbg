@@ -4,7 +4,10 @@
 /// \file filesystem_unix.cpp
 /// This file contains definitions of unix-specific functions related to file system.
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 #include <array>
