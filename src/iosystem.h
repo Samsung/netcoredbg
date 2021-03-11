@@ -201,11 +201,11 @@ template <typename Traits> struct IOSystemImpl
 
 template <typename Traits> template <typename IteratorType>
 const typename IOSystemImpl<Traits>::AsyncHandleIterator::Operations
-IOSystemImpl<Traits>::AsyncHandleIterator::OpsImpl<IteratorType>::ops =
+IOSystemImpl<Traits>::AsyncHandleIterator::OpsImpl<typename IteratorType>::ops =
 {
-    [](void *thiz) { ++*reinterpret_cast<IteratorType*>(thiz); },
-    [](void *thiz) -> typename IOSystemImpl<Traits>::AsyncHandle& { return **reinterpret_cast<IteratorType*>(thiz); },
-    [](void *thiz) { reinterpret_cast<IteratorType*>(thiz)->~IteratorType(); }
+    [](void *thiz) { ++*reinterpret_cast<typename IteratorType*>(thiz); },
+    [](void *thiz) -> typename IOSystemImpl<Traits>::AsyncHandle& { return **reinterpret_cast<typename IteratorType*>(thiz); },
+    [](void *thiz) { reinterpret_cast<typename IteratorType*>(thiz)->~IteratorType(); }
 };
 
 } // ::netcoredbg
