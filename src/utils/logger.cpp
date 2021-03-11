@@ -23,7 +23,7 @@
 #include <windows.h>
 #endif
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #include <sys/types.h>
 #include <unistd.h>
 #include <sys/syscall.h>

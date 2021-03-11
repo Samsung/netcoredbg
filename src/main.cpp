@@ -27,7 +27,7 @@ static void setenv(const char* var, const char* val, int) { _putenv_s(var, val);
 #define getpid() (GetCurrentProcessId())
 #endif
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #include <sys/types.h>
 #include <unistd.h>
 #endif

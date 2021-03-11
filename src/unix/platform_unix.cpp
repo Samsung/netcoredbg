@@ -4,7 +4,10 @@
 /// \file platform_unix.cpp  This file contains unix-specific function definitions,
 /// for functions defined in platform.h
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+#ifdef __APPLE__
+#include <crt_externs.h>
+#endif
 #include <unistd.h>
 #include "platform.h"
 

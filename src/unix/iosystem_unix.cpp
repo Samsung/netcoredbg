@@ -4,12 +4,13 @@
 /// \file iosystem_unix.cpp  This file contains unix-specific definitions of
 /// IOSystem class members (see iosystem.h).
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #include <cstdlib>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 #include <unistd.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/types.h>

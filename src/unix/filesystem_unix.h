@@ -3,7 +3,7 @@
 
 /// \file filesystem_unix.h  This file contains unix-specific details to FileSystem class.
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #pragma once
 #include <cstddef>
 #include <climits>

@@ -3,7 +3,7 @@
 
 /// \file iosystem_unix.h  This file contains unix-specific declaration of IOSystem class (see iosystem.h).
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #pragma once
 #include <cstdlib>
 #include <cassert>

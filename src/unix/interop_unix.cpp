@@ -3,7 +3,7 @@
 
 /// \file interop_unix.h  This file contains unix-specific functions for Interop class defined in interop.h
 
-#ifdef __unix__
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #include <dirent.h>
 #include <stddef.h>
 #include <string.h>
