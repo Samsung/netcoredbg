@@ -108,9 +108,7 @@ HRESULT Modules::ForEachMethod(ICorDebugModule *pModule, std::function<bool(cons
     while (SUCCEEDED(pMDImport->EnumTypeDefs(&fTypeEnum, &mdType, 1, &typesCnt)) && typesCnt != 0)
     {
         std::string typeName;
-        std::list<std::string> args;
-
-        IfFailRet(TypePrinter::NameForToken(mdType, pMDImport, typeName, false, args));
+        IfFailRet(TypePrinter::NameForToken(mdType, pMDImport, typeName, false, nullptr));
 
         HCORENUM fFuncEnum = NULL;
         mdMethodDef mdMethod = mdMethodDefNil;

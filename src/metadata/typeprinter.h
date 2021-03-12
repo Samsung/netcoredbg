@@ -16,14 +16,14 @@ namespace netcoredbg
 class TypePrinter
 {
     static HRESULT NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImport, std::string &mdName,
-                                  std::list<std::string> &args);
+                                  std::list<std::string> *args);
     static HRESULT NameForTypeRef(mdTypeRef tkTypeRef, IMetaDataImport *pImport, std::string &mdName);
     static HRESULT AddGenericArgs(ICorDebugType *pType, std::list<std::string> &args);
     static HRESULT AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::string> &args);
     static PCCOR_SIGNATURE NameForTypeSig(PCCOR_SIGNATURE typePtr, const std::vector<std::string> &args, IMetaDataImport *pImport, std::string &out, std::string &appendix);
 public:
-    static HRESULT NameForToken(mdTypeDef mb, IMetaDataImport *pImport, std::string &mdName, bool bClassName,
-                                std::list<std::string> &args);
+    static HRESULT NameForToken(mdToken mb, IMetaDataImport *pImport, std::string &mdName, bool bClassName,
+                                std::list<std::string> *args);
     static void NameForTypeSig(PCCOR_SIGNATURE typePtr, ICorDebugType *enclosingType, IMetaDataImport *pImport, std::string &typeName);
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &output);
     static HRESULT GetTypeOfValue(ICorDebugValue *pValue, std::string &output);

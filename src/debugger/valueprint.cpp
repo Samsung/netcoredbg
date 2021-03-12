@@ -177,8 +177,7 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
         pMD->GetCustomAttributeProps(attr, &ptkObj, &ptkType, nullptr, nullptr);
 
         std::string mdName;
-        std::list<std::string> emptyArgs;
-        TypePrinter::NameForToken(ptkType, pMD, mdName, true, emptyArgs);
+        TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr);
 
         if (mdName == "System.FlagsAttribute..ctor")
         {

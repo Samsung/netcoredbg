@@ -122,7 +122,7 @@ HRESULT TypePrinter::NameForTypeDef(
     mdTypeDef tkTypeDef,
     IMetaDataImport *pImport,
     std::string &mdName,
-    std::list<std::string> &args)
+    std::list<std::string> *args)
 {
     HRESULT Status;
     DWORD flags;
@@ -134,7 +134,9 @@ HRESULT TypePrinter::NameForTypeDef(
 
     if (!IsTdNested(flags))
     {
-        mdName = ConsumeGenericArgs(mdName, args);
+        if (args)
+            mdName = ConsumeGenericArgs(mdName, *args);
+
         return S_OK;
     }
 
@@ -144,7 +146,7 @@ HRESULT TypePrinter::NameForTypeDef(
     std::string enclosingName;
     IfFailRet(NameForTypeDef(tkEnclosingClass, pImport, enclosingName, args));
 
-    mdName = enclosingName + "." + ConsumeGenericArgs(mdName, args);
+    mdName = enclosingName + "." + (args ? ConsumeGenericArgs(mdName, *args) : mdName);
 
     return S_OK;
 }
@@ -168,11 +170,11 @@ HRESULT TypePrinter::NameForTypeRef(
     return S_OK;
 }
 
-HRESULT TypePrinter::NameForToken(mdTypeDef mb,
+HRESULT TypePrinter::NameForToken(mdToken mb,
                                   IMetaDataImport *pImport,
                                   std::string &mdName,
                                   bool bClassName,
-                                  std::list<std::string> &args)
+                                  std::list<std::string> *args)
 {
     mdName[0] = L'\0';
     if (TypeFromToken(mb) != mdtTypeDef
@@ -372,9 +374,6 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
             //Defaults in case we fail...
             elementType = (corElemType == ELEMENT_TYPE_VALUETYPE) ? "struct" : "class";
 
-            std::list<std::string> args;
-            AddGenericArgs(pType, args);
-
             mdTypeDef typeDef;
             ToRelease<ICorDebugClass> pClass;
             if(SUCCEEDED(pType->GetClass(&pClass)) && SUCCEEDED(pClass->GetToken(&typeDef)))
@@ -388,8 +387,9 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
                 IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
                 std::string name;
-
-                if(SUCCEEDED(NameForToken(TokenFromRid(typeDef, mdtTypeDef), pMD, name, false, args)))
+                std::list<std::string> args;
+                AddGenericArgs(pType, args);
+                if(SUCCEEDED(NameForToken(TokenFromRid(typeDef, mdtTypeDef), pMD, name, false, &args)))
                 {
                     ss << name;
                 }
@@ -560,8 +560,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
         case ELEMENT_TYPE_CLASS        :
             {
                 typePtr += CorSigUncompressToken(typePtr, &tk);
-                std::list<std::string> empty_args;
-                TypePrinter::NameForToken(tk, pImport, out, true, empty_args);
+                TypePrinter::NameForToken(tk, pImport, out, true, nullptr);
             }
             break;
 
@@ -663,7 +662,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
                     typePtr = NameForTypeSig(typePtr, args, pImport, genType, genTypeAppendix);
                     genericArgs.push_back(genType + genTypeAppendix);
                 }
-                TypePrinter::NameForToken(tk, pImport, out, true, genericArgs);
+                TypePrinter::NameForToken(tk, pImport, out, true, &genericArgs);
             }
             break;
 
@@ -799,7 +798,7 @@ HRESULT TypePrinter::GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeN
 
     if (memTypeDef != mdTypeDefNil)
     {
-        if (FAILED(NameForTypeDef(memTypeDef, pMD, typeName, args)))
+        if (FAILED(NameForTypeDef(memTypeDef, pMD, typeName, &args)))
             typeName = "";
     }
 

@@ -87,8 +87,7 @@ static bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const std::string &a
         pMD->GetCustomAttributeProps(attr, &ptkObj, &ptkType, nullptr, nullptr);
 
         std::string mdName;
-        std::list<std::string> emptyArgs;
-        TypePrinter::NameForToken(ptkType, pMD, mdName, true, emptyArgs);
+        TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr);
 
         if (mdName == attrName)
         {

@@ -574,9 +574,8 @@ HRESULT Evaluator::FindType(
     mdToken tkExtends;
     IfFailRet(pMD->GetTypeDefProps(typeToken, nullptr, 0, &nameLen, &flags, &tkExtends));
 
-    std::list<std::string> args;
     std::string eTypeName;
-    IfFailRet(TypePrinter::NameForToken(typeToken, pMD, eTypeName, true, args));
+    IfFailRet(TypePrinter::NameForToken(typeToken, pMD, eTypeName, true, nullptr));
 
     bool isValueType = eTypeName == "System.ValueType" || eTypeName == "System.Enum";
     CorElementType et = isValueType ? ELEMENT_TYPE_VALUETYPE : ELEMENT_TYPE_CLASS;
@@ -1562,8 +1561,7 @@ HRESULT Evaluator::WalkMembers(
                     continue;
 
                 std::string mdName;
-                std::list<std::string> emptyArgs;
-                if (FAILED(TypePrinter::NameForToken(ptkType, pMD, mdName, true, emptyArgs)))
+                if (FAILED(TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr)))
                     continue;
 
                 if (mdName == g_DebuggerBrowsable
