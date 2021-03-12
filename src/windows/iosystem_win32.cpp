@@ -465,7 +465,7 @@ Class::IOSystem::StdFiles Class::get_std_files()
 
 // StdIOSwap class allows to substitute set of standard IO files with one provided to constructor.
 // Substitution exists only during life time of StsIOSwap instance.
-Class::StdIOSwap::StdIOSwap(const StdFiles& files)
+Class::StdIOSwap::StdIOSwap(const StdFiles& files) : m_valid(true)
 {
     const static unsigned NFD = std::tuple_size<StdFiles>::value;
     static const DWORD std_handles[NFD] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
@@ -524,6 +524,9 @@ Class::StdIOSwap::StdIOSwap(const StdFiles& files)
 
 Class::StdIOSwap::~StdIOSwap()
 {
+    if (!m_valid)
+        return;
+
     const static unsigned NFD = std::tuple_size<StdFiles>::value;
     static const DWORD std_handles[NFD] = {STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
     const int open_fds[NFD] = {_fileno(stdin), _fileno(stdout), _fileno(stderr)};

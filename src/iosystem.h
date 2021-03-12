@@ -194,6 +194,8 @@ template <typename Traits> struct IOSystemImpl
 
     public:
         StdIOSwap(const StdFiles &files) : ioswap(files) {}
+
+        StdIOSwap(const StdIOSwap&) = delete;
     };
 
 }; // struct IOSystemImpl

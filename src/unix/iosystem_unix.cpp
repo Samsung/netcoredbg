@@ -326,7 +326,7 @@ netcoredbg::IOSystem::StdFiles Class::get_std_files()
 
 // StdIOSwap class allows to substitute set of standard IO files with one provided to constructor.
 // Substitution exists only during life time of StsIOSwap instance.
-Class::StdIOSwap::StdIOSwap(const StdFiles& files)
+Class::StdIOSwap::StdIOSwap(const StdFiles& files) : m_valid(true)
 {
     const static unsigned NFD = std::tuple_size<StdFiles>::value;
     static const int oldfd[NFD] = { StdFileType::Stdin, StdFileType::Stdout, StdFileType::Stderr };
@@ -358,6 +358,9 @@ Class::StdIOSwap::StdIOSwap(const StdFiles& files)
 
 Class::StdIOSwap::~StdIOSwap()
 {
+    if (!m_valid)
+        return;
+
     const static unsigned NFD = std::tuple_size<StdFiles>::value;
     static const int oldfd[NFD] = { StdFileType::Stdin, StdFileType::Stdout, StdFileType::Stderr };
     for (unsigned n = 0; n < NFD; n++)
