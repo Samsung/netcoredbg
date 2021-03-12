@@ -17,6 +17,7 @@ class TypePrinter
 {
     static HRESULT NameForTypeDef(mdTypeDef tkTypeDef, IMetaDataImport *pImport, std::string &mdName,
                                   std::list<std::string> &args);
+    static HRESULT NameForTypeRef(mdTypeRef tkTypeRef, IMetaDataImport *pImport, std::string &mdName);
     static HRESULT AddGenericArgs(ICorDebugType *pType, std::list<std::string> &args);
     static HRESULT AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::string> &args);
     static PCCOR_SIGNATURE NameForTypeSig(PCCOR_SIGNATURE typePtr, const std::vector<std::string> &args, IMetaDataImport *pImport, std::string &out, std::string &appendix);

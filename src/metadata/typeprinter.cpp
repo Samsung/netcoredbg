@@ -6,18 +6,11 @@
 
 #include <sstream>
 #include <unordered_map>
+#include <memory>
 
 #include "torelease.h"
-
-/// NOTE: Taken from `src/ToolBox/SOS/Strike/util.h`
-typedef LPCSTR  LPCUTF8;
-#include "sos_md.h"
-
 #include "utils/utf.h"
 
-// <TODO> Get rid of these!  Don't use them any more!</TODO>
-#define MAX_CLASSNAME_LENGTH    1024
-#define MAX_NAMESPACE_LENGTH    1024
 
 namespace netcoredbg 
 {
@@ -156,6 +149,25 @@ HRESULT TypePrinter::NameForTypeDef(
     return S_OK;
 }
 
+HRESULT TypePrinter::NameForTypeRef(
+    mdTypeRef tkTypeRef,
+    IMetaDataImport *pImport,
+    std::string &mdName)
+{
+    // Note, instead of GetTypeDefProps(), GetTypeRefProps() return fully-qualified name.
+    // CoreCLR use dynamic allocated or size fixed buffers up to 16kb for GetTypeRefProps().
+    HRESULT Status;
+    ULONG refNameSize;
+    IfFailRet(pImport->GetTypeRefProps(tkTypeRef, NULL, NULL, 0, &refNameSize));
+
+    std::unique_ptr<WCHAR[]> refName(new WCHAR[refNameSize + 1]);
+    IfFailRet(pImport->GetTypeRefProps(tkTypeRef, NULL, refName.get(), refNameSize, NULL));
+
+    mdName = to_utf8(refName.get());
+
+    return S_OK;
+}
+
 HRESULT TypePrinter::NameForToken(mdTypeDef mb,
                                   IMetaDataImport *pImport,
                                   std::string &mdName,
@@ -175,7 +187,7 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
 
     HRESULT hr = E_FAIL;
 
-    WCHAR name[MAX_CLASSNAME_LENGTH];
+    WCHAR name[mdNameLen];
     if (TypeFromToken(mb) == mdtTypeDef)
     {
         hr = NameForTypeDef(mb, pImport, mdName, args);
@@ -226,35 +238,21 @@ HRESULT TypePrinter::NameForToken(mdTypeDef mb,
         {
             if (TypeFromToken(mdClass) == mdtTypeRef && bClassName)
             {
-                ToRelease<IMDInternalImport> pMDI;
-                hr = GetMDInternalFromImport(pImport, &pMDI);
-                if (SUCCEEDED(hr))
-                {
-                    LPCSTR sznamespace = 0;
-                    LPCSTR szname = 0;
-                    if (SUCCEEDED(pMDI->GetNameOfTypeRef(mdClass, &sznamespace, &szname)))
-                        mdName = std::string(sznamespace) + "." + std::string(szname) + ".";
-                }
+                hr = NameForTypeRef(mdClass, pImport, mdName);
+                mdName += ".";
             }
             else if (TypeFromToken(mdClass) == mdtTypeDef && bClassName)
             {
                 hr = NameForTypeDef(mdClass, pImport, mdName, args);
                 mdName += ".";
             }
+            // TODO TypeSpec
             mdName += to_utf8(name/*, size*/);
         }
     }
     else if (TypeFromToken(mb) == mdtTypeRef)
     {
-        ToRelease<IMDInternalImport> pMDI;
-        hr = GetMDInternalFromImport(pImport, &pMDI);
-        if (SUCCEEDED(hr))
-        {
-            LPCSTR sznamespace = 0;
-            LPCSTR szname = 0;
-            if (SUCCEEDED(pMDI->GetNameOfTypeRef(mdtTypeRef, &sznamespace, &szname)))
-                mdName = std::string(sznamespace) + "." + std::string(szname);
-        }
+        hr = NameForTypeRef(mb, pImport, mdName);
     }
     else
     {
