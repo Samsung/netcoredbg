@@ -79,7 +79,7 @@ public:
             IOSystem::close(std::get<IOSystem::Stderr>(m_pipes));
         };
 
-        std::unique_ptr<void, decltype(on_exit)> defer{nullptr, on_exit};
+        std::unique_ptr<void, decltype(on_exit)> defer{this, on_exit};
         return func(std::forward<Args>(args)...);
     }
 
