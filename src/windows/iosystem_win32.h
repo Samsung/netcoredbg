@@ -38,10 +38,19 @@ template <> struct IOSystemTraits<Win32PlatformTag>
     {
         HANDLE handle;
         std::unique_ptr<OVERLAPPED> overlapped;
+        bool check_eof;
 
-        AsyncHandle() : handle(INVALID_HANDLE_VALUE), overlapped() {}
+        // workaround: non-blocking reading from console
+        void *buf;
+        size_t count;
 
-        AsyncHandle(AsyncHandle&& other) noexcept : handle(other.handle), overlapped(std::move(other.overlapped))
+        AsyncHandle()
+        : handle(INVALID_HANDLE_VALUE), overlapped(), check_eof(false), buf(nullptr), count(0)
+        {}
+
+        AsyncHandle(AsyncHandle&& other) noexcept 
+        : handle(other.handle), overlapped(std::move(other.overlapped)), check_eof(other.check_eof),
+          buf(other.buf), count(other.count)
         {
             other.handle = INVALID_HANDLE_VALUE;
         }

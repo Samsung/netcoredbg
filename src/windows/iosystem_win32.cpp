@@ -329,12 +329,25 @@ Class::AsyncHandle Class::async_read(const FileHandle& fh, void *buf, size_t cou
         return {};
 
     AsyncHandle result; 
+    result.check_eof = true;
     result.handle = fh.handle;
     result.overlapped.reset(new OVERLAPPED);
     memset(result.overlapped.get(), 0, sizeof(OVERLAPPED));
     result.overlapped->hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (result.overlapped->hEvent == INVALID_HANDLE_VALUE)
         return {};
+
+    DWORD val;
+    if (GetConsoleMode(fh.handle, &val))
+    {
+        // file handle is the console
+        if (GetNumberOfConsoleInputEvents(fh.handle, &val) && !val)
+        {
+            // nothing to read from the console -- defer call to ReadFile
+            result.buf = buf, result.count = count;
+            return result;
+        }
+    }
 
     if (! ReadFile(fh.handle, buf, (DWORD)count, nullptr, result.overlapped.get()))
     {
@@ -369,6 +382,17 @@ Class::AsyncHandle Class::async_write(const FileHandle& fh, const void *buf, siz
 
 bool Class::async_wait(IOSystem::AsyncHandleIterator begin, IOSystem::AsyncHandleIterator end, std::chrono::milliseconds timeout)
 {
+    // console workaround
+    for (auto it = begin; it != end; ++it)
+    {
+        if (it->handle.buf)
+        {
+            DWORD val;
+            if (GetNumberOfConsoleInputEvents(it->handle.handle, &val) && val)
+                SetEvent(it->handle.overlapped->hEvent);
+        }
+    }
+
     // count number of active handles
     unsigned count = 0;
     for (auto it = begin; it != end; ++it)
@@ -396,6 +420,13 @@ Class::IOResult Class::async_cancel(AsyncHandle& h)
     if (!CloseHandle(h.overlapped->hEvent))
         perror("CloseHandle(event) error");
 
+    // console workaround -- canceling deffered operation
+    if (h.buf)
+    {
+        h = AsyncHandle();
+        return {IOResult::Success};
+    }
+
     IOResult result;
     if (!CancelIoEx(h.handle, h.overlapped.get()))
         result = {IOResult::Error};
@@ -412,19 +443,39 @@ Class::IOResult Class::async_result(AsyncHandle& h)
         return {IOResult::Error};
 
     DWORD bytes;
-    bool finished = GetOverlappedResult(h.handle, h.overlapped.get(), &bytes, FALSE);
-    if (!finished)
+    bool finished;
+
+    if (h.buf)
     {
-        DWORD error = GetLastError();
-        if (error == ERROR_IO_INCOMPLETE)
-            return {IOResult::Pending};
+        // workaround for the console
+        finished = ReadFile(h.handle, h.buf, DWORD(h.count), &bytes, nullptr);
+    }
+    else
+    {
+        // pipes, normal files, etc...
+        finished = GetOverlappedResult(h.handle, h.overlapped.get(), &bytes, FALSE);
+        if (!finished)
+        {
+            DWORD error = GetLastError();
+            if (error == ERROR_IO_INCOMPLETE)
+                return {IOResult::Pending};
+        }
     }
 
     if (!CloseHandle(h.overlapped->hEvent))
         perror("CloseHandle(event) error");
 
+    bool check_eof = h.check_eof;
+
     h = AsyncHandle();
-    return finished ? IOResult{IOResult::Success, bytes} : IOResult{IOResult::Error};
+
+    if (!finished)
+        return {IOResult::Error};
+
+    if (check_eof && bytes == 0)
+        return {IOResult::Eof, bytes};
+        
+    return {IOResult::Success, bytes};
 }
 
 // Function closes the file represented by file handle.
