@@ -152,10 +152,14 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # AddressSanitize
-if (CLR_CMAKE_PLATFORM_UNIX AND ASAN)
+if (ASAN)
 
+if (CLR_CMAKE_PLATFORM_UNIX)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer -g ")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer -g ")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -fno-omit-frame-pointer ")
+elseif (WIN32)
+  add_compile_options(/fsanitize=address)
+endif()
 
 endif()
