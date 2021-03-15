@@ -147,7 +147,9 @@ constexpr static const CLIParams::CommandInfo info_commands[] =
     {CommandTag::InfoThreads, {}, {}, {{"threads"}}, {{}, "Display currently known threads."}},
 
     {CommandTag::InfoHelp,    {}, {}, {{"help"}}, {{}, {}}},
-    CLIParams::CommandsEnd
+
+    // This should be placed at end of command (sub)lists.
+    {CommandTag::End, {}, {}, {}, {}}
 };
 
 // Subcommands for "set" command.
@@ -158,7 +160,9 @@ constexpr static const CLIParams::CommandInfo set_commands[] =
                             "when it is started (via 'run' command)."}},
 
     {CommandTag::SetHelp, {}, {}, {{"help"}}, {{}, {}}},
-    CLIParams::CommandsEnd
+
+    // This should be placed at end of command (sub)lists.
+    {CommandTag::End, {}, {}, {}, {}}
 };
 
 // Subcommands for "help" command.
@@ -166,7 +170,9 @@ constexpr static const CLIParams::CommandInfo help_commands[] =
 {
     {CommandTag::HelpInfo, {}, {}, {{"info"}}, {{}, {}}},
     {CommandTag::HelpSet,  {}, {}, {{"set"}}, {{}, {}}},
-    CLIParams::CommandsEnd
+
+    // This should be placed at end of command (sub)lists.
+    {CommandTag::End, {}, {}, {}, {}}
 };
 
 // List of currently implemented commands. Help message will be printed in same order.
@@ -225,7 +231,8 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
         {"[topic]", "Show help on specified topic or print\n"
                     "this help message (if no argument specified)."}},
 
-    CLIParams::CommandsEnd
+    // This should be placed at end of command (sub)lists.
+    {CommandTag::End, {}, {}, {}, {}}
 };
 
 // This class parses commands and provides calls to functions
@@ -263,7 +270,7 @@ public:
         errno = 0;
         cmdline.reset(linenoise(prompt));
         if (!cmdline)
-            return {{}, errno == EAGAIN ? Interrupt : Eof};
+            return {string_view{}, errno == EAGAIN ? Interrupt : Eof};
 
         linenoiseHistoryAdd(cmdline.get());
         return {string_view{cmdline.get()}, Success};
@@ -288,7 +295,7 @@ public:
     {
         std::getline(*stream, line);
         if (!stream->good())
-            return {{}, stream->eof() ? Eof : Error};
+            return {string_view{}, stream->eof() ? Eof : Error};
 
         return {line, Success};
     }
@@ -309,7 +316,7 @@ public:
     virtual std::tuple<string_view, Result> get_line(const char *) override
     {
         if (commands.empty())
-            return {{}, Eof};
+            return {string_view{}, Eof};
 
         auto line = commands.front();
         commands = commands.subspan(1);

@@ -119,9 +119,6 @@ struct CLIHelperParams : CLIHelperBase
 
         AuxInfo aux;                // auxilarry information (not used by this class)
     };
-
-    // This should be placed at end of command (sub)lists.
-    static constexpr const CommandInfo CommandsEnd {CommandTag::End, {}, {}, {}, {}};
 };
 
 
