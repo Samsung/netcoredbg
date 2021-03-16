@@ -78,7 +78,8 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
                                 Debugger::StepType stepType)
 {
     ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
-    m_debugger->StepCommand(threadId, stepType);
+    HRESULT Status;
+    IfFailRet(m_debugger->StepCommand(threadId, stepType));
     output = "^running";
     return S_OK;
 }
