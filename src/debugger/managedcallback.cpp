@@ -552,8 +552,21 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(
     /* [in] */ WCHAR *pLogSwitchName,
     /* [in] */ WCHAR *pMessage)
 {
-    LogFuncEntry();
-    return E_NOTIMPL;
+    string_view src;
+    std::string src_holder;
+    if (pLogSwitchName && *pLogSwitchName)
+    {
+        src_holder = to_utf8(pLogSwitchName);
+        src = src_holder;
+    }
+    else
+    {
+        src = "Debugger.Log";
+    }
+
+    m_debugger.m_protocol->EmitOutputEvent(OutputConsole, to_utf8(pMessage), src);
+    pAppDomain->Continue(0);
+    return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE ManagedCallback::LogSwitch(
