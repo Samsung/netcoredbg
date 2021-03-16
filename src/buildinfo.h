@@ -1,36 +1,28 @@
-#ifndef _NETCOREDBG_BUILDINFO_CONSTANT
-#define _NETCOREDBG_BUILDINFO_CONSTANT
+// Copyright (C) 2020 Samsung Electronics Co., Ltd.
+// See the LICENSE file in the project root for more information.
+
+#pragma once
 
 namespace netcoredbg
 {
 
-// We need unique value for each binary netcoredbg files
-struct BUILDINFO
+namespace BuildInfo
 {
-    static const std::string BUILD_NETCOREDBG_GIT_REFSPEC;
-    static const std::string BUILD_NETCOREDBG_GIT_HEAD;
-    static const std::string BUILD_NETCOREDBG_GIT_SUBJECT;
-    static const std::string BUILD_NETCOREDBG_GIT_DATE;
+    extern const char version[];    // version for displaying
+    extern const char build_type[]; // build type (same version might have different build types)
 
-    static const std::string BUILD_CORECLR_GIT_REFSPEC;
-    static const std::string BUILD_CORECLR_GIT_HEAD;
-    static const std::string BUILD_CORECLR_GIT_SUBJECT;
-    static const std::string BUILD_CORECLR_GIT_DATE;
+    // Following two strings contain GIT revision hash, tag, SVN revision number, etc...
+    extern const char netcoredbg_vcs_info[];  // for netcoredbg itself
+    extern const char coreclr_vcs_info[];     // for CoreCLR (which might come from different source tree)
 
-    static const std::string BUILD_NETCOREDBG_DATE;        // Building date and time
-    static const std::string CMAKE_SYSTEM_NAME;            // Value: string Windows
-    static const std::string CLR_CMAKE_TARGET_ARCH;        // Value: string x64
-	
-    // TODO:
-    // Also available some othre values from.cmake
-    // For example # CLR_CMAKE_TARGET_TIZEN_LINUX // Value: int 1/0
-    //
-    // And we can make the self hash value from sources
-    //  we take sha for each source file in project and produce summ
-    //
-    // And we can check git directory on any local changes
-};
+    extern const char os_name[];   // OS name for which project was build.
+    extern const char cpu_arch[];  // CPU architecture name for which project was build.
+
+    extern const char date[];
+    extern const char time[];      // Date and time of the build.
+
+    extern const char hostname[];  // hostname of the buildserver.
+}
+
 
 } // namespace netcoredbg
-
-#endif // _NETCOREDBG_BUILDINFO_CONSTANT

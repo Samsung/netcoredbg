@@ -103,6 +103,7 @@ set(netcoredbg_SRC
     utils/utf.cpp
     errormessage.cpp
     main.cpp
+    buildinfo.cpp
     utils/escaped_string.cpp
     filesystem.cpp
     ioredirect.cpp
@@ -133,6 +134,24 @@ endif()
 if (NOT CLR_CMAKE_TARGET_TIZEN_LINUX)
     list(APPEND netcoredbg_SRC utils/logger.cpp)
 endif()
+
+
+# special threatment of buildinfo.cpp -- this file rebuilds every time,
+# whatever it changed or not (because it contains version information and
+# date/time of the build).
+cmake_host_system_information(RESULT fqdn QUERY FQDN)
+string(CONCAT buildinfo_flags
+    " " -DVERSION=${VERSION}
+    " " -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
+    " " -DNETCOREDBG_VCS_INFO=${NETCOREDBG_VCS_INFO}
+    " " -DCORECLR_VCS_INFO=${CORECLR_VCS_INFO}
+    " " -DOS_NAME=${CMAKE_SYSTEM_NAME}
+    " " -DCPU_ARCH=${CLR_CMAKE_TARGET_ARCH}
+    " " -DHOSTNAME=${fqdn}
+)
+set_source_files_properties(buildinfo.cpp PROPERTIES COMPILE_FLAGS "${buildinfo_flags}")
+add_custom_target(buildinfo ALL COMMAND
+    ${CMAKE_COMMAND} -E touch "${CMAKE_SOURCE_DIR}/src/buildinfo.cpp")
 
 
 add_executable(netcoredbg ${netcoredbg_SRC})

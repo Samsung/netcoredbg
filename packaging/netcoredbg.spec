@@ -76,6 +76,9 @@ cp packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nupkg packaging/pkgs
 cp packaging/nuget.xml tools/generrmsg/nuget.xml
 
 %build
+set -- %{vcs}
+mkdir .git
+printf "%s\n" "${1#*#}" > .git/HEAD
 export CFLAGS=" --target=%{_host}"
 export CXXFLAGS=" --target=%{_host}"
 

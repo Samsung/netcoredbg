@@ -16,6 +16,7 @@
 #include "protocols/cliprotocol.h"
 #include "utils/utf.h"
 #include "utils/logger.h"
+#include "buildinfo.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -32,7 +33,6 @@ static void setenv(const char* var, const char* val, int) { _putenv_s(var, val);
 #include <unistd.h>
 #endif
 
-#include "buildinfo.cpp"
 
 namespace netcoredbg
 {
@@ -67,45 +67,24 @@ static void print_help()
 
 static void print_buildinfo()
 {
-    fprintf(stdout, ".NET Core debugger\n");
+    printf(".NET Core debugger %s (%s)\n", __VERSION, BuildInfo::version);
 
-    fprintf(stdout,
-        "\n"
-        "    Build info:\n"
-        "      Build date:  %s\n"
+    printf(
+        "\nBuild info:\n"
+        "      Build type:  %s\n"
+        "      Build date:  %s %s\n"
         "      Target OS:   %s\n"
         "      Target arch: %s\n"
-        , BUILDINFO::BUILD_NETCOREDBG_DATE.c_str()
-        , BUILDINFO::CMAKE_SYSTEM_NAME.c_str()
-        , BUILDINFO::CLR_CMAKE_TARGET_ARCH.c_str()
+        "      Hostname:    %s\n\n",
+            BuildInfo::build_type,
+            BuildInfo::date, BuildInfo::time,
+            BuildInfo::os_name,
+            BuildInfo::cpu_arch,
+            BuildInfo::hostname
     );
 
-    fprintf(stdout,
-        "\n"
-        "    NetcoreDBG HEAD commit info:\n"
-        "      Hash:    %s\n"
-        "      Date:    %s\n"
-        "      Subject: %s\n"
-        "      Refs:    %s\n"
-        , BUILDINFO::BUILD_NETCOREDBG_GIT_HEAD.c_str()
-        , BUILDINFO::BUILD_NETCOREDBG_GIT_DATE.c_str()
-        , BUILDINFO::BUILD_NETCOREDBG_GIT_SUBJECT.c_str()
-        , BUILDINFO::BUILD_NETCOREDBG_GIT_REFSPEC.c_str()
-    );
-
-    fprintf(stdout,
-        "\n"
-        "    CoreCLR HEAD commit info:\n"
-        "      Hash:    %s\n"
-        "      Date:    %s\n"
-        "      Subject: %s\n"
-        "      Refs:    %s\n"
-        "\n"
-        , BUILDINFO::BUILD_CORECLR_GIT_HEAD.c_str()
-        , BUILDINFO::BUILD_CORECLR_GIT_DATE.c_str()
-        , BUILDINFO::BUILD_CORECLR_GIT_SUBJECT.c_str()
-        , BUILDINFO::BUILD_CORECLR_GIT_REFSPEC.c_str()
-    );
+    printf("NetcoreDBG VCS info:  %s\n", BuildInfo::netcoredbg_vcs_info);
+    printf("CoreCLR VCS info:     %s\n", BuildInfo::coreclr_vcs_info);
 }
 
 // protocol names for logging
@@ -274,7 +253,8 @@ int main(int argc, char *argv[])
         }
         else if (strcmp(argv[i], "--version") == 0)
         {
-            fprintf(stdout, "NET Core debugger %s\n", __VERSION);
+            fprintf(stdout, "NET Core debugger %s (%s, %s)\n",
+                __VERSION, BuildInfo::netcoredbg_vcs_info, BuildInfo::build_type);
             fprintf(stdout, "\nCopyright (c) 2020 Samsung Electronics Co., LTD\n");
             fprintf(stdout, "Distributed under the MIT License.\n");
             fprintf(stdout, "See the LICENSE file in the project root for more information.\n");
