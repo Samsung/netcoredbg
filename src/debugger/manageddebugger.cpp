@@ -97,73 +97,80 @@ void ManagedDebugger::WaitProcessExited()
         m_processAttachedCV.wait(lock, [this]{return m_processAttachedState == ProcessUnattached;});
 }
 
-static HRESULT DisableAllSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
+HRESULT ManagedDebugger::DisableAllSteppers()
 {
     HRESULT Status;
-    ToRelease<ICorDebugStepperEnum> steppers;
-    IfFailRet(pAppDomain->EnumerateSteppers(&steppers));
+    IfFailRet(DisableAllSimpleSteppers());
 
-    ICorDebugStepper *curStepper;
-    ULONG steppersFetched;
-    while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
-    {
-        ToRelease<ICorDebugStepper> pStepper(curStepper);
-        pStepper->Deactivate();
-    }
+    m_asyncStepMutex.lock();
+    if (m_asyncStep)
+        m_asyncStep.reset(nullptr);
+    if (m_asyncStepNotifyDebuggerOfWaitCompletion)
+        m_asyncStepNotifyDebuggerOfWaitCompletion.reset(nullptr);
+    m_asyncStepMutex.unlock();
 
     return S_OK;
 }
 
-HRESULT ManagedDebugger::DisableAllSteppers(ICorDebugProcess *pProcess)
+HRESULT ManagedDebugger::DisableAllSimpleSteppers()
 {
     HRESULT Status;
 
     ToRelease<ICorDebugAppDomainEnum> domains;
-    IfFailRet(pProcess->EnumerateAppDomains(&domains));
+    IfFailRet(m_pProcess->EnumerateAppDomains(&domains));
 
     ICorDebugAppDomain *curDomain;
     ULONG domainsFetched;
     while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
     {
         ToRelease<ICorDebugAppDomain> pDomain(curDomain);
-        DisableAllSteppersInAppDomain(pDomain);
-    }
-    return S_OK;
-}
+        ToRelease<ICorDebugStepperEnum> steppers;
+        IfFailRet(pDomain->EnumerateSteppers(&steppers));
 
-static HRESULT DisableAllBreakpointsAndSteppersInAppDomain(ICorDebugAppDomain *pAppDomain)
-{
-    ToRelease<ICorDebugBreakpointEnum> breakpoints;
-    if (SUCCEEDED(pAppDomain->EnumerateBreakpoints(&breakpoints)))
-    {
-        ICorDebugBreakpoint *curBreakpoint;
-        ULONG breakpointsFetched;
-        while (SUCCEEDED(breakpoints->Next(1, &curBreakpoint, &breakpointsFetched)) && breakpointsFetched == 1)
+        ICorDebugStepper *curStepper;
+        ULONG steppersFetched;
+        while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
         {
-            ToRelease<ICorDebugBreakpoint> pBreakpoint(curBreakpoint);
-            pBreakpoint->Activate(FALSE);
+            ToRelease<ICorDebugStepper> pStepper(curStepper);
+            pStepper->Deactivate();
         }
     }
 
-    DisableAllSteppersInAppDomain(pAppDomain);
+    m_stepMutex.lock();
+    m_enabledSimpleStepId = 0;
+    m_stepMutex.unlock();
 
     return S_OK;
 }
 
-static HRESULT DisableAllBreakpointsAndSteppers(ICorDebugProcess *pProcess)
+HRESULT ManagedDebugger::DisableAllBreakpointsAndSteppers()
 {
     HRESULT Status;
 
+    // Async stepper could have breakpoints active, disable them first.
+    IfFailRet(DisableAllSteppers());
+
     ToRelease<ICorDebugAppDomainEnum> domains;
-    IfFailRet(pProcess->EnumerateAppDomains(&domains));
+    IfFailRet(m_pProcess->EnumerateAppDomains(&domains));
 
     ICorDebugAppDomain *curDomain;
     ULONG domainsFetched;
     while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
     {
         ToRelease<ICorDebugAppDomain> pDomain(curDomain);
-        DisableAllBreakpointsAndSteppersInAppDomain(pDomain);
+        ToRelease<ICorDebugBreakpointEnum> breakpoints;
+        if (SUCCEEDED(pDomain->EnumerateBreakpoints(&breakpoints)))
+        {
+            ICorDebugBreakpoint *curBreakpoint;
+            ULONG breakpointsFetched;
+            while (SUCCEEDED(breakpoints->Next(1, &curBreakpoint, &breakpointsFetched)) && breakpointsFetched == 1)
+            {
+                ToRelease<ICorDebugBreakpoint> pBreakpoint(curBreakpoint);
+                pBreakpoint->Activate(FALSE);
+            }
+        }
     }
+
     return S_OK;
 }
 
@@ -458,8 +465,10 @@ HRESULT ManagedDebugger::SetBreakpointIntoNotifyDebuggerOfWaitCompletion()
     IfFailRet(pBreakpoint->Activate(TRUE));
 
     const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
-    modAddressNotifyDebuggerOfWaitCompletion = modAddress;
-    methodTokenNotifyDebuggerOfWaitCompletion = notifyDef;
+    m_asyncStepNotifyDebuggerOfWaitCompletion.reset(new asyncBreakpoint_t());
+    m_asyncStepNotifyDebuggerOfWaitCompletion->iCorBreakpoint = pBreakpoint.Detach();
+    m_asyncStepNotifyDebuggerOfWaitCompletion->modAddress = modAddress;
+    m_asyncStepNotifyDebuggerOfWaitCompletion->methodToken = notifyDef;
 
     return S_OK;
 }
@@ -545,6 +554,7 @@ ManagedDebugger::ManagedDebugger() :
     m_managedCallback(new ManagedCallback(*this)),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
+    m_enabledSimpleStepId(0),
     m_justMyCode(true),
     m_startupReady(false),
     m_startupResult(S_OK),
@@ -554,7 +564,8 @@ ManagedDebugger::ManagedDebugger() :
         { IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe() },
         std::bind(&ManagedDebugger::InputCallback, this, std::placeholders::_1, std::placeholders::_2)
     ),
-    m_asyncStep(nullptr)
+    m_asyncStep(nullptr),
+    m_asyncStepNotifyDebuggerOfWaitCompletion(nullptr)
 {
 }
 
@@ -675,10 +686,7 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, StepType stepType)
 {
     HRESULT Status;
 
-    m_asyncStepMutex.lock();
-    if (m_asyncStep)
-        m_asyncStep.reset(nullptr);
-    m_asyncStepMutex.unlock();
+    DisableAllSteppers();
 
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
@@ -781,7 +789,7 @@ HRESULT ManagedDebugger::SetupSimpleStep(ICorDebugThread *pThread, StepType step
         IfFailRet(pStepper->StepOut());
 
         std::lock_guard<std::mutex> lock(m_stepMutex);
-        m_stepSettedUp[int(threadId)] = true;
+        m_enabledSimpleStepId = int(threadId);
 
         return S_OK;
     }
@@ -797,7 +805,7 @@ HRESULT ManagedDebugger::SetupSimpleStep(ICorDebugThread *pThread, StepType step
     }
 
     std::lock_guard<std::mutex> lock(m_stepMutex);
-    m_stepSettedUp[int(threadId)] = true;
+    m_enabledSimpleStepId = int(threadId);
 
     return S_OK;
 }
@@ -811,7 +819,6 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
-    DisableAllSteppers(m_pProcess);
     IfFailRet(SetupStep(pThread, stepType));
 
     m_variables.Clear();
@@ -917,11 +924,7 @@ HRESULT ManagedDebugger::Pause()
         return Status;
 
     // Same logic as provide vsdbg in case of pause during stepping.
-    m_asyncStepMutex.lock();
-    if (m_asyncStep)
-        m_asyncStep.reset(nullptr);
-    m_asyncStepMutex.unlock();
-    DisableAllSteppers(m_pProcess);
+    DisableAllSteppers();
 
     // For Visual Studio, we have to report a thread ID in async stop event.
     // We have to find a thread which has a stack frame with valid location in its stack trace.
@@ -1288,11 +1291,7 @@ HRESULT ManagedDebugger::DetachFromProcess()
     if (SUCCEEDED(m_pProcess->Stop(0)))
     {
         m_breakpoints.DeleteAllBreakpoints();
-        m_asyncStepMutex.lock();
-        if (m_asyncStep)
-            m_asyncStep.reset(nullptr);
-        m_asyncStepMutex.unlock();
-        DisableAllBreakpointsAndSteppers(m_pProcess);
+        DisableAllBreakpointsAndSteppers();
         m_pProcess->Detach();
     }
 
@@ -1314,11 +1313,7 @@ HRESULT ManagedDebugger::TerminateProcess()
 
     if (SUCCEEDED(m_pProcess->Stop(0)))
     {
-        m_asyncStepMutex.lock();
-        if (m_asyncStep)
-            m_asyncStep.reset(nullptr);
-        m_asyncStepMutex.unlock();
-        DisableAllBreakpointsAndSteppers(m_pProcess);
+        DisableAllBreakpointsAndSteppers();
         //pProcess->Detach();
     }
 
@@ -1830,13 +1825,12 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
         // and NotifyDebuggerOfWaitCompletion magic happens with breakpoint in this method.
         // Note, if we hit NotifyDebuggerOfWaitCompletion breakpoint, it's our no matter which thread.
 
-        if (modAddress != modAddressNotifyDebuggerOfWaitCompletion ||
-            methodToken != methodTokenNotifyDebuggerOfWaitCompletion)
+        if (!m_asyncStepNotifyDebuggerOfWaitCompletion ||
+            modAddress != m_asyncStepNotifyDebuggerOfWaitCompletion->modAddress ||
+            methodToken != m_asyncStepNotifyDebuggerOfWaitCompletion->methodToken)
             return false;
 
-        modAddressNotifyDebuggerOfWaitCompletion = 0;
-        methodTokenNotifyDebuggerOfWaitCompletion = mdMethodDefNil;
-        pBreakpoint->Activate(FALSE);
+        m_asyncStepNotifyDebuggerOfWaitCompletion.reset(nullptr);
         // Note, notification flag will be reseted automatically in NotifyDebuggerOfWaitCompletion() method,
         // no need call SetNotificationForWaitCompletion() with FALSE arg (at least, mono acts in the same way).
 
@@ -1884,9 +1878,7 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
             return true;
         }
 
-        ToRelease<ICorDebugProcess> pProcess;
-        if (SUCCEEDED(pThread->GetProcess(&pProcess)))
-            DisableAllSteppers(pProcess);
+        DisableAllSimpleSteppers();
 
         m_asyncStep->m_stepStatus = ManagedDebugger::asyncStepStatus::resume_offset_breakpoint;
 

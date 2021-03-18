@@ -263,7 +263,7 @@ private:
     ICorDebugProcess *m_pProcess;
 
     std::mutex m_stepMutex;
-    std::unordered_map<DWORD, bool> m_stepSettedUp;
+    int m_enabledSimpleStepId;
 
     bool m_justMyCode;
 
@@ -285,7 +285,9 @@ private:
 
     void Cleanup();
 
-    static HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
+    HRESULT DisableAllSteppers();
+    HRESULT DisableAllSimpleSteppers();
+    HRESULT DisableAllBreakpointsAndSteppers();
 
     HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
     HRESULT SetupSimpleStep(ICorDebugThread *pThread, StepType stepType);
@@ -405,10 +407,8 @@ private:
     std::mutex m_asyncStepMutex;
     // Pointer to object, that provide all active async step related data. Object will be created only in case of active async method stepping.
     std::unique_ptr<asyncStep_t> m_asyncStep;
-    // System.Threading.Tasks.Task.NotifyDebuggerOfWaitCompletion() method data,
-    // will be configured at async method step-out setup.
-    CORDB_ADDRESS modAddressNotifyDebuggerOfWaitCompletion = 0;
-    mdMethodDef methodTokenNotifyDebuggerOfWaitCompletion = mdMethodDefNil;
+    // System.Threading.Tasks.Task.NotifyDebuggerOfWaitCompletion() method function breakpoint data, will be configured at async method step-out setup.
+    std::unique_ptr<asyncBreakpoint_t> m_asyncStepNotifyDebuggerOfWaitCompletion;
 
     bool HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
     HRESULT SetBreakpointIntoNotifyDebuggerOfWaitCompletion();

@@ -131,8 +131,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
     auto stepForcedIgnoreBP = [&] () {
         {
             std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
-            auto stepSettedUpForThread = m_debugger.m_stepSettedUp.find(int(threadId));
-            if (stepSettedUpForThread == m_debugger.m_stepSettedUp.end() || !stepSettedUpForThread->second)
+            if (m_debugger.m_enabledSimpleStepId != int(threadId))
             {
                 return false;
             }
@@ -183,9 +182,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
         }
 
         // Disable all steppers if we stop at breakpoint during step.
-        ToRelease<ICorDebugProcess> pProcess;
-        if (SUCCEEDED(pThread->GetProcess(&pProcess)))
-            m_debugger.DisableAllSteppers(pProcess);
+        m_debugger.DisableAllSteppers();
 
         if (atEntry)
             event.reason = StopEntry;
@@ -215,6 +212,12 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
     LogFuncEntry();
     ThreadId threadId(getThreadId(pThread));
 
+    // Don't call DisableAllSteppers() or DisableAllSimpleSteppers() here!
+
+    // Reset simple step without real stepper release.
+    m_debugger.m_stepMutex.lock();
+    m_debugger.m_enabledSimpleStepId = 0;
+    m_debugger.m_stepMutex.unlock();
     // In case we have async method and first await breakpoint (yield_offset) was enabled, but not reached.
     m_debugger.m_asyncStepMutex.lock();
     if (m_debugger.m_asyncStep)
@@ -266,9 +269,6 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
         m_debugger.m_protocol->EmitStoppedEvent(event);
         m_debugger.m_ioredirect.async_cancel();
     }
-
-    std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
-    m_debugger.m_stepSettedUp[int(threadId)] = false;
 
     return S_OK;
 }
@@ -352,6 +352,9 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     m_debugger.SetLastStoppedThread(pThread);
 
     StoppedEvent event(StopPause, threadId);
+
+    // Disable all steppers if we stop during step.
+    m_debugger.DisableAllSteppers();
 
     ToRelease<ICorDebugFrame> pFrame;
     if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
