@@ -87,6 +87,39 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void WasBreakpointHit(string bpName)
+        {
+            MIConst Result = new MIConst("-1");
+            var bp = (LineBreakpoint)DebuggeeInfo.Breakpoints[bpName];
+
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+
+                if (reason.CString != "breakpoint-hit") {
+                    return false;
+                }
+
+                var frame = (MITuple)(output["frame"]);
+                var fileName = (MIConst)(frame["file"]);
+                var numLine = (MIConst)(frame["line"]);
+
+                if (fileName.CString == bp.FileName &&
+                    numLine.CString == bp.NumLine.ToString()) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            if (!MIDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
         public static void WasExit()
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
@@ -163,6 +196,11 @@ namespace NetcoreDbgTest.Script
             Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-finish").Class);
         }
 
+        public static void Continue()
+        {
+            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+        }
+
         public static MIDebugger MIDebugger = new MIDebugger();
     }
 }
@@ -177,7 +215,8 @@ namespace MITestStepping
             Label.Checkpoint("init", "step1", () => {
                 Context.Prepare();
                 Context.WasEntryPointHit();
-                Context.EnableBreakpoint("inside_func0"); // check, that step-in and breakpoint at same line will generate only one event - step
+                Context.EnableBreakpoint("inside_func1_1"); // check, that step-in and breakpoint at same line will generate only one event - step
+                Context.EnableBreakpoint("inside_func2_1"); // check, that step-over and breakpoint inside method will generate breakpoint and reset step
                 Context.StepOver();
             });
 
@@ -196,16 +235,23 @@ namespace MITestStepping
             });
 
             Label.Checkpoint("step_in", "step_in_func", () => {
-                Context.WasStep("step_func");
+                Context.WasStep("step_func1");
                 Context.StepIn();
             });
 
-            test_func();                                        Label.Breakpoint("step_func");
+            test_func1();                                        Label.Breakpoint("step_func1");
 
-            Label.Checkpoint("step_out_check", "finish", () => {
-                Context.WasStep("step_func");
-                Context.StepOut();
+            Label.Checkpoint("step_out_check", "step_over", () => {
+                Context.WasStep("step_func1");
+                Context.StepOver();
             });
+
+            Label.Checkpoint("step_over", "step_over_breakpoint", () => {
+                Context.WasStep("step_func2");
+                Context.StepOver();
+            });
+
+            test_func2();                                        Label.Breakpoint("step_func2");
 
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
@@ -213,18 +259,28 @@ namespace MITestStepping
             });
         }
 
-        static public void test_func()
-        {                                                       Label.Breakpoint("inside_func0");
-            Console.WriteLine("test_func");                     Label.Breakpoint("inside_func1");
+        static public void test_func1()
+        {                                                       Label.Breakpoint("inside_func1_1");
+            Console.WriteLine("test_func1");                    Label.Breakpoint("inside_func1_2");
 
             Label.Checkpoint("step_in_func", "step_out_func", () => {
-                Context.WasStep("inside_func0");
+                Context.WasStep("inside_func1_1");
                 Context.StepOver();
             });
 
             Label.Checkpoint("step_out_func", "step_out_check", () => {
-                Context.WasStep("inside_func1");
+                Context.WasStep("inside_func1_2");
                 Context.StepOut();
+            });
+        }
+
+        static public void test_func2()
+        {
+            Console.WriteLine("test_func2");                    Label.Breakpoint("inside_func2_1");
+
+            Label.Checkpoint("step_over_breakpoint", "finish", () => {
+                Context.WasBreakpointHit("inside_func2_1");
+                Context.Continue();
             });
         }
     }

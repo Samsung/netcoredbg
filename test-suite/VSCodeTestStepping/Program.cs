@@ -157,6 +157,45 @@ namespace NetcoreDbgTest.Script
             throw new NetcoreDbgTestCore.ResultNotSuccessException();
         }
 
+        public static void WasBreakpointHit(string BpName)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
+
+            if (!VSCodeDebugger.IsEventReceived(filter))
+                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success);
+
+            Breakpoint breakpoint = DebuggeeInfo.Breakpoints[BpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            var lbp = (LineBreakpoint)breakpoint;
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+
+            foreach (var Frame in stackTraceResponse.body.stackFrames) {
+                if (Frame.line == lbp.NumLine
+                    && Frame.source.name == lbp.FileName
+                    // NOTE this code works only with one source file
+                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    return;
+            }
+
+            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+        }
+
         public static void StepOver()
         {
             NextRequest nextRequest = new NextRequest();
@@ -178,6 +217,13 @@ namespace NetcoreDbgTest.Script
             Assert.True(VSCodeDebugger.Request(stepOutRequest).Success);
         }
 
+        public static void Continue()
+        {
+            ContinueRequest continueRequest = new ContinueRequest();
+            continueRequest.arguments.threadId = threadId;
+            Assert.True(VSCodeDebugger.Request(continueRequest).Success);
+        }
+
         static VSCodeDebugger VSCodeDebugger = new VSCodeDebugger();
         static int threadId = -1;
         public static string BreakpointSourceName;
@@ -194,7 +240,8 @@ namespace VSCodeTestStepping
         {
             Label.Checkpoint("init", "step1", () => {
                 Context.PrepareStart();
-                Context.AddBreakpoint("inside_func0"); // check, that step-in and breakpoint at same line will generate only one event - step
+                Context.AddBreakpoint("inside_func1_1"); // check, that step-in and breakpoint at same line will generate only one event - step
+                Context.AddBreakpoint("inside_func2_1"); // check, that step-over and breakpoint inside method will generate breakpoint and reset step
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
                 Context.WasEntryPointHit();
@@ -216,16 +263,23 @@ namespace VSCodeTestStepping
             });
 
             Label.Checkpoint("step_in", "step_in_func", () => {
-                Context.WasStep("step_func");
+                Context.WasStep("step_func1");
                 Context.StepIn();
             });
 
-            test_func();                                        Label.Breakpoint("step_func");
+            test_func1();                                        Label.Breakpoint("step_func1");
 
-            Label.Checkpoint("step_out_check", "finish", () => {
-                Context.WasStep("step_func");
-                Context.StepOut();
+            Label.Checkpoint("step_out_check", "step_over", () => {
+                Context.WasStep("step_func1");
+                Context.StepOver();
             });
+
+            Label.Checkpoint("step_over", "step_over_breakpoint", () => {
+                Context.WasStep("step_func2");
+                Context.StepOver();
+            });
+
+            test_func2();                                        Label.Breakpoint("step_func2");
 
             Label.Checkpoint("finish", "", () => {
                 Context.WasExit();
@@ -233,18 +287,28 @@ namespace VSCodeTestStepping
             });
         }
 
-        static public void test_func()
-        {                                                       Label.Breakpoint("inside_func0");
-            Console.WriteLine("test_func");                     Label.Breakpoint("inside_func1");
+        static public void test_func1()
+        {                                                       Label.Breakpoint("inside_func1_1");
+            Console.WriteLine("test_func1");                    Label.Breakpoint("inside_func1_2");
 
             Label.Checkpoint("step_in_func", "step_out_func", () => {
-                Context.WasStep("inside_func0");
+                Context.WasStep("inside_func1_1");
                 Context.StepOver();
             });
 
             Label.Checkpoint("step_out_func", "step_out_check", () => {
-                Context.WasStep("inside_func1");
+                Context.WasStep("inside_func1_2");
                 Context.StepOut();
+            });
+        }
+
+        static public void test_func2()
+        {
+            Console.WriteLine("test_func2");                    Label.Breakpoint("inside_func2_1");
+
+            Label.Checkpoint("step_over_breakpoint", "finish", () => {
+                Context.WasBreakpointHit("inside_func2_1");
+                Context.Continue();
             });
         }
     }
