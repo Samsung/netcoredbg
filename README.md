@@ -85,7 +85,7 @@ After this, build instructions are same as for Unix (including prerequisites).
 
 1. Download and install **CMake** from here: https://cmake.org/download
 
-2. Download and install **Microsoft's Visual Studio 2019**: https://visualstudio.microsoft.com/downloads
+2. Download and install **Microsoft's Visual Studio 2019** or newer: https://visualstudio.microsoft.com/downloads
 
    During installation of Visual Studio you should install all options required
    for C# and C++ development on windows.
@@ -120,7 +120,7 @@ C:\Users\localuser\netcoredbg\build> cmake .. -G "Visual Studio 16 2019"
 You should run this command from cmd.exe, *not from cygwin's shell*.
 
 Option `-G` specifies which instance of Visual Studio should build the project.
-If you have installed Visual Studio 2017, then you should change this option to `Visual Studio 15 2017 Win64` or something like this.
+Note, minimum requirements for netcoredbg build is `Visual Studio 2019` version.
 
 
 If you want to run tests after build succeed, you should add following option: `-DCMAKE_INSTALL_PREFIX="%cd%\..\bin"`
@@ -246,7 +246,7 @@ By default build system create release builds.
 
 Example:
 ```
-CC=clang-10 CXX=clang++-10 CXXFLAGS="-fno-omit-frame-pointer -fsanitize=address -g" LDFLAGS="-fno-omit-frame-pointer -fsanitize=address -g" cmake ..   -DCMAKE_INSTALL_PREFIX=$PWD/../bin  -DCMAKE_BUILD_TYPE=Debug  -DCORECLR_DIR=/path/to/coreclr -DDOTNET_DIR=/usr/share/dotnet
+CC=clang-10 CXX=clang++-10 cmake .. -DCMAKE_INSTALL_PREFIX=$PWD/../bin  -DCMAKE_BUILD_TYPE=Debug  -DCORECLR_DIR=/path/to/coreclr -DDOTNET_DIR=/usr/share/dotnet -DASAN=1
 ```
 
 

@@ -20,7 +20,6 @@ matrix:
           - clang-9
     - os: osx
       osx_image: xcode12
-    - os: windows
 
 language: cpp
 
@@ -39,14 +38,8 @@ script:
   - eval "${MATRIX_EVAL}"
   - mkdir build && cd build
   - |
-      if [ ${TRAVIS_OS_NAME} = 'windows' ]; then
-        powershell -Command "Set-ExecutionPolicy Unrestricted"
-        cmake .. -G "Visual Studio 15 2017 Win64" -DCMAKE_INSTALL_PREFIX=$PWD/../bin
-        cmake --build . --config Release --target install
-      else
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/../bin
-        cmake --build . --target install
-      fi
+      cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PWD/../bin
+      cmake --build . --target install
   - cd ..
 
 before_deploy:
@@ -63,9 +56,7 @@ before_deploy:
 
         # Prepare files for deployment
         mv bin netcoredbg
-        if [ ${TRAVIS_OS_NAME} = 'windows' ]; then
-          7z a netcoredbg-win64.zip netcoredbg
-        elif [ ${TRAVIS_OS_NAME} = 'linux' ]; then
+        if [ ${TRAVIS_OS_NAME} = 'linux' ]; then
           tar cfz netcoredbg-${TRAVIS_OS_NAME}-${TRAVIS_DIST}-${TRAVIS_CPU_ARCH}.tar.gz ./netcoredbg/*
         else
           tar cfz netcoredbg-${TRAVIS_OS_NAME}.tar.gz ./netcoredbg/*
@@ -77,7 +68,6 @@ deploy:
   api_key: $GITHUB_API_KEY
   file:
     - "*.tar.gz"
-    - "*.zip"
   file_glob: true
   skip_cleanup: true
   overwrite: true
