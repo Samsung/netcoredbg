@@ -190,6 +190,34 @@ Class::FileHandle Class::listen_socket(unsigned port)
 
     ::listen(sockFd, 1);
 
+#ifdef DEBUGGER_FOR_TIZEN
+    // On Tizen, launch_app won't terminate until stdin, stdout and stderr are closed.
+    // But Visual Studio initiates the connection only after launch_app termination,
+    // therefore we need to close the descriptors before the call to accept().
+    int fd_null = open("/dev/null", O_WRONLY | O_APPEND);
+    if (fd_null < 0)
+    {
+        ::close(sockFd);
+        perror("can't open /dev/null");
+        return {};
+    }
+
+    // Silently close previous stdin/stdout/stderr and reuse fds.
+    // Don't allow stdin read (EOF), but allow stdout/stderr write.
+    if (dup2(fd_null, STDIN_FILENO) == -1 ||
+        dup2(fd_null, STDOUT_FILENO) == -1 ||
+        dup2(fd_null, STDERR_FILENO) == -1)
+    {
+        ::close(sockFd);
+        perror("can't dup2");
+        return {};
+    }
+
+    close(fd_null);
+
+    //TODO on Tizen redirect stderr/stdout output into dlog
+#endif
+
     clilen = sizeof(cli_addr);
     newsockfd = ::accept(sockFd, (struct sockaddr *) &cli_addr, &clilen);
     ::close(sockFd);

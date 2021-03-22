@@ -195,7 +195,7 @@ Basically you just need to build and install Netcoredbg into `bin` directory (in
 
 To build unit tests you need to add following option to CMake: `-DBUILD_TESTING=ON`.
 
-After the build, you can run unit tests by the command: `make tests`.
+After the build, you can run unit tests by the command: `make test`.
 
 See details in [src/unittests/README.md](src/unittests/README.md).
 

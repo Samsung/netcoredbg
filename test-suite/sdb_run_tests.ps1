@@ -22,7 +22,6 @@ $ALL_TEST_NAMES = @(
     "MITestExceptionBreakpoint"
     "MITestExitCode"
     "MITestEvalNotEnglish"
-    "MITestSrcBreakpointResolve"
     "MITestEnum"
     "MITestAsyncStepping"
     "VSCodeExampleTest"
@@ -37,13 +36,13 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestEnv"
     "VSCodeTestExitCode"
     "VSCodeTestEvalNotEnglish"
-    "VSCodeTestSrcBreakpointResolve"
     "VSCodeTestEnum"
     "VSCodeTestAsyncStepping"
 )
 
 # Skipped tests:
 # MITest中文目录 and VSCodeTest中文目录 - sdb related issue with non-English assembly/pdb name during 'push'
+# VSCodeTestSrcBreakpointResolve and MITestSrcBreakpointResolve - case sensitive test for paths work different on Linux/Windows parts
 
 $TEST_NAMES = $args
 

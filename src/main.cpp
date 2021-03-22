@@ -346,7 +346,6 @@ int main(int argc, char *argv[])
     // Note: there is no possibility to know which exception caused call to std::terminate
     std::set_terminate([]{ LOGF("Netcoredbg is terminated due to call to std::terminate: see stderr..."); });
 
-    ManagedDebugger debugger;
     std::vector<std::unique_ptr<std::ios_base> > streams;
     auto protocol = protocol_constructor(open_streams(streams, serverPort, protocol_constructor));
 
@@ -363,6 +362,7 @@ int main(int argc, char *argv[])
         p->EngineLogging(logFilePath);
     }
 
+    ManagedDebugger debugger;
     protocol->SetDebugger(&debugger);
     debugger.SetProtocol(protocol.get());
 
