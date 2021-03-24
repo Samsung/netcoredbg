@@ -264,18 +264,23 @@ namespace
 
     // This function serializes "OutputEvent" to specified output stream and used for two
     // purposes: to compute output size, and to perform the output directly.
-    template <typename T>
-    void serialize_output(std::ostream& stream, uint64_t counter, string_view name, T& text)
+    template <typename T1, typename T2>
+    void serialize_output(std::ostream& stream, uint64_t counter, string_view name, T1& text, T2& source)
     {
         stream << "{\"seq\":" << counter 
             << ", \"event\":\"output\",\"type\":\"event\",\"body\":{\"category\":\"" << name
-            << "\",\"output\":\"" << text << "\"}}";
+            << "\",\"output\":\"" << text << "\"";
+
+        if (source.size() > 0)
+            stream << ",\"source\":\"" << source << "\"";
+
+        stream <<  "}}";
 
         stream.flush();
     };
 }
 
-void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view)
+void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
 {
     LogFuncEntry();
 
@@ -285,22 +290,21 @@ void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output
     assert(category == OutputConsole || category == OutputStdOut || category == OutputStdErr);
     const string_view& name = categories[category];
 
-    // compute size of escaped "output" string
     EscapedString<JSON_escape_rules> escaped_text(output);
-    size_t const text_size = escaped_text.size();
+    EscapedString<JSON_escape_rules> escaped_source(source);
 
     std::lock_guard<std::mutex> lock(m_outMutex);
 
-    // compute size of headers without text
+    // compute size of headers without text (text could be huge, no reason parse it for size, that we already know)
     CountingStream count;
-    serialize_output(count, m_seqCounter, name, "");
+    serialize_output(count, m_seqCounter, name, "", escaped_source);
 
     // compute total size of headers + text
-    size_t const total_size = count.size() + text_size;
+    size_t const total_size = count.size() + escaped_text.size();
 
     // perform output
     cout << CONTENT_LENGTH << total_size << TWO_CRLF;
-    serialize_output(cout, m_seqCounter, name, escaped_text);
+    serialize_output(cout, m_seqCounter, name, escaped_text, escaped_source);
 
     ++m_seqCounter;
 }
