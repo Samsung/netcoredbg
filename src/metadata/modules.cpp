@@ -369,7 +369,6 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     IfFailRet(pFunc->GetModule(&pModule));
 
     ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
 
     ToRelease<ICorDebugILFrame> pILFrame;
@@ -716,7 +715,7 @@ HRESULT Modules::GetNextSequencePointInMethod(
 HRESULT Modules::GetSequencePointByILOffset(
     ManagedPart *managedPart,
     mdMethodDef methodToken,
-    ULONG32 &ilOffset,
+    ULONG32 ilOffset,
     SequencePoint *sequencePoint)
 {
     ManagedPart::SequencePoint symSequencePoint;
@@ -731,6 +730,26 @@ HRESULT Modules::GetSequencePointByILOffset(
     sequencePoint->endLine = symSequencePoint.endLine;
     sequencePoint->endColumn = symSequencePoint.endColumn;
     sequencePoint->offset = symSequencePoint.offset;
+
+    return S_OK;
+}
+
+HRESULT Modules::GetSequencePointByILOffset(
+    CORDB_ADDRESS modAddress,
+    mdMethodDef methodToken,
+    ULONG32 ilOffset,
+    Modules::SequencePoint &sequencePoint)
+{
+    HRESULT Status;
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+    {
+        return E_FAIL;
+    }
+
+    IfFailRet(GetSequencePointByILOffset(info_pair->second.managedPart.get(), methodToken, ilOffset, &sequencePoint));
 
     return S_OK;
 }

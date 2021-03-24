@@ -901,8 +901,6 @@ HRESULT Evaluator::EvalFunction(
     ICorDebugValue **ppEvalResult,
     int evalFlags)
 {
-    LogFuncEntry();
-
     assert((!ppArgsType && ArgsTypeCount == 0) || (ppArgsType && ArgsTypeCount > 0));
     assert((!ppArgsValue && ArgsValueCount == 0) || (ppArgsValue && ArgsValueCount > 0));
 

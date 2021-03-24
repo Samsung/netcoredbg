@@ -150,8 +150,14 @@ public:
     HRESULT GetSequencePointByILOffset(
         ManagedPart *managedPart,
         mdMethodDef methodToken,
-        ULONG32 &ilOffset,
+        ULONG32 ilOffset,
         SequencePoint *sequencePoint);
+
+    HRESULT GetSequencePointByILOffset(
+        CORDB_ADDRESS modAddress,
+        mdMethodDef methodToken,
+        ULONG32 ilOffset,
+        SequencePoint &sequencePoint);
 
     HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
 

@@ -212,14 +212,30 @@ private:
     void WaitProcessExited();
     HRESULT CheckNoProcess();
 
-    std::mutex m_lastStoppedThreadIdMutex;
+    struct FullyQualifiedIlOffset_t
+    {
+        CORDB_ADDRESS modAddress = 0;
+        mdMethodDef methodToken = 0;
+        ULONG32 ilOffset = 0;
+
+        void Reset()
+        {
+            modAddress = 0;
+            methodToken = 0;
+            ilOffset = 0;
+        }
+    };
+
+    std::mutex m_lastStoppedMutex;
     ThreadId m_lastStoppedThreadId;
+    FullyQualifiedIlOffset_t m_lastStoppedIlOffset;
 
     std::mutex m_lastUnhandledExceptionThreadIdsMutex;
     std::set<ThreadId> m_lastUnhandledExceptionThreadIds;
 
     void SetLastStoppedThread(ICorDebugThread *pThread);
     void SetLastStoppedThreadId(ThreadId threadId);
+    HRESULT GetFullyQualifiedIlOffset(const ThreadId &pThread, FullyQualifiedIlOffset_t &fullyQualifiedIlOffset);
 
     std::atomic_int m_stopCounter;
 

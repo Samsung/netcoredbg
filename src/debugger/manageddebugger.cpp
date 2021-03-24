@@ -469,10 +469,53 @@ void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
     SetLastStoppedThreadId(getThreadId(pThread));
 }
 
+HRESULT ManagedDebugger::GetFullyQualifiedIlOffset(const ThreadId &threadId, FullyQualifiedIlOffset_t &fullyQualifiedIlOffset)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
+
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+
+    mdMethodDef methodToken;
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    ULONG32 ilOffset;
+    CorDebugMappingResult mappingResult;
+    IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+
+    fullyQualifiedIlOffset.modAddress = modAddress;
+    fullyQualifiedIlOffset.methodToken = methodToken;
+    fullyQualifiedIlOffset.ilOffset = ilOffset;
+
+    return S_OK;
+}
+
 void ManagedDebugger::SetLastStoppedThreadId(ThreadId threadId)
 {
-    std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
+    std::lock_guard<std::mutex> lock(m_lastStoppedMutex);
     m_lastStoppedThreadId = threadId;
+
+    m_lastStoppedIlOffset.Reset();
+
+    if (m_lastStoppedThreadId == ThreadId::AllThreads)
+        return;
+
+    GetFullyQualifiedIlOffset(m_lastStoppedThreadId, m_lastStoppedIlOffset);
 }
 
 void ManagedDebugger::InvalidateLastStoppedThreadId()
@@ -484,7 +527,7 @@ ThreadId ManagedDebugger::GetLastStoppedThreadId()
 {
     LogFuncEntry();
 
-    std::lock_guard<std::mutex> lock(m_lastStoppedThreadIdMutex);
+    std::lock_guard<std::mutex> lock(m_lastStoppedMutex);
     return m_lastStoppedThreadId;
 }
 
@@ -785,8 +828,6 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
 
 HRESULT ManagedDebugger::Stop(ThreadId threadId, const StoppedEvent &event)
 {
-    LogFuncEntry();
-
     HRESULT Status = S_OK;
 
     while (m_stopCounter.load() > 0) {
@@ -938,6 +979,8 @@ HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
 
 HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
+    LogFuncEntry();
+
     HRESULT Status;
     if (!m_pProcess)
         return E_FAIL;
@@ -1056,8 +1099,6 @@ static string GetCLRPath(DWORD pid, int timeoutSec = 3)
 
 HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 {
-    LogFuncEntry();
-
     HRESULT Status;
 
     ToRelease<ICorDebug> pCorDebug;
@@ -1463,7 +1504,6 @@ HRESULT ManagedDebugger::DeleteExceptionBreakpoint(const uint32_t id)
 bool ManagedDebugger::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const string &exceptionName,
     const ExceptionBreakCategory category)
 {
-    LogFuncEntry();
     return m_breakpoints.MatchExceptionBreakpoint(dwEventType, exceptionName, category);
 }
 
@@ -1685,6 +1725,8 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     const std::string &value,
     std::string &output)
 {
+    LogFuncEntry();
+
     HRESULT Status;
     ToRelease<ICorDebugValue> pResultValue;
 
@@ -1695,16 +1737,19 @@ HRESULT ManagedDebugger::SetVariableByExpression(
 
 void ManagedDebugger::FindFileNames(string_view pattern, unsigned limit, SearchCallback cb)
 {
+    LogFuncEntry();
     m_modules.FindFileNames(pattern, limit, cb);
 }
 
 void ManagedDebugger::FindFunctions(string_view pattern, unsigned limit, SearchCallback cb)
 {
+    LogFuncEntry();
     m_modules.FindFunctions(pattern, limit, cb);
 }
 
 void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, string_view pattern, unsigned limit, SearchCallback cb)
 {
+    LogFuncEntry();
     StackFrame frame{thread, framelevel, ""};
     std::vector<Scope> scopes;
     std::vector<Variable> variables;
@@ -1958,12 +2003,14 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
 
 void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback)
 {
+    LogFuncEntry();
     return m_breakpoints.EnumerateBreakpoints(std::move(callback));
 }
 
 
 Debugger::AsyncResult ManagedDebugger::ProcessStdin(InStream& stream)
 {
+    LogFuncEntry();
     return m_ioredirect.async_input(stream);
 }
 

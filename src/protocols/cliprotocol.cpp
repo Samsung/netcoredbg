@@ -890,12 +890,6 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
                 int(event.threadId), frameLocation.c_str());
             break;
         }
-        case StopBreak:
-        {
-            printf("\nstopped, reason: Debugger.Break, thread id: %i, stopped threads: all, frame={%s\n}\n",
-                  int(event.threadId), frameLocation.c_str());
-            break;
-        }
         case StopPause:
         {
             printf("\nstopped, reason: interrupted, thread id: %i, stopped threads: all, frame={%s\n}\n",
@@ -980,6 +974,8 @@ void CLIProtocol::EmitModuleEvent(ModuleEvent event)
 // (from IORedirect class) as callback function, in separate thread.
 void CLIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
 {
+    LogFuncEntry();
+
     (void)source, (void)category;  // TODO What we should do with category and source?
 
     lock_guard lock(m_cout_mutex);

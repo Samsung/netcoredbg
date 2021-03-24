@@ -130,7 +130,11 @@ namespace DLogInternal
 // The macro definition is similar to original from Tizen's dlog.h
 #define LOG(priority, tag, format, ...) LOG_(D##priority, tag, format, ##__VA_ARGS__)
 
-// Added for compatibility with old logger, should be removed in future (DONT USE)
+// ONLY FOR:
+// - ManagedCallback's callback methods;
+// - ManagedDebugger's methods called directly from protocols;
+// - All protocol's emit methods;
+// This feature provide only minimal info you would need in user's log for issue investigation.
 #ifdef DEBUG
 #ifdef _WIN32
 #define __CROSS_FUNCTION__ __FUNCSIG__

@@ -565,12 +565,6 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
                 int(event.threadId), frameLocation.c_str());
             break;
         }
-        case StopBreak:
-        {
-            MIProtocol::Printf("*stopped,reason=\"Debugger.Break\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                int(event.threadId), frameLocation.c_str());
-            break;
-        }
         default:
             return;
     }
@@ -633,6 +627,8 @@ void MIProtocol::EmitModuleEvent(ModuleEvent event)
 
 void MIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
 {
+    LogFuncEntry();
+
 #if 0 
     static const string_view categories[] = {"console", "stdout", "stderr"};
 
@@ -908,6 +904,8 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
     { "exec-run", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
         m_debugger->Initialize();
+        // Note, in case of MI protocol, we enable stop at entry point all the time from debugger side,
+        // MIEngine will continue debuggee process at entry point stop event if IDE configured to ignore it.
         IfFailRet(m_debugger->Launch(m_fileExec, m_execArgs, {}, "", true));
         Status = m_debugger->ConfigurationDone();
         if (SUCCEEDED(Status))

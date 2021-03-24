@@ -158,9 +158,6 @@ void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
         case StopEntry:
             body["reason"] = "entry";
             break;
-        case StopBreak:
-            body["reason"] = "Debugger.Break";
-            break;
     }
 
     body["description"] = event.description;
@@ -280,6 +277,8 @@ namespace
 
 void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view)
 {
+    LogFuncEntry();
+
     static const string_view categories[] = {"console", "stdout", "stderr"};
 
     // determine "category name"
