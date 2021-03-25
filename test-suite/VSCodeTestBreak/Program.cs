@@ -7,14 +7,13 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
 using NetcoreDbgTest.Script;
 
-using Xunit;
 using Newtonsoft.Json;
 
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void PrepareStart()
+        public void PrepareStart(string caller_trace)
         {
             InitializeRequest initializeRequest = new InitializeRequest();
             initializeRequest.arguments.clientID = "vscode";
@@ -27,28 +26,28 @@ namespace NetcoreDbgTest.Script
             initializeRequest.arguments.supportsVariablePaging = true;
             initializeRequest.arguments.supportsRunInTerminalRequest = true;
             initializeRequest.arguments.locale = "en-us";
-            Assert.True(VSCodeDebugger.Request(initializeRequest).Success);
+            Assert.True(VSCodeDebugger.Request(initializeRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             LaunchRequest launchRequest = new LaunchRequest();
             launchRequest.arguments.name = ".NET Core Launch (console) with pipeline";
             launchRequest.arguments.type = "coreclr";
             launchRequest.arguments.preLaunchTask = "build";
-            launchRequest.arguments.program = DebuggeeInfo.TargetAssemblyPath;
+            launchRequest.arguments.program = ControlInfo.TargetAssemblyPath;
             launchRequest.arguments.cwd = "";
             launchRequest.arguments.console = "internalConsole";
             launchRequest.arguments.stopAtEntry = true;
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";
             launchRequest.arguments.__sessionId = Guid.NewGuid().ToString();
-            Assert.True(VSCodeDebugger.Request(launchRequest).Success);
+            Assert.True(VSCodeDebugger.Request(launchRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void PrepareEnd()
+        public void PrepareEnd(string caller_trace)
         {
             ConfigurationDoneRequest configurationDoneRequest = new ConfigurationDoneRequest();
-            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success);
+            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
@@ -59,11 +58,10 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             bool wasExited = false;
             int ?exitCode = null;
@@ -84,22 +82,21 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
             DisconnectRequest disconnectRequest = new DisconnectRequest();
             disconnectRequest.arguments = new DisconnectArguments();
             disconnectRequest.arguments.restart = false;
-            Assert.True(VSCodeDebugger.Request(disconnectRequest).Success);
+            Assert.True(VSCodeDebugger.Request(disconnectRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void AddBreakpoint(string bpName, string Condition = null)
+        public void AddBreakpoint(string caller_trace, string bpName, string Condition = null)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)bp;
 
             BreakpointSourceName = lbp.FileName;
@@ -107,19 +104,19 @@ namespace NetcoreDbgTest.Script
             BreakpointLines.Add(lbp.NumLine);
         }
 
-        public static void SetBreakpoints()
+        public void SetBreakpoints(string caller_trace)
         {
             SetBreakpointsRequest setBreakpointsRequest = new SetBreakpointsRequest();
             setBreakpointsRequest.arguments.source.name = BreakpointSourceName;
             // NOTE this code works only with one source file
-            setBreakpointsRequest.arguments.source.path = DebuggeeInfo.SourceFilesPath;
+            setBreakpointsRequest.arguments.source.path = ControlInfo.SourceFilesPath;
             setBreakpointsRequest.arguments.lines.AddRange(BreakpointLines);
             setBreakpointsRequest.arguments.breakpoints.AddRange(BreakpointList);
             setBreakpointsRequest.arguments.sourceModified = false;
-            Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success);
+            Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(string BpName)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
@@ -130,18 +127,17 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             StackTraceRequest stackTraceRequest = new StackTraceRequest();
             stackTraceRequest.arguments.threadId = threadId;
             stackTraceRequest.arguments.startFrame = 0;
             stackTraceRequest.arguments.levels = 20;
             var ret = VSCodeDebugger.Request(stackTraceRequest);
-            Assert.True(ret.Success);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Breakpoint breakpoint = DebuggeeInfo.Breakpoints[BpName];
-            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)breakpoint;
 
             StackTraceResponse stackTraceResponse =
@@ -151,14 +147,14 @@ namespace NetcoreDbgTest.Script
                 if (Frame.line == lbp.NumLine
                     && Frame.source.name == lbp.FileName
                     // NOTE this code works only with one source file
-                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    && Frame.source.path == ControlInfo.SourceFilesPath)
                     return;
             }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakHit(string BpName)
+        public void WasBreakHit(string caller_trace, string bpName)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
@@ -169,18 +165,17 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             StackTraceRequest stackTraceRequest = new StackTraceRequest();
             stackTraceRequest.arguments.threadId = threadId;
             stackTraceRequest.arguments.startFrame = 0;
             stackTraceRequest.arguments.levels = 20;
             var ret = VSCodeDebugger.Request(stackTraceRequest);
-            Assert.True(ret.Success);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Breakpoint breakpoint = DebuggeeInfo.Breakpoints[BpName];
-            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)breakpoint;
 
             StackTraceResponse stackTraceResponse =
@@ -190,14 +185,14 @@ namespace NetcoreDbgTest.Script
                 if (Frame.line == lbp.NumLine
                     && Frame.source.name == lbp.FileName
                     // NOTE this code works only with one source file
-                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    && Frame.source.path == ControlInfo.SourceFilesPath)
                     return;
             }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasStep(string BpName)
+        public void WasStep(string caller_trace, string bpName)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
@@ -208,18 +203,17 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             StackTraceRequest stackTraceRequest = new StackTraceRequest();
             stackTraceRequest.arguments.threadId = threadId;
             stackTraceRequest.arguments.startFrame = 0;
             stackTraceRequest.arguments.levels = 20;
             var ret = VSCodeDebugger.Request(stackTraceRequest);
-            Assert.True(ret.Success);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Breakpoint breakpoint = DebuggeeInfo.Breakpoints[BpName];
-            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)breakpoint;
 
             StackTraceResponse stackTraceResponse =
@@ -229,32 +223,39 @@ namespace NetcoreDbgTest.Script
                 if (Frame.line == lbp.NumLine
                     && Frame.source.name == lbp.FileName
                     // NOTE this code works only with one source file
-                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    && Frame.source.path == ControlInfo.SourceFilesPath)
                     return;
             }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void StepOver()
+        public void StepOver(string caller_trace)
         {
             NextRequest nextRequest = new NextRequest();
             nextRequest.arguments.threadId = threadId;
-            Assert.True(VSCodeDebugger.Request(nextRequest).Success);
+            Assert.True(VSCodeDebugger.Request(nextRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
             ContinueRequest continueRequest = new ContinueRequest();
             continueRequest.arguments.threadId = threadId;
-            Assert.True(VSCodeDebugger.Request(continueRequest).Success);
+            Assert.True(VSCodeDebugger.Request(continueRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static VSCodeDebugger VSCodeDebugger = new VSCodeDebugger();
-        static int threadId = -1;
-        public static string BreakpointSourceName;
-        public static List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
-        public static List<int> BreakpointLines = new List<int>();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            VSCodeDebugger = new VSCodeDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        VSCodeDebugger VSCodeDebugger;
+        int threadId = -1;
+        string BreakpointSourceName;
+        List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
+        List<int> BreakpointLines = new List<int>();
     }
 }
 
@@ -264,44 +265,48 @@ namespace VSCodeTestBreak
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "break_test1", () => {
-                Context.PrepareStart();
-                Context.AddBreakpoint("break_test2");
-                Context.AddBreakpoint("break_test3");
-                Context.AddBreakpoint("break_test4");
-                Context.AddBreakpoint("break_test5");
-                Context.SetBreakpoints();
-                Context.PrepareEnd();
-                Context.WasEntryPointHit();
-                Context.Continue();
+            Label.Checkpoint("init", "break_test1", (Object context) => {
+                Context Context = (Context)context;
+                Context.PrepareStart(@"__FILE__:__LINE__");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "break_test2");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "break_test3");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "break_test4");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "break_test5");
+                Context.SetBreakpoints(@"__FILE__:__LINE__");
+                Context.PrepareEnd(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger stop at Debugger.Break() in managed code.
             Console.WriteLine("Start test.");
             Debugger.Break();                                             Label.Breakpoint("break_test1");
 
-            Label.Checkpoint("break_test1", "break_test2", () => {
-                Context.WasBreakHit("break_test1");
-                Context.Continue();
+            Label.Checkpoint("break_test1", "break_test2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakHit(@"__FILE__:__LINE__", "break_test1");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger ignore Debugger.Break() on continue in case it already stop at breakpoint at this code line.
             Debugger.Break();                                             Label.Breakpoint("break_test2");
 
-            Label.Checkpoint("break_test2", "break_test3", () => {
-                Context.WasBreakpointHit("break_test2");
-                Context.Continue();
+            Label.Checkpoint("break_test2", "break_test3", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test2");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger ignore Debugger.Break() on step in case it already stop at breakpoint at this code line.
             Debugger.Break();                                             Label.Breakpoint("break_test3");
             Console.WriteLine("Next Line");                               Label.Breakpoint("break_test3_nextline");
 
-            Label.Checkpoint("break_test3", "break_test4", () => {
-                Context.WasBreakpointHit("break_test3");
-                Context.StepOver();
-                Context.WasStep("break_test3_nextline");
-                Context.Continue();
+            Label.Checkpoint("break_test3", "break_test4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test3");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test3_nextline");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger ignore Debugger.Break() on step in case it already stop at step at this code.
@@ -310,28 +315,31 @@ namespace VSCodeTestBreak
             int i = 0; Debugger.Break(); i++;                             Label.Breakpoint("break_test4");
             Console.WriteLine("Next Line i=" + i.ToString());             Label.Breakpoint("break_test4_nextline");
 
-            Label.Checkpoint("break_test4", "break_test5", () => {
-                Context.WasBreakpointHit("break_test4");
-                Context.StepOver();
-                Context.WasStep("break_test4");
-                Context.StepOver();
-                Context.WasStep("break_test4");
-                Context.StepOver();
-                Context.WasStep("break_test4_nextline");
-                Context.Continue();
+            Label.Checkpoint("break_test4", "break_test5", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test4_nextline");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger stop at Debugger.Break() in managed code during step-over and reset step.
             test_func();                                                  Label.Breakpoint("break_test5");
 
-            Label.Checkpoint("break_test5", "break_test5_func", () => {
-                Context.WasBreakpointHit("break_test5");
-                Context.StepOver();
+            Label.Checkpoint("break_test5", "break_test5_func", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test5");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
 
@@ -340,9 +348,10 @@ namespace VSCodeTestBreak
             Debugger.Break();                                             Label.Breakpoint("break_test5_func");
             Console.WriteLine("Test function.");
 
-            Label.Checkpoint("break_test5_func", "finish", () => {
-                Context.WasBreakHit("break_test5_func");
-                Context.Continue();
+            Label.Checkpoint("break_test5_func", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakHit(@"__FILE__:__LINE__", "break_test5_func");
+                Context.Continue(@"__FILE__:__LINE__");
             });
         }
     }

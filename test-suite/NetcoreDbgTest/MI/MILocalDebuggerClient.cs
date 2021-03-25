@@ -45,7 +45,8 @@ namespace NetcoreDbgTestCore.MI
             DebuggerOutput.Close();
         }
 
-        private void ReaderThread() {
+        void ReaderThread()
+        {
             while (true) {
                 GetInput.WaitOne();
                 InputString = DebuggerOutput.ReadLine();
@@ -61,7 +62,7 @@ namespace NetcoreDbgTestCore.MI
                 GetInput.Set();
                 bool success = GotInput.WaitOne(timeout);
                 if (!success)
-                    throw new DebuggerNotResponsesException();
+                    throw new DebuggerNotResponses();
 
                 if (InputString == null) {
                     return null;
@@ -79,8 +80,8 @@ namespace NetcoreDbgTestCore.MI
 
         StreamWriter DebuggerInput;
         StreamReader DebuggerOutput;
-        private Thread InputThread;
-        private AutoResetEvent GetInput, GotInput;
-        private string InputString;
+        Thread InputThread;
+        AutoResetEvent GetInput, GotInput;
+        string InputString;
     }
 }

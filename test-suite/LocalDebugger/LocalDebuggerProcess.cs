@@ -34,7 +34,7 @@ namespace LocalDebugger
             DebuggerProcess.Dispose();
         }
 
-        private void DebuggerProcess_Exited(object sender, System.EventArgs e)
+        void DebuggerProcess_Exited(object sender, System.EventArgs e)
         {
             if (!CloseCalled && DebuggerProcess.ExitCode != 0)
             {
@@ -47,7 +47,7 @@ namespace LocalDebugger
             }
         }
 
-        private bool CloseCalled = false;
+        bool CloseCalled = false;
 
         public StreamWriter Input;
         public StreamReader Output;

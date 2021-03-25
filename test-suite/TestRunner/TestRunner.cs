@@ -13,11 +13,11 @@ namespace TestRunner
 {
     class Program
     {
-        public static int Main(string[] args)
+        static int Main(string[] args)
         {
             var cli = new CLInterface(args);
             DebuggerClient debugger = null;
-            DebuggeeScript script = null;
+            ControlScript script = null;
             LocalDebuggerProcess localDebugger = null;
 
             if (cli.NeedHelp) {
@@ -101,7 +101,7 @@ namespace TestRunner
             }
 
             try {
-                script = new DebuggeeScript(cli.Environment.SourceFilesPath, debugger.Protocol);
+                script = new ControlScript(cli.Environment.SourceFilesPath, debugger.Protocol);
             }
             catch (ScriptNotBuiltException e) {
                 Console.Error.WriteLine("Script is not built:");
@@ -114,7 +114,7 @@ namespace TestRunner
             }
 
             try {
-                Debuggee.Run(script, debugger, cli.Environment);
+                new ControlPart().Run(script, debugger, cli.Environment);
                 Console.WriteLine("Success: Test case \"{0}\" is passed!!!",
                                   cli.Environment.TestName);
             }
@@ -342,7 +342,7 @@ options:
             Port = Int32.Parse(port);
         }
 
-        private bool IsIpAddressValid(string addr)
+        bool IsIpAddressValid(string addr)
         {
             try {
                 IPAddress[] hostIPs = Dns.GetHostAddresses(addr);

@@ -5,26 +5,26 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void Prepare()
+        public void Prepare(string caller_trace)
         {
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-file-exec-and-symbols "
-                                            + DebuggeeInfo.CorerunPath).Class);
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-exec-arguments "
-                                            + DebuggeeInfo.TargetAssemblyPath).Class);
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -40,7 +40,7 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -54,22 +54,21 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(Breakpoint breakpoint)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)breakpoint;
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -83,23 +82,23 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -122,26 +121,27 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static string EnableBreakpoint(string bpName, string bpPath = null)
+        public string EnableBreakpoint(string caller_trace, string bpName, string bpPath = null)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
 
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var lbp = (LineBreakpoint)bp;
 
             var BpResp =  MIDebugger.Request("-break-insert -f " + (bpPath != null ? bpPath : lbp.FileName)  + ":" + lbp.NumLine);
 
-            Assert.Equal(MIResultClass.Done, BpResp.Class);
+            Assert.Equal(MIResultClass.Done, BpResp.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             CurrentBpId++;
 
@@ -149,23 +149,33 @@ namespace NetcoreDbgTest.Script
             return ((MIConst)((MITuple)BpResp["bkpt"])["number"]).CString;
         }
 
-        public static void DeleteBreakpoint(string id)
+        public void DeleteBreakpoint(string caller_trace, string id)
         {
             Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("-break-delete " + id).Class);
+                         MIDebugger.Request("-break-delete " + id).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
-        public static int CurrentBpId = 0;
-        public static string id_bp5;
-        public static string id_bp5_b;
-        public static string id_bp6;
-        public static string id_bp6_b;
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        public MIDebugger MIDebugger { get; private set; }
+        public int CurrentBpId = 0;
+        public string id_bp5;
+        public string id_bp5_b;
+        public string id_bp6;
+        public string id_bp6_b;
     }
 }
 
@@ -175,25 +185,26 @@ namespace MITestSrcBreakpointResolve
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "bp_test1", () => {
+            Label.Checkpoint("init", "bp_test1", (Object context) => {
+                Context Context = (Context)context;
                 // setup breakpoints before process start
                 // in this way we will check breakpoint resolve routine during module load
 
-                var id1 = Context.EnableBreakpoint("bp0_delete_test1");
-                var id2 = Context.EnableBreakpoint("bp0_delete_test2");
-                Context.EnableBreakpoint("bp1");
-                Context.EnableBreakpoint("bp2", "../Program.cs");
-                Context.EnableBreakpoint("bp3", "MITestSrcBreakpointResolve/Program.cs");
-                Context.EnableBreakpoint("bp4", "./MITestSrcBreakpointResolve/folder/../Program.cs");
+                var id1 = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp0_delete_test1");
+                var id2 = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp0_delete_test2");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp2", "../Program.cs");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp3", "MITestSrcBreakpointResolve/Program.cs");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp4", "./MITestSrcBreakpointResolve/folder/../Program.cs");
 
-                Context.DeleteBreakpoint(id1);
+                Context.DeleteBreakpoint(@"__FILE__:__LINE__", id1);
 
-                Context.Prepare();
-                Context.WasEntryPointHit();
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
 
-                Context.DeleteBreakpoint(id2);
+                Context.DeleteBreakpoint(@"__FILE__:__LINE__", id2);
 
-                Context.Continue();
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
 Label.Breakpoint("bp0_delete_test1");
@@ -204,22 +215,23 @@ Label.Breakpoint("bp3");
 Label.Breakpoint("resolved_bp1");       Console.WriteLine(
                                                           "Hello World!");          Label.Breakpoint("bp4");
 
-            Label.Checkpoint("bp_test1", "bp_test2", () => {
+            Label.Checkpoint("bp_test1", "bp_test2", (Object context) => {
+                Context Context = (Context)context;
                 // check, that actually we have only one active breakpoint per line
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["resolved_bp1"]);
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resolved_bp1");
 
                 // check, that we have proper breakpoint ids (check, that for MI/GDB resolved breakpoints were not re-created hiddenly with different id)
-                var id7 = Context.EnableBreakpoint("bp0_delete_test1"); // previously was deleted with id1
-                Assert.Equal(Context.CurrentBpId.ToString(), id7);
-                Context.DeleteBreakpoint(id7);
+                var id7 = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp0_delete_test1"); // previously was deleted with id1
+                Assert.Equal(Context.CurrentBpId.ToString(), id7, @"__FILE__:__LINE__");
+                Context.DeleteBreakpoint(@"__FILE__:__LINE__", id7);
 
-                Context.id_bp5_b = Context.EnableBreakpoint("bp5_resolve_wrong_source", "../wrong_folder/./Program.cs");
-                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp5_b);
+                Context.id_bp5_b = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp5_resolve_wrong_source", "../wrong_folder/./Program.cs");
+                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp5_b, @"__FILE__:__LINE__");
 
-                Context.id_bp5 = Context.EnableBreakpoint("bp5");
-                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp5);
+                Context.id_bp5 = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp5");
+                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp5, @"__FILE__:__LINE__");
 
-                Context.Continue();
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
 Label.Breakpoint("bp5_resolve_wrong_source"); // Console.WriteLine("Hello World!");
@@ -230,19 +242,20 @@ Label.Breakpoint("bp5");                // Console.WriteLine("Hello World!");
                                         /* Console.WriteLine("Hello World!"); */
 Label.Breakpoint("resolved_bp2");       Console.WriteLine("Hello World!");
 
-            Label.Checkpoint("bp_test2", "bp_test3", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["resolved_bp2"]);
+            Label.Checkpoint("bp_test2", "bp_test3", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resolved_bp2");
 
-                Context.DeleteBreakpoint(Context.id_bp5);
-                Context.DeleteBreakpoint(Context.id_bp5_b);
+                Context.DeleteBreakpoint(@"__FILE__:__LINE__", Context.id_bp5);
+                Context.DeleteBreakpoint(@"__FILE__:__LINE__", Context.id_bp5_b);
 
-                Context.id_bp6_b = Context.EnableBreakpoint("bp6_resolve_wrong_source", "./wrong_folder/Program.cs");
-                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp6_b);
+                Context.id_bp6_b = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp6_resolve_wrong_source", "./wrong_folder/Program.cs");
+                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp6_b, @"__FILE__:__LINE__");
     
-                Context.id_bp6 = Context.EnableBreakpoint("bp6");
-                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp6);
+                Context.id_bp6 = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp6");
+                Assert.Equal(Context.CurrentBpId.ToString(), Context.id_bp6, @"__FILE__:__LINE__");
 
-                Context.Continue();
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
                                         Console.WriteLine(
@@ -250,21 +263,22 @@ Label.Breakpoint("resolved_bp2");       Console.WriteLine("Hello World!");
 Label.Breakpoint("resolved_bp3");       Console.WriteLine(
                                                           "Hello World!");          Label.Breakpoint("bp6");
 
-            Label.Checkpoint("bp_test3", "bp_test4", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["resolved_bp3"]);
+            Label.Checkpoint("bp_test3", "bp_test4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resolved_bp3");
 
-                Context.DeleteBreakpoint(Context.id_bp6);
-                Context.DeleteBreakpoint(Context.id_bp6_b);
+                Context.DeleteBreakpoint(@"__FILE__:__LINE__", Context.id_bp6);
+                Context.DeleteBreakpoint(@"__FILE__:__LINE__", Context.id_bp6_b);
 
-                Context.EnableBreakpoint("resolved_bp4");
-                Context.EnableBreakpoint("bp7", "Program.cs");
-                Context.EnableBreakpoint("bp8", "MITestSrcBreakpointResolve/Program.cs");
-                var current_bp_id = Context.EnableBreakpoint("bp9", "./MITestSrcBreakpointResolve/folder/../Program.cs");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "resolved_bp4");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp7", "Program.cs");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp8", "MITestSrcBreakpointResolve/Program.cs");
+                var current_bp_id = Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp9", "./MITestSrcBreakpointResolve/folder/../Program.cs");
 
                 // one more check, that we have proper breakpoint ids for MI/GDB
-                Assert.Equal(Context.CurrentBpId.ToString(), current_bp_id);
+                Assert.Equal(Context.CurrentBpId.ToString(), current_bp_id, @"__FILE__:__LINE__");
 
-                Context.Continue();
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
 Label.Breakpoint("bp7");
@@ -272,17 +286,19 @@ Label.Breakpoint("bp8");
 Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                                                           "Hello World!");          Label.Breakpoint("bp9");
 
-            Label.Checkpoint("bp_test4", "finish", () => {
+            Label.Checkpoint("bp_test4", "finish", (Object context) => {
+                Context Context = (Context)context;
                 // check, that actually we have only one active breakpoint per line
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["resolved_bp4"]);
-                Context.Continue();
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resolved_bp4");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             MITestSrcBreakpointResolve2.Program.testfunc();
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }

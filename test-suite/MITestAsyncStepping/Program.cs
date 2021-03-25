@@ -7,28 +7,26 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
-    // Context includes methods and constants which
-    // will be move to debugger API
     class Context
     {
-        public static void Prepare()
+        public void Prepare(string caller_trace)
         {
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-file-exec-and-symbols "
-                                            + DebuggeeInfo.CorerunPath).Class);
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-exec-arguments "
-                                            + DebuggeeInfo.TargetAssemblyPath).Class);
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -42,22 +40,21 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.<Main>d__0.MoveNext()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.<Main>d__0.MoveNext()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasStep(string stepName)
+        public void WasStep(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)DebuggeeInfo.Breakpoints[stepName];
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -66,28 +63,23 @@ namespace NetcoreDbgTest.Script
 
                 var output = ((MIAsyncRecord)record).Output;
                 var reason = (MIConst)output["reason"];
-
                 if (reason.CString != "end-stepping-range") {
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var numLine = (MIConst)(frame["line"]);
-
-                if (numLine.CString == bp.NumLine.ToString()) {
+                var frame = (MITuple)output["frame"];
+                var line = ((MIConst)frame["line"]).Int;
+                if (bp.NumLine == line) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (MIDebugger.IsEventReceived(filter))
-                return;
-
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -110,29 +102,30 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void EnableBreakpoint(string bpName)
+        public void EnableBreakpoint(string caller_trace, string bpName)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
 
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var lbp = (LineBreakpoint)bp;
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f "
-                                            + lbp.FileName + ":" + lbp.NumLine).Class);
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -148,22 +141,35 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void StepOver()
+        public void StepOver(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-next").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-next").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void StepIn()
+        public void StepIn(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-step").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-step").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void StepOut()
+        public void StepOut(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-finish").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-finish").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        MIDebugger MIDebugger;
     }
 }
 
@@ -174,75 +180,84 @@ namespace MITestAsyncStepping
     {
        static async Task Main(string[] args)
        {
-           Label.Checkpoint("init", "step1", () => {
-                Context.Prepare();
-                Context.WasEntryPointHit();
-                Context.StepOver();
+           Label.Checkpoint("init", "step1", (Object context) => {
+                Context Context = (Context)context;
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("Before double await block");     Label.Breakpoint("step1");
 
-            Label.Checkpoint("step1", "step2", () => {
-                Context.WasStep("step1");
-                Context.StepOver();
+            Label.Checkpoint("step1", "step2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             await Task.Delay(1500);                             Label.Breakpoint("step2");
 
-            Label.Checkpoint("step2", "step3", () => {
-                Context.WasStep("step2");
-                Context.StepOver();
+            Label.Checkpoint("step2", "step3", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step2");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             await Task.Delay(1500);                             Label.Breakpoint("step3");
 
-            Label.Checkpoint("step3", "step4", () => {
-                Context.WasStep("step3");
-                Context.StepOver();
+            Label.Checkpoint("step3", "step4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step3");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("After double await block");      Label.Breakpoint("step4");
 
-            Label.Checkpoint("step4", "step_in_func1", () => {
-                Context.WasStep("step4");
-                Context.StepOver();
-                Context.WasStep("step_func1");
-                Context.StepIn();
+            Label.Checkpoint("step4", "step_in_func1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "step_func1");
+                Context.StepIn(@"__FILE__:__LINE__");
             });
 
             // check step-in and step-out before await blocks (async step-out magic test)
             await test_func1();                                  Label.Breakpoint("step_func1");
 
-            Label.Checkpoint("step_out_func1_check", "step_in_func2", () => {
-                Context.WasStep("step_func1");
-                Context.StepOver();
-                Context.WasStep("step_func2");
-                Context.StepIn();
+            Label.Checkpoint("step_out_func1_check", "step_in_func2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "step_func2");
+                Context.StepIn(@"__FILE__:__LINE__");
             });
 
             // check step-in and step-over until we back to caller (async step-out magic test)
             await test_func2();                                  Label.Breakpoint("step_func2");
 
-            Label.Checkpoint("step_out_func2_check", "step_in_func3_cycle1", () => {
-                Context.WasStep("step_func2");
-                Context.StepOver();
-                Context.WasStep("step_func3_cycle1");
-                Context.StepIn();
+            Label.Checkpoint("step_out_func2_check", "step_in_func3_cycle1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func2");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle1");
+                Context.StepIn(@"__FILE__:__LINE__");
             });
 
             // check async method call with awaits in cycle
             await test_func3();                                 Label.Breakpoint("step_func3_cycle1");
             await test_func3();                                 Label.Breakpoint("step_func3_cycle2");
 
-            Label.Checkpoint("step_out_func3_check_cycle1", "step_in_func3_cycle2", () => {
-                Context.WasStep("step_func3_cycle1");
-                Context.StepOver();
-                Context.WasStep("step_func3_cycle2");
-                Context.StepIn();
+            Label.Checkpoint("step_out_func3_check_cycle1", "step_in_func3_cycle2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle2");
+                Context.StepIn(@"__FILE__:__LINE__");
             });
-            Label.Checkpoint("step_out_func3_check_cycle2", "step_whenall", () => {
-                Context.WasStep("step_func3_cycle2");
-                Context.StepOver();
+            Label.Checkpoint("step_out_func3_check_cycle2", "step_whenall", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle2");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             // WhenAll
@@ -251,36 +266,40 @@ namespace MITestAsyncStepping
             await Task.WhenAll(t1, t2);                          Label.Breakpoint("step_whenall_3");
             Console.WriteLine(t1.Result + t2.Result);            Label.Breakpoint("step_whenall_4");
 
-            Label.Checkpoint("step_whenall", "finish", () => {
-                Context.WasStep("step_whenall_1");
-                Context.StepOver();
-                Context.WasStep("step_whenall_2");
-                Context.StepOver();
-                Context.WasStep("step_whenall_3");
-                Context.StepOver();
-                Context.WasStep("step_whenall_4");
-                Context.StepOut();
+            Label.Checkpoint("step_whenall", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_whenall_1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "step_whenall_2");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "step_whenall_3");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "step_whenall_4");
+                Context.StepOut(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
 
         static async Task test_func1()
         {                                                       Label.Breakpoint("test_func1_step1");
 
-            Label.Checkpoint("step_in_func1", "step_out_func1", () => {
-                Context.WasStep("test_func1_step1");
-                Context.StepOver();
+            Label.Checkpoint("step_in_func1", "step_out_func1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func1_step1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("test_func1");                    Label.Breakpoint("test_func1_step2");
 
-            Label.Checkpoint("step_out_func1", "step_out_func1_check", () => {
-                Context.WasStep("test_func1_step2");
-                Context.StepOut();
+            Label.Checkpoint("step_out_func1", "step_out_func1_check", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func1_step2");
+                Context.StepOut(@"__FILE__:__LINE__");
             });
 
             await Task.Delay(1500);
@@ -289,73 +308,85 @@ namespace MITestAsyncStepping
         static async Task test_func2()
         {                                                       Label.Breakpoint("test_func2_step1");
 
-            Label.Checkpoint("step_in_func2", "func2_step1", () => {
-                Context.WasStep("test_func2_step1");
-                Context.StepOver();
+            Label.Checkpoint("step_in_func2", "func2_step1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func2_step1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("test_func2");                    Label.Breakpoint("test_func2_step2");
 
-            Label.Checkpoint("func2_step1", "func2_step2", () => {
-                Context.WasStep("test_func2_step2");
-                Context.StepOver();
+            Label.Checkpoint("func2_step1", "func2_step2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func2_step2");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             await Task.Delay(1500);                             Label.Breakpoint("test_func2_step3");
 
-            Label.Checkpoint("func2_step2", "func2_step3", () => {
-                Context.WasStep("test_func2_step3");
-                Context.StepOver();
+            Label.Checkpoint("func2_step2", "func2_step3", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func2_step3");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("func2_step3", "step_out_func2_check", () => {
-                Context.WasStep("test_func2_step4");
-                Context.StepOver();
+            Label.Checkpoint("func2_step3", "step_out_func2_check", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func2_step4");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
         Label.Breakpoint("test_func2_step4");}
         static async Task test_func3()
         {                                                       Label.Breakpoint("test_func3_step1");
 
-            Label.Checkpoint("step_in_func3_cycle1", "func3_step1_cycle1", () => {
-                Context.WasStep("test_func3_step1");
-                Context.StepOver();
+            Label.Checkpoint("step_in_func3_cycle1", "func3_step1_cycle1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
-            Label.Checkpoint("step_in_func3_cycle2", "func3_step1_cycle2", () => {
-                Context.WasStep("test_func3_step1");
-                Context.StepOver();
+            Label.Checkpoint("step_in_func3_cycle2", "func3_step1_cycle2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("test_func3");                    Label.Breakpoint("test_func3_step2");
 
-            Label.Checkpoint("func3_step1_cycle1", "func3_step2_cycle1", () => {
-                Context.WasStep("test_func3_step2");
-                Context.StepOver();
+            Label.Checkpoint("func3_step1_cycle1", "func3_step2_cycle1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step2");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
-            Label.Checkpoint("func3_step1_cycle2", "func3_step2_cycle2", () => {
-                Context.WasStep("test_func3_step2");
-                Context.StepOver();
+            Label.Checkpoint("func3_step1_cycle2", "func3_step2_cycle2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step2");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             await Task.Delay(1500);                             Label.Breakpoint("test_func3_step3");
 
-            Label.Checkpoint("func3_step2_cycle1", "func3_step3_cycle1", () => {
-                Context.WasStep("test_func3_step3");
-                Context.StepOver();
+            Label.Checkpoint("func3_step2_cycle1", "func3_step3_cycle1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step3");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
-            Label.Checkpoint("func3_step2_cycle2", "func3_step3_cycle2", () => {
-                Context.WasStep("test_func3_step3");
-                Context.StepOver();
+            Label.Checkpoint("func3_step2_cycle2", "func3_step3_cycle2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step3");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             await Task.Delay(1500);                             Label.Breakpoint("test_func3_step4");
 
-            Label.Checkpoint("func3_step3_cycle1", "step_out_func3_check_cycle1", () => {
-                Context.WasStep("test_func3_step4");
-                Context.StepOut();
+            Label.Checkpoint("func3_step3_cycle1", "step_out_func3_check_cycle1", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step4");
+                Context.StepOut(@"__FILE__:__LINE__");
             });
-            Label.Checkpoint("func3_step3_cycle2", "step_out_func3_check_cycle2", () => {
-                Context.WasStep("test_func3_step4");
-                Context.StepOut();
+            Label.Checkpoint("func3_step3_cycle2", "step_out_func3_check_cycle2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func3_step4");
+                Context.StepOut(@"__FILE__:__LINE__");
             });
         }
 

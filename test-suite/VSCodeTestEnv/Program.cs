@@ -8,14 +8,13 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
 using NetcoreDbgTest.Script;
 
-using Xunit;
 using Newtonsoft.Json;
 
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void PrepareStart()
+        public void PrepareStart(string caller_trace)
         {
             InitializeRequest initializeRequest = new InitializeRequest();
             initializeRequest.arguments.clientID = "vscode";
@@ -28,14 +27,14 @@ namespace NetcoreDbgTest.Script
             initializeRequest.arguments.supportsVariablePaging = true;
             initializeRequest.arguments.supportsRunInTerminalRequest = true;
             initializeRequest.arguments.locale = "en-us";
-            Assert.True(VSCodeDebugger.Request(initializeRequest).Success);
+            Assert.True(VSCodeDebugger.Request(initializeRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             LaunchRequest launchRequest = new LaunchRequest();
             launchRequest.arguments.name = ".NET Core Launch (web)";
             launchRequest.arguments.type = "coreclr";
             launchRequest.arguments.preLaunchTask = "build";
 
-            string AbsolutePathToAssembly = Path.GetFullPath(DebuggeeInfo.TargetAssemblyPath);
+            string AbsolutePathToAssembly = Path.GetFullPath(ControlInfo.TargetAssemblyPath);
             launchRequest.arguments.program = Path.GetFileName(AbsolutePathToAssembly);
             string targetAssemblyPath = Path.GetFileName(AbsolutePathToAssembly);
             int subLength = AbsolutePathToAssembly.Length - targetAssemblyPath.Length;
@@ -49,16 +48,16 @@ namespace NetcoreDbgTest.Script
             launchRequest.arguments.stopAtEntry = true;
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";
             launchRequest.arguments.__sessionId = Guid.NewGuid().ToString();
-            Assert.True(VSCodeDebugger.Request(launchRequest).Success);
+            Assert.True(VSCodeDebugger.Request(launchRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void PrepareEnd()
+        public void PrepareEnd(string caller_trace)
         {
             ConfigurationDoneRequest configurationDoneRequest = new ConfigurationDoneRequest();
-            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success);
+            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             bool wasExited = false;
             int ?exitCode = null;
@@ -79,22 +78,21 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
             DisconnectRequest disconnectRequest = new DisconnectRequest();
             disconnectRequest.arguments = new DisconnectArguments();
             disconnectRequest.arguments.restart = false;
-            Assert.True(VSCodeDebugger.Request(disconnectRequest).Success);
+            Assert.True(VSCodeDebugger.Request(disconnectRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void AddBreakpoint(string bpName, string Condition = null)
+        public void AddBreakpoint(string caller_trace, string bpName, string Condition = null)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)bp;
 
             BreakpointSourceName = lbp.FileName;
@@ -102,19 +100,19 @@ namespace NetcoreDbgTest.Script
             BreakpointLines.Add(lbp.NumLine);
         }
 
-        public static void SetBreakpoints()
+        public void SetBreakpoints(string caller_trace)
         {
             SetBreakpointsRequest setBreakpointsRequest = new SetBreakpointsRequest();
             setBreakpointsRequest.arguments.source.name = BreakpointSourceName;
             // NOTE this code works only with one source file
-            setBreakpointsRequest.arguments.source.path = DebuggeeInfo.SourceFilesPath;
+            setBreakpointsRequest.arguments.source.path = ControlInfo.SourceFilesPath;
             setBreakpointsRequest.arguments.lines.AddRange(BreakpointLines);
             setBreakpointsRequest.arguments.breakpoints.AddRange(BreakpointList);
             setBreakpointsRequest.arguments.sourceModified = false;
-            Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success);
+            Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(Breakpoint breakpoint)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
@@ -125,17 +123,17 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             StackTraceRequest stackTraceRequest = new StackTraceRequest();
             stackTraceRequest.arguments.threadId = threadId;
             stackTraceRequest.arguments.startFrame = 0;
             stackTraceRequest.arguments.levels = 20;
             var ret = VSCodeDebugger.Request(stackTraceRequest);
-            Assert.True(ret.Success);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)breakpoint;
 
             StackTraceResponse stackTraceResponse =
@@ -145,23 +143,24 @@ namespace NetcoreDbgTest.Script
                 if (Frame.line == lbp.NumLine
                     && Frame.source.name == lbp.FileName
                     // NOTE this code works only with one source file
-                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    && Frame.source.path == ControlInfo.SourceFilesPath)
                     return;
             }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static Int64 DetectFrameId(Breakpoint breakpoint)
+        public Int64 DetectFrameId(string caller_trace, string bpName)
         {
             StackTraceRequest stackTraceRequest = new StackTraceRequest();
             stackTraceRequest.arguments.threadId = threadId;
             stackTraceRequest.arguments.startFrame = 0;
             stackTraceRequest.arguments.levels = 20;
             var ret = VSCodeDebugger.Request(stackTraceRequest);
-            Assert.True(ret.Success);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(BreakpointType.Line, breakpoint.Type);
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)breakpoint;
 
             StackTraceResponse stackTraceResponse =
@@ -171,19 +170,19 @@ namespace NetcoreDbgTest.Script
                 if (Frame.line == lbp.NumLine
                     && Frame.source.name == lbp.FileName
                     // NOTE this code works only with one source file
-                    && Frame.source.path == DebuggeeInfo.SourceFilesPath)
+                    && Frame.source.path == ControlInfo.SourceFilesPath)
                     return Frame.id;
             }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static int GetVariablesReference(Int64 frameId, string ScopeName)
+        public int GetVariablesReference(string caller_trace, Int64 frameId, string ScopeName)
         {
             ScopesRequest scopesRequest = new ScopesRequest();
             scopesRequest.arguments.frameId = frameId;
             var ret = VSCodeDebugger.Request(scopesRequest);
-            Assert.True(ret.Success);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             ScopesResponse scopesResponse =
                 JsonConvert.DeserializeObject<ScopesResponse>(ret.ResponseStr);
@@ -194,31 +193,31 @@ namespace NetcoreDbgTest.Script
                 }
             }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void EvalVariable(int variablesReference, string Type, string Name, string Value)
+        public void EvalVariable(string caller_trace, int variablesReference, string Type, string Name, string Value)
         {
             VariablesRequest variablesRequest = new VariablesRequest();
             variablesRequest.arguments.variablesReference = variablesReference;
             var ret = VSCodeDebugger.Request(variablesRequest);
-            Assert.True(ret.Success);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             VariablesResponse variablesResponse =
                 JsonConvert.DeserializeObject<VariablesResponse>(ret.ResponseStr);
 
             foreach (var Variable in variablesResponse.body.variables) {
                 if (Variable.name == Name) {
-                    Assert.True(Type == Variable.type
-                                && Value == Variable.value);
+                    Assert.Equal(Type, Variable.type, @"__FILE__:__LINE__"+"\n"+caller_trace);
+                    Assert.Equal(Value, Variable.value, @"__FILE__:__LINE__"+"\n"+caller_trace);
                     return;
                 }
             }
 
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
@@ -229,22 +228,28 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
             ContinueRequest continueRequest = new ContinueRequest();
             continueRequest.arguments.threadId = threadId;
-            Assert.True(VSCodeDebugger.Request(continueRequest).Success);
+            Assert.True(VSCodeDebugger.Request(continueRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static VSCodeDebugger VSCodeDebugger = new VSCodeDebugger();
-        static int threadId = -1;
-        public static string BreakpointSourceName;
-        public static List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
-        public static List<int> BreakpointLines = new List<int>();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            VSCodeDebugger = new VSCodeDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        VSCodeDebugger VSCodeDebugger;
+        int threadId = -1;
+        string BreakpointSourceName;
+        List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
+        List<int> BreakpointLines = new List<int>();
     }
 }
 
@@ -252,15 +257,16 @@ namespace VSCodeTestEnv
 {
     class Program
     {
-        public static void Main(string[] args)
+        static void Main(string[] args)
         {
-            Label.Checkpoint("init", "env_test", () => {
-                Context.PrepareStart();
-                Context.AddBreakpoint("bp");
-                Context.SetBreakpoints();
-                Context.PrepareEnd();
-                Context.WasEntryPointHit();
-                Context.Continue();
+            Label.Checkpoint("init", "env_test", (Object context) => {
+                Context Context = (Context)context;
+                Context.PrepareStart(@"__FILE__:__LINE__");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp");
+                Context.SetBreakpoints(@"__FILE__:__LINE__");
+                Context.PrepareEnd(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             string EnvA = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
@@ -268,21 +274,23 @@ namespace VSCodeTestEnv
 
             Console.WriteLine("Env A = " + EnvA + " Env B = " + EnvB); Label.Breakpoint("bp");
 
-            Label.Checkpoint("env_test", "finish", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
-                Int64 frameId = Context.DetectFrameId(DebuggeeInfo.Breakpoints["bp"]);
+            Label.Checkpoint("env_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp");
 
-                int variablesReference_Locals = Context.GetVariablesReference(frameId, "Locals");
-                int variablesReference = Context.GetVariablesReference(frameId, "Locals");
-                Context.EvalVariable(variablesReference, "string", "EnvA", "\"Development\"");
-                Context.EvalVariable(variablesReference, "string", "EnvB", "\"https://localhost:25001\"");
+                int variablesReference_Locals = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
+                int variablesReference = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "string", "EnvA", "\"Development\"");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "string", "EnvB", "\"https://localhost:25001\"");
 
-                Context.Continue();
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }

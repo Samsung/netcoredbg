@@ -15,7 +15,6 @@ namespace NetcoreDbgTestCore
                 stream = client.GetStream();
                 DebuggerInput = new StreamWriter(stream);
                 DebuggerOutput = new StreamReader(stream);
-                PendingOutput = "";
             }
 
             public override bool DoHandshake(int timeout)
@@ -73,7 +72,6 @@ namespace NetcoreDbgTestCore
             NetworkStream stream;
             StreamWriter DebuggerInput;
             StreamReader DebuggerOutput;
-            string PendingOutput;
         }
     }
 }

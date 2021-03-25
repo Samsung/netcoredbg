@@ -113,7 +113,7 @@ namespace NetcoreDbgTestCore.VSCode
             GetInput.Set();
             bool success = GotInput.WaitOne(timeout);
             if (!success) {
-                throw new DebuggerNotResponsesException();
+                throw new DebuggerNotResponses();
             }
 
             if (InputString == null) {

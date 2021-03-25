@@ -5,13 +5,26 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
-    public static class Context
+    class Context
     {
-        public static void WasEntryPointHit()
+        public void Prepare(string caller_trace)
+        {
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -25,36 +38,37 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static bool IsValidFrame(MIResult frame, string bpName, int level)
+        public bool IsValidFrame(MIResult frame, string bpName, int level)
         {
-            var lbp = (LineBreakpoint)DebuggeeInfo.Breakpoints[bpName];
+            var lbp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
             var content = (MITuple)frame.Value;
             if (frame.Variable == "frame" &&
                 ((MIConst)content["level"]).Int == level &&
                 ((MIConst)content["fullname"]).String.Contains("Program.cs") &&
-                ((MIConst)content["line"]).Int == lbp.NumLine
-            ) {
+                ((MIConst)content["line"]).Int == lbp.NumLine)
+            {
                 return true;
             }
 
             return false;
         }
 
-        public static bool WasStep(LineBreakpoint lbp)
+        public void WasStep(string caller_trace, string bpName)
         {
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
+
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
                     return false;
@@ -68,17 +82,17 @@ namespace NetcoreDbgTest.Script
 
                 var frame = (MITuple)output["frame"];
                 var line = ((MIConst)frame["line"]).Int;
-                if (lbp.NumLine == line) {
+                if (bp.NumLine == line) {
                     return true;
                 }
 
                 return false;
             };
 
-            return MIDebugger.IsEventReceived(filter);
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -101,16 +115,17 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -126,27 +141,39 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static bool DoStepTo(string lbpName)
+        public void StepOver(string caller_trace)
         {
-            var lbp = (LineBreakpoint)DebuggeeInfo.Breakpoints[lbpName];
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-next").Class);
-
-            return WasStep(lbp);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-next").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+        
+        public void Continue(string caller_trace)
+        {
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIListElement[] Variables;
-        public static System.Func<string, string> GetVarValue = (string name) => {
-            var foundVar =
-                System.Array.Find(Variables,
-                           v => {
-                               var tuple = (MITuple)v;
-                               return ((MIConst)((MITuple)v)["name"]).CString == name;
-                           });
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+            GetVarValue = (string name) => {
+                var foundVar =
+                    System.Array.Find(Variables,
+                            v => {
+                                var tuple = (MITuple)v;
+                                return ((MIConst)((MITuple)v)["name"]).CString == name;
+                            });
+                return ((MIConst)((MITuple)foundVar)["value"]).CString;
+            };
+        }
 
-            return ((MIConst)((MITuple)foundVar)["value"]).CString;
-        };
-
-        public static MIDebugger MIDebugger = new MIDebugger();
+        ControlInfo ControlInfo;
+        public MIDebugger MIDebugger { get; private set; }
+        public MIListElement[] Variables;
+        public System.Func<string, string> GetVarValue;
     }
 }
 
@@ -171,29 +198,32 @@ namespace MITestException
 
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "test_steps", () => {
-                Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("1-file-exec-and-symbols "
-                                                        + DebuggeeInfo.CorerunPath).Class);
-                Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("2-exec-arguments "
-                                                        + DebuggeeInfo.TargetAssemblyPath).Class);
-                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("3-exec-run").Class);
-
-                Context.WasEntryPointHit();
+            Label.Checkpoint("init", "test_steps", (Object context) => {
+                Context Context = (Context)context;
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
             });
 
             P p = new P();                                      Label.Breakpoint("STEP1");
 
-            Label.Checkpoint("test_steps", "try_catch", () => {
-                Assert.True(Context.DoStepTo("STEP1"));
-                Assert.True(Context.DoStepTo("TRY1"));
-                Assert.True(Context.DoStepTo("TRY2"));
-                Assert.True(Context.DoStepTo("TRY3"));
-                Assert.True(Context.DoStepTo("CATCH1"));
-                Assert.True(Context.DoStepTo("CATCH2"));
-                Assert.True(Context.DoStepTo("CATCH3"));
-                Assert.True(Context.DoStepTo("CATCH4"));
+            Label.Checkpoint("test_steps", "try_catch", (Object context) => {
+                Context Context = (Context)context;
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "STEP1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "TRY1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "TRY2");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "TRY3");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "CATCH1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "CATCH2");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "CATCH3");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "CATCH4");
             });
 
             try {                                               Label.Breakpoint("TRY1");
@@ -204,40 +234,41 @@ namespace MITestException
                     int a = 1;                                  Label.Breakpoint("CATCH3");
                 }                                               Label.Breakpoint("CATCH4");
 
-                Label.Checkpoint("try_catch", "finish", () => {
+                Label.Checkpoint("try_catch", "finish", (Object context) => {
+                    Context Context = (Context)context;
                     // Check stack frames location
                     var res = Context.MIDebugger.Request("-stack-list-frames");
-                    Assert.Equal(MIResultClass.Done, res.Class);
+                    Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__");
 
                     var stack = (MIList)res["stack"];
 
-                    Assert.Equal(3, stack.Count);
-                    Assert.True(Context.IsValidFrame((MIResult)stack[0], "CATCH4", 0));
-                    Assert.True(Context.IsValidFrame((MIResult)stack[1], "THROW1", 1));
-                    Assert.True(Context.IsValidFrame((MIResult)stack[2], "TRY3", 2));
+                    Assert.Equal(3, stack.Count, @"__FILE__:__LINE__");
+                    Assert.True(Context.IsValidFrame((MIResult)stack[0], "CATCH4", 0), @"__FILE__:__LINE__");
+                    Assert.True(Context.IsValidFrame((MIResult)stack[1], "THROW1", 1), @"__FILE__:__LINE__");
+                    Assert.True(Context.IsValidFrame((MIResult)stack[2], "TRY3", 2), @"__FILE__:__LINE__");
 
                     //Check local variables
                     res = Context.MIDebugger.Request("-stack-list-variables");
-                    Assert.Equal(MIResultClass.Done, res.Class);
+                    Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__");
 
                     Context.Variables = ((MIList)res["variables"]).ToArray();
 
-                    Assert.Equal("{System.Exception}", Context.GetVarValue("$exception"));
-                    Assert.Equal("{System.Exception}", Context.GetVarValue("e"));
-                    Assert.Equal("1", Context.GetVarValue("a"));
-                    Assert.Equal("{MITestException.P}", Context.GetVarValue("p"));
-                    Assert.Equal("{string[0]}", Context.GetVarValue("args"));
+                    Assert.Equal("{System.Exception}", Context.GetVarValue("$exception"), @"__FILE__:__LINE__");
+                    Assert.Equal("{System.Exception}", Context.GetVarValue("e"), @"__FILE__:__LINE__");
+                    Assert.Equal("1", Context.GetVarValue("a"), @"__FILE__:__LINE__");
+                    Assert.Equal("{MITestException.P}", Context.GetVarValue("p"), @"__FILE__:__LINE__");
+                    Assert.Equal("{string[0]}", Context.GetVarValue("args"), @"__FILE__:__LINE__");
 
                     // Execute property and check its value
                     res = Context.MIDebugger.Request("-var-create - * \"p.x\"");
-                    Assert.Equal(MIResultClass.Done, res.Class);
+                    Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__");
 
-                    Assert.Equal("111", ((MIConst)res["value"]).CString);
-                    Assert.Equal(0, ((MIConst)res["numchild"]).Int);
-                    Assert.Equal("int", ((MIConst)res["type"]).CString);
-                    Assert.Equal("p.x", ((MIConst)res["exp"]).CString);
+                    Assert.Equal("111", ((MIConst)res["value"]).CString, @"__FILE__:__LINE__");
+                    Assert.Equal(0, ((MIConst)res["numchild"]).Int, @"__FILE__:__LINE__");
+                    Assert.Equal("int", ((MIConst)res["type"]).CString, @"__FILE__:__LINE__");
+                    Assert.Equal("p.x", ((MIConst)res["exp"]).CString, @"__FILE__:__LINE__");
 
-                    Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-continue").Class);
+                    Context.Continue(@"__FILE__:__LINE__");
                 });
 
                 int b = 2;                                      Label.Breakpoint("TRY4");
@@ -256,9 +287,10 @@ namespace MITestException
 
             int d = 1;
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }

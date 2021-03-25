@@ -41,20 +41,18 @@ namespace NetcoreDbgTestCore
         EmitResult Result;
     }
 
-    public class DebuggeeScript
+    public class ControlScript
     {
-        public DebuggeeScript(string pathToTestFiles, ProtocolType protocolType)
+        public ControlScript(string pathToTestFiles, ProtocolType protocolType)
         {
-            DebuggeeScriptDummyText =
+            ControlScriptDummyText =
 @"using System;
 using System.IO;
 using System.Diagnostics;
 using System.Collections.Generic;
 using NetcoreDbgTest;
 using NetcoreDbgTest.Script;
-using Xunit;
 using Newtonsoft.Json;
-
 using NetcoreDbgTest." + protocolType.ToString() + @";
 
 namespace NetcoreDbgTest.Script
@@ -63,8 +61,21 @@ namespace NetcoreDbgTest.Script
 
 namespace NetcoreDbgTestCore
 {
-    public class GeneratedScript {
+    public class GeneratedScript
+    {
+        static Context m_Context;
+
+        public static void Setup(ControlInfo controlInfo, DebuggerClient debuggerClient)
+        {
+            m_Context = new Context(controlInfo, debuggerClient);
+        }
+
         public static void ExecuteCheckPoints() {}
+
+        public static void Invoke(string id, string next_id, Checkpoint checkpoint)
+        {
+            checkpoint(m_Context);
+        }
     }
 }";
 
@@ -76,7 +87,18 @@ namespace NetcoreDbgTestCore
                 if (String.IsNullOrEmpty(pathToFile)) {
                     continue;
                 }
-                string testSource = File.ReadAllText(pathToFile);
+
+                // Read file text and replace __FILE__ and __LINE__ markers.
+                string[] lines = File.ReadAllLines(pathToFile);
+                List<string> list = new List<string>();
+                int lineNum = 1;
+                foreach (string line in lines)
+                {
+                    list.Add(line.Replace("__LINE__", lineNum.ToString()));
+                    lineNum++;
+                }
+                string testSource = String.Join("\n", list.ToArray()).Replace("__FILE__", pathToFile);
+
                 SyntaxTree testTree = CSharpSyntaxTree.ParseText(testSource)
                               .WithFilePath(pathToFile);
                 trees.Add(testTree);
@@ -95,17 +117,24 @@ namespace NetcoreDbgTestCore
 
         public SyntaxTree SyntaxTree;
 
-        public void ExecuteCheckPoints()
+        public void ExecuteCheckPoints(ControlInfo ControlInfo, DebuggerClient DebuggerClient)
         {
-            MethodInfo minfo = generatedScriptClass.GetMethod("ExecuteCheckPoints");
+            MethodInfo minfo_setup = generatedScriptClass.GetMethod("Setup");
             try {
-                minfo.Invoke(null, null);
+                minfo_setup.Invoke(null, new object[]{ControlInfo, DebuggerClient});
+            } catch (TargetInvocationException e) {
+                throw e.InnerException;
+            }
+
+            MethodInfo minfo_execute = generatedScriptClass.GetMethod("ExecuteCheckPoints");
+            try {
+                minfo_execute.Invoke(null, null);
             } catch (TargetInvocationException e) {
                 throw e.InnerException;
             }
         }
 
-        private TestLabelsInfo CollectTestLabelsInfo(List<SyntaxTree> trees, ProtocolType protocolType)
+        TestLabelsInfo CollectTestLabelsInfo(List<SyntaxTree> trees, ProtocolType protocolType)
         {
             var visitor = new TestLabelsInfoCollector(protocolType);
 
@@ -116,7 +145,7 @@ namespace NetcoreDbgTestCore
             return visitor.TestLabelsInfo;
         }
 
-        private SyntaxList<MemberDeclarationSyntax> CollectScriptDeclarations(List<SyntaxTree> trees)
+        SyntaxList<MemberDeclarationSyntax> CollectScriptDeclarations(List<SyntaxTree> trees)
         {
             var visitor = new ScriptDeclarationsCollector();
 
@@ -127,9 +156,9 @@ namespace NetcoreDbgTestCore
             return visitor.ScriptDeclarations;
         }
 
-        private SyntaxTree BuildTree()
+        SyntaxTree BuildTree()
         {
-            var tree = CSharpSyntaxTree.ParseText(DebuggeeScriptDummyText);
+            var tree = CSharpSyntaxTree.ParseText(ControlScriptDummyText);
 
             CSharpSyntaxRewriter visitor;
 
@@ -141,7 +170,7 @@ namespace NetcoreDbgTestCore
             return tree;
         }
 
-        private MetadataReference[] GetMetadataReferences()
+        MetadataReference[] GetMetadataReferences()
         {
             var systemPath = Path.GetDirectoryName(typeof(object).Assembly.Location);
             var libList = new List<MetadataReference>();
@@ -162,16 +191,15 @@ namespace NetcoreDbgTestCore
             }
 
             libList.Add(MetadataReference.CreateFromFile(typeof(Label).Assembly.Location));
-            libList.Add(MetadataReference.CreateFromFile(typeof(Xunit.Assert).Assembly.Location));
             libList.Add(MetadataReference.CreateFromFile(typeof(Newtonsoft.Json.JsonConvert).Assembly.Location));
 
             return libList.ToArray();
         }
 
-        private Compilation CompileTree(SyntaxTree tree)
+        Compilation CompileTree(SyntaxTree tree)
         {
             var compilation = CSharpCompilation.Create(
-                "DebuggeeScript",
+                "ControlScript",
                 new SyntaxTree[] {tree},
                 GetMetadataReferences(),
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
@@ -180,7 +208,7 @@ namespace NetcoreDbgTestCore
             return compilation;
         }
 
-        private Assembly MakeAssembly(Compilation compilation)
+        Assembly MakeAssembly(Compilation compilation)
         {
             using (var ms = new MemoryStream())
             {
@@ -200,10 +228,10 @@ namespace NetcoreDbgTestCore
             }
         }
 
-        private Type generatedScriptClass = null;
-        private TestLabelsInfo TestLabelsInfo = null;
-        private SyntaxList<MemberDeclarationSyntax> ScriptDeclarations;
-        private static string DebuggeeScriptDummyText;
+        Type generatedScriptClass = null;
+        TestLabelsInfo TestLabelsInfo = null;
+        SyntaxList<MemberDeclarationSyntax> ScriptDeclarations;
+        string ControlScriptDummyText;
     }
 
     public class TestLabelsInfo
@@ -258,7 +286,7 @@ namespace NetcoreDbgTestCore
         }
 
         public TestLabelsInfo TestLabelsInfo;
-        private Type TypeClassBP;
+        Type TypeClassBP;
     }
 
     public class GeneratedScriptInvokesBuilder : CSharpSyntaxRewriter
@@ -270,10 +298,10 @@ namespace NetcoreDbgTestCore
 
         public override SyntaxNode VisitMethodDeclaration(MethodDeclarationSyntax node)
         {
-            var debuggeeEnterMember =
+            var controlEnterMember =
                 SyntaxFactory.MemberAccessExpression(
                     SyntaxKind.SimpleMemberAccessExpression,
-                    SyntaxFactory.IdentifierName("Debuggee"),
+                    SyntaxFactory.IdentifierName("GeneratedScript"),
                     SyntaxFactory.IdentifierName("Invoke")
                 );
 
@@ -293,7 +321,7 @@ namespace NetcoreDbgTestCore
                             }
                         } else {
                             Console.Error.WriteLine("Error! Can't find \"" + key + "\" checkpoint");
-                            throw new ResultNotSuccessException();
+                            throw new BrokenTestCheckpointLogic();
                         }
                     } while (!String.IsNullOrEmpty(key));
                     break;
@@ -305,7 +333,7 @@ namespace NetcoreDbgTestCore
 
             foreach (var invoke in invokes) {
                 var invokeEnter =
-                    SyntaxFactory.InvocationExpression(debuggeeEnterMember)
+                    SyntaxFactory.InvocationExpression(controlEnterMember)
                     .WithArgumentList(invoke.ArgumentList);
 
                 statements.Add(SyntaxFactory.ExpressionStatement(invokeEnter));
@@ -314,7 +342,7 @@ namespace NetcoreDbgTestCore
             return node.WithBody(SyntaxFactory.Block(statements.ToArray()));
         }
 
-        private TestLabelsInfo TestLabelsInfo;
+        TestLabelsInfo TestLabelsInfo;
     }
 
     public class ScriptDeclarationsCollector : CSharpSyntaxWalker
@@ -357,6 +385,6 @@ namespace NetcoreDbgTestCore
             return node;
         }
 
-        private SyntaxList<MemberDeclarationSyntax> ScriptDeclarations;
+        SyntaxList<MemberDeclarationSyntax> ScriptDeclarations;
     }
 }

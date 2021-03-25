@@ -6,26 +6,26 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void Prepare()
+        public void Prepare(string caller_trace)
         {
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-file-exec-and-symbols "
-                                            + DebuggeeInfo.CorerunPath).Class);
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-exec-arguments "
-                                            + DebuggeeInfo.TargetAssemblyPath).Class);
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -41,7 +41,7 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -55,20 +55,19 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -86,16 +85,31 @@ namespace NetcoreDbgTest.Script
                 return true;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
+        public void DebuggerExit(string caller_trace)
+        {
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        public MIDebugger MIDebugger { get; private set; }
     }
 }
 
@@ -105,35 +119,37 @@ namespace MITestGDB
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "", () => {
-                Context.Prepare();
-                Context.WasEntryPointHit();
-                Context.Continue();
+            Label.Checkpoint("init", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
 
                 var showResult = Context.MIDebugger.Request("-gdb-show just-my-code");
-                Assert.Equal(MIResultClass.Done, showResult.Class);
-                Assert.Equal("1", ((MIConst)showResult["value"]).CString);
+                Assert.Equal(MIResultClass.Done, showResult.Class, @"__FILE__:__LINE__");
+                Assert.Equal("1", ((MIConst)showResult["value"]).CString, @"__FILE__:__LINE__");
 
                 // NOTE space is only legit delimiter (name-value) for gdb-set (see miengine for more info)
                 Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("-gdb-set just-my-code 0").Class);
+                             Context.MIDebugger.Request("-gdb-set just-my-code 0").Class,
+                             @"__FILE__:__LINE__");
 
                 showResult = Context.MIDebugger.Request("-gdb-show just-my-code");
-                Assert.Equal(MIResultClass.Done, showResult.Class);
-                Assert.Equal("0", ((MIConst)showResult["value"]).CString);
+                Assert.Equal(MIResultClass.Done, showResult.Class, @"__FILE__:__LINE__");
+                Assert.Equal("0", ((MIConst)showResult["value"]).CString, @"__FILE__:__LINE__");
 
                 // NOTE space is only legit delimiter (name-value) for gdb-set (see miengine for more info)
                 Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("-gdb-set just-my-code 1").Class);
+                             Context.MIDebugger.Request("-gdb-set just-my-code 1").Class,
+                             @"__FILE__:__LINE__");
 
                 showResult = Context.MIDebugger.Request("-gdb-show just-my-code");
-                Assert.Equal(MIResultClass.Done, showResult.Class);
-                Assert.Equal("1", ((MIConst)showResult["value"]).CString);
+                Assert.Equal(MIResultClass.Done, showResult.Class, @"__FILE__:__LINE__");
+                Assert.Equal("1", ((MIConst)showResult["value"]).CString, @"__FILE__:__LINE__");
 
-                Assert.Equal(MIResultClass.Exit,
-                             Context.MIDebugger.Request("-gdb-exit").Class);
-
-                Context.WasExit();
+                // Note, reverted sequence here - exit and check, that debuggee process was forced closed.
+                Context.DebuggerExit(@"__FILE__:__LINE__");
+                Context.WasExit(@"__FILE__:__LINE__");
             });
 
             Thread.Sleep(10000);

@@ -6,26 +6,26 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void Prepare()
+        public void Prepare(string caller_trace)
         {
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-file-exec-and-symbols "
-                                            + DebuggeeInfo.CorerunPath).Class);
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-exec-arguments "
-                                            + DebuggeeInfo.TargetAssemblyPath).Class);
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -41,7 +41,7 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -55,22 +55,21 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(string breakpointName)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)DebuggeeInfo.Breakpoints[breakpointName];
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -84,25 +83,25 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakHit(string breakpointName)
+        public void WasBreakHit(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)DebuggeeInfo.Breakpoints[breakpointName];
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -118,25 +117,24 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasStep(string breakpointName)
+        public void WasStep(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)DebuggeeInfo.Breakpoints[breakpointName];
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -145,26 +143,23 @@ namespace NetcoreDbgTest.Script
 
                 var output = ((MIAsyncRecord)record).Output;
                 var reason = (MIConst)output["reason"];
-
                 if (reason.CString != "end-stepping-range") {
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var numLine = (MIConst)(frame["line"]);
-
-                if (numLine.CString == bp.NumLine.ToString()) {
+                var frame = (MITuple)output["frame"];
+                var line = ((MIConst)frame["line"]).Int;
+                if (bp.NumLine == line) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -187,39 +182,51 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void EnableBreakpoint(string bpName)
+        public void EnableBreakpoint(string caller_trace, string bpName)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
 
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var lbp = (LineBreakpoint)bp;
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f "
-                                            + lbp.FileName + ":" + lbp.NumLine).Class);
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void StepOver()
+        public void StepOver(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-next").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-next").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static MIDebugger MIDebugger = new MIDebugger();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        MIDebugger MIDebugger;
     }
 }
 
@@ -229,42 +236,46 @@ namespace MITestBreak
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "break_test1", () => {
-                Context.Prepare();
-                Context.WasEntryPointHit();
-                Context.EnableBreakpoint("break_test2");
-                Context.EnableBreakpoint("break_test3");
-                Context.EnableBreakpoint("break_test4");
-                Context.EnableBreakpoint("break_test5");
-                Context.Continue();
+            Label.Checkpoint("init", "break_test1", (Object context) => {
+                Context Context = (Context)context;
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "break_test2");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "break_test3");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "break_test4");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "break_test5");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger stop at Debugger.Break() in managed code.
             Console.WriteLine("Start test.");
             Debugger.Break();                                             Label.Breakpoint("break_test1");
 
-            Label.Checkpoint("break_test1", "break_test2", () => {
-                Context.WasBreakHit("break_test1");
-                Context.Continue();
+            Label.Checkpoint("break_test1", "break_test2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakHit(@"__FILE__:__LINE__", "break_test1");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger ignore Debugger.Break() on continue in case it already stop at breakpoint at this code line.
             Debugger.Break();                                             Label.Breakpoint("break_test2");
 
-            Label.Checkpoint("break_test2", "break_test3", () => {
-                Context.WasBreakpointHit("break_test2");
-                Context.Continue();
+            Label.Checkpoint("break_test2", "break_test3", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test2");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger ignore Debugger.Break() on step in case it already stop at breakpoint at this code line.
             Debugger.Break();                                             Label.Breakpoint("break_test3");
             Console.WriteLine("Next Line");                               Label.Breakpoint("break_test3_nextline");
 
-            Label.Checkpoint("break_test3", "break_test4", () => {
-                Context.WasBreakpointHit("break_test3");
-                Context.StepOver();
-                Context.WasStep("break_test3_nextline");
-                Context.Continue();
+            Label.Checkpoint("break_test3", "break_test4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test3");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test3_nextline");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger ignore Debugger.Break() on step in case it already stop at step at this code.
@@ -273,28 +284,31 @@ namespace MITestBreak
             int i = 0; Debugger.Break(); i++;                             Label.Breakpoint("break_test4");
             Console.WriteLine("Next Line i=" + i.ToString());             Label.Breakpoint("break_test4_nextline");
 
-            Label.Checkpoint("break_test4", "break_test5", () => {
-                Context.WasBreakpointHit("break_test4");
-                Context.StepOver();
-                Context.WasStep("break_test4");
-                Context.StepOver();
-                Context.WasStep("break_test4");
-                Context.StepOver();
-                Context.WasStep("break_test4_nextline");
-                Context.Continue();
+            Label.Checkpoint("break_test4", "break_test5", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "break_test4_nextline");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Test, that debugger stop at Debugger.Break() in managed code during step-over and reset step.
             test_func();                                                  Label.Breakpoint("break_test5");
 
-            Label.Checkpoint("break_test5", "break_test5_func", () => {
-                Context.WasBreakpointHit("break_test5");
-                Context.StepOver();
+            Label.Checkpoint("break_test5", "break_test5_func", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "break_test5");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
 
@@ -303,9 +317,10 @@ namespace MITestBreak
             Debugger.Break();                                             Label.Breakpoint("break_test5_func");
             Console.WriteLine("Test function.");
 
-            Label.Checkpoint("break_test5_func", "finish", () => {
-                Context.WasBreakHit("break_test5_func");
-                Context.Continue();
+            Label.Checkpoint("break_test5_func", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakHit(@"__FILE__:__LINE__", "break_test5_func");
+                Context.Continue(@"__FILE__:__LINE__");
             });
         }
     }

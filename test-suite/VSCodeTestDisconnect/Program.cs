@@ -6,14 +6,13 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
 using NetcoreDbgTest.Script;
 
-using Xunit;
 using Newtonsoft.Json;
 
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void PrepareStart()
+        public void PrepareStart(string caller_trace)
         {
             InitializeRequest initializeRequest = new InitializeRequest();
             initializeRequest.arguments.clientID = "vscode";
@@ -26,28 +25,28 @@ namespace NetcoreDbgTest.Script
             initializeRequest.arguments.supportsVariablePaging = true;
             initializeRequest.arguments.supportsRunInTerminalRequest = true;
             initializeRequest.arguments.locale = "en-us";
-            Assert.True(VSCodeDebugger.Request(initializeRequest).Success);
+            Assert.True(VSCodeDebugger.Request(initializeRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             LaunchRequest launchRequest = new LaunchRequest();
             launchRequest.arguments.name = ".NET Core Launch (console) with pipeline";
             launchRequest.arguments.type = "coreclr";
             launchRequest.arguments.preLaunchTask = "build";
-            launchRequest.arguments.program = DebuggeeInfo.TargetAssemblyPath;
+            launchRequest.arguments.program = ControlInfo.TargetAssemblyPath;
             launchRequest.arguments.cwd = "";
             launchRequest.arguments.console = "internalConsole";
             launchRequest.arguments.stopAtEntry = true;
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";
             launchRequest.arguments.__sessionId = Guid.NewGuid().ToString();
-            Assert.True(VSCodeDebugger.Request(launchRequest).Success);
+            Assert.True(VSCodeDebugger.Request(launchRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void PrepareEnd()
+        public void PrepareEnd(string caller_trace)
         {
             ConfigurationDoneRequest configurationDoneRequest = new ConfigurationDoneRequest();
-            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success);
+            Assert.True(VSCodeDebugger.Request(configurationDoneRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<string, bool> filter = (resJSON) => {
                 if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
@@ -58,21 +57,20 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
             ContinueRequest continueRequest = new ContinueRequest();
             continueRequest.arguments.threadId = threadId;
-            Assert.True(VSCodeDebugger.Request(continueRequest).Success);
+            Assert.True(VSCodeDebugger.Request(continueRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void AddBreakpoint(string bpName, string Condition = null)
+        public void AddBreakpoint(string caller_trace, string bpName, string Condition = null)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var lbp = (LineBreakpoint)bp;
 
             BreakpointSourceName = lbp.FileName;
@@ -80,19 +78,19 @@ namespace NetcoreDbgTest.Script
             BreakpointLines.Add(lbp.NumLine);
         }
 
-        public static void SetBreakpoints()
+        public void SetBreakpoints(string caller_trace)
         {
             SetBreakpointsRequest setBreakpointsRequest = new SetBreakpointsRequest();
             setBreakpointsRequest.arguments.source.name = BreakpointSourceName;
             // NOTE this code works only with one source file
-            setBreakpointsRequest.arguments.source.path = DebuggeeInfo.SourceFilesPath;
+            setBreakpointsRequest.arguments.source.path = ControlInfo.SourceFilesPath;
             setBreakpointsRequest.arguments.lines.AddRange(BreakpointLines);
             setBreakpointsRequest.arguments.breakpoints.AddRange(BreakpointList);
             setBreakpointsRequest.arguments.sourceModified = false;
-            Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success);
+            Assert.True(VSCodeDebugger.Request(setBreakpointsRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             bool wasExited = false;
             int ?exitCode = null;
@@ -114,23 +112,29 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!VSCodeDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
             DisconnectRequest disconnectRequest = new DisconnectRequest();
             disconnectRequest.arguments = new DisconnectArguments();
             disconnectRequest.arguments.restart = false;
-            Assert.True(VSCodeDebugger.Request(disconnectRequest).Success);
+            Assert.True(VSCodeDebugger.Request(disconnectRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static VSCodeDebugger VSCodeDebugger = new VSCodeDebugger();
-        static int threadId = -1;
-        public static string BreakpointSourceName;
-        public static List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
-        public static List<int> BreakpointLines = new List<int>();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            VSCodeDebugger = new VSCodeDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        VSCodeDebugger VSCodeDebugger;
+        int threadId = -1;
+        string BreakpointSourceName;
+        List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
+        List<int> BreakpointLines = new List<int>();
     }
 }
 
@@ -140,18 +144,20 @@ namespace VSCodeTestDisconnect
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "finish", () => {
-                Context.PrepareStart();
-                Context.AddBreakpoint("bp");
-                Context.SetBreakpoints();
-                Context.PrepareEnd();
-                Context.WasEntryPointHit();
-                Context.Continue();
+            Label.Checkpoint("init", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.PrepareStart(@"__FILE__:__LINE__");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp");
+                Context.SetBreakpoints(@"__FILE__:__LINE__");
+                Context.PrepareEnd(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("finish", "", () => {;
-                Context.DebuggerExit();
-                Context.WasExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.DebuggerExit(@"__FILE__:__LINE__");
+                Context.WasExit(@"__FILE__:__LINE__");
             });
 
             System.Threading.Thread.Sleep(30000);

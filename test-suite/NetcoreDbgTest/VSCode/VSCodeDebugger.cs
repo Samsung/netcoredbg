@@ -52,31 +52,35 @@ namespace NetcoreDbgTest.VSCode
 
             return null;
         }
+
         public VSCodeResult Request(Request command, int timeout = -1)
         {
+            command.seq = RequestSeq++;
             string stringJSON = JsonConvert.SerializeObject(command,
                                                             Formatting.None,
                                                             new JsonSerializerSettings { 
                                                                 NullValueHandling = NullValueHandling.Ignore});
 
             Logger.LogLine("-> (C) " + stringJSON);
-            Int64 RequestSeq = (Int64)GetResponsePropertyValue(stringJSON, "seq");
 
-            if (!Debuggee.DebuggerClient.Send(stringJSON)) {
-                throw new DebuggerNotResponsesException();
+            if (!DebuggerClient.Send(stringJSON)) {
+                throw new DebuggerNotResponses();
             }
 
             while (true) {
-                string[] response = Debuggee.DebuggerClient.Receive(timeout);
+                string[] response = DebuggerClient.Receive(timeout);
                 if (response == null) {
-                    throw new DebuggerNotResponsesException();
+                    throw new DebuggerNotResponses();
                 }
                 string line = response[0];
 
-                if (isResponseContainProperty(line, "type", "response")
-                    && (Int64)GetResponsePropertyValue(line, "request_seq") == RequestSeq) {
+                if (isResponseContainProperty(line, "type", "response"))
+                {
                     Logger.LogLine("<- (R) " + line);
-                    return new VSCodeResult((bool)GetResponsePropertyValue(line, "success"), line);
+                    if ((Int64)GetResponsePropertyValue(line, "request_seq") == command.seq)
+                        return new VSCodeResult((bool)GetResponsePropertyValue(line, "success"), line);
+                    else
+                        throw new WrongResponseSequence();
                 } else {
                     Logger.LogLine("<- (E) " + line);
                     EventQueue.Enqueue(line);
@@ -87,9 +91,9 @@ namespace NetcoreDbgTest.VSCode
         void ReceiveEvents(int timeout = -1)
         {
             while (true) {
-                string[] response = Debuggee.DebuggerClient.Receive(timeout);
+                string[] response = DebuggerClient.Receive(timeout);
                 if (response == null) {
-                    throw new DebuggerNotResponsesException();
+                    throw new DebuggerNotResponses();
                 }
                 string line = response[0];
 
@@ -122,8 +126,16 @@ namespace NetcoreDbgTest.VSCode
             return false;
         }
 
+        public VSCodeDebugger(DebuggerClient debuggerClient)
+        {
+            DebuggerClient = debuggerClient;
+        }
+
         Queue<string> EventQueue = new Queue<string>();
-        string[] StopEvents = {"stopped",
-                               "terminated"};
+        Logger Logger = new Logger();
+        DebuggerClient DebuggerClient;
+        static string[] StopEvents = {"stopped",
+                                      "terminated"};
+        int RequestSeq = 1;
     }
 }

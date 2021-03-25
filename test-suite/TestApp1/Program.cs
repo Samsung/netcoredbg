@@ -7,34 +7,35 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace TestApp1
 {
     class Program
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "bp_test", () => {
-                Context.Run();
-                Context.WasEntryPointHit();
-                Context.EnableBreakpoint("bp");
-                Context.Continue();
+            Label.Checkpoint("init", "bp_test", (Object context) => {
+                Context Context = (Context)context;
+                Context.Run(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             int i = 1;
             i++;                                                        Label.Breakpoint("bp");
 
-            Label.Checkpoint("bp_test", "finish", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
-                Context.Continue();
+            Label.Checkpoint("bp_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             i++;
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }
@@ -42,16 +43,14 @@ namespace TestApp1
 
 namespace NetcoreDbgTest.Script
 {
-    // Context includes methods and constants which
-    // will be move to debugger API
     class Context
     {
-        public static void Run()
+        public void Run(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class);
+            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -67,7 +66,7 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -81,22 +80,21 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(Breakpoint breakpoint)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)breakpoint;
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -110,23 +108,23 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -149,33 +147,43 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void EnableBreakpoint(string bpName)
+        public void EnableBreakpoint(string caller_trace, string bpName)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
 
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var lbp = (LineBreakpoint)bp;
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f "
-                                            + lbp.FileName + ":" + lbp.NumLine).Class);
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static MIDebugger MIDebugger = new MIDebugger();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        MIDebugger MIDebugger;
     }
 }

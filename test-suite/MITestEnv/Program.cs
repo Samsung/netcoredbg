@@ -6,13 +6,11 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -26,20 +24,19 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -55,7 +52,7 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -78,21 +75,31 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        public ControlInfo ControlInfo { get; private set; }
+        public MIDebugger MIDebugger { get; private set; }
     }
 }
 
@@ -102,38 +109,39 @@ namespace MITestEnv
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "finish", () => {
-                string targetAssemblyPath = Path.GetFileName(DebuggeeInfo.TargetAssemblyPath);
-                if (DebuggeeInfo.TargetAssemblyPath == targetAssemblyPath) {
-                    // don't use assembly file name as TargetAssemblyPath
-                    throw new NetcoreDbgTestCore.ResultNotSuccessException();
-                }
-                string pwd = DebuggeeInfo.TargetAssemblyPath.Substring(
+            Label.Checkpoint("init", "finish", (Object context) => {
+                Context Context = (Context)context;
+                string targetAssemblyPath = Path.GetFileName(Context.ControlInfo.TargetAssemblyPath);
+                // don't use assembly file name as TargetAssemblyPath
+                Assert.NotEqual(Context.ControlInfo.TargetAssemblyPath, targetAssemblyPath, @"__FILE__:__LINE__");
+                string pwd = Context.ControlInfo.TargetAssemblyPath.Substring(
                                 0,
-                                DebuggeeInfo.TargetAssemblyPath.Length - targetAssemblyPath.Length);
+                                Context.ControlInfo.TargetAssemblyPath.Length - targetAssemblyPath.Length);
 
                 Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("-environment-cd " + pwd).Class);
+                             Context.MIDebugger.Request("-environment-cd " + pwd).Class,
+                             @"__FILE__:__LINE__");
 
                 Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("-file-exec-and-symbols "
-                                                + DebuggeeInfo.CorerunPath).Class);
+                             Context.MIDebugger.Request("-file-exec-and-symbols " + Context.ControlInfo.CorerunPath).Class,
+                             @"__FILE__:__LINE__");
 
                 Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("-exec-arguments "
-                                                        + targetAssemblyPath).Class);
+                             Context.MIDebugger.Request("-exec-arguments " + targetAssemblyPath).Class,
+                             @"__FILE__:__LINE__");
 
-                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-run").Class);
+                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-run").Class, @"__FILE__:__LINE__");
 
-                Context.WasEntryPointHit();
-                Context.Continue();
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("Hello World!");
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }

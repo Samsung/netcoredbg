@@ -7,13 +7,11 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -29,9 +27,9 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void WasBreakpointHit(Breakpoint breakpoint)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)breakpoint;
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -45,47 +43,58 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void EnableBreakpoint(string bpName)
+        public void EnableBreakpoint(string caller_trace, string bpName)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
 
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var lbp = (LineBreakpoint)bp;
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f "
-                                            + lbp.FileName + ":" + lbp.NumLine).Class);
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
-        public static Process testProcess;
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        public ControlInfo ControlInfo { get; private set; }
+        public MIDebugger MIDebugger { get; private set; }
+        public Process testProcess;
     }
 }
 
@@ -95,51 +104,55 @@ namespace MITestTarget
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "bp_setup", () => {
+            Label.Checkpoint("init", "bp_setup", (Object context) => {
+                Context Context = (Context)context;
                 Context.testProcess = new Process();
                 Context.testProcess.StartInfo.UseShellExecute = false;
-                Context.testProcess.StartInfo.FileName = DebuggeeInfo.CorerunPath;
-                Context.testProcess.StartInfo.Arguments = DebuggeeInfo.TargetAssemblyPath;
+                Context.testProcess.StartInfo.FileName = Context.ControlInfo.CorerunPath;
+                Context.testProcess.StartInfo.Arguments = Context.ControlInfo.TargetAssemblyPath;
                 Context.testProcess.StartInfo.CreateNoWindow = true;
-                Assert.True(Context.testProcess.Start());
+                Assert.True(Context.testProcess.Start(), @"__FILE__:__LINE__");
                 Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("-target-attach "
-                                                        + Context.testProcess.Id.ToString()).Class);
+                             Context.MIDebugger.Request("-target-attach " + Context.testProcess.Id.ToString()).Class,
+                             @"__FILE__:__LINE__");
             });
 
             // wait some time, control process should attach and setup breakpoints
             Thread.Sleep(3000);
 
-            Label.Checkpoint("bp_setup", "bp_test", () => {
-                Context.EnableBreakpoint("bp");
-                Context.EnableBreakpoint("bp2");
+            Label.Checkpoint("bp_setup", "bp_test", (Object context) => {
+                Context Context = (Context)context;
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp2");
             });
 
             int i = 10000;
             i++;                                                          Label.Breakpoint("bp");
 
-            Label.Checkpoint("bp_test", "finish", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
-                Context.Continue();
+            Label.Checkpoint("bp_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // wait some time after process detached
             Thread.Sleep(i);                                              Label.Breakpoint("bp2");
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp2"]);
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp2");
 
-                Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("-thread-info").Class);
-                Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("-target-detach").Class);
-                Assert.Equal(MIResultClass.Error, Context.MIDebugger.Request("-thread-info").Class);
+                Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("-thread-info").Class, @"__FILE__:__LINE__");
+                Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("-target-detach").Class, @"__FILE__:__LINE__");
+                Assert.Equal(MIResultClass.Error, Context.MIDebugger.Request("-thread-info").Class, @"__FILE__:__LINE__");
 
-                Assert.False(Context.testProcess.HasExited);
+                Assert.False(Context.testProcess.HasExited, @"__FILE__:__LINE__");
                 Context.testProcess.Kill();
                 while (!Context.testProcess.HasExited) {};
                 // killed by SIGKILL
-                Assert.NotEqual(0, Context.testProcess.ExitCode);
+                Assert.NotEqual(0, Context.testProcess.ExitCode, @"__FILE__:__LINE__");
 
-                Context.DebuggerExit();
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }

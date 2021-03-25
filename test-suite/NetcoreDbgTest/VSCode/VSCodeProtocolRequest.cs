@@ -6,13 +6,11 @@ namespace NetcoreDbgTest.VSCode
     public class Request : ProtocolMessage {
         public Request()
         {
-            seq = RequestSeq++;
+            // "seq" must be configured by VSCodeDebugger
             type = "request";
         }
         public string command;
-        static public int RequestSeq = 1;
     }
-
 
     public class InitializeRequest : Request {
         public InitializeRequest()

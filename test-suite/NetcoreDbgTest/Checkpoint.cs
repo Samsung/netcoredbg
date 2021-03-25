@@ -1,4 +1,6 @@
+using System;
+
 namespace NetcoreDbgTestCore
 {
-    public delegate void Checkpoint();
+    public delegate void Checkpoint(Object Context);
 }

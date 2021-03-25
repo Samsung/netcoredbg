@@ -13,15 +13,15 @@ namespace NetcoreDbgTest.MI
 
             Logger.LogLine("> " + command);
 
-            if (!Debuggee.DebuggerClient.Send(command)) {
-                throw new DebuggerNotResponsesException();
+            if (!DebuggerClient.Send(command)) {
+                throw new DebuggerNotResponses();
             }
 
             while (true) {
-                string[] response = Debuggee.DebuggerClient.Receive(timeout);
+                string[] response = DebuggerClient.Receive(timeout);
 
                 if (response == null) {
-                    throw new DebuggerNotResponsesException();
+                    throw new DebuggerNotResponses();
                 }
 
                 foreach (string line in response) {
@@ -50,10 +50,10 @@ namespace NetcoreDbgTest.MI
 
         void ReceiveEvents(int timeout = -1)
         {
-            string[] response = Debuggee.DebuggerClient.Receive(timeout);
+            string[] response = DebuggerClient.Receive(timeout);
 
             if (response == null) {
-                throw new DebuggerNotResponsesException();
+                throw new DebuggerNotResponses();
             }
 
             foreach (string line in response) {
@@ -90,7 +90,14 @@ namespace NetcoreDbgTest.MI
             return false;
         }
 
+        public MIDebugger(DebuggerClient debuggerClient)
+        {
+            DebuggerClient = debuggerClient;
+        }
+
         Queue<MIOutOfBandRecord> EventQueue = new Queue<MIOutOfBandRecord>();
+        Logger Logger = new Logger();
         MIParser MIParser = new MIParser();
+        DebuggerClient DebuggerClient;
     }
 }

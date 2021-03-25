@@ -100,9 +100,9 @@ namespace XUnitTests
 
             Xunit.Assert.True(DebuggerClient.DoHandshake(5000));
 
-            var Script = new DebuggeeScript(Env.SourceFilesPath, DebuggerClient.Protocol);
+            var Script = new ControlScript(Env.SourceFilesPath, DebuggerClient.Protocol);
 
-            Debuggee.Run(Script, DebuggerClient, Env);
+            new ControlPart().Run(Script, DebuggerClient, Env);
         }
 
         public void Dispose()
@@ -121,8 +121,8 @@ namespace XUnitTests
             }
         }
 
-        private LocalDebuggerProcess LocalDebugger;
-        private DebuggerClient DebuggerClient;
-        private static string DebuggerPath = "../bin/netcoredbg";
+        LocalDebuggerProcess LocalDebugger;
+        DebuggerClient DebuggerClient;
+        static string DebuggerPath = "../bin/netcoredbg";
     }
 }

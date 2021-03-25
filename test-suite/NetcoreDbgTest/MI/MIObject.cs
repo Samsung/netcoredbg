@@ -82,7 +82,7 @@ namespace NetcoreDbgTest.MI
 
         public MIToken Token = null;
         public MIResultClass Class = MIResultClass.Done;
-        private Dictionary<string, MIValue> Results;
+        Dictionary<string, MIValue> Results;
     }
 
     public class MIOutOfBandRecord
@@ -208,7 +208,7 @@ namespace NetcoreDbgTest.MI
             return Results.GetEnumerator();
         }
 
-        private Dictionary<string, MIValue>Results;
+        Dictionary<string, MIValue>Results;
     }
 
     public class MIList : MIValue, IEnumerable
@@ -496,24 +496,24 @@ namespace NetcoreDbgTest.MI
         }
 
         public MIAsyncOutputClass Class;
-        private Dictionary<string, MIValue> Results;
+        Dictionary<string, MIValue> Results;
     }
 
     public class MIResultClass
     {
-        public static MIResultClass Done =
+        public static MIResultClass Done { get; private set; } =
             new MIResultClass("done");
 
-        public static MIResultClass Running =
+        public static MIResultClass Running { get; private set; } =
             new MIResultClass("running");
 
-        public static MIResultClass Connected =
+        public static MIResultClass Connected { get; private set; } =
             new MIResultClass("connected");
 
-        public static MIResultClass Error =
+        public static MIResultClass Error { get; private set; } =
             new MIResultClass("error");
 
-        public static MIResultClass Exit =
+        public static MIResultClass Exit { get; private set; } =
             new MIResultClass("exit");
 
         public override string ToString()
@@ -521,17 +521,17 @@ namespace NetcoreDbgTest.MI
             return Representation;
         }
 
-        private MIResultClass(string reprsentation)
+        MIResultClass(string reprsentation)
         {
             Representation = reprsentation;
         }
 
-        private string Representation;
+        string Representation;
     }
 
     public class MIAsyncOutputClass
     {
-        public static MIAsyncOutputClass Stopped =
+        public static MIAsyncOutputClass Stopped { get; private set; } =
             new MIAsyncOutputClass("stopped");
 
         public static MIAsyncOutputClass Others(string representation)
@@ -544,23 +544,23 @@ namespace NetcoreDbgTest.MI
             return Represenation;
         }
 
-        private MIAsyncOutputClass(string representation)
+        MIAsyncOutputClass(string representation)
         {
             Represenation = representation;
         }
 
-        private string Represenation;
+        string Represenation;
     }
 
     public class MIAsyncRecordClass
     {
-        public static MIAsyncRecordClass Exec =
+        public static MIAsyncRecordClass Exec { get; private set; } =
             new MIAsyncRecordClass("*");
 
-        public static MIAsyncRecordClass Status =
+        public static MIAsyncRecordClass Status { get; private set; } =
             new MIAsyncRecordClass("+");
 
-        public static MIAsyncRecordClass Notify =
+        public static MIAsyncRecordClass Notify { get; private set; } =
             new MIAsyncRecordClass("=");
 
         public override string ToString()
@@ -568,7 +568,7 @@ namespace NetcoreDbgTest.MI
             return Represenation;
         }
 
-        private MIAsyncRecordClass(string represenation)
+        MIAsyncRecordClass(string represenation)
         {
             Represenation = represenation;
         }
@@ -583,16 +583,16 @@ namespace NetcoreDbgTest.MI
             return Represenation;
         }
 
-        public static MIStreamRecordClass Console =
+        public static MIStreamRecordClass Console { get; private set; } =
             new MIStreamRecordClass("~");
 
-        public static MIStreamRecordClass Target =
+        public static MIStreamRecordClass Target { get; private set; } =
             new MIStreamRecordClass("@");
 
-        public static MIStreamRecordClass Log =
+        public static MIStreamRecordClass Log { get; private set; } =
             new MIStreamRecordClass("&");
 
-        private MIStreamRecordClass(string representation)
+        MIStreamRecordClass(string representation)
         {
             Represenation = representation;
         }

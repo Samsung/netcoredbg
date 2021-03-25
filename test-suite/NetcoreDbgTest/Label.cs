@@ -4,7 +4,7 @@ using NetcoreDbgTestCore;
 
 namespace NetcoreDbgTest
 {
-    static public class Label
+    public static class Label
     {
         [Conditional("TEST_LABEL")]
         public static void Breakpoint(string name)

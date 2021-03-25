@@ -5,26 +5,26 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
     class Context
     {
-        public static void Prepare()
+        public void Prepare(string caller_trace)
         {
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-file-exec-and-symbols "
-                                            + DebuggeeInfo.CorerunPath).Class);
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-exec-arguments "
-                                            + DebuggeeInfo.TargetAssemblyPath).Class);
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -40,7 +40,7 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -54,22 +54,21 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(Breakpoint breakpoint)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)breakpoint;
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -83,23 +82,23 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -122,42 +121,51 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void EnableBreakpoint(string bpName)
+        public void EnableBreakpoint(string caller_trace, string bpName)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
 
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var lbp = (LineBreakpoint)bp;
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f "
-                                            + lbp.FileName + ":" + lbp.NumLine).Class);
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void CheckEnum(string VarName, string ExpectedResult)
+        public void CheckEnum(string caller_trace, string VarName, string ExpectedResult)
         {
-            var result =
-                Context.MIDebugger.Request(String.Format("-var-create - * \"{0}\"", VarName));
-            Assert.Equal(MIResultClass.Done, result.Class);
-            Assert.Equal(ExpectedResult, ((MIConst)result["value"]).CString);
+            var result = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", VarName));
+            Assert.Equal(MIResultClass.Done, result.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(ExpectedResult, ((MIConst)result["value"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        MIDebugger MIDebugger;
     }
 }
 
@@ -240,11 +248,12 @@ namespace MITestEnum
 
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "values_test", () => {
-                Context.Prepare();
-                Context.WasEntryPointHit();
-                Context.EnableBreakpoint("bp");
-                Context.Continue();
+            Label.Checkpoint("init", "values_test", (Object context) => {
+                Context Context = (Context)context;
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp");
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             // Note, we test for same behaviour as MS vsdbg have.
@@ -303,67 +312,69 @@ namespace MITestEnum
 
             Console.WriteLine("A breakpoint \"bp\" is set on this line"); Label.Breakpoint("bp");
 
-            Label.Checkpoint("values_test", "finish", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["bp"]);
+            Label.Checkpoint("values_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp");
 
-                Context.CheckEnum("enum1_test0", "0");
-                Context.CheckEnum("enum1_test1", "read");
-                Context.CheckEnum("enum1_test2", "write");
-                Context.CheckEnum("enum1_test3", "append");
-                Context.CheckEnum("enum1_test4", "0");
-                Context.CheckEnum("enum1_test5", "append");
-                Context.CheckEnum("enum1_test6", "101");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum1_test0", "0");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum1_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum1_test2", "write");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum1_test3", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum1_test4", "0");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum1_test5", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum1_test6", "101");
 
-                Context.CheckEnum("enum2_test0", "None");
-                Context.CheckEnum("enum2_test1", "read");
-                Context.CheckEnum("enum2_test2", "write");
-                Context.CheckEnum("enum2_test3", "append");
-                Context.CheckEnum("enum2_test4", "None");
-                Context.CheckEnum("enum2_test5", "append");
-                Context.CheckEnum("enum2_test6", "101");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum2_test0", "None");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum2_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum2_test2", "write");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum2_test3", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum2_test4", "None");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum2_test5", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum2_test6", "101");
 
-                Context.CheckEnum("enum3_test0", "0");
-                Context.CheckEnum("enum3_test1", "read");
-                Context.CheckEnum("enum3_test2", "write");
-                Context.CheckEnum("enum3_test3", "append");
-                Context.CheckEnum("enum3_test4", "0");
-                Context.CheckEnum("enum3_test5", "read | write | append");
-                Context.CheckEnum("enum3_test6", "101");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum3_test0", "0");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum3_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum3_test2", "write");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum3_test3", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum3_test4", "0");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum3_test5", "read | write | append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum3_test6", "101");
 
-                Context.CheckEnum("enum4_test0", "None");
-                Context.CheckEnum("enum4_test1", "read");
-                Context.CheckEnum("enum4_test2", "write");
-                Context.CheckEnum("enum4_test3", "append");
-                Context.CheckEnum("enum4_test4", "None");
-                Context.CheckEnum("enum4_test5", "read | write | append");
-                Context.CheckEnum("enum4_test6", "101");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum4_test0", "None");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum4_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum4_test2", "write");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum4_test3", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum4_test4", "None");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum4_test5", "read | write | append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum4_test6", "101");
 
-                Context.CheckEnum("enum5_test1", "append");
-                Context.CheckEnum("enum5_test2", "append");
-                Context.CheckEnum("enum5_test3", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum5_test1", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum5_test2", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum5_test3", "append");
 
-                Context.CheckEnum("enum6_test1", "append");
-                Context.CheckEnum("enum6_test2", "append");
-                Context.CheckEnum("enum6_test3", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum6_test1", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum6_test2", "append");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum6_test3", "append");
 
-                Context.CheckEnum("enum7_test1", "read");
-                Context.CheckEnum("enum7_test2", "write");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum7_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum7_test2", "write");
 
-                Context.CheckEnum("enum8_test1", "read");
-                Context.CheckEnum("enum8_test2", "write");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum8_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum8_test2", "write");
 
-                Context.CheckEnum("enum9_test1", "read");
-                Context.CheckEnum("enum9_test2", "write");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum9_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum9_test2", "write");
 
-                Context.CheckEnum("enum10_test1", "read");
-                Context.CheckEnum("enum10_test2", "write");               
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum10_test1", "read");
+                Context.CheckEnum(@"__FILE__:__LINE__", "enum10_test2", "write");               
 
-                Context.Continue();
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }

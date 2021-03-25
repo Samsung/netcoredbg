@@ -6,7 +6,7 @@ using NetcoreDbgTest.MI;
 
 namespace NetcoreDbgTestCore.MI
 {
-    public class MIParserException : NetcoreDbgTestCore.Exception
+    public class MIParserException : System.Exception
     {
     }
 
@@ -41,7 +41,7 @@ namespace NetcoreDbgTestCore.MI
             return new MIOutput(outOfBandRecordList.ToArray(), resultRecord);
         }
 
-        private MIResultRecord ParseResultRecord(string response)
+        MIResultRecord ParseResultRecord(string response)
         {
             int endIndex;
             var token = ParseToken(response, 0, out endIndex);
@@ -64,7 +64,7 @@ namespace NetcoreDbgTestCore.MI
             return new MIResultRecord(token, resultClass, results.ToArray());
         }
 
-        private MIOutOfBandRecord ParseOutOfBandRecord(string response)
+        MIOutOfBandRecord ParseOutOfBandRecord(string response)
         {
             MIOutOfBandRecord outOfBandRecord;
             int endIndex;
@@ -82,7 +82,7 @@ namespace NetcoreDbgTestCore.MI
             return outOfBandRecord;
         }
 
-        private MIToken ParseToken(string response, int beginIndex, out int endIndex)
+        MIToken ParseToken(string response, int beginIndex, out int endIndex)
         {
             endIndex = beginIndex;
 
@@ -99,7 +99,7 @@ namespace NetcoreDbgTestCore.MI
             );
         }
 
-        private MIResultClass ParseResultClass(string response, int beginIndex, out int endIndex)
+        MIResultClass ParseResultClass(string response, int beginIndex, out int endIndex)
         {
             var resClasses = new MIResultClass[] {
                 MIResultClass.Done,
@@ -123,7 +123,7 @@ namespace NetcoreDbgTestCore.MI
             throw new MIParserException();
         }
 
-        private MIResult ParseResult(string response, int beginIndex, out int endIndex)
+        MIResult ParseResult(string response, int beginIndex, out int endIndex)
         {
             endIndex = response.IndexOf('=', beginIndex);
             string variable = response.Substring(beginIndex, endIndex - beginIndex);
@@ -132,7 +132,7 @@ namespace NetcoreDbgTestCore.MI
             return new MIResult(variable, miValue);
         }
 
-        private MIValue ParseValue(string response, int beginIndex, out int endIndex)
+        MIValue ParseValue(string response, int beginIndex, out int endIndex)
         {
             if (response[beginIndex] == '{') {
                  return ParseTuple(response, beginIndex, out endIndex);
@@ -145,7 +145,7 @@ namespace NetcoreDbgTestCore.MI
             throw new MIParserException();
         }
 
-        private MITuple ParseTuple(string response, int beginIndex, out int endIndex)
+        MITuple ParseTuple(string response, int beginIndex, out int endIndex)
         {
             beginIndex++; // eat '{'
 
@@ -169,10 +169,7 @@ namespace NetcoreDbgTestCore.MI
             throw new MIParserException();
         }
 
-        private MIListElement ParseListElement(MIListElementType type,
-                                     string response,
-                                     int beginIndex,
-                                     out int endIndex)
+        MIListElement ParseListElement(MIListElementType type, string response, int beginIndex, out int endIndex)
         {
             switch (type) {
             case MIListElementType.Value:
@@ -184,7 +181,7 @@ namespace NetcoreDbgTestCore.MI
             throw new MIParserException();
         }
 
-        private MIList ParseList(string response, int beginIndex, out int endIndex)
+        MIList ParseList(string response, int beginIndex, out int endIndex)
         {
             var elements = new List<MIListElement>();
             MIListElementType type;
@@ -220,7 +217,7 @@ namespace NetcoreDbgTestCore.MI
             throw new MIParserException();
         }
 
-        private MIConst ParseConst(string response, int beginIndex, out int endIndex)
+        MIConst ParseConst(string response, int beginIndex, out int endIndex)
         {
             for (endIndex = beginIndex + 1; endIndex < response.Length; endIndex++) {
                 if (response[endIndex] == '"' && response[endIndex - 1] != '\\') {
@@ -235,7 +232,7 @@ namespace NetcoreDbgTestCore.MI
             return new MIConst(cstring);
         }
 
-        private MIOutOfBandRecord ParseAsyncRecord(string response, int beginIndex, out int endIndex)
+        MIOutOfBandRecord ParseAsyncRecord(string response, int beginIndex, out int endIndex)
         {
             MIToken token = ParseToken(response, beginIndex, out endIndex);
             MIAsyncRecordClass asyncRecordClass = ParseAsyncRecordClass(response, endIndex, out endIndex);
@@ -244,7 +241,7 @@ namespace NetcoreDbgTestCore.MI
             return new MIAsyncRecord(token, asyncRecordClass, asyncOutput);
         }
 
-        private MIAsyncRecordClass ParseAsyncRecordClass(string response, int beginIndex, out int endIndex)
+        MIAsyncRecordClass ParseAsyncRecordClass(string response, int beginIndex, out int endIndex)
         {
             endIndex = beginIndex + 1;
 
@@ -257,7 +254,7 @@ namespace NetcoreDbgTestCore.MI
             throw new MIParserException();
         }
 
-        private MIAsyncOutput ParseAsyncOutput(string response, int beginIndex, out int endIndex)
+        MIAsyncOutput ParseAsyncOutput(string response, int beginIndex, out int endIndex)
         {
             MIAsyncOutputClass asyncClass = ParseAsyncOutputClass(response, beginIndex, out endIndex);
 
@@ -274,7 +271,7 @@ namespace NetcoreDbgTestCore.MI
             return new MIAsyncOutput(asyncClass, results.ToArray());
         }
 
-        private MIAsyncOutputClass ParseAsyncOutputClass(string response, int beginIndex, out int endIndex)
+        MIAsyncOutputClass ParseAsyncOutputClass(string response, int beginIndex, out int endIndex)
         {
             endIndex = beginIndex;
 
@@ -294,7 +291,7 @@ namespace NetcoreDbgTestCore.MI
             return MIAsyncOutputClass.Others(strClass);
         }
 
-        private MIStreamRecord ParseStreamRecord(string response, int beginIndex, out int endIndex)
+        MIStreamRecord ParseStreamRecord(string response, int beginIndex, out int endIndex)
         {
             MIStreamRecordClass streamRecordClass =
                 ParseStreamRecordClass(response, beginIndex, out endIndex);
@@ -303,7 +300,7 @@ namespace NetcoreDbgTestCore.MI
             return new MIStreamRecord(streamRecordClass, constant);
         }
 
-        private MIStreamRecordClass ParseStreamRecordClass(string response, int beginIndex, out int endIndex)
+        MIStreamRecordClass ParseStreamRecordClass(string response, int beginIndex, out int endIndex)
         {
             endIndex = beginIndex + 1;
 
@@ -316,20 +313,20 @@ namespace NetcoreDbgTestCore.MI
             throw new MIParserException();
         }
 
-        private bool IsOutOfBandRecord(string response)
+        bool IsOutOfBandRecord(string response)
         {
             return IsStreamRecord(response) ||
                    IsAsyncRecord(response);
         }
 
-        private bool IsStreamRecord(string response)
+        bool IsStreamRecord(string response)
         {
             return response[0] == '~' ||
                    response[0] == '@' ||
                    response[0] == '&';
         }
 
-        private bool IsAsyncRecord(string response)
+        bool IsAsyncRecord(string response)
         {
             int i = 0;
             while (Char.IsDigit(response[i])) {
@@ -341,7 +338,7 @@ namespace NetcoreDbgTestCore.MI
                    response[i] == '=';
         }
 
-        private bool IsResultRecord(string response)
+        bool IsResultRecord(string response)
         {
             int i = 0;
             while (Char.IsDigit(response[i])) {

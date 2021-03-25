@@ -5,28 +5,26 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
-    // Context includes methods and constants which
-    // will be move to debugger API
     class Context
     {
-        public static void Prepare()
+        public void Prepare(string caller_trace)
         {
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-file-exec-and-symbols "
-                                            + DebuggeeInfo.CorerunPath).Class);
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-exec-arguments "
-                                            + DebuggeeInfo.TargetAssemblyPath).Class);
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
 
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-run").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -40,23 +38,21 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIConst WasStep(string stepName)
+        public void WasStep(string caller_trace, string bpName)
         {
-            MIConst Result = new MIConst("-1");
-            var bp = (LineBreakpoint)DebuggeeInfo.Breakpoints[stepName];
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -65,32 +61,25 @@ namespace NetcoreDbgTest.Script
 
                 var output = ((MIAsyncRecord)record).Output;
                 var reason = (MIConst)output["reason"];
-
                 if (reason.CString != "end-stepping-range") {
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var numLine = (MIConst)(frame["line"]);
-
-                if (numLine.CString == bp.NumLine.ToString()) {
-                    Result = (MIConst)output["thread-id"];
+                var frame = (MITuple)output["frame"];
+                var line = ((MIConst)frame["line"]).Int;
+                if (bp.NumLine == line) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (MIDebugger.IsEventReceived(filter))
-                return Result;
-
-            throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(string bpName)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
-            MIConst Result = new MIConst("-1");
-            var bp = (LineBreakpoint)DebuggeeInfo.Breakpoints[bpName];
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -104,23 +93,23 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -143,29 +132,30 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void EnableBreakpoint(string bpName)
+        public void EnableBreakpoint(string caller_trace, string bpName)
         {
-            Breakpoint bp = DebuggeeInfo.Breakpoints[bpName];
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
 
-            Assert.Equal(BreakpointType.Line, bp.Type);
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var lbp = (LineBreakpoint)bp;
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f "
-                                            + lbp.FileName + ":" + lbp.NumLine).Class);
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -181,27 +171,42 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static void StepOver()
+        public void StepOver(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-next").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-next").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void StepIn()
+        public void StepIn(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-step").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-step").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void StepOut()
+        public void StepOut(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("-exec-finish").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-finish").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void Continue()
+        public void Continue(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Running, MIDebugger.Request("-exec-continue").Class);
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        MIDebugger MIDebugger;
     }
 }
 
@@ -212,50 +217,57 @@ namespace MITestStepping
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "step1", () => {
-                Context.Prepare();
-                Context.WasEntryPointHit();
-                Context.EnableBreakpoint("inside_func1_1"); // check, that step-in and breakpoint at same line will generate only one event - step
-                Context.EnableBreakpoint("inside_func2_1"); // check, that step-over and breakpoint inside method will generate breakpoint and reset step
-                Context.StepOver();
+            Label.Checkpoint("init", "step1", (Object context) => {
+                Context Context = (Context)context;
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "inside_func1_1"); // check, that step-in and breakpoint at same line will generate only one event - step
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "inside_func2_1"); // check, that step-over and breakpoint inside method will generate breakpoint and reset step
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("step 1");                        Label.Breakpoint("step1");
 
-            Label.Checkpoint("step1", "step2", () => {
-                Context.WasStep("step1");
-                Context.StepOver();
+            Label.Checkpoint("step1", "step2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             Console.WriteLine("step 2");                        Label.Breakpoint("step2");
 
-            Label.Checkpoint("step2", "step_in", () => {
-                Context.WasStep("step2");
-                Context.StepIn();
+            Label.Checkpoint("step2", "step_in", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step2");
+                Context.StepIn(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("step_in", "step_in_func", () => {
-                Context.WasStep("step_func1");
-                Context.StepIn();
+            Label.Checkpoint("step_in", "step_in_func", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func1");
+                Context.StepIn(@"__FILE__:__LINE__");
             });
 
             test_func1();                                        Label.Breakpoint("step_func1");
 
-            Label.Checkpoint("step_out_check", "step_over", () => {
-                Context.WasStep("step_func1");
-                Context.StepOver();
+            Label.Checkpoint("step_out_check", "step_over", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("step_over", "step_over_breakpoint", () => {
-                Context.WasStep("step_func2");
-                Context.StepOver();
+            Label.Checkpoint("step_over", "step_over_breakpoint", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func2");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             test_func2();                                        Label.Breakpoint("step_func2");
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
 
@@ -263,14 +275,16 @@ namespace MITestStepping
         {                                                       Label.Breakpoint("inside_func1_1");
             Console.WriteLine("test_func1");                    Label.Breakpoint("inside_func1_2");
 
-            Label.Checkpoint("step_in_func", "step_out_func", () => {
-                Context.WasStep("inside_func1_1");
-                Context.StepOver();
+            Label.Checkpoint("step_in_func", "step_out_func", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "inside_func1_1");
+                Context.StepOver(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("step_out_func", "step_out_check", () => {
-                Context.WasStep("inside_func1_2");
-                Context.StepOut();
+            Label.Checkpoint("step_out_func", "step_out_check", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "inside_func1_2");
+                Context.StepOut(@"__FILE__:__LINE__");
             });
         }
 
@@ -278,9 +292,10 @@ namespace MITestStepping
         {
             Console.WriteLine("test_func2");                    Label.Breakpoint("inside_func2_1");
 
-            Label.Checkpoint("step_over_breakpoint", "finish", () => {
-                Context.WasBreakpointHit("inside_func2_1");
-                Context.Continue();
+            Label.Checkpoint("step_over_breakpoint", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "inside_func2_1");
+                Context.Continue(@"__FILE__:__LINE__");
             });
         }
     }

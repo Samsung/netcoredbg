@@ -2,14 +2,14 @@ using System;
 
 namespace NetcoreDbgTest
 {
-    public static class Logger
+    class Logger
     {
-        public static void LogLine(string line)
+        public void LogLine(string line)
         {
             Console.WriteLine(line);
         }
 
-        public static void LogError(string error)
+        public void LogError(string error)
         {
             Console.Error.WriteLine(error);
         }

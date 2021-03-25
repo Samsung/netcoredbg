@@ -7,11 +7,9 @@ using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
 
-using Xunit;
-
 namespace NetcoreDbgTest.Script
 {
-    public static class Context
+    class Context
     {
         // https://docs.microsoft.com/en-us/visualstudio/extensibility/debugger/reference/evalflags
         public enum enum_EVALFLAGS {
@@ -24,53 +22,61 @@ namespace NetcoreDbgTest.Script
             EVAL_NOEVENTS = 0x1000
         }
 
-        public static void InsertBreakpoint(Breakpoint bp, int token)
+        public void Prepare(string caller_trace)
         {
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request(token.ToString() + "-break-insert -f "
-                                            + bp.ToString()).Class);
+                         MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-exec-arguments " + ControlInfo.TargetAssemblyPath).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-run").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void CreateAndAssignVar(string variable, string val)
+        public void CreateAndAssignVar(string caller_trace, string variable, string val)
         {
             var res = MIDebugger.Request("-var-create - * \"" + variable + "\"");
-            Assert.Equal(MIResultClass.Done, res.Class);
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             string internalName = ((MIConst)res["name"]).CString;
 
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-var-assign " + internalName + " "
-                                            + "\"" + val + "\"").Class);
+                         MIDebugger.Request("-var-assign " + internalName + " " + "\"" + val + "\"").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void CreateAndCompareVar(string variable, string val)
+        public void CreateAndCompareVar(string caller_trace, string variable, string val)
         {
             var res = MIDebugger.Request("-var-create - * \"" + variable + "\"");
-            Assert.Equal(MIResultClass.Done, res.Class);
-
-            Assert.Equal(val, ((MIConst)res["value"]).CString);
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(val, ((MIConst)res["value"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static string GetChildValue(string variable, int childIndex, bool setEvalFlags, enum_EVALFLAGS evalFlags)
+        public void GetAndCheckChildValue(string caller_trace, string ExpectedResult, string variable,
+                                                 int childIndex, bool setEvalFlags, enum_EVALFLAGS evalFlags)
         {
             var res = MIDebugger.Request("-var-create - * " +
                                          "\"" + variable + "\"" +
                                          (setEvalFlags ? (" --evalFlags " + (int)evalFlags) : "" ));
-            Assert.Equal(MIResultClass.Done, res.Class);
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             string struct2 = ((MIConst)res["name"]).CString;
 
             res = MIDebugger.Request("-var-list-children --simple-values " +
                                      "\"" + struct2 + "\"");
-            Assert.Equal(MIResultClass.Done, res.Class);
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var children = (MIList)res["children"];
             var child =  (MITuple)((MIResult)children[childIndex]).Value;
 
-            return ((MIConst)child["value"]).CString;
+            Assert.Equal(ExpectedResult, ((MIConst)child["value"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasEntryPointHit()
+        public void WasEntryPointHit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -84,22 +90,21 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var func = (MIConst)(frame["func"]);
-                if (func.CString == DebuggeeInfo.TestName + ".Program.Main()") {
+                var frame = (MITuple)output["frame"];
+                var func = (MIConst)frame["func"];
+                if (func.CString == ControlInfo.TestName + ".Program.Main()") {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasBreakpointHit(Breakpoint breakpoint)
+        public void WasBreakpointHit(string caller_trace, string bpName)
         {
-            var bp = (LineBreakpoint)breakpoint;
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
 
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -113,23 +118,23 @@ namespace NetcoreDbgTest.Script
                     return false;
                 }
 
-                var frame = (MITuple)(output["frame"]);
-                var fileName = (MIConst)(frame["file"]);
-                var numLine = (MIConst)(frame["line"]);
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
 
                 if (fileName.CString == bp.FileName &&
-                    numLine.CString == bp.NumLine.ToString()) {
+                    line == bp.NumLine) {
                     return true;
                 }
 
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void WasExit()
+        public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -152,16 +157,17 @@ namespace NetcoreDbgTest.Script
                 return false;
             };
 
-            if (!MIDebugger.IsEventReceived(filter))
-                throw new NetcoreDbgTestCore.ResultNotSuccessException();
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public static void DebuggerExit()
+        public void DebuggerExit(string caller_trace)
         {
-            Assert.Equal(MIResultClass.Exit, Context.MIDebugger.Request("-gdb-exit").Class);
+            Assert.Equal(MIResultClass.Exit,
+                         MIDebugger.Request("-gdb-exit").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        static bool IsStoppedEvent(MIOutOfBandRecord record)
+        bool IsStoppedEvent(MIOutOfBandRecord record)
         {
             if (record.Type != MIOutOfBandRecordType.Async) {
                 return false;
@@ -177,7 +183,34 @@ namespace NetcoreDbgTest.Script
             return true;
         }
 
-        public static MIDebugger MIDebugger = new MIDebugger();
+        public void EnableBreakpoint(string caller_trace, string bpName)
+        {
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
+
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            var lbp = (LineBreakpoint)bp;
+
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void Continue(string caller_trace)
+        {
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
+        {
+            ControlInfo = controlInfo;
+            MIDebugger = new MIDebugger(debuggerClient);
+        }
+
+        ControlInfo ControlInfo;
+        MIDebugger MIDebugger;
     }
 }
 
@@ -371,28 +404,21 @@ namespace MITestSetValue
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "setup_var", () => {
-                Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("1-file-exec-and-symbols "
-                                                        + DebuggeeInfo.CorerunPath).Class);
-                Assert.Equal(MIResultClass.Done,
-                             Context.MIDebugger.Request("2-exec-arguments "
-                                                        + DebuggeeInfo.TargetAssemblyPath).Class);
-                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("3-exec-run").Class);
+            Label.Checkpoint("init", "setup_var", (Object context) => {
+                Context Context = (Context)context;
+                Context.Prepare(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
 
-                Context.WasEntryPointHit();
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK2");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK3");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK4");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK5");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK6");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK7");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_GETTER");
 
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK1"], 4);
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK2"], 5);
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK3"], 6);
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK4"], 7);
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK5"], 8);
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK6"], 9);
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK7"], 10);
-                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK_GETTER"], 11);
-
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("12-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             TestStruct2 ts = new TestStruct2(1, 5, 10);
@@ -414,78 +440,78 @@ namespace MITestSetValue
 
             int dummy1 = 1;                                     Label.Breakpoint("BREAK1");
 
-            Label.Checkpoint("setup_var", "test_var", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK1"]);
+            Label.Checkpoint("setup_var", "test_var", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK1");
 
-                Context.CreateAndAssignVar("ts.struct2.val1", "666");
-                Context.CreateAndAssignVar("testBool", "true");
-                Context.CreateAndAssignVar("testChar", "'a'");
-                Context.CreateAndAssignVar("testByte", "200");
-                Context.CreateAndAssignVar("testSByte", "-1");
-                Context.CreateAndAssignVar("testShort", "-666");
-                Context.CreateAndAssignVar("testUShort", "666");
-                Context.CreateAndAssignVar("testInt", "666666");
-                Context.CreateAndAssignVar("testUInt", "666666");
-                Context.CreateAndAssignVar("testLong", "-666666666");
-                Context.CreateAndAssignVar("testULong", "666666666");
-                Context.CreateAndAssignVar("b", "-1.000000000000000000000017M");
-                Context.CreateAndAssignVar("testString", "\"edited string\"");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "ts.struct2.val1", "666");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testBool", "true");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testChar", "'a'");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testByte", "200");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testSByte", "-1");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testShort", "-666");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testUShort", "666");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testInt", "666666");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testUInt", "666666");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testLong", "-666666666");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testULong", "666666666");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "b", "-1.000000000000000000000017M");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "testString", "\"edited string\"");
 
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("34-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             int dummy2 = 2;                                     Label.Breakpoint("BREAK2");
 
-            Label.Checkpoint("test_var", "test_eval_flags", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK2"]);
+            Label.Checkpoint("test_var", "test_eval_flags", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK2");
 
-                Assert.Equal("666", Context.GetChildValue("ts.struct2", 0, false, 0));
-                Context.CreateAndCompareVar("testBool", "true");
-                Context.CreateAndCompareVar("testChar", "97 'a'");
-                Context.CreateAndCompareVar("testByte", "200");
-                Context.CreateAndCompareVar("testSByte", "-1");
-                Context.CreateAndCompareVar("testShort", "-666");
-                Context.CreateAndCompareVar("testUShort", "666");
-                Context.CreateAndCompareVar("testInt", "666666");
-                Context.CreateAndCompareVar("testUInt", "666666");
-                Context.CreateAndCompareVar("testLong", "-666666666");
-                Context.CreateAndCompareVar("testULong", "666666666");
-                Context.CreateAndCompareVar("b", "-1.000000000000000000000017");
-                Context.CreateAndCompareVar("testString", "\\\"edited string\\\"");
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "666", "ts.struct2", 0, false, 0);
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testBool", "true");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testChar", "97 'a'");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testByte", "200");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testSByte", "-1");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testShort", "-666");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testUShort", "666");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testInt", "666666");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testUInt", "666666");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testLong", "-666666666");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testULong", "666666666");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "b", "-1.000000000000000000000017");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "testString", "\\\"edited string\\\"");
 
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("49-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             TestStruct3 ts3 = new TestStruct3();
 
             int dummy3 = 3;                                     Label.Breakpoint("BREAK3");
 
-            Label.Checkpoint("test_eval_flags", "test_debugger_browsable_state", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK3"]);
+            Label.Checkpoint("test_eval_flags", "test_debugger_browsable_state", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK3");
 
-                Context.CreateAndAssignVar("ts3.val1", "666");
-                Assert.Equal("777", Context.GetChildValue("ts3", 0, false, 0));
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "ts3.val1", "666");
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "777", "ts3", 0, false, 0);
                 Context.enum_EVALFLAGS evalFlags = Context.enum_EVALFLAGS.EVAL_NOFUNCEVAL;
-                Assert.Equal("<error>", Context.GetChildValue("ts3", 0, true, evalFlags));
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "<error>", "ts3", 0, true, evalFlags);
 
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             TestStruct4 ts4 = new TestStruct4();
 
             int dummy4 = 4;                                     Label.Breakpoint("BREAK4");
 
-            Label.Checkpoint("test_debugger_browsable_state", "test_NotifyOfCrossThreadDependency", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK4"]);
+            Label.Checkpoint("test_debugger_browsable_state", "test_NotifyOfCrossThreadDependency", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK4");
 
-                Assert.Equal("666", Context.GetChildValue("ts4", 0, false, 0));
-                Assert.Equal("888", Context.GetChildValue("ts4", 1, false, 0));
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "666", "ts4", 0, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "888", "ts4", 1, false, 0);
 
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             TestStruct5 ts5 = new TestStruct5();
@@ -495,59 +521,60 @@ namespace MITestSetValue
 
             int dummy5 = 5;                                     Label.Breakpoint("BREAK5");
 
-            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "test_eval_timeout", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK5"]);
+            Label.Checkpoint("test_NotifyOfCrossThreadDependency", "test_eval_timeout", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK5");
 
-                Assert.Equal("111", Context.GetChildValue("ts5", 0, false, 0));
-                Assert.Equal("<error>", Context.GetChildValue("ts5", 1, false, 0));
-                Assert.Equal("\\\"text_333\\\"", Context.GetChildValue("ts5", 2, false, 0));
-                Assert.Equal("<error>", Context.GetChildValue("ts5", 3, false, 0));
-                Assert.Equal("555.5", Context.GetChildValue("ts5", 4, false, 0));
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "111", "ts5", 0, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "<error>", "ts5", 1, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "\\\"text_333\\\"", "ts5", 2, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "<error>", "ts5", 3, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "555.5", "ts5", 4, false, 0);
 
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             TestStruct6 ts6 = new TestStruct6();
 
             int dummy6 = 6;                                     Label.Breakpoint("BREAK6");
 
-            Label.Checkpoint("test_eval_timeout", "test_eval_with_exception", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK6"]);
+            Label.Checkpoint("test_eval_timeout", "test_eval_with_exception", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK6");
 
                 var task = System.Threading.Tasks.Task.Run(() => 
                 {
-                    Assert.Equal("123", Context.GetChildValue("ts6", 0, false, 0));
-                    Assert.Equal("<error>", Context.GetChildValue("ts6", 1, false, 0));
-                    Assert.Equal("\\\"text_123\\\"", Context.GetChildValue("ts6", 2, false, 0));
+                    Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "123", "ts6", 0, false, 0);
+                    Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "<error>", "ts6", 1, false, 0);
+                    Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "\\\"text_123\\\"", "ts6", 2, false, 0);
                 });
                 // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve)
                 if (!task.Wait(TimeSpan.FromSeconds(20)))
-                    throw new NetcoreDbgTestCore.DebuggerTimedOut();
+                    throw new DebuggerTimedOut(@"__FILE__:__LINE__");
 
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
             TestStruct7 ts7 = new TestStruct7();
 
             int dummy7 = 7;                                     Label.Breakpoint("BREAK7");
 
-            Label.Checkpoint("test_eval_with_exception", "finish", () => {
-                Context.WasBreakpointHit(DebuggeeInfo.Breakpoints["BREAK7"]);
+            Label.Checkpoint("test_eval_with_exception", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK7");
 
-                Assert.Equal("567", Context.GetChildValue("ts7", 0, false, 0));
-                Assert.Equal("777", Context.GetChildValue("ts7", 1, false, 0));
-                Assert.Equal("{System.DivideByZeroException}", Context.GetChildValue("ts7", 2, false, 0));
-                Assert.Equal("\\\"text_567\\\"", Context.GetChildValue("ts7", 3, false, 0));
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "567", "ts7", 0, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "777", "ts7", 1, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "{System.DivideByZeroException}", "ts7", 2, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "\\\"text_567\\\"", "ts7", 3, false, 0);
 
-                Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("-exec-continue").Class);
+                Context.Continue(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("finish", "", () => {
-                Context.WasExit();
-                Context.DebuggerExit();
+            Label.Checkpoint("finish", "", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExit(@"__FILE__:__LINE__");
+                Context.DebuggerExit(@"__FILE__:__LINE__");
             });
         }
     }
