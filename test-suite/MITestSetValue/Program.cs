@@ -299,6 +299,8 @@ namespace MITestSetValue
         {
             get
             {
+                // Test, that debugger ignore Break() callback during eval.
+                Debugger.Break();
                 return 123; 
             }
         }
@@ -316,7 +318,8 @@ namespace MITestSetValue
         {
             get
             {
-                return "text_123"; 
+                // Test, that debugger ignore Breakpoint() callback during eval.
+                return "text_123";                              Label.Breakpoint("BREAK_GETTER");
             }
         }
     }
@@ -386,9 +389,10 @@ namespace MITestSetValue
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK5"], 8);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK6"], 9);
                 Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK7"], 10);
+                Context.InsertBreakpoint(DebuggeeInfo.Breakpoints["BREAK_GETTER"], 11);
 
                 Assert.Equal(MIResultClass.Running,
-                             Context.MIDebugger.Request("11-exec-continue").Class);
+                             Context.MIDebugger.Request("12-exec-continue").Class);
             });
 
             TestStruct2 ts = new TestStruct2(1, 5, 10);

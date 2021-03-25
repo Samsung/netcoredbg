@@ -25,6 +25,7 @@ ALL_TEST_NAMES=(
     "MITestSrcBreakpointResolve"
     "MITestEnum"
     "MITestAsyncStepping"
+    "MITestBreak"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -42,6 +43,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestSrcBreakpointResolve"
     "VSCodeTestEnum"
     "VSCodeTestAsyncStepping"
+    "VSCodeTestBreak"
 )
 
 # Skipped tests:

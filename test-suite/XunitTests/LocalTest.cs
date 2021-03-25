@@ -39,6 +39,7 @@ namespace XUnitTests
         [InlineData("MITest中文目录", "中文文件名.cs")]
         [InlineData("MITestSrcBreakpointResolve", "Program.cs;folder/Program.cs")]
         [InlineData("MITestEnum", "Program.cs")]
+        [InlineData("MITestBreak", "Program.cs")]
         [InlineData("MITestAsyncStepping", "Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
@@ -57,6 +58,7 @@ namespace XUnitTests
         [InlineData("VSCodeTestSrcBreakpointResolve", "Program.cs;folder/Program.cs")]
         [InlineData("VSCodeTestEnum", "Program.cs")]
         [InlineData("VSCodeTestAsyncStepping", "Program.cs")]
+        [InlineData("VSCodeTestBreak", "Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             // Explicit encoding setup, since system console encoding could be not utf8 (Windows OS).

@@ -322,6 +322,7 @@ namespace VSCodeTestVariables
                 Context.AddBreakpoint("bp4");
                 Context.AddBreakpoint("bp5");
                 Context.AddBreakpoint("bp_func");
+                Context.AddBreakpoint("bp_getter");
                 Context.SetBreakpoints();
                 Context.PrepareEnd();
                 Context.WasEntryPointHit();
@@ -561,6 +562,8 @@ namespace VSCodeTestVariables
             {
                 get
                 {
+                    // Test, that debugger ignore Break() callback during eval.
+                    Debugger.Break();
                     return 123; 
                 }
             }
@@ -578,7 +581,8 @@ namespace VSCodeTestVariables
             {
                 get
                 {
-                    return "text_123"; 
+                    // Test, that debugger ignore Breakpoint() callback during eval.
+                    return "text_123";                              Label.Breakpoint("bp_getter");
                 }
             }
         }
