@@ -874,7 +874,19 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
         return S_OK;
     }
 
-    m_debugger.Stop(threadId, event);
+    // TODO this looks like wrong logic with m_stopCounter, we must not have situation when process stop logic emit continued event.
+    //      Exception breakpoint related code must be refactored.
+    m_debugger.m_stopCounterMutex.lock();
+    while (m_debugger.m_stopCounter > 0) {
+        m_debugger.m_protocol->EmitContinuedEvent(m_debugger.GetLastStoppedThreadId());
+        --m_debugger.m_stopCounter;
+    }
+    // INFO: Double EmitStopEvent() produce blocked coreclr command reader
+    m_debugger.m_stopCounter = 1;
+    m_debugger.m_stopCounterMutex.unlock();
+
+    m_debugger.m_protocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }
 

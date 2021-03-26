@@ -855,16 +855,15 @@ void VSCodeProtocol::CommandLoop()
         }
 
         std::string output = response.dump();
+
+        std::lock_guard<std::mutex> lock(m_outMutex);
+
         output = VSCodeSeq(m_seqCounter) + output.substr(1);
+        ++m_seqCounter;
 
-        {
-            std::lock_guard<std::mutex> lock(m_outMutex);
-            ++m_seqCounter;
-
-            cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
-            cout.flush();
-            Log(LOG_RESPONSE, output);
-        }
+        cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
+        cout.flush();
+        Log(LOG_RESPONSE, output);
     }
 
     if (!m_exit)
@@ -889,9 +888,9 @@ void VSCodeProtocol::EngineLogging(const std::string &path)
     }
 }
 
+// Caller must care about m_outMutex.
 void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
 {
-    // Calling function must lock m_outMutex
     switch(m_engineLogOutput)
     {
         case LogNone:

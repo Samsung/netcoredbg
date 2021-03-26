@@ -493,6 +493,7 @@ static HRESULT TrySetupAsyncEntryBreakpoint(ICorDebugModule *pModule, IMetaDataI
     return S_OK;
 }
 
+// Caller must care about m_breakpointsMutex.
 HRESULT Breakpoints::TrySetupEntryBreakpoint(ICorDebugModule *pModule)
 {
     if (!m_stopAtEntry || m_entryPoint != mdMethodDefNil)

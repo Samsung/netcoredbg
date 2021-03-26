@@ -22,7 +22,7 @@ using Utility::string_view;
 
 class MIProtocol : public IProtocol
 {
-    static std::mutex m_outMutex;
+    std::mutex m_outMutex;
 
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;

@@ -1181,8 +1181,6 @@ void MIProtocol::CommandLoop()
     Printf("(gdb)\n");
 }
 
-std::mutex MIProtocol::m_outMutex;
-
 void MIProtocol::Printf(const char *fmt, ...)
 {
     std::string strbuffer;

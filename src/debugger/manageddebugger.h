@@ -237,7 +237,8 @@ private:
     void SetLastStoppedThreadId(ThreadId threadId);
     HRESULT GetFullyQualifiedIlOffset(const ThreadId &pThread, FullyQualifiedIlOffset_t &fullyQualifiedIlOffset);
 
-    std::atomic_int m_stopCounter;
+    std::mutex m_stopCounterMutex;
+    int m_stopCounter;
 
     enum StartMethod
     {
@@ -355,7 +356,6 @@ public:
     Debugger::AsyncResult ProcessStdin(InStream &) override;
 
 private:
-    HRESULT Stop(ThreadId threadId, const StoppedEvent &event);
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 
     enum class asyncStepStatus

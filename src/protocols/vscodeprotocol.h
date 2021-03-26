@@ -44,8 +44,7 @@ class VSCodeProtocol : public Protocol
         LogFile
     } m_engineLogOutput;
     std::ofstream m_engineLog;
-
-    uint64_t m_seqCounter;
+    uint64_t m_seqCounter; // Note, this counter must be covered by m_outMutex.
 
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;

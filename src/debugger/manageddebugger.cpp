@@ -828,23 +828,10 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
     {
         FrameId::invalidate();
         m_protocol->EmitContinuedEvent(threadId);
+        m_stopCounterMutex.lock();
         --m_stopCounter;
+        m_stopCounterMutex.unlock();
     }
-    return Status;
-}
-
-HRESULT ManagedDebugger::Stop(ThreadId threadId, const StoppedEvent &event)
-{
-    HRESULT Status = S_OK;
-
-    while (m_stopCounter.load() > 0) {
-        m_protocol->EmitContinuedEvent(m_lastStoppedThreadId);
-        --m_stopCounter;
-    }
-    // INFO: Double EmitStopEvent() produce blocked coreclr command reader
-    m_stopCounter.store(1); // store zero and increment
-    m_protocol->EmitStoppedEvent(event);
-    m_ioredirect.async_cancel();
     return Status;
 }
 
@@ -896,7 +883,9 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     {
         FrameId::invalidate();
         m_protocol->EmitContinuedEvent(threadId);
+        m_stopCounterMutex.lock();
         --m_stopCounter;
+        m_stopCounterMutex.unlock();
     }
 
     return res;
