@@ -917,7 +917,8 @@ HRESULT Modules::ResolveBreakpointFileAndLine(std::string &filename, int &linenu
     {
         // Check for absolute path.
 #ifdef WIN32
-        if (filename[1] == ':' && (filename[2] == '/' || filename[2] == '\\'))
+        // Check, if start from drive letter, for example "D:\" or "D:/".
+        if (filename.size() > 2 && filename[1] == ':' && (filename[2] == '/' || filename[2] == '\\'))
 #else
         if (filename[0] == '/')
 #endif
