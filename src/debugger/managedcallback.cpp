@@ -347,7 +347,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     while (0);
 
     // Disable all steppers if we stop at break during step.
-    m_debugger.DisableAllSteppers(m_debugger.m_pProcess);
+    m_debugger.DisableAllSteppers();
 
     m_debugger.SetLastStoppedThread(pThread);
 
