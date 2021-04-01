@@ -11,13 +11,15 @@ namespace netcoredbg
 
 class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2, ICorDebugManagedCallback3
 {
+    std::mutex m_refCountMutex;
     ULONG m_refCount;
     ManagedDebugger &m_debugger;
 public:
 
     void HandleEvent(ICorDebugController *controller, const std::string &eventName);
+    ULONG GetRefCount();
 
-    ManagedCallback(ManagedDebugger &debugger) : m_refCount(1), m_debugger(debugger) {}
+    ManagedCallback(ManagedDebugger &debugger) : m_refCount(0), m_debugger(debugger) {}
     virtual ~ManagedCallback() {}
 
     // IUnknown

@@ -259,7 +259,7 @@ private:
     Breakpoints m_breakpoints;
     Variables m_variables;
     Protocol *m_protocol;
-    ToRelease<ManagedCallback> m_managedCallback;
+    std::unique_ptr<ManagedCallback> m_managedCallback;
     ICorDebug *m_pDebug;
     ICorDebugProcess *m_pProcess;
 

@@ -551,7 +551,7 @@ ManagedDebugger::ManagedDebugger() :
     m_breakpoints(m_modules),
     m_variables(m_evaluator),
     m_protocol(nullptr),
-    m_managedCallback(new ManagedCallback(*this)),
+    m_managedCallback(nullptr),
     m_pDebug(nullptr),
     m_pProcess(nullptr),
     m_enabledSimpleStepId(0),
@@ -1098,10 +1098,12 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 
     IfFailRet(pCorDebug->Initialize());
 
-    Status = pCorDebug->SetManagedHandler(m_managedCallback);
+    m_managedCallback.reset(new ManagedCallback(*this));
+    Status = pCorDebug->SetManagedHandler(m_managedCallback.get());
     if (FAILED(Status))
     {
         pCorDebug->Terminate();
+        m_managedCallback.reset(nullptr);
         return Status;
     }
 
@@ -1115,6 +1117,7 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     if (FAILED(Status))
     {
         pCorDebug->Terminate();
+        m_managedCallback.reset(nullptr);
         return Status;
     }
 
@@ -1292,6 +1295,12 @@ HRESULT ManagedDebugger::DetachFromProcess()
     m_pDebug->Terminate();
     m_pDebug = nullptr;
 
+    if (m_managedCallback->GetRefCount() > 0)
+    {
+        LOGW("ManagedCallback was not properly released by ICorDebug");
+    }
+    m_managedCallback.reset(nullptr);
+
     return S_OK;
 }
 
@@ -1316,6 +1325,12 @@ HRESULT ManagedDebugger::TerminateProcess()
 
     m_pDebug->Terminate();
     m_pDebug = nullptr;
+
+    if (m_managedCallback->GetRefCount() > 0)
+    {
+        LOGW("ManagedCallback was not properly released by ICorDebug");
+    }
+    m_managedCallback.reset(nullptr);
 
     return S_OK;
 }

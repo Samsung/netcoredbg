@@ -56,58 +56,69 @@ void ManagedCallback::HandleEvent(ICorDebugController *controller, const std::st
     controller->Continue(0);
 }
 
+ULONG ManagedCallback::GetRefCount()
+{
+    LogFuncEntry();
+
+    std::lock_guard<std::mutex> lock(m_refCountMutex);
+    return m_refCount;
+}
+
+// IUnknown
+
 HRESULT STDMETHODCALLTYPE ManagedCallback::QueryInterface(REFIID riid, VOID** ppInterface)
 {
     LogFuncEntry();
 
-    if(riid == __uuidof(ICorDebugManagedCallback))
+    if (riid == IID_ICorDebugManagedCallback)
     {
         *ppInterface = static_cast<ICorDebugManagedCallback*>(this);
-        AddRef();
-        return S_OK;
     }
-    else if(riid == __uuidof(ICorDebugManagedCallback2))
+    else if (riid == IID_ICorDebugManagedCallback2)
     {
         *ppInterface = static_cast<ICorDebugManagedCallback2*>(this);
-        AddRef();
-        return S_OK;
     }
-    else if(riid == __uuidof(ICorDebugManagedCallback3))
+    else if (riid == IID_ICorDebugManagedCallback3)
     {
         *ppInterface = static_cast<ICorDebugManagedCallback3*>(this);
-        AddRef();
-        return S_OK;
     }
-    else if(riid == __uuidof(IUnknown))
+    else if (riid == IID_IUnknown)
     {
         *ppInterface = static_cast<IUnknown*>(static_cast<ICorDebugManagedCallback*>(this));
-        AddRef();
-        return S_OK;
     }
     else
     {
+        *ppInterface = NULL;
         return E_NOINTERFACE;
     }
+
+    this->AddRef();
+    return S_OK;
 }
 
 ULONG STDMETHODCALLTYPE ManagedCallback::AddRef()
 {
     LogFuncEntry();
 
-    return InterlockedIncrement((volatile LONG *) &m_refCount);
+    std::lock_guard<std::mutex> lock(m_refCountMutex);
+    return ++m_refCount;
 }
 
 ULONG STDMETHODCALLTYPE ManagedCallback::Release()
 {
     LogFuncEntry();
 
-    ULONG count = InterlockedDecrement((volatile LONG *) &m_refCount);
-    if(count == 0)
-    {
-        delete this;
-    }
-    return count;
+    std::lock_guard<std::mutex> lock(m_refCountMutex);
+
+    assert(m_refCount > 0);
+
+    // Note, we don't provide "delete" call for object itself for our fake "COM".
+    // External holder will care about this object during debugger lifetime.
+
+    return --m_refCount;
 }
+
+// ICorDebugManagedCallback
 
 HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
     /* [in] */ ICorDebugAppDomain *pAppDomain,
