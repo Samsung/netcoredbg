@@ -14,75 +14,15 @@
 #include <functional>
 
 
-/// FIXME: Definition of `TADDR`
-#include "torelease.h"
-
 namespace netcoredbg
 {
 
-typedef  int (*ReadMemoryDelegate)(ULONG64, char *, int);
-typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, ULONG64, int, ULONG64, int, ReadMemoryDelegate);
-typedef  void (*DisposeDelegate)(PVOID);
-typedef  BOOL (*ResolveSequencePointDelegate)(PVOID, const WCHAR*, unsigned int, unsigned int*, unsigned int*);
-typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned int*, unsigned int*);
-typedef  BOOL (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, PVOID);
-typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
-typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
-typedef  void (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int*);
-typedef  BOOL (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int *, BSTR*);
-typedef  BOOL (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int*, int*, PVOID*);
-typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int *, PVOID*);
-typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
-typedef  void (*StringToUpperDelegate)(const WCHAR*, BSTR*);
-
-// TODO WinAPI and related code should be moved in platform-related sources
-namespace WinAPI
+namespace Interop
 {
-typedef BSTR (*SysAllocStringLen_t)(const OLECHAR*, UINT);
-typedef void (*SysFreeString_t)(BSTR);
-typedef UINT (*SysStringLen_t)(BSTR);
-typedef LPVOID (*CoTaskMemAlloc_t)(size_t);
-typedef void (*CoTaskMemFree_t)(LPVOID);
-
-extern SysAllocStringLen_t sysAllocStringLen;
-extern SysFreeString_t sysFreeString;
-extern SysStringLen_t sysStringLen;
-extern CoTaskMemAlloc_t coTaskMemAlloc;
-extern CoTaskMemFree_t coTaskMemFree;
-} // namespace WinAPI
-
-class ManagedPart
-{
-private:
-    PVOID m_symbolReaderHandle;
-
-    static std::string coreClrPath;
-    static LoadSymbolsForModuleDelegate loadSymbolsForModuleDelegate;
-    static DisposeDelegate disposeDelegate;
-    static ResolveSequencePointDelegate resolveSequencePointDelegate;
-    static GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate;
-    static GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate;
-    static GetStepRangesFromIPDelegate getStepRangesFromIPDelegate;
-    static GetSequencePointsDelegate getSequencePointsDelegate;
-    static GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate;
-    static ParseExpressionDelegate parseExpressionDelegate;
-    static EvalExpressionDelegate evalExpressionDelegate;
-    static RegisterGetChildDelegate registerGetChildDelegate;
-    static StringToUpperDelegate stringToUpperDelegate;
-
-    static HRESULT PrepareManagedPart();
-
-    HRESULT LoadSymbolsForPortablePDB(
-        const std::string &modulePath,
-        BOOL isInMemory,
-        BOOL isFileLayout,
-        ULONG64 peAddress,
-        ULONG64 peSize,
-        ULONG64 inMemoryPdbAddress,
-        ULONG64 inMemoryPdbSize);
-
-public:
-    static const int HiddenLine;
+    // 0xfeefee is a magic number for "#line hidden" directive.
+    // https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/preprocessor-directives/preprocessor-line
+    // https://docs.microsoft.com/en-us/archive/blogs/jmstall/line-hidden-and-0xfeefee-sequence-points
+    constexpr int HiddenLine = 0xfeefee;
 
     struct SequencePoint {
         int32_t startLine;
@@ -97,7 +37,33 @@ public:
             offset(0),
             document(nullptr)
         {}
-        ~SequencePoint() { WinAPI::sysFreeString(document); }
+        ~SequencePoint();
+
+        SequencePoint(const SequencePoint&) = delete;
+        SequencePoint& operator=(const SequencePoint&) = delete;
+        SequencePoint(SequencePoint&& other) noexcept
+            :startLine(other.startLine)
+            ,startColumn(other.startColumn)
+            ,endLine(other.endLine)
+            ,endColumn(other.endColumn)
+            ,offset(other.offset)
+            ,document(other.document)
+        {
+            other.document = nullptr;
+        }
+        SequencePoint& operator=(SequencePoint&& other)
+        {
+            if(this == std::addressof(other))
+                return *this;
+            startLine = other.startLine;
+            startColumn = other.startColumn;
+            endLine = other.endLine;
+            endColumn = other.endColumn;
+            offset = other.offset;
+            document = other.document;
+            other.document = nullptr;
+            return *this;
+        }
     };
 
     // Keep in sync with string[] basicTypes in Evaluation.cs
@@ -134,39 +100,31 @@ public:
         {}
     };
 
-    ManagedPart()
-    {
-        m_symbolReaderHandle = 0;
-    }
-
-    ~ManagedPart()
-    {
-        if (m_symbolReaderHandle != 0)
-        {
-            disposeDelegate(m_symbolReaderHandle);
-            m_symbolReaderHandle = 0;
-        }
-    }
-
-    bool SymbolsLoaded() const { return m_symbolReaderHandle != 0; }
-
-    static void SetCoreCLRPath(const std::string &path) { coreClrPath = path; }
-
     typedef std::function<bool(PVOID, const std::string&, int *, PVOID*)> GetChildCallback;
 
-    HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule);
-    HRESULT GetSequencePointByILOffset(mdMethodDef MethodToken, ULONG64 IlOffset, SequencePoint *sequencePoint);
-    HRESULT GetNamedLocalVariableAndScope(ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex, WCHAR* paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32* pIlStart, ULONG32* pIlEnd);
-    HRESULT ResolveSequencePoint(const char *filename, ULONG32 lineNumber, TADDR mod, mdMethodDef* pToken, ULONG32* pIlOffset);
-    HRESULT GetStepRangesFromIP(ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
-    HRESULT GetSequencePoints(mdMethodDef methodToken, std::vector<SequencePoint> &points);
-    HRESULT GetAsyncMethodsSteppingInfo(std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo);
-    static HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
-    static HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
-    static PVOID AllocBytes(size_t size);
-    static PVOID AllocString(const std::string &str);
-    static HRESULT StringToUpper(std::string &String);
-};
+    // WARNING! Due to CoreCLR limitations, Init() / Shutdown() sequence can be used only once during process execution.
+    // Note, init in case of error will throw exception, since this is fatal for debugger (CoreCLR can't be re-init).
+    void Init(const std::string &coreClrPath);
+    // WARNING! Due to CoreCLR limitations, Shutdown() can't be called out of the Main() scope, for example, from global object destructor.
+    void Shutdown();
+
+    HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule, VOID **ppSymbolReaderHandle);
+    void DisposeSymbols(PVOID pSymbolReaderHandle);
+    HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG64 IlOffset, SequencePoint *sequencePoint);
+    HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex,
+                                                 WCHAR* paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32* pIlStart, ULONG32* pIlEnd);
+    HRESULT ResolveSequencePoint(PVOID pSymbolReaderHandle, const char *filename, ULONG32 lineNumber, mdMethodDef* pToken, ULONG32* pIlOffset);
+    HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
+    HRESULT GetSequencePoints(PVOID pSymbolReaderHandle, mdMethodDef methodToken, std::vector<SequencePoint> &points);
+    HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo);
+    HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
+    HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
+    PVOID AllocBytes(size_t size);
+    PVOID AllocString(const std::string &str);
+    HRESULT StringToUpper(std::string &String);
+
+} // namespace Interop
+
 
 // Set of platform-specific functions implemented in separate, platform-specific modules.
 template <typename PlatformTag>
@@ -178,8 +136,23 @@ struct InteropTraits
 
     /// This function unsets `CORECLR_ENABLE_PROFILING' environment variable.
     static void UnsetCoreCLREnv();
+
+    /// Allocates a new string, copies the specified number of characters from the passed string, and appends a null-terminating character.
+    static BSTR SysAllocStringLen(const OLECHAR *strIn, UINT ui);
+
+    /// Deallocates a string allocated previously by SysAllocString, SysAllocStringByteLen, SysReAllocString, SysAllocStringLen, or SysReAllocStringLen.
+    static void SysFreeString(BSTR bstrString);
+
+    /// Returns the length of a BSTR.
+    static UINT SysStringLen(BSTR bstrString);
+
+    /// Allocates a block of task memory in the same way that IMalloc::Alloc does.
+    static LPVOID CoTaskMemAlloc(size_t cb);
+
+    /// Frees a block of task memory previously allocated through a call to the CoTaskMemAlloc or CoTaskMemRealloc function.
+    static void CoTaskMemFree(LPVOID pv);
 };
 
-typedef InteropTraits<PlatformTag> Interop;
+typedef InteropTraits<PlatformTag> InteropPlatform;
 
 } // namespace netcoredbg

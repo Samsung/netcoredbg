@@ -1098,6 +1098,14 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 
     IfFailRet(pCorDebug->Initialize());
 
+    if (m_clrPath.empty())
+        m_clrPath = GetCLRPath(pid);
+
+    // Note, ManagedPart must be initialized before callbacks setup, since callbacks use it.
+    // ManagedPart must be initialized only once for process, since CoreCLR don't support unload and reinit
+    // for global variables. coreclr_shutdown only should be called on process exit.
+    Interop::Init(m_clrPath);
+
     m_managedCallback.reset(new ManagedCallback(*this));
     Status = pCorDebug->SetManagedHandler(m_managedCallback.get());
     if (FAILED(Status))
@@ -1106,11 +1114,6 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
         m_managedCallback.reset(nullptr);
         return Status;
     }
-
-    if (m_clrPath.empty())
-        m_clrPath = GetCLRPath(pid);
-
-    ManagedPart::SetCoreCLRPath(m_clrPath);
 
     ToRelease<ICorDebugProcess> pProcess;
     Status = pCorDebug->DebugActiveProcess(pid, FALSE, &pProcess);
@@ -1340,7 +1343,6 @@ void ManagedDebugger::Cleanup()
     m_modules.CleanupAllModules();
     m_evaluator.Cleanup();
     m_protocol->Cleanup();
-    // TODO: Cleanup libcoreclr.so instance
 }
 
 HRESULT ManagedDebugger::AttachToProcess(DWORD pid)

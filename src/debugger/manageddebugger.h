@@ -172,11 +172,13 @@ public:
         FrameId frameId,
         std::string &output);
 
-    HRESULT GetScopes(ICorDebugProcess *pProcess,
+    HRESULT GetScopes(
+        ICorDebugProcess *pProcess,
         FrameId frameId,
         std::vector<Scope> &scopes);
 
-    HRESULT Evaluate(ICorDebugProcess *pProcess,
+    HRESULT Evaluate(
+        ICorDebugProcess *pProcess,
         FrameId frameId,
         const std::string &expression,
         Variable &variable,

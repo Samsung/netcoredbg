@@ -22,7 +22,7 @@ DLHandle DLOpen(string_view path)
 
     path.copy(str, path.size());
     str[path.size()] = 0;
-    return reinterpret_cast<DLHandle>(::LoadLibraryA(str));
+    return reinterpret_cast<DLHandle>(::LoadLibraryExA(str, NULL, 0));
 }
 
 // This function resolves symbol address within library specified by handle,

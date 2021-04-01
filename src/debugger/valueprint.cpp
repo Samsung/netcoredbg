@@ -837,27 +837,27 @@ HRESULT PrintBasicValue(int typeId, const string &rawData, string &typeName, str
     std::ostringstream ss;
     switch(typeId)
     {
-        case ManagedPart::TypeCorValue:
+        case Interop::TypeCorValue:
             ss << "null";
             typeName = "object";
             break;
-        case ManagedPart::TypeObject:
+        case Interop::TypeObject:
             ss << "null";
             typeName = "object";
             break;
-        case ManagedPart::TypeBoolean:
+        case Interop::TypeBoolean:
             ss << (rawData[0] == 0 ? "false" : "true");
             typeName = "bool";
             break;
-        case ManagedPart::TypeByte:
+        case Interop::TypeByte:
             ss << (unsigned int) *(unsigned char*) &(rawData[0]);
             typeName = "byte";
             break;
-        case ManagedPart::TypeSByte:
+        case Interop::TypeSByte:
             ss << (int) *(char*) &(rawData[0]);
             typeName = "sbyte";
             break;
-        case ManagedPart::TypeChar:
+        case Interop::TypeChar:
             {
                 WCHAR wc = * (WCHAR *) &(rawData[0]);
                 string printableVal = to_utf8(wc);
@@ -866,51 +866,51 @@ HRESULT PrintBasicValue(int typeId, const string &rawData, string &typeName, str
                 typeName = "char";
             }
             break;
-        case ManagedPart::TypeDouble:
+        case Interop::TypeDouble:
             ss << std::setprecision(16) << *(double*) &(rawData[0]);
             typeName = "double";
             break;
-        case ManagedPart::TypeSingle:
+        case Interop::TypeSingle:
             ss << std::setprecision(8) << *(float*) &(rawData[0]);
             typeName = "float";
             break;
-        case ManagedPart::TypeInt32:
+        case Interop::TypeInt32:
             ss << *(int*) &(rawData[0]);
             typeName = "int";
             break;
-        case ManagedPart::TypeUInt32:
+        case Interop::TypeUInt32:
             ss << *(unsigned int*) &(rawData[0]);
             typeName = "uint";
             break;
-        case ManagedPart::TypeInt64:
+        case Interop::TypeInt64:
             ss << *(__int64*) &(rawData[0]);
             typeName = "long";
             break;
-        case ManagedPart::TypeUInt64:
+        case Interop::TypeUInt64:
             typeName = "ulong";
             ss << *(unsigned __int64*) &(rawData[0]);
             break;
-        case ManagedPart::TypeInt16:
+        case Interop::TypeInt16:
             ss << *(short*) &(rawData[0]);
             typeName = "short";
             break;
-        case ManagedPart::TypeUInt16:
+        case Interop::TypeUInt16:
             ss << *(unsigned short*) &(rawData[0]);
             typeName = "ushort";
             break;
-        case ManagedPart::TypeIntPtr:
+        case Interop::TypeIntPtr:
             ss << "0x" << std::hex << *(intptr_t*) &(rawData[0]);
             typeName = "IntPtr";
             break;
-        case ManagedPart::TypeUIntPtr:
+        case Interop::TypeUIntPtr:
             ss << "0x" << std::hex << *(intptr_t*) &(rawData[0]);
             typeName = "UIntPtr";
             break;
-        case ManagedPart::TypeDecimal:
+        case Interop::TypeDecimal:
             PrintDecimalValue(rawData, value);
             typeName = "decimal";
             return S_OK;
-        case ManagedPart::TypeString:
+        case Interop::TypeString:
             {
                 string rawStr = rawData;
                 EscapeString(rawStr, '"');
@@ -933,7 +933,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
     if (isNull)
     {
         *data = nullptr;
-        *typeId = ManagedPart::TypeObject;
+        *typeId = Interop::TypeObject;
         return S_OK;
     }
 
@@ -959,7 +959,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
 
         if (!raw_str.empty())
         {
-            *data = ManagedPart::AllocString(raw_str);
+            *data = Interop::AllocString(raw_str);
             if (*data == nullptr)
                 return E_FAIL;
         }
@@ -968,7 +968,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
             *data = nullptr;
         }
 
-        *typeId = ManagedPart::TypeString;
+        *typeId = Interop::TypeString;
         return S_OK;
     }
 
@@ -976,7 +976,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
     {
         pInputValue->AddRef();
         *data = pInputValue;
-        *typeId = ManagedPart::TypeCorValue;
+        *typeId = Interop::TypeCorValue;
         return S_OK;
     }
 
@@ -996,7 +996,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
         return E_FAIL;
 
     case ELEMENT_TYPE_PTR:
-        *typeId = ManagedPart::TypeIntPtr;
+        *typeId = Interop::TypeIntPtr;
         break;
 
     case ELEMENT_TYPE_FNPTR:
@@ -1006,7 +1006,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
             if(SUCCEEDED(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue)))
                 pReferenceValue->GetValue(&addr);
             *(CORDB_ADDRESS*) &(rgbValue[0]) = addr;
-            *typeId = ManagedPart::TypeIntPtr;
+            *typeId = Interop::TypeIntPtr;
         }
         break;
 
@@ -1019,67 +1019,67 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
             {
                 pInputValue->AddRef();
                 *data = pInputValue;
-                *typeId = ManagedPart::TypeCorValue;
+                *typeId = Interop::TypeCorValue;
                 return S_OK;
             }
-            *typeId = ManagedPart::TypeDecimal;
+            *typeId = Interop::TypeDecimal;
         }
         break;
 
     case ELEMENT_TYPE_BOOLEAN:
-        *typeId = ManagedPart::TypeBoolean;
+        *typeId = Interop::TypeBoolean;
         break;
 
     case ELEMENT_TYPE_CHAR:
-        *typeId = ManagedPart::TypeChar;
+        *typeId = Interop::TypeChar;
         break;
 
     case ELEMENT_TYPE_I1:
-        *typeId = ManagedPart::TypeSByte;
+        *typeId = Interop::TypeSByte;
         break;
 
     case ELEMENT_TYPE_U1:
-        *typeId = ManagedPart::TypeByte;
+        *typeId = Interop::TypeByte;
         break;
 
     case ELEMENT_TYPE_I2:
-        *typeId = ManagedPart::TypeInt16;
+        *typeId = Interop::TypeInt16;
         break;
 
     case ELEMENT_TYPE_U2:
-        *typeId = ManagedPart::TypeUInt16;
+        *typeId = Interop::TypeUInt16;
         break;
 
     case ELEMENT_TYPE_I:
-        *typeId = ManagedPart::TypeIntPtr;
+        *typeId = Interop::TypeIntPtr;
         break;
 
     case ELEMENT_TYPE_U:
-        *typeId = ManagedPart::TypeUIntPtr;
+        *typeId = Interop::TypeUIntPtr;
         break;
 
     case ELEMENT_TYPE_I4:
-        *typeId = ManagedPart::TypeInt32;
+        *typeId = Interop::TypeInt32;
         break;
 
     case ELEMENT_TYPE_U4:
-        *typeId = ManagedPart::TypeUInt32;
+        *typeId = Interop::TypeUInt32;
         break;
 
     case ELEMENT_TYPE_I8:
-        *typeId = ManagedPart::TypeInt64;
+        *typeId = Interop::TypeInt64;
         break;
 
     case ELEMENT_TYPE_U8:
-        *typeId = ManagedPart::TypeUInt64;
+        *typeId = Interop::TypeUInt64;
         break;
 
     case ELEMENT_TYPE_R4:
-        *typeId = ManagedPart::TypeSingle;
+        *typeId = Interop::TypeSingle;
         break;
 
     case ELEMENT_TYPE_R8:
-        *typeId = ManagedPart::TypeDouble;
+        *typeId = Interop::TypeDouble;
         break;
 
     case ELEMENT_TYPE_OBJECT:
@@ -1087,7 +1087,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
 
     }
 
-    *data = ManagedPart::AllocBytes(cbSize);
+    *data = Interop::AllocBytes(cbSize);
     if (*data == nullptr)
     {
         return E_FAIL;

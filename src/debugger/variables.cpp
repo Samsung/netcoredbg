@@ -61,11 +61,11 @@ static HRESULT WriteValue(
     auto renamed = cor2name.find(corType);
     if (renamed != cor2name.end())
     {
-        IfFailRet(ManagedPart::ParseExpression(value, renamed->second, data, errorText));
+        IfFailRet(Interop::ParseExpression(value, renamed->second, data, errorText));
     }
     else if (corType == ELEMENT_TYPE_STRING)
     {
-        IfFailRet(ManagedPart::ParseExpression(value, "System.String", data, errorText));
+        IfFailRet(Interop::ParseExpression(value, "System.String", data, errorText));
 
         ToRelease<ICorDebugValue> pNewString;
         IfFailRet(evaluator.CreateString(pThread, data, &pNewString));
@@ -91,7 +91,7 @@ static HRESULT WriteValue(
             errorText = "Unable to set value of type '" + typeName + "'";
             return E_FAIL;
         }
-        IfFailRet(ManagedPart::ParseExpression(value, "System.Decimal", data, errorText));
+        IfFailRet(Interop::ParseExpression(value, "System.Decimal", data, errorText));
     }
     else
     {
@@ -535,7 +535,7 @@ HRESULT Variables::Evaluate(
     // Use Roslyn for expression evaluation
     if (!pResultValue)
     {
-    IfFailRet(ManagedPart::EvalExpression(
+    IfFailRet(Interop::EvalExpression(
         expression, output, &typeId, &pResultValue,
         [&](void *corValue, const std::string &name, int *typeId, void **data) -> bool
     {

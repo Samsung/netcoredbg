@@ -23,9 +23,6 @@ namespace netcoredbg
 {
 using Utility::string_view;
 
-using Utility::string_view;
-
-class ManagedPart;
 typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
 
 HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module);
@@ -34,17 +31,30 @@ class Modules
 {
     struct ModuleInfo
     {
-        std::unique_ptr<ManagedPart> managedPart;
-        ToRelease<ICorDebugModule> module;
+        PVOID m_symbolReaderHandle = nullptr;
+        ToRelease<ICorDebugModule> m_iCorModule;
 
-        ModuleInfo(ModuleInfo &&) = default;
-        ModuleInfo(const ModuleInfo &) = delete;
+        ModuleInfo(PVOID Handle, ICorDebugModule *Module) :
+            m_symbolReaderHandle(Handle),
+            m_iCorModule(Module)
+        {}
+
+        ModuleInfo(ModuleInfo&& other) noexcept :
+            m_symbolReaderHandle(other.m_symbolReaderHandle),
+            m_iCorModule(std::move(other.m_iCorModule))
+        {
+            other.m_symbolReaderHandle = nullptr;
+        }
+        ModuleInfo(const ModuleInfo&) = delete;
+        ModuleInfo& operator=(ModuleInfo&&) = delete;
+        ModuleInfo& operator=(const ModuleInfo&) = delete;
+        ~ModuleInfo();
     };
 
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
 
-    static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, ManagedPart *managedPart);
+    static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
 
     static HRESULT ResolveMethodInModule(
         ICorDebugModule *pModule,
@@ -65,7 +75,7 @@ class Modules
     // map of source file name to list of source full paths from loaded assemblies,
     // need it order to resolve source full path by requested breakpoint relative source path
     std::unordered_map<std::string, std::set<std::string> > m_sourcesFullPaths;
-    HRESULT FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, ManagedPart *managedPart);
+    HRESULT FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle);
     HRESULT ResolveRelativeSourceFileName(std::string &filename);
 #ifdef WIN32
     // all internal breakpoint routine are case sensitive, proper source full name for Windows must be used (same as in module)
@@ -148,7 +158,7 @@ public:
         Modules::SequencePoint &sequencePoint);
 
     HRESULT GetSequencePointByILOffset(
-        ManagedPart *managedPart,
+        PVOID pSymbolReaderHandle,
         mdMethodDef methodToken,
         ULONG32 ilOffset,
         SequencePoint *sequencePoint);
@@ -208,7 +218,7 @@ private:
     // All async methods stepping information for all loaded (with symbols) modules.
     std::unordered_map<std::pair<CORDB_ADDRESS, mdMethodDef>, AsyncMethodInfo, PairHash> m_asyncMethodsSteppingInfo;
     std::mutex m_asyncMethodsSteppingInfoMutex;
-    HRESULT FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, ManagedPart *managedPart);
+    HRESULT FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
 };
 
 } // namespace netcoredbg

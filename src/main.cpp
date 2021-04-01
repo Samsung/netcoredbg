@@ -14,6 +14,7 @@
 #include "debugger/manageddebugger.h"
 #include "protocols/miprotocol.h"
 #include "protocols/cliprotocol.h"
+#include "managed/interop.h"
 #include "utils/utf.h"
 #include "utils/logger.h"
 #include "buildinfo.h"
@@ -389,6 +390,7 @@ int main(int argc, char *argv[])
         if (FAILED(Status))
         {
             fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
+            Interop::Shutdown();
             return EXIT_FAILURE;
         }
     }
@@ -418,6 +420,7 @@ int main(int argc, char *argv[])
         if (FAILED(hr))
         {
             fprintf(stderr, "Error: %#x %s\n", hr, errormessage(hr));
+            Interop::Shutdown();
             exit(EXIT_FAILURE);
         }
     }
@@ -438,5 +441,6 @@ int main(int argc, char *argv[])
     }
 
     protocol->CommandLoop();
+    Interop::Shutdown();
     return EXIT_SUCCESS;
 }

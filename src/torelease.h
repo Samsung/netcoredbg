@@ -125,13 +125,6 @@ private:
 #define _wcsstr     wcsstr
 #endif // !PAL_STDCPP_COMPAT
 
-typedef uintptr_t TADDR;
-typedef ULONG64 CLRDATA_ADDRESS;
-
-// Convert between CLRDATA_ADDRESS and TADDR.
-#define TO_TADDR(cdaddr) ((TADDR)(cdaddr))
-#define TO_CDADDR(taddr) ((CLRDATA_ADDRESS)(LONG_PTR)(taddr))
-
 const int mdNameLen = 2048;
 
 #ifdef _MSC_VER
