@@ -690,8 +690,6 @@ PVOID ManagedPart::AllocString(const std::string &str)
 {
     PrepareManagedPart();
     auto wstr = to_utf16(str);
-    if (wstr.size() > UINT_MAX)
-        return nullptr;
     BSTR bstr = WinAPI::sysAllocStringLen(0, (UINT)wstr.size());
     if (WinAPI::sysStringLen(bstr) == 0)
         return nullptr;

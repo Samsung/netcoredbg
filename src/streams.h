@@ -291,7 +291,10 @@ public:
     /// Function returns file handle which is used for reading data.
     IOSystem::FileHandle get_file_handle() const
     {
-        return dynamic_cast<InStreamBuf*>(rdbuf())->get_file_handle();
+        auto *ptr = dynamic_cast<InStreamBuf*>(rdbuf());
+        if (ptr == nullptr)
+            throw std::runtime_error("dynamic_cast fail");
+        return ptr->get_file_handle();
     }
 };
 
@@ -314,7 +317,10 @@ public:
     /// Function returns file handle which is used for writing data.
     IOSystem::FileHandle get_file_handle() const
     {
-        return dynamic_cast<OutStreamBuf*>(rdbuf())->get_file_handle();
+        auto *ptr = dynamic_cast<OutStreamBuf*>(rdbuf());
+        if (ptr == nullptr)
+            throw std::runtime_error("dynamic_cast fail");
+        return ptr->get_file_handle();
     }
 };
 
@@ -336,7 +342,10 @@ public:
     /// Function returns file handle which is used for reading/writing data.
     IOSystem::FileHandle get_file_handle() const
     {
-        return dynamic_cast<StreamBuf*>(rdbuf())->get_file_handle();
+        auto *ptr = dynamic_cast<StreamBuf*>(rdbuf());
+        if (ptr == nullptr)
+            throw std::runtime_error("dynamic_cast fail");
+        return ptr->get_file_handle();
     }
 };
 

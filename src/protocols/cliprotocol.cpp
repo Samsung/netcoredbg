@@ -594,7 +594,7 @@ HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
-void CLIProtocol::EmitBreakpointEvent(BreakpointEvent event)
+void CLIProtocol::EmitBreakpointEvent(const BreakpointEvent &event)
 {
     LogFuncEntry();
 
@@ -840,7 +840,7 @@ void CLIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
-void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
+void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
 {
     LogFuncEntry();
 
@@ -904,7 +904,7 @@ void CLIProtocol::EmitStoppedEvent(StoppedEvent event)
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
-void CLIProtocol::EmitExitedEvent(ExitedEvent event)
+void CLIProtocol::EmitExitedEvent(const ExitedEvent &event)
 {
     LogFuncEntry();
     lock_guard lock(m_mutex);
@@ -928,7 +928,7 @@ void CLIProtocol::EmitContinuedEvent(ThreadId threadId)
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
-void CLIProtocol::EmitThreadEvent(ThreadEvent event)
+void CLIProtocol::EmitThreadEvent(const ThreadEvent &event)
 {
     LogFuncEntry();
 
@@ -948,7 +948,7 @@ void CLIProtocol::EmitThreadEvent(ThreadEvent event)
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
-void CLIProtocol::EmitModuleEvent(ModuleEvent event)
+void CLIProtocol::EmitModuleEvent(const ModuleEvent &event)
 {
     LogFuncEntry();
 
@@ -1310,7 +1310,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Next>(const std::vector<std::string> 
     return StepCommand(args, output, Debugger::STEP_OVER);    
 }
 
-HRESULT CLIProtocol::PrintVariable(ThreadId threadId, FrameId frameId, std::list<std::string>::iterator token_iterator, Variable v, std::ostringstream &ss, bool expand)
+HRESULT CLIProtocol::PrintVariable(ThreadId threadId, FrameId frameId, std::list<std::string>::iterator token_iterator, const Variable &v, std::ostringstream &ss, bool expand)
 {
     if(!token_iterator->empty())
     {

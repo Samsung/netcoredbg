@@ -54,14 +54,14 @@ public:
 
     void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv0) override {}
-    void EmitStoppedEvent(StoppedEvent event) override;
-    void EmitExitedEvent(ExitedEvent event) override;
+    void EmitStoppedEvent(const StoppedEvent &event) override;
+    void EmitExitedEvent(const ExitedEvent &event) override;
     void EmitTerminatedEvent() override {}
     void EmitContinuedEvent(ThreadId threadId) override;
-    void EmitThreadEvent(ThreadEvent event) override;
-    void EmitModuleEvent(ModuleEvent event) override;
+    void EmitThreadEvent(const ThreadEvent &event) override;
+    void EmitModuleEvent(const ModuleEvent &event) override;
     void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") override;
-    void EmitBreakpointEvent(BreakpointEvent event) override;
+    void EmitBreakpointEvent(const BreakpointEvent &event) override;
     void Cleanup() override;
     void CommandLoop() override;
 

@@ -277,7 +277,7 @@ struct BreakpointEvent
     BreakpointReason reason;
     Breakpoint breakpoint;
 
-    BreakpointEvent(BreakpointReason reason, Breakpoint breakpoint) : reason(reason), breakpoint(breakpoint) {}
+    BreakpointEvent(const BreakpointReason &reason, const Breakpoint &breakpoint) : reason(reason), breakpoint(breakpoint) {}
 };
 
 struct ExitedEvent

@@ -362,9 +362,19 @@ int main(int argc, char *argv[])
         p->EngineLogging(logFilePath);
     }
 
-    ManagedDebugger debugger;
-    protocol->SetDebugger(&debugger);
-    debugger.SetProtocol(protocol.get());
+    std::unique_ptr<ManagedDebugger> debugger;
+    try
+    {
+        debugger.reset(new ManagedDebugger);
+    }
+    catch (const std::exception &e)
+    {
+        fprintf(stderr, "%s\n", e.what());
+        exit(EXIT_FAILURE);
+    }
+
+    protocol->SetDebugger(debugger.get());
+    debugger->SetProtocol(protocol.get());
 
     if (!execFile.empty())
         protocol->SetLaunchCommand(execFile, execArgs);
@@ -373,9 +383,9 @@ int main(int argc, char *argv[])
     if (pidDebuggee != 0)
     {
         // try to attach to existing process
-        debugger.Initialize();
-        debugger.Attach(pidDebuggee);
-        HRESULT Status = debugger.ConfigurationDone();
+        debugger->Initialize();
+        debugger->Attach(pidDebuggee);
+        HRESULT Status = debugger->ConfigurationDone();
         if (FAILED(Status))
         {
             fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
@@ -387,13 +397,22 @@ int main(int argc, char *argv[])
         // launch new process to debug
         HRESULT hr;
         do {
-            hr = debugger.Initialize();
+            hr = debugger->Initialize();
             if (FAILED(hr)) break;
 
-            hr = debugger.Launch(execFile, execArgs, {}, {}, false);
+            try
+            {
+                hr = debugger->Launch(execFile, execArgs, {}, {}, false);
+            }
+            catch (const std::exception &e)
+            {
+                fprintf(stderr, "%s\n", e.what());
+                exit(EXIT_FAILURE);
+            }
+
             if (FAILED(hr)) break;
 
-            hr = debugger.ConfigurationDone();
+            hr = debugger->ConfigurationDone();
         } while(0);
 
         if (FAILED(hr))

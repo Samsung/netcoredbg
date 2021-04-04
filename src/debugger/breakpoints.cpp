@@ -374,11 +374,11 @@ static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
         corRVA = VAL32(ntHeaders64.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COMHEADER].VirtualAddress);
     }
 
-    ULONG pos =
-        VAL32(dosHeader.e_lfanew)
-        + sizeof(ntHeaders.Signature)
-        + sizeof(ntHeaders.FileHeader)
-        + VAL16(ntHeaders.FileHeader.SizeOfOptionalHeader);
+    constexpr DWORD DWORD_MAX = 4294967295;
+    DWORD pos = VAL32(dosHeader.e_lfanew);
+    if (pos > DWORD_MAX - sizeof(ntHeaders.Signature) - sizeof(ntHeaders.FileHeader) - VAL16(ntHeaders.FileHeader.SizeOfOptionalHeader))
+        return mdMethodDefNil;
+    pos += sizeof(ntHeaders.Signature) + sizeof(ntHeaders.FileHeader) + VAL16(ntHeaders.FileHeader.SizeOfOptionalHeader);
 
     if (fseek(pFile, pos, SEEK_SET) != 0) return mdMethodDefNil;
 

@@ -127,14 +127,14 @@ public:
 
     virtual void EmitInitializedEvent() = 0;
     virtual void EmitExecEvent(PID, const std::string& argv0) = 0;
-    virtual void EmitStoppedEvent(StoppedEvent event) = 0;
-    virtual void EmitExitedEvent(ExitedEvent event) = 0;
+    virtual void EmitStoppedEvent(const StoppedEvent &event) = 0;
+    virtual void EmitExitedEvent(const ExitedEvent &event) = 0;
     virtual void EmitTerminatedEvent() = 0;
     virtual void EmitContinuedEvent(ThreadId threadId) = 0;
-    virtual void EmitThreadEvent(ThreadEvent event) = 0;
-    virtual void EmitModuleEvent(ModuleEvent event) = 0;
+    virtual void EmitThreadEvent(const ThreadEvent &event) = 0;
+    virtual void EmitModuleEvent(const ModuleEvent &event) = 0;
     virtual void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") = 0;
-    virtual void EmitBreakpointEvent(BreakpointEvent event) = 0;
+    virtual void EmitBreakpointEvent(const BreakpointEvent &event) = 0;
     virtual void Cleanup() = 0;
     virtual void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) = 0;
     virtual void CommandLoop() = 0;

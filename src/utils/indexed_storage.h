@@ -21,7 +21,7 @@ namespace netcoredbg
 // This container tries avoid using of repeated `Key' value after call
 // to `clear()' (it uses cyclically increased number, which wraps around
 // after reaching `Max' value).
-template <typename Key, typename T, Key Max = std::numeric_limits<Key>::max()>
+template <typename Key, typename T, Key Max = std::numeric_limits<Key>::max(), class = typename std::enable_if<std::is_unsigned<Key>::value>::type>
 class IndexedStorage
 {
 public:
@@ -51,7 +51,9 @@ public:
     iterator end() const { return m_data.end(); }
 
     // Constructor which creates new empty container.
-    IndexedStorage() {}
+    IndexedStorage() :
+        m_base(0)
+    {}
 
     // Return number of elements currently stored in container.
     size_type size() const { return m_data.size(); }
@@ -101,8 +103,11 @@ public:
     // to `end()` value of no any element corresponds to supplied `key'.
     iterator find(key_type key) const
     {
+        if (m_base > key)
+            return end();
+
         key_type index = key - m_base;
-        if (index >= m_data.size() || index < 0 || m_data[index].first != key)
+        if (index >= m_data.size() || m_data[index].first != key)
             return end();
 
         return begin() + index;
@@ -123,9 +128,13 @@ private:
 
     key_type next_id() const
     {
-        key_type next_id = m_base + key_type(m_data.size());
-        if (next_id > Max) next_id -= Max;
-        return next_id;
+        key_type data_size = key_type(m_data.size());
+
+        if (m_base > Max - data_size)
+            // calculate (m_base + data_size - Max) without result overflow and underflow for unsigned "Key" type
+            return Max - (Max - m_base) - (Max - data_size);
+
+        return m_base + data_size;
     }
 };
 

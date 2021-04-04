@@ -50,7 +50,7 @@ void* DLSym(DLHandle handle, string_view name)
 bool DLClose(DLHandle handle)
 {
     return ::dlclose(handle);
-
 }
+
 }  // ::netcoredbg
 #endif // __unix__

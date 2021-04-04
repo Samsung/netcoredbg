@@ -1180,7 +1180,7 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
     m_startupReady = false;
     m_clrPath.clear();
 
-    HANDLE resumeHandle; // Fake thread handle for the process resume
+    HANDLE resumeHandle = 0; // Fake thread handle for the process resume
 
     vector<char> outEnv;
     if (!m_env.empty()) {
@@ -1957,12 +1957,11 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
             const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
 
             ToRelease<ICorDebugValue> pValueRef;
-            GetAsyncIdReference(pThread, pFrame, m_evaluator, &pValueRef);
-
             CORDB_ADDRESS currentAsyncId = 0;
             ToRelease<ICorDebugValue> pValue;
             BOOL isNull = FALSE;
-            if (SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
+            if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_evaluator, &pValueRef)) &&
+                SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
                 pValue->GetAddress(&currentAsyncId);
             else
                 LOGE("Could not calculate current async ID for await block");

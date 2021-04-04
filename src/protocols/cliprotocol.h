@@ -83,14 +83,14 @@ public:
 
     void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv) override {}
-    void EmitStoppedEvent(StoppedEvent event) override;
-    void EmitExitedEvent(ExitedEvent event) override;
+    void EmitStoppedEvent(const StoppedEvent &event) override;
+    void EmitExitedEvent(const ExitedEvent &event) override;
     void EmitTerminatedEvent() override {}
     void EmitContinuedEvent(ThreadId threadId) override;
-    void EmitThreadEvent(ThreadEvent event) override;
-    void EmitModuleEvent(ModuleEvent event) override;
+    void EmitThreadEvent(const ThreadEvent &event) override;
+    void EmitModuleEvent(const ModuleEvent &event) override;
     void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") override;
-    void EmitBreakpointEvent(BreakpointEvent event) override;
+    void EmitBreakpointEvent(const BreakpointEvent &event) override;
     void Cleanup() override;
     void CommandLoop() override;
 
@@ -176,7 +176,7 @@ private:
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
-    HRESULT PrintVariable(ThreadId threadId, FrameId frameId, std::list<std::string>::iterator it, Variable v, std::ostringstream &output, bool expand);
+    HRESULT PrintVariable(ThreadId threadId, FrameId frameId, std::list<std::string>::iterator it, const Variable &v, std::ostringstream &output, bool expand);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);

@@ -22,6 +22,17 @@ namespace
 {
     // timeout for select() call
     std::chrono::milliseconds WaitForever{INT_MAX / 1000};
+
+    char *get_streams_pptr(std::tuple<OutStream, InStream, InStream> &m_streams)
+    {
+        auto *out = dynamic_cast<OutStreamBuf*>(std::get<IOSystem::Stdin>(m_streams).rdbuf());
+        if (out == nullptr)
+        {
+            LOGE("dynamic_cast fail");
+            return nullptr;
+        }
+        return out->pptr();
+    }
 }
 
 
@@ -42,7 +53,7 @@ IORedirectHelper::IORedirectHelper(
     InStream(InStreamBuf(std::get<IOSystem::Stderr>(pipes).first, input_bufsize))
   },
   m_callback(callback),
-  m_sent(dynamic_cast<OutStreamBuf*>(std::get<IOSystem::Stdin>(m_streams).rdbuf())->pptr()),
+  m_sent(get_streams_pptr(m_streams)),
   m_unsent(m_sent),
   m_eof(),
   m_worker_pipe(IOSystem::unnamed_pipe()),
@@ -57,6 +68,8 @@ IORedirectHelper::IORedirectHelper(
     assert(std::get<IOSystem::Stdout>(pipes).second);
     assert(std::get<IOSystem::Stderr>(pipes).first);
     assert(std::get<IOSystem::Stderr>(pipes).second);
+
+    assert(m_sent != nullptr);
 
     // prohibit inheritance of "our" pipe ends
     IOSystem::set_inherit(std::get<IOSystem::Stdin>(pipes).second, false);
@@ -120,6 +133,11 @@ void IORedirectHelper::worker()
 
     OutStreamBuf* const out_stream = 
         dynamic_cast<OutStreamBuf*>(std::get<stream_types[0]>(m_streams).rdbuf());
+    if (out_stream == nullptr)
+    {
+        LOGE("dynamic_cast fail");
+        return;
+    }
 
     // currently existing asyncchronous io requests
     IOSystem::AsyncHandle async_handles[Utility::Size(stream_types) + 1];
@@ -328,6 +346,11 @@ Debugger::AsyncResult IORedirectHelper::async_input(InStream& in)
         return AsyncResult::Eof;
 
     auto *out = dynamic_cast<OutStreamBuf*>(std::get<IOSystem::Stdin>(m_streams).rdbuf());
+    if (out == nullptr)
+    {
+        LOGE("dynamic_cast fail");
+        return AsyncResult::Error;
+    }
 
     IOSystem::AsyncHandle async_handles[2];
     auto& input_handle = async_handles[0];

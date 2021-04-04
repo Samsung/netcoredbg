@@ -137,7 +137,7 @@ void VSCodeProtocol::EmitContinuedEvent(ThreadId threadId)
     EmitEvent("continued", body);
 }
 
-void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
+void VSCodeProtocol::EmitStoppedEvent(const StoppedEvent &event)
 {
     LogFuncEntry();
 
@@ -176,7 +176,7 @@ void VSCodeProtocol::EmitStoppedEvent(StoppedEvent event)
     EmitEvent("stopped", body);
 }
 
-void VSCodeProtocol::EmitExitedEvent(ExitedEvent event)
+void VSCodeProtocol::EmitExitedEvent(const ExitedEvent &event)
 {
     LogFuncEntry();
     json body;
@@ -190,7 +190,7 @@ void VSCodeProtocol::EmitTerminatedEvent()
     EmitEvent("terminated", json::object());
 }
 
-void VSCodeProtocol::EmitThreadEvent(ThreadEvent event)
+void VSCodeProtocol::EmitThreadEvent(const ThreadEvent &event)
 {
     LogFuncEntry();
     json body;
@@ -210,7 +210,7 @@ void VSCodeProtocol::EmitThreadEvent(ThreadEvent event)
     EmitEvent("thread", body);
 }
 
-void VSCodeProtocol::EmitModuleEvent(ModuleEvent event)
+void VSCodeProtocol::EmitModuleEvent(const ModuleEvent &event)
 {
     LogFuncEntry();
     json body;
@@ -311,7 +311,7 @@ void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output
     ++m_seqCounter;
 }
 
-void VSCodeProtocol::EmitBreakpointEvent(BreakpointEvent event)
+void VSCodeProtocol::EmitBreakpointEvent(const BreakpointEvent &event)
 {
     LogFuncEntry();
     json body;

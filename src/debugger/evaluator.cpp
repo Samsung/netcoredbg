@@ -1332,6 +1332,7 @@ HRESULT Evaluator::WalkMembers(
     IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
 
     if (isNull && !pValue.GetPtr()) return S_OK;
+    else if (!pValue.GetPtr()) return E_FAIL;
 
     CorElementType inputCorType;
     IfFailRet(pInputValue->GetType(&inputCorType));
@@ -1377,7 +1378,10 @@ HRESULT Evaluator::WalkMembers(
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
     if(pTypeCast == nullptr)
+    {
         IfFailRet(pValue2->GetExactType(&pType));
+        if (!pType) return E_FAIL;
+    }
     else
     {
         pType = pTypeCast;

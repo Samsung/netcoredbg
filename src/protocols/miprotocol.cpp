@@ -55,7 +55,7 @@ HRESULT MIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
     return Status;
 }
 
-void MIProtocol::EmitBreakpointEvent(BreakpointEvent event)
+void MIProtocol::EmitBreakpointEvent(const BreakpointEvent &event)
 {
     LogFuncEntry();
 
@@ -517,7 +517,7 @@ HRESULT MIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t
     return S_OK;
 }
 
-void MIProtocol::EmitStoppedEvent(StoppedEvent event)
+void MIProtocol::EmitStoppedEvent(const StoppedEvent &event)
 {
     LogFuncEntry();
 
@@ -572,7 +572,7 @@ void MIProtocol::EmitStoppedEvent(StoppedEvent event)
     MIProtocol::Printf("(gdb)\n");
 }
 
-void MIProtocol::EmitExitedEvent(ExitedEvent event)
+void MIProtocol::EmitExitedEvent(const ExitedEvent &event)
 {
     LogFuncEntry();
 
@@ -585,7 +585,7 @@ void MIProtocol::EmitContinuedEvent(ThreadId threadId)
     LogFuncEntry();
 }
 
-void MIProtocol::EmitThreadEvent(ThreadEvent event)
+void MIProtocol::EmitThreadEvent(const ThreadEvent &event)
 {
     LogFuncEntry();
 
@@ -602,7 +602,7 @@ void MIProtocol::EmitThreadEvent(ThreadEvent event)
     MIProtocol::Printf("=%s,id=\"%i\"\n", reasonText, int(event.threadId));
 }
 
-void MIProtocol::EmitModuleEvent(ModuleEvent event)
+void MIProtocol::EmitModuleEvent(const ModuleEvent &event)
 {
     LogFuncEntry();
 
