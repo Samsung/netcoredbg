@@ -80,7 +80,7 @@ namespace generrmsg
                          if (reader.Name.ToString() == "HRESULT") {
                              ErrMsg errmsg = new ErrMsg();
                              int code = 0;
-                             if (hresult.StartsWith("0x") || hresult.StartsWith("0X")) {
+                             if ((hresult != null) && (hresult.StartsWith("0x") || hresult.StartsWith("0X"))) {
                                  code = int.Parse(hresult.Substring(2), System.Globalization.NumberStyles.HexNumber);
                                  hresult = code.ToString();
                              }
@@ -128,6 +128,7 @@ namespace generrmsg
             }
             PrintFooter(outfile);
             PrintFooterH(hfile);
+            reader.Dispose();
             outfile.Close();
             hfile.Close();
             System.IO.File.Delete(outputfilename);

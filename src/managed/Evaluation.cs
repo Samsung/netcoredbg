@@ -408,9 +408,11 @@ namespace NetCoreDbg
                     }
                 }
 
+                if (genericMethod == null)
+                    throw new ArgumentNullException();
+
                 dynamic v = genericMethod.Invoke(null, new object[]{expr, null, null, null, default(System.Threading.CancellationToken)});
                 value = v.Result;
-
             }
             catch (TargetInvocationException e)
             {

@@ -758,7 +758,7 @@ namespace NetCoreDbg
                 }
 
                 var pdbStream = TryOpenFile(pdbPath);
-                if (pdbStream == null)
+                if (pdbStream == null && assemblyPath != null)
                 {
                     // workaround, since NI file could be generated in `.native_image` subdirectory
                     // NOTE this is temporary solution until we add option for specifying pdb path
@@ -774,15 +774,15 @@ namespace NetCoreDbg
                     }
                     catch
                     {
-                         // invalid characters in CodeView path
+                        // invalid characters in CodeView path
                         return null;
                     }
 
                     pdbStream = TryOpenFile(pdbPath);
-                    if (pdbStream == null)
-                    {
-                        return null;
-                    }
+                }
+                if (pdbStream == null)
+                {
+                    return null;
                 }
 
                 provider = MetadataReaderProvider.FromPortablePdbStream(pdbStream);
