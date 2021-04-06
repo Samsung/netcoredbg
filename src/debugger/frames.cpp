@@ -165,6 +165,11 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
             continue;
         }
 
+        // At this point (Status == S_OK).
+        // Accordingly to CoreCLR sources, S_OK could be with nulled pFrame, that must be skipped.
+        if (pFrame == NULL)
+            continue;
+
         // If we get a RuntimeUnwindableFrame, then the stackwalker is stopped at a native
         // stack frame, but requires special unwinding help from the runtime.
         ToRelease<ICorDebugRuntimeUnwindableFrame> pRuntimeUnwindableFrame;
