@@ -227,6 +227,20 @@ namespace NetcoreDbgTest.Script
 
 namespace VSCodeTestEvaluate
 {
+    class Class1
+    {
+        public static int a;
+        static Class1() { a = 100; }
+        public Class1(int i) { a = i;}
+    }
+
+    class Class2
+    {
+        public static int a;
+        public Class2() { a = 200; }
+        public Class2(int i) { a = i;}
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -262,9 +276,14 @@ namespace VSCodeTestEvaluate
                 Context.CalcExpressionWithNotDeclared(@"__FILE__:__LINE__", frameId, "not_declared_variable");
                 Context.CalcExpressionWithNotDeclared(@"__FILE__:__LINE__", frameId, "not_declared_variable + 1");
 
+                Context.CalcAndCheckExpression(@"__FILE__:__LINE__", null, "100", "VSCodeTestEvaluate.Class1.a");
+                Context.CalcAndCheckExpression(@"__FILE__:__LINE__", null, "0", "VSCodeTestEvaluate.Class2.a");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
+            Class2 class2 = new Class2();
+            Class1.a = 101;
             int d = 99;
             int e = c + a;                                      Label.Breakpoint("bp2");
 
@@ -274,6 +293,9 @@ namespace VSCodeTestEvaluate
 
                 Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp2");
                 Context.CalcAndCheckExpression(@"__FILE__:__LINE__", frameId, "109", "d + a");
+
+                Context.CalcAndCheckExpression(@"__FILE__:__LINE__", null, "101", "VSCodeTestEvaluate.Class1.a");
+                Context.CalcAndCheckExpression(@"__FILE__:__LINE__", null, "200", "VSCodeTestEvaluate.Class2.a");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

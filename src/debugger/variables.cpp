@@ -520,7 +520,7 @@ HRESULT Variables::Evaluate(
 
     ToRelease<ICorDebugValue> pResultValue;
 
-    static std::regex re("[[:alpha:]\\$_][[:alnum:]_]*");
+    static std::regex re("^ *(global::)?[A-Za-z\\$_][A-Za-z0-9_]* *(\\[ *\\d+ *(, *\\d+)* *\\])?(( *\\. *[A-Za-z_][A-Za-z0-9_]*)+( *\\[ *\\d+( *, *\\d+)* *\\])?)* *$");
 
     if (std::regex_match(expression, re))
     {

@@ -164,6 +164,19 @@ namespace NetcoreDbgTest.Script
 
 namespace MITestVarObject
 {
+    class Class1
+    {
+        public static int a;
+        static Class1() { a = 100; }
+        public Class1(int i) { a = i;}
+    }
+
+    class Class2
+    {
+        public static int a;
+        public Class2() { a = 200; }
+        public Class2(int i) { a = i;}
+    }
     class Program
     {
         static void Main(string[] args)
@@ -173,6 +186,7 @@ namespace MITestVarObject
                 Context.Prepare(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK2");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -181,7 +195,7 @@ namespace MITestVarObject
             decimal short_zero_dec = 0.17M;
             int x = 1;                                                                          Label.Breakpoint("BREAK");
 
-            Label.Checkpoint("values_test", "finish", (Object context) => {
+            Label.Checkpoint("values_test", "values_test2", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK");
 
@@ -231,6 +245,52 @@ namespace MITestVarObject
                              Context.MIDebugger.Request("11-var-show-attributes " + d_varName).Class,
                              @"__FILE__:__LINE__");
 
+                var Class1var =
+                    Context.MIDebugger.Request(String.Format("12-var-create - * \"{0}\"", "MITestVarObject.Class1.a"));
+                Assert.Equal(MIResultClass.Done, Class1var.Class, @"__FILE__:__LINE__");
+
+                string Class1varName = ((MIConst)Class1var["name"]).CString;
+                Assert.Equal("100", ((MIConst)Class1var["value"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("MITestVarObject.Class1.a", ((MIConst)Class1var["exp"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("0", ((MIConst)Class1var["numchild"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("int", ((MIConst)Class1var["type"]).CString, @"__FILE__:__LINE__");
+
+                var Class2var =
+                    Context.MIDebugger.Request(String.Format("13-var-create - * \"{0}\"", "MITestVarObject.Class2.a"));
+                Assert.Equal(MIResultClass.Done, Class2var.Class, @"__FILE__:__LINE__");
+
+                string Class2varName = ((MIConst)Class2var["name"]).CString;
+                Assert.Equal("0", ((MIConst)Class2var["value"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("MITestVarObject.Class2.a", ((MIConst)Class2var["exp"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("0", ((MIConst)Class2var["numchild"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("int", ((MIConst)Class2var["type"]).CString, @"__FILE__:__LINE__");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            Class2 class2 = new Class2();
+            Class1.a = 1000;
+            x = 2;                                                                              Label.Breakpoint("BREAK2");
+
+            Label.Checkpoint("values_test2", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK2");
+
+                var Class1var =
+                    Context.MIDebugger.Request(String.Format("14-var-create - * \"{0}\"", "MITestVarObject.Class1.a"));
+                Assert.Equal(MIResultClass.Done, Class1var.Class, @"__FILE__:__LINE__");
+
+                string Class1varName = ((MIConst)Class1var["name"]).CString;
+                Assert.Equal("1000", ((MIConst)Class1var["value"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("MITestVarObject.Class1.a", ((MIConst)Class1var["exp"]).CString, @"__FILE__:__LINE__");
+
+                var Class2var =
+                    Context.MIDebugger.Request(String.Format("15-var-create - * \"{0}\"", "MITestVarObject.Class2.a"));
+                Assert.Equal(MIResultClass.Done, Class2var.Class, @"__FILE__:__LINE__");
+
+                string Class2varName = ((MIConst)Class2var["name"]).CString;
+                Assert.Equal("200", ((MIConst)Class2var["value"]).CString, @"__FILE__:__LINE__");
+                Assert.Equal("MITestVarObject.Class2.a", ((MIConst)Class2var["exp"]).CString, @"__FILE__:__LINE__");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
