@@ -487,6 +487,8 @@ HRESULT ManagedDebugger::GetFullyQualifiedIlOffset(const ThreadId &threadId, Ful
 
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
 
     mdMethodDef methodToken;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
@@ -816,23 +818,13 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
 
     if (!m_pProcess)
         return E_FAIL;
+
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
     IfFailRet(SetupStep(pThread, stepType));
 
-    m_variables.Clear();
-    Status = m_pProcess->Continue(0);
-
-    if (SUCCEEDED(Status))
-    {
-        FrameId::invalidate();
-        m_protocol->EmitContinuedEvent(threadId);
-        m_stopCounterMutex.lock();
-        --m_stopCounter;
-        m_stopCounterMutex.unlock();
-    }
-    return Status;
+    return Continue(threadId);
 }
 
 HRESULT ManagedDebugger::Continue(ThreadId threadId)
@@ -842,45 +834,18 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     if (!m_pProcess)
         return E_FAIL;
 
-    HRESULT res = S_OK;
-    if (!m_evaluator.IsEvalRunning() && m_evaluator.is_empty_eval_queue()) {
-        if ((res = m_pProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr)) != S_OK) {
-            // TODO: need function for printing coreCLR errors by error code
-            switch (res) {
-                case CORDBG_E_PROCESS_NOT_SYNCHRONIZED:
-                    LOGE("Setting thread state failed. Process not synchronized:'%0x'", res);
-                break;
-                case CORDBG_E_PROCESS_TERMINATED:
-                    LOGE("Setting thread state failed. Process was terminated:'%0x'", res);
-                break;
-                case CORDBG_E_OBJECT_NEUTERED:
-                    LOGE("Setting thread state failed. Object has been neutered(it's in a zombie state):'%0x'", res);
-                break;
-                default:
-                    LOGE("SetAllThreadsDebugState() %0x", res);
-                break;
-            }
-        }
-    }
-    if ((res = m_pProcess->Continue(0)) != S_OK) {
-        switch (res) {
-        case CORDBG_E_SUPERFLOUS_CONTINUE:
-            LOGE("Continue failed. Returned from a call to Continue that was not matched with a stopping event:'%0x'", res);
-            break;
-        case CORDBG_E_PROCESS_TERMINATED:
-            LOGE("Continue failed. Process was terminated:'%0x'", res);
-            break;
-        case CORDBG_E_OBJECT_NEUTERED:
-            LOGE("Continue failed. Object has been neutered(it's in a zombie state):'%0x'", res);
-            break;
-        default:
-            LOGE("Continue() %0x", res);
-            break;
-        }
-    }
+    HRESULT res;
+    // FIXME if not all threads switched back to THREAD_RUN state after eval finished - something wrong with logic at eval complete/exception point
+    if (!m_evaluator.IsEvalRunning() && m_evaluator.is_empty_eval_queue())
+        if (FAILED(res = m_pProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr)))
+            LOGE("Continue failed: %s", errormessage(res));
+
+    if (FAILED(res = m_pProcess->Continue(0)))
+        LOGE("Continue failed: %s", errormessage(res));
 
     if (SUCCEEDED(res))
     {
+        m_variables.Clear(); // Important, must be sync with MIProtocol m_vars.clear()
         FrameId::invalidate();
         m_protocol->EmitContinuedEvent(threadId);
         m_stopCounterMutex.lock();
@@ -1342,6 +1307,7 @@ void ManagedDebugger::Cleanup()
 {
     m_modules.CleanupAllModules();
     m_evaluator.Cleanup();
+    m_variables.Clear(); // Important, must be sync with MIProtocol m_vars.clear()
     m_protocol->Cleanup();
 }
 

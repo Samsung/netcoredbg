@@ -112,21 +112,19 @@ static HRESULT WriteValue(
     return S_OK;
 }
 
-HRESULT Variables::GetNumChild(
+void Variables::GetNumChild(
     ICorDebugValue *pValue,
-    unsigned int &numchild,
+    int &numChild,
     bool static_members)
 {
-    HRESULT Status = S_OK;
-    numchild = 0;
-
-    ULONG numstatic = 0;
-    ULONG numinstance = 0;
+    numChild = 0;
 
     if (pValue == nullptr)
-        return 0;
+        return;
 
-    IfFailRet(m_evaluator.WalkMembers(pValue, nullptr, nullptr, [&numstatic, &numinstance](
+    int numStatic = 0;
+    int numInstance = 0;
+    if (FAILED(m_evaluator.WalkMembers(pValue, nullptr, nullptr, [&numStatic, &numInstance](
         mdMethodDef,
         ICorDebugModule *,
         ICorDebugType *,
@@ -135,21 +133,24 @@ HRESULT Variables::GetNumChild(
         const std::string &)
     {
         if (is_static)
-            numstatic++;
+            numStatic++;
         else
-            numinstance++;
+            numInstance++;
         return S_OK;
-    }));
+    })))
+    {
+        return;
+    }
 
     if (static_members)
     {
-        numchild = numstatic;
+        numChild = numStatic;
     }
     else
     {
-        numchild = (numstatic > 0) ? numinstance + 1 : numinstance;
+        // Note, "+1", since all static members will be "packed" into "Static members" entry
+        numChild = (numStatic > 0) ? numInstance + 1 : numInstance;
     }
-    return S_OK;
 }
 
 struct Variables::Member
@@ -250,8 +251,8 @@ HRESULT Variables::FetchFieldsAndProperties(
 
 int Variables::GetNamedVariables(uint32_t variablesReference)
 {
-    auto it = m_variables.find(variablesReference);
-    if (it == m_variables.end())
+    auto it = m_references.find(variablesReference);
+    if (it == m_references.end())
         return 0;
     return it->second.namedVariables;
 }
@@ -267,8 +268,8 @@ HRESULT Variables::GetVariables(
     if (pProcess == nullptr)
         return E_FAIL;
 
-    auto it = m_variables.find(variablesReference);
-    if (it == m_variables.end())
+    auto it = m_references.find(variablesReference);
+    if (it == m_references.end())
         return E_FAIL;
 
     VariableReference &ref = it->second;
@@ -296,18 +297,23 @@ HRESULT Variables::GetVariables(
     return S_OK;
 }
 
-void Variables::AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *value, ValueKind valueKind)
+HRESULT Variables::AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *pValue, ValueKind valueKind)
 {
-    unsigned int numChild = 0;
-    GetNumChild(value, numChild, valueKind == ValueIsClass);
+    if (m_references.size() == std::numeric_limits<uint32_t>::max())
+        return E_FAIL;
+
+    int numChild = 0;
+    GetNumChild(pValue, numChild, valueKind == ValueIsClass);
     if (numChild == 0)
-        return;
+        return S_OK;
 
     variable.namedVariables = numChild;
-    variable.variablesReference = m_nextVariableReference++;
-    value->AddRef();
-    VariableReference variableReference(variable, frameId, value, valueKind);
-    m_variables.emplace(std::make_pair(variable.variablesReference, std::move(variableReference)));
+    variable.variablesReference = (uint32_t)m_references.size() + 1;
+    pValue->AddRef();
+    VariableReference variableReference(variable, frameId, pValue, valueKind);
+    m_references.emplace(std::make_pair(variable.variablesReference, std::move(variableReference)));
+
+    return S_OK;
 }
 
 HRESULT Variables::GetExceptionVariable(
@@ -327,7 +333,7 @@ HRESULT Variables::GetExceptionVariable(
         TypePrinter::GetTypeOfValue(pExceptionValue, var.type);
 
         // AddVariableReference is re-interable function.
-        AddVariableReference(var, frameId, pExceptionValue, ValueIsVariable);
+        IfFailRet(AddVariableReference(var, frameId, pExceptionValue, ValueIsVariable));
 
         string excModule;
         IfFailRet(GetModuleName(pThread, excModule));
@@ -369,7 +375,7 @@ HRESULT Variables::GetStackVariables(
         bool escape = true;
         PrintValue(pValue, var.value, escape);
         TypePrinter::GetTypeOfValue(pValue, var.type);
-        AddVariableReference(var, frameId, pValue, ValueIsVariable);
+        IfFailRet(AddVariableReference(var, frameId, pValue, ValueIsVariable));
         variables.push_back(var);
         return S_OK;
     }));
@@ -385,8 +391,12 @@ HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::v
     HRESULT Status;
 
     StackFrame stackFrame(frameId);
+    ThreadId threadId = stackFrame.GetThreadId();
+    if (!threadId)
+        return E_FAIL;
+
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
+    IfFailRet(pProcess->GetThread(int(threadId), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -408,9 +418,12 @@ HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::v
 
     if (namedVariables > 0)
     {
-        variablesReference = m_nextVariableReference++;
+        if (m_references.size() == std::numeric_limits<uint32_t>::max())
+            return E_FAIL;
+
+        variablesReference = (uint32_t)m_references.size() + 1;
         VariableReference scopeReference(variablesReference, frameId, namedVariables);
-        m_variables.emplace(std::make_pair(variablesReference, std::move(scopeReference)));
+        m_references.emplace(std::make_pair(variablesReference, std::move(scopeReference)));
     }
 
     scopes.emplace_back(variablesReference, "Locals", namedVariables);
@@ -452,10 +465,10 @@ HRESULT Variables::GetChildren(
 
     bool hasStaticMembers = false;
 
-    if (!ref.value)
+    if (!ref.iCorValue)
         return S_OK;
 
-    IfFailRet(FetchFieldsAndProperties(ref.value,
+    IfFailRet(FetchFieldsAndProperties(ref.iCorValue,
                                        pThread,
                                        pILFrame,
                                        members,
@@ -475,7 +488,7 @@ HRESULT Variables::GetChildren(
         if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
             var.evaluateName = ref.evaluateName + (isIndex ? "" : ".") + var.name;
         FillValueAndType(it, var);
-        AddVariableReference(var, ref.frameId, it.value, ValueIsVariable);
+        IfFailRet(AddVariableReference(var, ref.frameId, it.value, ValueIsVariable));
         variables.push_back(var);
     }
 
@@ -484,12 +497,13 @@ HRESULT Variables::GetChildren(
         bool staticsInRange = start < ref.namedVariables && (count == 0 || start + count >= ref.namedVariables);
         if (staticsInRange)
         {
-            m_evaluator.RunClassConstructor(pThread, ref.value, ref.evalFlags);
+            m_evaluator.RunClassConstructor(pThread, ref.iCorValue, ref.evalFlags);
 
             Variable var(ref.evalFlags);
             var.name = "Static members";
-            TypePrinter::GetTypeOfValue(ref.value, var.evaluateName); // do not expose type for this fake variable
-            AddVariableReference(var, ref.frameId, ref.value, ValueIsClass);
+            TypePrinter::GetTypeOfValue(ref.iCorValue, var.evaluateName); // do not expose type for this fake variable
+
+            IfFailRet(AddVariableReference(var, ref.frameId, ref.iCorValue, ValueIsClass));
             variables.push_back(var);
         }
     }
@@ -510,8 +524,12 @@ HRESULT Variables::Evaluate(
     HRESULT Status;
 
     StackFrame stackFrame(frameId);
+    ThreadId threadId = stackFrame.GetThreadId();
+    if (!threadId)
+        return E_FAIL;
+
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
+    IfFailRet(pProcess->GetThread(int(threadId), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
     ToRelease<ICorDebugILFrame> pILFrame;
@@ -621,7 +639,7 @@ HRESULT Variables::Evaluate(
     {
         PrintBasicValue(typeId, output, variable.type, variable.value);
     }
-    AddVariableReference(variable, frameId, pResultValue, ValueIsVariable);
+    IfFailRet(AddVariableReference(variable, frameId, pResultValue, ValueIsVariable));
 
     return S_OK;
 }
@@ -636,8 +654,8 @@ HRESULT Variables::SetVariable(
     if (pProcess == nullptr)
         return E_FAIL;
 
-    auto it = m_variables.find(ref);
-    if (it == m_variables.end())
+    auto it = m_references.find(ref);
+    if (it == m_references.end())
         return E_FAIL;
 
     VariableReference &varRef = it->second;
@@ -702,7 +720,7 @@ HRESULT Variables::SetChild(
     if (ref.IsScope())
         return E_INVALIDARG;
 
-    if (!ref.value)
+    if (!ref.iCorValue)
         return S_OK;
 
     HRESULT Status;
@@ -711,7 +729,7 @@ HRESULT Variables::SetChild(
     if (pFrame)
         IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
-    IfFailRet(m_evaluator.WalkMembers(ref.value, pThread, pILFrame, [&](
+    IfFailRet(m_evaluator.WalkMembers(ref.iCorValue, pThread, pILFrame, [&](
         mdMethodDef mdGetter,
         ICorDebugModule *pModule,
         ICorDebugType *pType,
@@ -740,8 +758,12 @@ HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId fram
     HRESULT Status;
 
     StackFrame stackFrame(frameId);
+    ThreadId threadId = stackFrame.GetThreadId();
+    if (!threadId)
+        return E_FAIL;
+
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
+    IfFailRet(pProcess->GetThread(int(threadId), &pThread));
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
@@ -761,8 +783,12 @@ HRESULT Variables::SetVariable(
         return E_FAIL;
 
     StackFrame stackFrame(frameId);
+    ThreadId threadId = stackFrame.GetThreadId();
+    if (!threadId)
+        return E_FAIL;
+
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(int(stackFrame.GetThreadId()), &pThread));
+    IfFailRet(pProcess->GetThread(int(threadId), &pThread));
 
     IfFailRet(WriteValue(pVariable, value, pThread, m_evaluator, output));
     bool escape = true;

@@ -80,6 +80,7 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
     ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
     HRESULT Status;
     IfFailRet(m_debugger->StepCommand(threadId, stepType));
+    m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
     output = "^running";
     return S_OK;
 }
@@ -218,20 +219,26 @@ void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, ThreadId t
     output = ss.str();
 }
 
-void MIProtocol::PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
+HRESULT MIProtocol::PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
 {
+    if (m_vars.size() == std::numeric_limits<unsigned>::max())
+        return E_FAIL;
+
     std::string name;
     if (varobjName.empty() || varobjName == "-")
     {
-        name = "var" + std::to_string(m_varCounter++);
+        name = "var" + std::to_string(m_vars.size() + 1);
     }
-    else {
+    else
+    {
         name = varobjName;
     }
 
     m_vars[name] = v;
 
     PrintVar(name, v, threadId, print_values, output);
+
+    return S_OK;
 }
 
 HRESULT MIProtocol::CreateVar(ThreadId threadId, FrameLevel level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output)
@@ -244,14 +251,22 @@ HRESULT MIProtocol::CreateVar(ThreadId threadId, FrameLevel level, int evalFlags
     IfFailRet(m_debugger->Evaluate(frameId, expression, variable, output));
 
     int print_values = 1;
-    PrintNewVar(varobjName, variable, threadId, print_values, output);
-
-    return S_OK;
+    return PrintNewVar(varobjName, variable, threadId, print_values, output);
 }
 
 HRESULT MIProtocol::DeleteVar(const std::string &varobjName)
 {
-    return m_vars.erase(varobjName) == 0 ? E_FAIL : S_OK;
+    // Note:
+    // * IDE could delete var objects that was created by `var-create`, when we already cleared m_vars.
+    //       This happens because IDE will receive continue/step command status after we already cleared m_vars.
+    // * IDE could ignore var objects created by `var-list-children`. In theory, m_vars should
+    //       have tree-like structure and delete all related var objects in case root was deleted.
+    // * IDE must not request old var object data after receive successful return code on continue/step command.
+    //       Debugger can't provide any data by old var objects in this case, since old data have inconsistent state.
+    //       This is the reason why we don't hold old data. IDE must create new var objects for each stop point.
+    // * IDE should not care about `var-delete` return status, but just in case return S_OK.
+    m_vars.erase(varobjName);
+    return S_OK;
 }
 
 HRESULT MIProtocol::FindVar(const std::string &varobjName, Variable &variable)
@@ -267,20 +282,20 @@ HRESULT MIProtocol::FindVar(const std::string &varobjName, Variable &variable)
 
 void MIProtocol::Cleanup()
 {
-    m_vars.clear();
-    m_varCounter = 0;
+    m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
     m_breakpoints.clear();
 }
 
-void MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output)
+HRESULT MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output)
 {
+    HRESULT Status;
     std::ostringstream ss;
     ss << "numchild=\"" << children.size() << "\"";
 
     if (children.empty())
     {
         output = ss.str();
-        return;
+        return S_OK;
     }
     ss << ",children=[";
 
@@ -289,7 +304,7 @@ void MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadI
     {
         std::string varout;
         std::string minus("-");
-        PrintNewVar(minus, child, threadId, print_values, varout);
+        IfFailRet(PrintNewVar(minus, child, threadId, print_values, varout));
 
         ss << sep;
         sep = ",";
@@ -299,6 +314,8 @@ void MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadI
     ss << "]";
     ss << ",has_more=\"" << (has_more ? 1 : 0) << "\"";
     output = ss.str();
+
+    return S_OK;
 }
 
 HRESULT MIProtocol::ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output)
@@ -323,9 +340,7 @@ HRESULT MIProtocol::ListChildren(ThreadId threadId, FrameLevel level, int childS
         has_more = childEnd < m_debugger->GetNamedVariables(variablesReference);
     }
 
-    PrintChildren(variables, threadId, print_values, has_more, output);
-
-    return S_OK;
+    return PrintChildren(variables, threadId, print_values, has_more, output);
 }
 
 HRESULT MIProtocol::SetBreakpoint(
@@ -680,6 +695,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
     { "exec-continue", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
         IfFailRet(m_debugger->Continue(ThreadId::AllThreads));
+        m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
         output = "^running";
         return S_OK;
     } },

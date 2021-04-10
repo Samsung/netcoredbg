@@ -1701,6 +1701,9 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
 {
     HRESULT Status;
 
+    if (pFrame == nullptr)
+        return E_INVALIDARG;
+
     ToRelease<ICorDebugILFrame> pILFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 

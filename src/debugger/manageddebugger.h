@@ -42,17 +42,17 @@ class Variables
         std::string evaluateName;
 
         ValueKind valueKind;
-        ToRelease<ICorDebugValue> value;
+        ToRelease<ICorDebugValue> iCorValue;
         FrameId frameId;
 
-        VariableReference(const Variable &variable, FrameId frameId, ToRelease<ICorDebugValue> value, ValueKind valueKind) :
+        VariableReference(const Variable &variable, FrameId frameId, ICorDebugValue *pValue, ValueKind valueKind) :
             variablesReference(variable.variablesReference),
             namedVariables(variable.namedVariables),
             indexedVariables(variable.indexedVariables),
             evalFlags(variable.evalFlags),
             evaluateName(variable.evaluateName),
             valueKind(valueKind),
-            value(std::move(value)),
+            iCorValue(pValue),
             frameId(frameId)
         {}
 
@@ -62,7 +62,7 @@ class Variables
             indexedVariables(0),
             evalFlags(0), // unused in this case, not involved into GetScopes routine
             valueKind(ValueIsScope),
-            value(nullptr),
+            iCorValue(nullptr),
             frameId(frameId)
         {}
 
@@ -75,10 +75,9 @@ class Variables
     Evaluator &m_evaluator;
     struct Member;
 
-    std::unordered_map<uint32_t, VariableReference> m_variables;
-    uint32_t m_nextVariableReference;
+    std::unordered_map<uint32_t, VariableReference> m_references;
 
-    void AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *value, ValueKind valueKind);
+    HRESULT AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *pValue, ValueKind valueKind);
 
 public:
     HRESULT GetExceptionVariable(
@@ -116,9 +115,9 @@ private:
         int childEnd,
         int evalFlags);
 
-    HRESULT GetNumChild(
+    void GetNumChild(
         ICorDebugValue *pValue,
-        unsigned int &numchild,
+        int &numChild,
         bool static_members = false);
 
     HRESULT SetStackVariable(
@@ -137,15 +136,12 @@ private:
         const std::string &value,
         std::string &output);
 
-    static BOOL VarGetChild(void *opaque, uint32_t varRef, const char* name, int *typeId, void **data);
-    bool GetChildDataByName(uint32_t varRef, const std::string &name, int *typeId, void **data);
     void FillValueAndType(Member &member, Variable &var, bool escape = true);
 
 public:
 
     Variables(Evaluator &evaluator) :
-        m_evaluator(evaluator),
-        m_nextVariableReference(1)
+        m_evaluator(evaluator)
     {}
 
     int GetNamedVariables(uint32_t variablesReference);
@@ -190,7 +186,7 @@ public:
         const Variable &variable,
         ICorDebugValue **ppResult);
 
-    void Clear() { m_variables.clear(); m_nextVariableReference = 1; }
+    void Clear() { m_references.clear(); }
 
 };
 

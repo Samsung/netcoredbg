@@ -368,7 +368,7 @@ struct Variable
     std::string name;
     std::string value;
     std::string type;
-    std::string module;
+    std::string module; // used by exception routine only
     VariablePresentationHint presentationHint;
     std::string evaluateName;
     uint32_t variablesReference;

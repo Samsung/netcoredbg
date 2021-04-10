@@ -57,8 +57,6 @@ class CLIProtocol : public IProtocol
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
-    unsigned int m_varCounter;
-    std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
     std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
 

@@ -528,7 +528,6 @@ CLIProtocol::CLIProtocol(InStream& input, OutStream& output) :
   m_input(input),
   m_output(output),
   m_processStatus(NotStarted),
-  m_varCounter(0),
   m_term_settings(*this), 
   line_reader(),
   m_commandMode(CommandMode::Unset)
@@ -721,8 +720,6 @@ void CLIProtocol::Cleanup()
 {
     lock_guard lock(m_mutex);
 
-    m_vars.clear();
-    m_varCounter = 0;
     m_breakpoints.clear();
 }
 

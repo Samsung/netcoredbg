@@ -27,7 +27,6 @@ class MIProtocol : public IProtocol
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
-    unsigned int m_varCounter;
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
     std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
@@ -50,7 +49,7 @@ class MIProtocol : public IProtocol
 
 public:
 
-    MIProtocol(std::istream& input, std::ostream& output) : IProtocol(input, output), m_varCounter(0) {}
+    MIProtocol(std::istream& input, std::ostream& output) : IProtocol(input, output) {}
 
     void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv0) override {}
@@ -84,8 +83,8 @@ private:
     HRESULT CreateVar(ThreadId threadId, FrameLevel level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output);
     HRESULT DeleteVar(const std::string &varobjName);
     HRESULT FindVar(const std::string &varobjName, Variable &variable);
-    void PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output);
-    void PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
+    HRESULT PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output);
+    HRESULT PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
     HRESULT ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);

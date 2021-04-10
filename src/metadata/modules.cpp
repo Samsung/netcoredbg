@@ -953,7 +953,6 @@ HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module)
     HRESULT Status;
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
-
     if (pFrame == nullptr)
         return E_FAIL;
 
