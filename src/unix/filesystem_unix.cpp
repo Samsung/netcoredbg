@@ -42,14 +42,11 @@ namespace
 #elif defined(__APPLE__)
     static span<char> get_exe_path(span<char> buffer)
     {
-        uint32_t real_len;
+        uint32_t real_len = buffer.size();
         if (_NSGetExecutablePath(buffer.data(), &real_len) < 0)
             return {};
 
-        if (real_len >= buffer.size())
-            return {};
-
-        buffer[real_len] = 0;
+        real_len = strlen(buffer.data());
         return buffer.subspan(0, real_len);
     }
 #endif
