@@ -53,6 +53,9 @@ struct dbgshim_t
         libName += DIRECTORY_SEPARATOR_STR_A;
 #else
         std::string exe = GetExeAbsPath();
+        if (exe.empty())
+            throw std::runtime_error("Unable to detect exe path");
+
         std::size_t dirSepIndex = exe.rfind(DIRECTORY_SEPARATOR_STR_A);
         if (dirSepIndex == std::string::npos)
             return;

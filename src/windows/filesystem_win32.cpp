@@ -15,7 +15,7 @@ namespace netcoredbg
 const char* FileSystemTraits<Win32PlatformTag>::PathSeparatorSymbols = "/\\";
 
 // Function returns absolute path to currently running executable.
-string_view GetExeAbsPath()
+std::string GetExeAbsPath()
 {
     const size_t MAX_LONGPATH = 1024;
     char hostPath[MAX_LONGPATH + 1];

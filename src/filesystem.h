@@ -37,7 +37,7 @@ namespace netcoredbg
     };
 
     /// Function returns absolute path to currently running executable.
-    string_view GetExeAbsPath();
+    std::string GetExeAbsPath();
 
     /// Function returns only file name part of the full path.
     string_view GetBasename(string_view path);

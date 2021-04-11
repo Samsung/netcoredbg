@@ -25,46 +25,40 @@ template <typename T> using span = Utility::span<T>;
 
 const char* FileSystemTraits<UnixPlatformTag>::PathSeparatorSymbols = "/";
 
-namespace 
+namespace
 {
 #ifdef __linux__
-    static span<char> get_exe_path(span<char> buffer)
+    std::string get_exe_path()
     {
-        static const char* self_link = "/proc/self/exe";
-        ssize_t r = readlink(self_link, buffer.data(), buffer.size());
-        if (r < 0 || size_t(r) >= buffer.size())
-            return {};  // error or path too long
-
-        buffer[r] = 0;
-        return buffer.subspan(0, r);
+        static const char self_link[] = "/proc/self/exe";
+        char buffer[PATH_MAX];
+        ssize_t r = readlink(self_link, buffer, PATH_MAX);
+        return std::string(buffer, r < 0 ? 0 : r);
     }
-
 #elif defined(__APPLE__)
-    static span<char> get_exe_path(span<char> buffer)
+    std::string get_exe_path()
     {
-        uint32_t real_len;
-        if (_NSGetExecutablePath(buffer.data(), &real_len) < 0)
-            return {};
-
-        if (real_len >= buffer.size())
-            return {};
-
-        buffer[real_len] = 0;
-        return buffer.subspan(0, real_len);
+        uint32_t lenActualPath = 0;
+        if (_NSGetExecutablePath(nullptr, &lenActualPath) == -1)
+        {
+            // OSX has placed the actual path length in lenActualPath,
+            // so re-attempt the operation
+            std::string resizedPath(lenActualPath, '\0');
+            char *pResizedPath = const_cast<char *>(resizedPath.data());
+            if (_NSGetExecutablePath(pResizedPath, &lenActualPath) == 0)
+                return pResizedPath;
+        }
+        return std::string();
     }
 #endif
 }
 
-
 // Function returns absolute path to currently running executable.
-string_view GetExeAbsPath()
+std::string GetExeAbsPath()
 {
-    std::array<char, PATH_MAX> exe_path;
-    auto path = get_exe_path(exe_path);
-    static const std::string result {path.data(), path.size()};
+    static const std::string result(get_exe_path());
     return result;
 }
-
 
 // Function returns path to directory, which should be used for creation of
 // temporary files. Typically this is `/tmp` on Unix and something like
