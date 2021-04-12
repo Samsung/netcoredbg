@@ -1250,7 +1250,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoThreads>(const std::vector<std::s
     }
 
     std::vector<Thread> threads;
-    if (m_debugger->GetThreads(threads) != S_OK)
+    if (FAILED(m_debugger->GetThreads(threads)))
     {
         output = "No threads.";
         return E_FAIL;

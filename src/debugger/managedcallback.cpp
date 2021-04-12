@@ -237,49 +237,50 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
 
     StackFrame stackFrame;
     ToRelease<ICorDebugFrame> pFrame;
-    HRESULT Status = S_FALSE;
     if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-        Status = m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
+        m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
 
-    const bool no_source = Status == S_FALSE;
+    // No reason check GetFrameLocation() return code, since it could be failed by some API call after source detection.
+    const bool no_source = stackFrame.source.IsNull();
 
     if (m_debugger.IsJustMyCode() && no_source)
     {
+        // FIXME will not work in proper way with async methods
         m_debugger.SetupSimpleStep(pThread, Debugger::STEP_OVER);
         pAppDomain->Continue(0);
+        return S_OK;
     }
-    else
+
+    // Note, step-in stop at the beginning of a newly called function at 0 IL offset.
+    // But, for example, async function don't have user code at 0 IL offset, so,
+    // we need additional step-over to real user code.
+    if (reason == CorDebugStepReason::STEP_CALL)
     {
-        // Note, step-in stop at the beginning of a newly called function at 0 IL offset.
-        // But, for example, async function don't have user code at 0 IL offset, so,
-        // we need additional step-over to real user code.
-        if (reason == CorDebugStepReason::STEP_CALL)
+        HRESULT Status;
+        ToRelease<ICorDebugFrame> pFrame;
+        ToRelease<ICorDebugILFrame> pILFrame;
+        ULONG32 ipOffset;
+        CorDebugMappingResult mappingResult;
+        Modules::SequencePoint sequencePoint;
+        if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr &&
+            SUCCEEDED(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)) &&
+            SUCCEEDED(pILFrame->GetIP(&ipOffset, &mappingResult)) &&
+            SUCCEEDED(m_debugger.m_modules.GetFrameILAndSequencePoint(pFrame, ipOffset, sequencePoint)) &&
+            // Current IL offset less than real offset of first user code line.
+            ipOffset < (ULONG32)sequencePoint.offset)
         {
-            ToRelease<ICorDebugFrame> pFrame;
-            ToRelease<ICorDebugILFrame> pILFrame;
-            ULONG32 ipOffset;
-            CorDebugMappingResult mappingResult;
-            Modules::SequencePoint sequencePoint;
-            if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr &&
-                SUCCEEDED(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)) &&
-                SUCCEEDED(pILFrame->GetIP(&ipOffset, &mappingResult)) &&
-                SUCCEEDED(m_debugger.m_modules.GetFrameILAndSequencePoint(pFrame, ipOffset, sequencePoint)) &&
-                // Current IL offset less than real offset of first user code line.
-                ipOffset < (ULONG32)sequencePoint.offset)
-            {
-                IfFailRet(m_debugger.SetupSimpleStep(pThread, Debugger::STEP_OVER));
-                pAppDomain->Continue(0);
-                return S_OK;
-            }
+            IfFailRet(m_debugger.SetupSimpleStep(pThread, Debugger::STEP_OVER));
+            pAppDomain->Continue(0);
+            return S_OK;
         }
-
-        StoppedEvent event(StopStep, threadId);
-        event.frame = stackFrame;
-
-        m_debugger.SetLastStoppedThread(pThread);
-        m_debugger.m_protocol->EmitStoppedEvent(event);
-        m_debugger.m_ioredirect.async_cancel();
     }
+
+    StoppedEvent event(StopStep, threadId);
+    event.frame = stackFrame;
+
+    m_debugger.SetLastStoppedThread(pThread);
+    m_debugger.m_protocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
 
     return S_OK;
 }
@@ -292,6 +293,20 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     ThreadId threadId(getThreadId(pThread));
 
     if (m_debugger.m_evaluator.IsEvalRunning())
+    {
+        pAppDomain->Continue(0);
+        return S_OK;
+    }
+
+    StackFrame stackFrame;
+    ToRelease<ICorDebugFrame> pFrame;
+    if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+        m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
+
+    // No reason check GetFrameLocation() return code, since it could be failed by some API call after source detection.
+    const bool no_source = stackFrame.source.IsNull();
+
+    if (m_debugger.IsJustMyCode() && no_source)
     {
         pAppDomain->Continue(0);
         return S_OK;
@@ -363,19 +378,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     m_debugger.SetLastStoppedThread(pThread);
 
     StoppedEvent event(StopPause, threadId);
-
-    // Disable all steppers if we stop during step.
-    m_debugger.DisableAllSteppers();
-
-    ToRelease<ICorDebugFrame> pFrame;
-    if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-    {
-        StackFrame stackFrame;
-        if (m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel{0}, stackFrame) == E_FAIL)
-            stackFrame = StackFrame(threadId, FrameLevel{0}, "");
-        event.frame = stackFrame;
-    }
-
+    event.frame = stackFrame;
     m_debugger.m_protocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return S_OK;
@@ -858,16 +861,14 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     IfFailRet(pThread->GetCurrentException(&pExceptionValue));
     IfFailRet(PrintStringField(pExceptionValue, fieldName, message));
 
-    StackFrame stackFrame;
     ToRelease<ICorDebugFrame> pActiveFrame;
     if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
-        m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), stackFrame);
+        m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), event.frame);
 
     m_debugger.SetLastStoppedThread(pThread);
 
     event.text = excType;
     event.description = message.empty() ? details : message;
-    event.frame = stackFrame;
 
     if (m_debugger.m_evaluator.IsEvalRunning() && !m_debugger.m_evaluator.is_empty_eval_queue())
     {
@@ -959,7 +960,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CustomNotification(
         }
     }
 
-    IfFailRet(pAppDomain->Continue(false));
+    IfFailRet(pAppDomain->Continue(0));
     return S_OK;
 }
 

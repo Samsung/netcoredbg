@@ -73,7 +73,7 @@ ThreadId getThreadId(ICorDebugThread *pThread)
 {
     DWORD threadId = 0;  // invalid value for Win32
     HRESULT res = pThread->GetID(&threadId);
-    return res == S_OK && threadId != 0 ? ThreadId{threadId} : ThreadId{};
+    return SUCCEEDED(res) && threadId != 0 ? ThreadId{threadId} : ThreadId{};
 }
 
 void ManagedDebugger::NotifyProcessCreated()
@@ -867,15 +867,12 @@ HRESULT ManagedDebugger::Pause()
     // Each call to Stop or each dispatched callback increments the counter.
     // Each call to ICorDebugController::Continue decrements the counter.
     BOOL running = FALSE;
-    HRESULT Status = m_pProcess->IsRunning(&running);
-    if (Status != S_OK)
-        return Status;
+    HRESULT Status;
+    IfFailRet(m_pProcess->IsRunning(&running));
     if (!running)
         return S_OK;
 
-    Status = m_pProcess->Stop(0);
-    if (Status != S_OK)
-        return Status;
+    IfFailRet(m_pProcess->Stop(0));
 
     // Same logic as provide vsdbg in case of pause during stepping.
     DisableAllSteppers();
@@ -1223,7 +1220,7 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
         return E_FAIL;
     }
 
-    if (m_startupResult == S_OK)
+    if (SUCCEEDED(m_startupResult))
         m_protocol->EmitExecEvent(PID{m_processId}, fileExec);
 
     return m_startupResult;
@@ -1585,7 +1582,7 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
 
     TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
-    return stackFrame.source.IsNull() ? S_FALSE : S_OK;
+    return S_OK;
 }
 
 HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)

@@ -356,7 +356,7 @@ HRESULT Variables::GetStackVariables(
     HRESULT Status;
     int currentIndex = -1;
     Variable var;
-    if (GetExceptionVariable(frameId, pThread, var) == S_OK) {
+    if (SUCCEEDED(GetExceptionVariable(frameId, pThread, var))) {
         variables.push_back(var);
         ++currentIndex;
     }
