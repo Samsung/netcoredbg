@@ -152,7 +152,7 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
 
         ToRelease<ICorDebugFrame> pFrame;
         IfFailRet(pStackWalk->GetFrame(&pFrame));
-        if (Status == S_FALSE)
+        if (Status == S_FALSE) // S_FALSE - The current frame is a native stack frame.
         {
             // We've hit a native frame, we need to store the CONTEXT
             memset(&ctxUnmanagedChain, 0, sizeof(CONTEXT));

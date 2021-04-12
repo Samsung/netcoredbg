@@ -497,7 +497,12 @@ HRESULT Variables::GetChildren(
         bool staticsInRange = start < ref.namedVariables && (count == 0 || start + count >= ref.namedVariables);
         if (staticsInRange)
         {
-            m_evaluator.RunClassConstructor(pThread, ref.iCorValue, ref.evalFlags);
+            ToRelease<ICorDebugValue2> pValue2;
+            IfFailRet(ref.iCorValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+            ToRelease<ICorDebugType> pType;
+            IfFailRet(pValue2->GetExactType(&pType));
+            // Note, this call could return S_FALSE without ICorDebugValue creation in case type don't have static members.
+            IfFailRet(m_evaluator.CreatTypeObjectStaticConstructor(pThread, pType, nullptr, false));
 
             Variable var(ref.evalFlags);
             var.name = "Static members";
@@ -543,9 +548,9 @@ HRESULT Variables::Evaluate(
     if (std::regex_match(expression, re))
     {
         // Use simple name parser
-        Status = m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags);
-        if (FAILED(Status))
-            pResultValue.Free();
+        // Note, in case of fail we don't call Roslyn, since it will use simple eval check with same `expression`,
+        // but in case we miss something with `regex_match`, Roslyn will use simple eval check from managed part.
+        IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags));
     }
 
     int typeId;
@@ -569,8 +574,8 @@ HRESULT Variables::Evaluate(
             {
                 if (!found && varName == "this")
                 {
-                    pThisValue = pValue;
                     pValue->AddRef();
+                    pThisValue = pValue;
                 }
                 if (!found && varName == name)
                 {

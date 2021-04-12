@@ -56,8 +56,6 @@ public:
 
 private:
 
-    ToRelease<ICorDebugFunction> m_pRunClassConstructor;
-    ToRelease<ICorDebugFunction> m_pGetTypeHandle;
     ToRelease<ICorDebugFunction> m_pSuppressFinalize;
 
     struct evalResult_t {
@@ -110,13 +108,6 @@ private:
     HRESULT WaitEvalResult(ICorDebugThread *pThread,
                            ICorDebugEval *pEval,
                            ICorDebugValue **ppEvalResult);
-
-    HRESULT EvalObjectNoConstructor(
-        ICorDebugThread *pThread,
-        ICorDebugType *pType,
-        ICorDebugValue **ppEvalResult,
-        int evalFlags,
-        bool suppressFinalize = true);
 
     std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
         ICorDebugThread *pThread,
@@ -175,7 +166,11 @@ public:
 
     Evaluator(Modules &modules) : m_modules(modules) {}
 
-    HRESULT RunClassConstructor(ICorDebugThread *pThread, ICorDebugValue *pValue, int evalFlags);
+    HRESULT CreatTypeObjectStaticConstructor(
+        ICorDebugThread *pThread,
+        ICorDebugType *pType,
+        ICorDebugValue **ppTypeObjectResult = nullptr,
+        bool DetectStaticMembers = true);
 
     HRESULT EvalFunction(
         ICorDebugThread *pThread,

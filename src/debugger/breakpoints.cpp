@@ -193,15 +193,10 @@ HRESULT Breakpoints::HitManagedFunctionBreakpoint(Debugger *debugger,
                 {
                     ToRelease<ICorDebugValue> pValue;
                     ULONG cArgsFetched;
-                    Status = pParamEnum->Next(1, &pValue, &cArgsFetched);
-                    std::string param;
-
-                    if (FAILED(Status))
+                    if (FAILED(pParamEnum->Next(1, &pValue, &cArgsFetched)))
                         continue;
 
-                    if (Status == S_FALSE)
-                        break;
-
+                    std::string param;
                     IfFailRet(TypePrinter::GetTypeOfValue(pValue, param));
                     if (i > 0)
                         params += ",";

@@ -45,8 +45,8 @@ HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOut
         else
         {
             if(pIsNull != nullptr) *pIsNull = TRUE;
+            pValue->AddRef();
             *ppOutputValue = pValue;
-            (*ppOutputValue)->AddRef();
             return S_OK;
         }
     }
@@ -59,8 +59,8 @@ HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOut
         IfFailRet(pBoxedValue->GetObject(&pUnboxedValue));
         return DereferenceAndUnboxValue(pUnboxedValue, ppOutputValue, pIsNull);
     }
+    pValue->AddRef();
     *ppOutputValue = pValue;
-    (*ppOutputValue)->AddRef();
     return S_OK;
 }
 
@@ -383,7 +383,7 @@ static HRESULT GetDecimalFields(ICorDebugValue *pValue,
         WCHAR mdName[mdNameLen] = {0};
         if(SUCCEEDED(pMD->GetFieldProps(fieldDef, NULL, mdName, mdNameLen, &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
         {
-            if(fieldAttr & fdLiteral)
+            if (fieldAttr & fdLiteral)
                 continue;
             if (fieldAttr & fdStatic)
                 continue;
