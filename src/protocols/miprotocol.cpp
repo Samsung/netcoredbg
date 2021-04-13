@@ -1231,14 +1231,25 @@ struct MIProtocol::MIProtocolChars
     static const char forbidden_chars[];
 
     // substitutions (except of '\\' prefix)
-    static const char subst_chars[];
+    static const string_view subst_chars[];
 
     static constexpr const char escape_char = '\\';
 };
 
 
-const char MIProtocol::MIProtocolChars::forbidden_chars[] = "\"\\\0\a\b\f\n\r\t\v";
-const char MIProtocol::MIProtocolChars::subst_chars[] = "\"\\0abfnrtv";
+const char MIProtocol::MIProtocolChars::forbidden_chars[] = 
+    "\"\\"
+    "\000\001\002\003\004\005\006\007\010\011\012\013\014\015\016\017"
+    "\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037";
+
+const string_view MIProtocol::MIProtocolChars::subst_chars[] {
+    "\\\"", "\\\\",
+    "\\u0000", "\\u0001", "\\u0002", "\\u0003", "\\u0004", "\\u0005", "\\u0006", "\\u0007",
+    "\\u0008", "\\u0009", "\\u000a", "\\u000b", "\\u000c", "\\u000d", "\\u000e", "\\u000f",
+    "\\u0010", "\\u0011", "\\u0012", "\\u0013", "\\u0014", "\\u0015", "\\u0016", "\\u0017",
+    "\\u0018", "\\u0019", "\\u001a", "\\u001b", "\\u001c", "\\u001d", "\\u001e", "\\u001f"
+};
+
 const char MIProtocol::MIProtocolChars::escape_char;
 
 

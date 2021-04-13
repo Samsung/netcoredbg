@@ -257,13 +257,13 @@ namespace
     struct JSON_escape_rules
     {
        static const char forbidden_chars[];
-       static const char subst_chars[];
+       static const string_view subst_chars[];
        constexpr static const char escape_char = '\\';
     };
 
     // Allocate static memory for strings declared above.
     const char JSON_escape_rules::forbidden_chars[] = "\b\f\n\r\t\"\\";
-    const char JSON_escape_rules::subst_chars[] = "bfnrt\"\\";
+    const string_view JSON_escape_rules::subst_chars[] = { "\\b", "\\f", "\\n", "\\r", "\\t", "\\\"", "\\\\" };
 
     // This function serializes "OutputEvent" to specified output stream and used for two
     // purposes: to compute output size, and to perform the output directly.
