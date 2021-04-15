@@ -8,6 +8,8 @@
 #else
 #include <termios.h>
 #include <unistd.h>
+#define _isatty(fd) ::isatty(fd)
+#define _fileno(file) ::fileno(file)
 #endif
 
 #include "debugger/frames.h"
@@ -2085,12 +2087,21 @@ void CLIProtocol::applyCommandMode()
 {
     lock_guard lock(m_mutex);
 
-    // setup function which is called after Stop/Exit events to redraw screen, etc...
-#ifndef WIN32
-    m_repaint_fn = std::bind(pthread_kill, pthread_self(), SIGWINCH);
-#else
-    m_repaint_fn = []{ GenerateConsoleCtrlEvent(CTRL_C_EVENT , 0); };
-#endif
+    if (_isatty(_fileno(stdin)))
+    {
+        // setup function which is called after Stop/Exit events to redraw screen, etc...
+        #ifndef WIN32
+        m_repaint_fn = std::bind(pthread_kill, pthread_self(), SIGWINCH);
+        #else
+        m_repaint_fn = []{ GenerateConsoleCtrlEvent(CTRL_C_EVENT , 0); };
+        #endif
+    }
+    else {
+        // if input comes from non (pseudo) terminals (pipes, files, sockets, etc...)
+        // no special function required (because SIGWINCH might not be handled corretly in this case).
+        m_repaint_fn = nullptr;
+
+    }
 }
 
 
@@ -2116,11 +2127,15 @@ void CLIProtocol::CommandLoop()
             m_commandMode = CommandMode::Synchronous;
         applyCommandMode();
 
-        linenoiseInstallWindowChangeHandler();
-        linenoiseHistorySetMaxLen(DefaultHistoryDepth);
-        linenoiseHistoryLoad(HistoryFileName);
+        // Use linenoise features only if input comes from (pseudo)terminal.
+        if (_isatty(_fileno(stdin)))
+        {
+            linenoiseInstallWindowChangeHandler();
+            linenoiseHistorySetMaxLen(DefaultHistoryDepth);
+            linenoiseHistoryLoad(HistoryFileName);
 
-        linenoiseSetCompletionCallbackEx(completion_callback, this);
+            linenoiseSetCompletionCallbackEx(completion_callback, this);
+        }
     }
 
     // loop till eof, error, or exit request.
