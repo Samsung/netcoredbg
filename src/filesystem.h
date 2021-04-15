@@ -46,7 +46,7 @@ namespace netcoredbg
     string_view GetDirname(string_view path);
 
     /// Function changes current working directory. Return value is `false` in case of error.
-    bool SetWorkDir(string_view path);
+    bool SetWorkDir(const std::string &path);
 
     /// Function returns path to directory, which should be used for creation of
     /// temporary files. Typically this is `/tmp` on Unix and something like

@@ -80,15 +80,9 @@ string_view GetTempDir()
 
 
 // Function changes current working directory. Return value is `false` in case of error.
-bool SetWorkDir(string_view path)
+bool SetWorkDir(const std::string &path)
 {
-    char str[PATH_MAX];
-    if (path.size() >= sizeof(str))
-        return false;
-
-    path.copy(str, path.size());
-    str[path.size()] = 0;
-    return chdir(str) == 0;
+    return chdir(path.c_str()) == 0;
 }
 
 }  // ::netcoredbg

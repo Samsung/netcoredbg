@@ -36,15 +36,14 @@ string_view GetTempDir()
 
 
 // Function changes current working directory. Return value is `false` in case of error.
-bool SetWorkDir(string_view path)
+bool SetWorkDir(const std::string &path)
 {
-    char str[MAX_PATH];
-    if (path.size() >= sizeof(str))
+    // In the ANSI version of this function, the name is limited to MAX_PATH characters.
+    // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setcurrentdirectory
+    if (path.size() >= MAX_PATH)
         return false;
 
-    path.copy(str, path.size());
-    str[path.size()] = 0;
-    return SetCurrentDirectoryA(str);
+    return SetCurrentDirectoryA(path.c_str());
 }
 
 }  // ::netcoredbg
