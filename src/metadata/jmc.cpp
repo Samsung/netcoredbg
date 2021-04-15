@@ -100,20 +100,6 @@ static bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const std::string &a
     return found;
 }
 
-static bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodDef)
-{
-    std::vector<Interop::SequencePoint> points;
-    if (FAILED(Interop::GetSequencePoints(pSymbolReaderHandle, methodDef, points)))
-        return false;
-
-    for (auto &p : points)
-    {
-        if (p.startLine != 0 && p.startLine != Interop::HiddenLine)
-            return true;
-    }
-    return false;
-}
-
 static HRESULT GetNonJMCMethodsForTypeDef(
     IMetaDataImport *pMD,
     PVOID pSymbolReaderHandle,
@@ -141,7 +127,7 @@ static HRESULT GetNonJMCMethodsForTypeDef(
         if ((g_operatorMethodNames.find(to_utf8(szFunctionName)) != g_operatorMethodNames.end())
             || HasAttribute(pMD, methodDef, g_nonUserCode)
             || HasAttribute(pMD, methodDef, g_stepThrough)
-            || !HasSourceLocation(pSymbolReaderHandle, methodDef))
+            || !Interop::HasSourceLocation(pSymbolReaderHandle, methodDef))
         {
             excludeMethods.push_back(methodDef);
         }

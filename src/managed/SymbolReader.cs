@@ -340,6 +340,94 @@ namespace NetCoreDbg
             return false;
         }
 
+        /// <summary>
+        /// Check, that method have user code in method's body.
+        /// </summary>
+        /// <param name="assemblyPath">file path of the assembly or null if the module is in-memory or dynamic</param>
+        /// <param name="methodToken">method token</param>
+        /// <returns>"true" if method have user code, otherwise "false"</returns>
+        internal static bool HasSourceLocation(IntPtr symbolReaderHandle, int methodToken)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+
+            try
+            {
+                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+                MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+                Handle handle = MetadataTokens.Handle(methodToken);
+                if (handle.Kind != HandleKind.MethodDefinition)
+                    return false;
+
+                MethodDebugInformationHandle methodDebugHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
+                if (methodDebugHandle.IsNil)
+                    return false;
+
+                MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugHandle);
+                SequencePointCollection sequencePoints = methodDebugInfo.GetSequencePoints();
+
+                foreach (SequencePoint p in sequencePoints)
+                {
+                    if (p.StartLine != 0 && p.StartLine != SequencePoint.HiddenLine)
+                        return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Find and return last method's offset for user code.
+        /// </summary>
+        /// <param name="assemblyPath">file path of the assembly or null if the module is in-memory or dynamic</param>
+        /// <param name="methodToken">method token</param>
+        /// <param name="LastIlOffset">return last found IL offset in user code</param>
+        /// <returns>"true" if last IL offset was found, otherwise "false"</returns>
+        internal static bool GetMethodLastIlOffset(IntPtr symbolReaderHandle, int methodToken, out uint LastIlOffset)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+
+            LastIlOffset = 0;
+            bool foundOffset = false;
+
+            try
+            {
+                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+                MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+                Handle handle = MetadataTokens.Handle(methodToken);
+                if (handle.Kind != HandleKind.MethodDefinition)
+                    return false;
+
+                MethodDebugInformationHandle methodDebugHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
+                if (methodDebugHandle.IsNil)
+                    return false;
+
+                MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugHandle);
+                SequencePointCollection sequencePoints = methodDebugInfo.GetSequencePoints();
+
+                // We don't use LINQ in order to reduce memory consumption for managed part, so Reverse() usage not an option here.
+                // Note,  SequencePointCollection is IEnumerable based collections.
+                foreach (SequencePoint p in sequencePoints)
+                {
+                    if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine || p.Offset < 0)
+                        continue;
+
+                    // Method's IL start only from 0, use uint for IL offset.
+                    LastIlOffset = (uint)p.Offset;
+                    foundOffset = true;
+                }
+            }
+            catch
+            {
+            }
+
+            return foundOffset;
+        }
+
         internal static bool GetSequencePoints(IntPtr symbolReaderHandle, int methodToken, out IntPtr points, out int pointsCount)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);

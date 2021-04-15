@@ -499,16 +499,7 @@ HRESULT Modules::FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, PVOID pS
         m_asyncMethodsSteppingInfo[newKey].catch_handler_offset = entry.catch_handler_offset; // same for all awaits in async method
         m_asyncMethodsSteppingInfo[newKey].awaits.emplace_back(entry.yield_offset, entry.resume_offset);
 
-        std::vector<Interop::SequencePoint> points;
-        IfFailRet(Interop::GetSequencePoints(pSymbolReaderHandle, realToken, points));
-        for (auto it = points.rbegin(); it != points.rend(); ++it)
-        {
-            if (it->startLine == 0 || it->startLine == Interop::HiddenLine)
-                continue;
-            
-            m_asyncMethodsSteppingInfo[newKey].lastIlOffset = it->offset;
-            break;
-        }
+        IfFailRet(Interop::GetMethodLastIlOffset(pSymbolReaderHandle, realToken, &m_asyncMethodsSteppingInfo[newKey].lastIlOffset));
     }
 
     return S_OK;

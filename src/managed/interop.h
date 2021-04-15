@@ -116,6 +116,8 @@ namespace Interop
     HRESULT ResolveSequencePoint(PVOID pSymbolReaderHandle, const char *filename, ULONG32 lineNumber, mdMethodDef* pToken, ULONG32* pIlOffset);
     HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
     HRESULT GetSequencePoints(PVOID pSymbolReaderHandle, mdMethodDef methodToken, std::vector<SequencePoint> &points);
+    bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodToken);
+    HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset);
     HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo);
     HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
     HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);

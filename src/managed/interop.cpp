@@ -53,6 +53,8 @@ typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned i
 typedef  BOOL (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, PVOID);
 typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
 typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
+typedef  BOOL (*HasSourceLocationDelegate)(PVOID, mdMethodDef);
+typedef  BOOL (*GetMethodLastIlOffsetDelegate)(PVOID, mdMethodDef, unsigned int*);
 typedef  void (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int*);
 typedef  BOOL (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int *, BSTR*);
 typedef  BOOL (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int*, int*, PVOID*);
@@ -67,6 +69,8 @@ GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate = nullptr;
 GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate = nullptr;
 GetStepRangesFromIPDelegate getStepRangesFromIPDelegate = nullptr;
 GetSequencePointsDelegate getSequencePointsDelegate = nullptr;
+HasSourceLocationDelegate hasSourceLocationDelegate = nullptr;
+GetMethodLastIlOffsetDelegate getMethodLastIlOffsetDelegate = nullptr;
 GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate = nullptr;
 ParseExpressionDelegate parseExpressionDelegate = nullptr;
 EvalExpressionDelegate evalExpressionDelegate = nullptr;
@@ -241,6 +245,8 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "HasSourceLocation", (void **)&hasSourceLocationDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetMethodLastIlOffset", (void **)&getMethodLastIlOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodsSteppingInfo", (void **)&getAsyncMethodsSteppingInfoDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate)) &&
@@ -257,6 +263,8 @@ void Init(const std::string &coreClrPath)
                               getSequencePointByILOffsetDelegate &&
                               getStepRangesFromIPDelegate &&
                               getSequencePointsDelegate &&
+                              hasSourceLocationDelegate &&
+                              getMethodLastIlOffsetDelegate &&
                               getAsyncMethodsSteppingInfoDelegate &&
                               parseExpressionDelegate &&
                               evalExpressionDelegate &&
@@ -300,6 +308,8 @@ void Shutdown()
     getSequencePointByILOffsetDelegate = nullptr;
     getStepRangesFromIPDelegate = nullptr;
     getSequencePointsDelegate = nullptr;
+    hasSourceLocationDelegate = nullptr;
+    getMethodLastIlOffsetDelegate = nullptr;
     getAsyncMethodsSteppingInfoDelegate = nullptr;
     parseExpressionDelegate = nullptr;
     evalExpressionDelegate = nullptr;
@@ -395,6 +405,26 @@ HRESULT GetSequencePoints(PVOID pSymbolReaderHandle, mdMethodDef methodToken, st
 
     InteropPlatform::CoTaskMemFree(allocatedPoints);
     return S_OK;
+}
+
+bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodToken)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!hasSourceLocationDelegate || !pSymbolReaderHandle)
+        return false;
+
+    BOOL ok = hasSourceLocationDelegate(pSymbolReaderHandle, methodToken);
+    return !!(ok);
+}
+
+HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!getMethodLastIlOffsetDelegate || !pSymbolReaderHandle)
+        return E_FAIL;
+
+    BOOL ok = getMethodLastIlOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset);
+    return ok ? S_OK : E_FAIL;
 }
 
 HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo)
