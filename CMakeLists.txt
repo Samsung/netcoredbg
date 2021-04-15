@@ -8,8 +8,11 @@ project(netcoredbg)
 
 set(CORECLR_DIR "" CACHE FILEPATH "Path to CoreCLR source directory")
 set(DOTNET_DIR "" CACHE FILEPATH "Path to .NET SDK directory")
+# Note, since 5.0 src are broken and will not build netcoredbg without patch, stay with 3.1 for now.
 set(CORECLR_BRANCH "release/3.1" CACHE STRING "CoreCLR source branch")
-set(DOTNET_CHANNEL "3.1" CACHE STRING ".NET SDK channel")
+# Note, we must use latest runtime, since we need copy latest dbgshim in order to work with all runtime versions.
+# https://github.com/dotnet/runtime/pull/44748#issuecomment-729268650
+set(DOTNET_CHANNEL "5.0" CACHE STRING ".NET SDK channel")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
 set(DBGSHIM_RUNTIME_DIR "" CACHE FILEPATH "Path to dbgshim library directory (at runtime)")
 
