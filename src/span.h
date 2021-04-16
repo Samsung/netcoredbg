@@ -46,6 +46,10 @@ public:
     /// the resulting span has data() == ptr and size() == count.
     span(T* first, size_t count) noexcept : _first(first), _beyond_last(first + count) {}
 
+    /// Constructs a span from array.
+    template <size_t N>
+    span(element_type (&arr)[N]) noexcept : _first(arr), _beyond_last(&arr[N]) {}
+
     /// @{ Construct span which holds references on container elements.
     // TODO add enable_if and check container properties
     template <class Container, typename = typename is_container<Container>::type>
