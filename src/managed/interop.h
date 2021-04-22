@@ -37,7 +37,7 @@ namespace Interop
             offset(0),
             document(nullptr)
         {}
-        ~SequencePoint();
+        ~SequencePoint() noexcept;
 
         SequencePoint(const SequencePoint&) = delete;
         SequencePoint& operator=(const SequencePoint&) = delete;
@@ -90,17 +90,16 @@ namespace Interop
 
     struct AsyncAwaitInfoBlock
     {
-        uint32_t catch_handler_offset;
         uint32_t yield_offset;
         uint32_t resume_offset;
         uint32_t token; // note, this is internal token number, runtime method token for module should be calculated as "mdMethodDefNil + token"
         
         AsyncAwaitInfoBlock() :
-            catch_handler_offset(0), yield_offset(0), resume_offset(0), token(0)
+            yield_offset(0), resume_offset(0), token(0)
         {}
     };
 
-    typedef std::function<bool(PVOID, const std::string&, int *, PVOID*)> GetChildCallback;
+    typedef std::function<bool(PVOID, const std::string&, int*, PVOID*)> GetChildCallback;
 
     // WARNING! Due to CoreCLR limitations, Init() / Shutdown() sequence can be used only once during process execution.
     // Note, init in case of error will throw exception, since this is fatal for debugger (CoreCLR can't be re-init).
@@ -108,23 +107,25 @@ namespace Interop
     // WARNING! Due to CoreCLR limitations, Shutdown() can't be called out of the Main() scope, for example, from global object destructor.
     void Shutdown();
 
-    HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule, VOID **ppSymbolReaderHandle);
+    HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle);
     void DisposeSymbols(PVOID pSymbolReaderHandle);
     HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG64 IlOffset, SequencePoint *sequencePoint);
-    HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex,
-                                                 WCHAR* paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32* pIlStart, ULONG32* pIlEnd);
-    HRESULT ResolveSequencePoint(PVOID pSymbolReaderHandle, const char *filename, ULONG32 lineNumber, mdMethodDef* pToken, ULONG32* pIlOffset);
+    HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFrame *pILFrame, mdMethodDef methodToken, ULONG localIndex,
+                                          WCHAR *paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32 *pIlStart, ULONG32 *pIlEnd);
     HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
-    HRESULT GetSequencePoints(PVOID pSymbolReaderHandle, mdMethodDef methodToken, std::vector<SequencePoint> &points);
     bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodToken);
     HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset);
+    HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, int32_t constrTokensNum, PVOID constrTokens, int32_t normalTokensNum, PVOID normalTokens, PVOID *data);
+    HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandle, int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t nestedToken, int32_t &Count, PVOID *data);
     HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo);
     HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
     HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
-    PVOID AllocBytes(size_t size);
     PVOID AllocString(const std::string &str);
     HRESULT StringToUpper(std::string &String);
-
+    BSTR SysAllocStringLen(int32_t size);
+    void SysFreeString(BSTR ptrBSTR);
+    PVOID CoTaskMemAlloc(int32_t size);
+    void CoTaskMemFree(PVOID ptr);
 } // namespace Interop
 
 
@@ -139,20 +140,8 @@ struct InteropTraits
     /// This function unsets `CORECLR_ENABLE_PROFILING' environment variable.
     static void UnsetCoreCLREnv();
 
-    /// Allocates a new string, copies the specified number of characters from the passed string, and appends a null-terminating character.
-    static BSTR SysAllocStringLen(const OLECHAR *strIn, UINT ui);
-
-    /// Deallocates a string allocated previously by SysAllocString, SysAllocStringByteLen, SysReAllocString, SysAllocStringLen, or SysReAllocStringLen.
-    static void SysFreeString(BSTR bstrString);
-
     /// Returns the length of a BSTR.
     static UINT SysStringLen(BSTR bstrString);
-
-    /// Allocates a block of task memory in the same way that IMalloc::Alloc does.
-    static LPVOID CoTaskMemAlloc(size_t cb);
-
-    /// Frees a block of task memory previously allocated through a call to the CoTaskMemAlloc or CoTaskMemRealloc function.
-    static void CoTaskMemFree(LPVOID pv);
 };
 
 typedef InteropTraits<PlatformTag> InteropPlatform;

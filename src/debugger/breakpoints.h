@@ -79,7 +79,7 @@ class Breakpoints
             for (auto &fbel : breakpoints)
             {
                 if (fbel.funcBreakpoint)
-                    fbel.funcBreakpoint->Activate(0);
+                    fbel.funcBreakpoint->Activate(FALSE);
             }
         }
 
@@ -110,8 +110,7 @@ class Breakpoints
     std::unordered_map<std::string, ManagedFunctionBreakpoint > m_funcBreakpoints;
     ExceptionBreakpointStorage m_exceptionBreakpoints;
 
-    HRESULT ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp);
-    HRESULT ResolveBreakpoint(ManagedBreakpoint &bp);
+    HRESULT ResolveBreakpoint(ICorDebugModule *pModule, ManagedBreakpoint &bp);
 
     HRESULT ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &bp);
     HRESULT ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp);

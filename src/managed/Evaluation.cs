@@ -326,7 +326,7 @@ namespace NetCoreDbg
             }
         }
 
-        internal static bool EvalExpression([MarshalAs(UnmanagedType.LPWStr)] string expr, IntPtr opaque, out IntPtr errorText, out int typeId, out int size, out IntPtr result)
+        internal static RetCode EvalExpression([MarshalAs(UnmanagedType.LPWStr)] string expr, IntPtr opaque, out IntPtr errorText, out int typeId, out int size, out IntPtr result)
         {
             SyntaxAnalyzer sa = new SyntaxAnalyzer(expr);
 
@@ -361,7 +361,7 @@ namespace NetCoreDbg
                     if (returnValue is null)
                     {
                         typeId = 0;
-                        return true;
+                        return RetCode.OK;
                     }
                     for (int i = 1; i < basicTypes.Length; i++)
                     {
@@ -369,21 +369,22 @@ namespace NetCoreDbg
                         {
                             typeId = i;
                             MarshalValue(returnValue, out size, out result);
-                            return true;
+                            return RetCode.OK;
                         }
                     }
-                    return false;
+                    return RetCode.Fail;
                 }
             }
             catch(Exception e)
             {
                 errorText = Marshal.StringToBSTR(e.ToString());
-                return false;
+                return RetCode.Exception;
             }
-            return true;
+
+            return RetCode.OK;
         }
 
-        internal static bool ParseExpression([MarshalAs(UnmanagedType.LPWStr)] string expr, [MarshalAs(UnmanagedType.LPWStr)] string resultTypeName, out IntPtr data, out int size, out IntPtr errorText)
+        internal static RetCode ParseExpression([MarshalAs(UnmanagedType.LPWStr)] string expr, [MarshalAs(UnmanagedType.LPWStr)] string resultTypeName, out IntPtr data, out int size, out IntPtr errorText)
         {
             object value = null;
             data = IntPtr.Zero;
@@ -393,7 +394,7 @@ namespace NetCoreDbg
             if (resultType == null)
             {
                 errorText = Marshal.StringToBSTR("Unknown type: " + resultTypeName);
-                return false;
+                return RetCode.Fail;
             }
             try
             {
@@ -424,15 +425,15 @@ namespace NetCoreDbg
                 {
                     errorText = Marshal.StringToBSTR(e.InnerException.ToString());
                 }
-                return false;
+                return RetCode.Exception;
             }
             if (value == null)
             {
                 errorText = Marshal.StringToBSTR("Value can not be null");
-                return false;
+                return RetCode.Fail;
             }
             MarshalValue(value, out size, out data);
-            return true;
+            return RetCode.OK;
         }
     }
 }

@@ -27,6 +27,76 @@ typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunction
 
 HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module);
 
+struct method_input_data_t
+{
+    mdMethodDef methodDef;
+    int32_t startLine; // first segment/method SequencePoint's startLine
+    int32_t endLine; // last segment/method SequencePoint's endLine
+    int32_t startColumn; // first segment/method SequencePoint's startColumn
+    int32_t endColumn; // last segment/method SequencePoint's endColumn
+
+    method_input_data_t(mdMethodDef methodDef_, int32_t startLine_, int32_t endLine_, int32_t startColumn_, int32_t endColumn_) :
+        methodDef(methodDef_),
+        startLine(startLine_),
+        endLine(endLine_),
+        startColumn(startColumn_),
+        endColumn(endColumn_)
+    {}
+
+    bool operator < (const method_input_data_t &other) const
+    {
+        return endLine < other.endLine || (endLine == other.endLine && endColumn < other.endColumn);
+    }
+    bool NestedInto(const method_input_data_t &other) const
+    {
+        assert(startLine != other.startLine || startColumn != other.startColumn);
+        assert(endLine != other.endLine || endColumn != other.endColumn);
+
+        return (startLine > other.startLine || (startLine == other.startLine && startColumn > other.startColumn)) &&
+            (endLine < other.endLine || (endLine == other.endLine && endColumn < other.endColumn));
+    }
+};
+
+struct method_data_t
+{
+    mdMethodDef methodDef;
+    uint32_t startLine; // first segment/method SequencePoint's startLine
+    uint32_t endLine; // last segment/method SequencePoint's endLine
+
+    method_data_t() = default;
+    method_data_t(mdMethodDef methodDef_, uint32_t startLine_, uint32_t endLine_) :
+        methodDef(methodDef_),
+        startLine(startLine_),
+        endLine(endLine_)
+    {}
+    method_data_t(const method_input_data_t &other) :
+        methodDef(other.methodDef),
+        startLine(other.startLine),
+        endLine(other.endLine)
+    {
+        assert(other.startLine >= 0);
+        assert(other.endLine >= 0);
+    }
+
+    bool operator < (const uint32_t lineNum) const
+    {
+        return endLine < lineNum;
+    }
+
+    bool operator == (const method_data_t &other) const
+    {
+        return methodDef == other.methodDef &&  startLine == other.startLine &&  endLine == other.endLine;
+    }
+};
+
+struct method_data_t_hash
+{
+    size_t operator()(const method_data_t &p) const
+    {
+        return p.methodDef + p.startLine * 100 + p.endLine * 1000;
+    }
+};
+
 class Modules
 {
     struct ModuleInfo
@@ -48,13 +118,13 @@ class Modules
         ModuleInfo(const ModuleInfo&) = delete;
         ModuleInfo& operator=(ModuleInfo&&) = delete;
         ModuleInfo& operator=(const ModuleInfo&) = delete;
-        ~ModuleInfo();
+        ~ModuleInfo() noexcept;
     };
 
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
 
-    static HRESULT SetJMCFromAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
+    static HRESULT DisableJMCByExceptionList(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
 
     static HRESULT ResolveMethodInModule(
         ICorDebugModule *pModule,
@@ -65,21 +135,35 @@ class Modules
 
     static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName);
 
-    // sync access to m_sourcesCodeLines, m_sourcesFullPaths and m_sourceCaseSensitiveFullPaths,
-    // since breakpoint resolve and module load could be in the same time
-    // (breakpoints setup with ran debuggee's process in the same time, for example)
+    struct FileMethodsData
+    {
+        CORDB_ADDRESS modAddress = 0;
+        // properly ordered on each nested level arrays of methods data
+        std::vector<std::vector<method_data_t>> methodsData;
+        // mapping method's data to array of tokens, that also represent same code
+        // aimed to resolve all methods token for constructor's segment, since it could be part of multiple constructors
+        std::unordered_map<method_data_t, std::vector<mdMethodDef>, method_data_t_hash> multiMethodsData;
+    };
+
+    // Note, breakpoints setup and ran debuggee's process could be in the same time.
     std::mutex m_sourcesInfoMutex;
-    // map of source full path to all sequence point's startLine and endLine in this source file,
-    // need it in order to resolve requested breakpoint line number to proper line number related to executable code
-    std::unordered_map<std::string, std::map<int32_t, std::tuple<int32_t, int32_t> > > m_sourcesCodeLines;
-    // map of source file name to list of source full paths from loaded assemblies,
-    // need it order to resolve source full path by requested breakpoint relative source path
-    std::unordered_map<std::string, std::set<std::string> > m_sourcesFullPaths;
-    HRESULT FillSourcesCodeLinesForModule(IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle);
+    // Note, we only add to m_sourceIndexToPath/m_sourcePathToIndex/m_sourceIndexToInitialFullPath, "size()" used as index in map at new element add.
+    // m_sourceIndexToPath - mapping index to full path
+    std::vector<std::string> m_sourceIndexToPath;
+    // m_sourcePathToIndex - mapping full path to index
+    std::unordered_map<std::string, unsigned> m_sourcePathToIndex;
+    // m_sourceNameToFullPathsIndexes - mapping file name to set of paths with this file name
+    std::unordered_map<std::string, std::set<unsigned>> m_sourceNameToFullPathsIndexes;
+    // m_sourcesMethodsData - all methods data indexed by full path, second vector hold data with same full path for different modules,
+    //                        since we may have modules with same source full path
+    std::vector<std::vector<FileMethodsData>> m_sourcesMethodsData;
+
+    HRESULT FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle);
     HRESULT ResolveRelativeSourceFileName(std::string &filename);
+
 #ifdef WIN32
-    // all internal breakpoint routine are case sensitive, proper source full name for Windows must be used (same as in module)
-    std::unordered_map<std::string, std::string> m_sourceCaseSensitiveFullPaths;
+    // on Windows OS, all files names converted to uppercase in containers above, but this vector hold initial full path names
+    std::vector<std::string> m_sourceIndexToInitialFullPath;
 #endif
 
 public:
@@ -92,11 +176,34 @@ public:
         std::string document;
     };
 
+    struct resolved_bp_t
+    {
+        int32_t startLine;
+        int32_t endLine;
+        uint32_t ilOffset;
+        uint32_t methodToken;
+        ToRelease<ICorDebugModule> iCorModule;
+
+        resolved_bp_t(int32_t startLine_, int32_t endLine_, uint32_t ilOffset_, uint32_t methodToken_, ICorDebugModule *pModule) :
+            startLine(startLine_),
+            endLine(endLine_),
+            ilOffset(ilOffset_),
+            methodToken(methodToken_),
+            iCorModule(pModule)
+        {}
+    };
+
     static HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
     static std::string GetModuleFileName(ICorDebugModule *pModule);
 
     // This function strips directory path from file name.
     static string_view GetFileName(string_view path);
+
+    HRESULT ResolveBreakpoint(
+        /*in*/ CORDB_ADDRESS modAddress,
+        /*in,out*/ std::string &filename,
+        /*in*/ int sourceLine,
+        /*out*/ std::vector<resolved_bp_t> &resolvedPoints);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
 
@@ -104,20 +211,6 @@ public:
         ICorDebugFrame *pFrame,
         ULONG32 &ilOffset,
         SequencePoint &sequencePoint);
-
-    HRESULT GetLocationInModule(
-        ICorDebugModule *pModule,
-        const std::string& filename,
-        ULONG linenum,
-        ULONG32 &ilOffset,
-        mdMethodDef &methodToken);
-
-    HRESULT GetLocationInAny(
-        const std::string& filename,
-        ULONG linenum,
-        ULONG32 &ilOffset,
-        mdMethodDef &methodToken,
-        ICorDebugModule **ppModule);
 
     HRESULT ResolveFunctionInAny(
         const std::string &module,
@@ -171,8 +264,6 @@ public:
 
     HRESULT ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb);
 
-    HRESULT ResolveBreakpointFileAndLine(std::string &filename, int &linenum, int &endLine);
-
     void FindFileNames(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
     void FindFunctions(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
 
@@ -191,13 +282,12 @@ public:
 
     struct AsyncMethodInfo
     {
-        uint32_t catch_handler_offset;
         std::vector<AwaitInfo> awaits;
         // Part of NotifyDebuggerOfWaitCompletion magic, see ManagedDebugger::SetupAsyncStep().
         ULONG32 lastIlOffset;
 
         AsyncMethodInfo() :
-            catch_handler_offset(0), awaits(), lastIlOffset(0)
+            awaits(), lastIlOffset(0)
         {};
     };
 

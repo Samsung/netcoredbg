@@ -9,7 +9,6 @@
 #include <coreclrhost.h>
 #include <thread>
 #include <string>
-#include <map>
 
 #include "palclr.h"
 #include "platform.h"
@@ -40,35 +39,50 @@ namespace Interop
 namespace // unnamed namespace
 {
 
+enum class RetCode : int32_t
+{
+    OK = 0,
+    Fail = 1,
+    Exception = 2
+};
+
 Utility::RWLock CLRrwlock;
 void *hostHandle = nullptr;
 unsigned int domainId = 0;
 coreclr_shutdown_ptr shutdownCoreClr = nullptr;
 
-typedef  int (*ReadMemoryDelegate)(ULONG64, char *, int);
-typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, ULONG64, int, ULONG64, int, ReadMemoryDelegate);
+// CoreCLR use fixed size integers, don't use system/arch size dependant types for delegates.
+// Important! In case of usage pointer to variable as delegate arg, make sure it have proper size for CoreCLR!
+// For example, native code "int" != managed code "int", since managed code "int" is 4 byte fixed size.
+typedef  int (*ReadMemoryDelegate)(uint64_t, char*, int32_t);
+typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, uint64_t, int32_t, uint64_t, int32_t, ReadMemoryDelegate);
 typedef  void (*DisposeDelegate)(PVOID);
-typedef  BOOL (*ResolveSequencePointDelegate)(PVOID, const WCHAR*, unsigned int, unsigned int*, unsigned int*);
-typedef  BOOL (*GetLocalVariableNameAndScope)(PVOID, int, int, BSTR*, unsigned int*, unsigned int*);
-typedef  BOOL (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, ULONG64, PVOID);
-typedef  BOOL (*GetStepRangesFromIPDelegate)(PVOID, int, mdMethodDef, unsigned int*, unsigned int*);
-typedef  BOOL (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int*);
-typedef  BOOL (*HasSourceLocationDelegate)(PVOID, mdMethodDef);
-typedef  BOOL (*GetMethodLastIlOffsetDelegate)(PVOID, mdMethodDef, unsigned int*);
-typedef  void (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int*);
-typedef  BOOL (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int *, BSTR*);
-typedef  BOOL (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int*, int*, PVOID*);
-typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int *, PVOID*);
+typedef  RetCode (*GetLocalVariableNameAndScope)(PVOID, int32_t, int32_t, BSTR*, uint32_t*, uint32_t*);
+typedef  RetCode (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint64_t, PVOID);
+typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
+typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, int32_t, PVOID, int32_t, PVOID, PVOID*);
+typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID, int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*);
+typedef  RetCode (*HasSourceLocationDelegate)(PVOID, mdMethodDef);
+typedef  RetCode (*GetMethodLastIlOffsetDelegate)(PVOID, mdMethodDef, uint32_t*);
+typedef  RetCode (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int32_t*);
+typedef  RetCode (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int32_t*, BSTR*);
+typedef  RetCode (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int32_t*, int32_t*, PVOID*);
+typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
-typedef  void (*StringToUpperDelegate)(const WCHAR*, BSTR*);
+typedef  RetCode (*StringToUpperDelegate)(const WCHAR*, BSTR*);
+typedef  void (*GCCollectDelegate)();
+typedef  PVOID (*CoTaskMemAllocDelegate)(int32_t);
+typedef  void (*CoTaskMemFreeDelegate)(PVOID);
+typedef  PVOID (*SysAllocStringLenDelegate)(int32_t);
+typedef  void (*SysFreeStringDelegate)(PVOID);
 
 LoadSymbolsForModuleDelegate loadSymbolsForModuleDelegate = nullptr;
 DisposeDelegate disposeDelegate = nullptr;
-ResolveSequencePointDelegate resolveSequencePointDelegate = nullptr;
 GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate = nullptr;
 GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate = nullptr;
 GetStepRangesFromIPDelegate getStepRangesFromIPDelegate = nullptr;
-GetSequencePointsDelegate getSequencePointsDelegate = nullptr;
+GetModuleMethodsRangesDelegate getModuleMethodsRangesDelegate = nullptr;
+ResolveBreakPointsDelegate resolveBreakPointsDelegate = nullptr;
 HasSourceLocationDelegate hasSourceLocationDelegate = nullptr;
 GetMethodLastIlOffsetDelegate getMethodLastIlOffsetDelegate = nullptr;
 GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate = nullptr;
@@ -76,6 +90,11 @@ ParseExpressionDelegate parseExpressionDelegate = nullptr;
 EvalExpressionDelegate evalExpressionDelegate = nullptr;
 RegisterGetChildDelegate registerGetChildDelegate = nullptr;
 StringToUpperDelegate stringToUpperDelegate = nullptr;
+GCCollectDelegate gCCollectDelegate = nullptr;
+CoTaskMemAllocDelegate coTaskMemAllocDelegate = nullptr;
+CoTaskMemFreeDelegate coTaskMemFreeDelegate = nullptr;
+SysAllocStringLenDelegate sysAllocStringLenDelegate = nullptr;
+SysFreeStringDelegate sysFreeStringDelegate = nullptr;
 
 constexpr char ManagedPartDllName[] = "ManagedPart";
 constexpr char SymbolReaderClassName[] = "NetCoreDbg.SymbolReader";
@@ -118,12 +137,12 @@ HRESULT LoadSymbolsForPortablePDB(const std::string &modulePath, BOOL isInMemory
 } // unnamed namespace
 
 
-SequencePoint::~SequencePoint()
+SequencePoint::~SequencePoint() noexcept
 {
-    InteropPlatform::SysFreeString(document);
+    Interop::SysFreeString(document);
 }
 
-HRESULT LoadSymbols(IMetaDataImport* pMD, ICorDebugModule* pModule, VOID **ppSymbolReaderHandle)
+HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle)
 {
     HRESULT Status = S_OK;
     BOOL isDynamic = FALSE;
@@ -240,11 +259,11 @@ void Init(const std::string &coreClrPath)
     bool allDelegatesCreated = 
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "LoadSymbolsForModule", (void **)&loadSymbolsForModuleDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "ResolveSequencePoint", (void **)&resolveSequencePointDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetModuleMethodsRanges", (void **)&getModuleMethodsRangesDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "ResolveBreakPoints", (void **)&resolveBreakPointsDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "HasSourceLocation", (void **)&hasSourceLocationDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetMethodLastIlOffset", (void **)&getMethodLastIlOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodsSteppingInfo", (void **)&getAsyncMethodsSteppingInfoDelegate)) &&
@@ -252,24 +271,34 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "RegisterGetChild", (void **)&registerGetChildDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "StringToUpper", (void **)&stringToUpperDelegate));
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "GCCollect", (void **)&gCCollectDelegate));
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "CoTaskMemAlloc", (void **)&coTaskMemAllocDelegate));
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "CoTaskMemFree", (void **)&coTaskMemFreeDelegate));
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "SysAllocStringLen", (void **)&sysAllocStringLenDelegate));
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "SysFreeString", (void **)&sysFreeStringDelegate));
 
     if (!allDelegatesCreated)
         throw std::runtime_error("createDelegate failed with status: " + std::to_string(Status));
 
     bool allDelegatesInited = loadSymbolsForModuleDelegate &&
                               disposeDelegate &&
-                              resolveSequencePointDelegate &&
                               getLocalVariableNameAndScopeDelegate &&
                               getSequencePointByILOffsetDelegate &&
                               getStepRangesFromIPDelegate &&
-                              getSequencePointsDelegate &&
+                              getModuleMethodsRangesDelegate &&
+                              resolveBreakPointsDelegate &&
                               hasSourceLocationDelegate &&
                               getMethodLastIlOffsetDelegate &&
                               getAsyncMethodsSteppingInfoDelegate &&
                               parseExpressionDelegate &&
                               evalExpressionDelegate &&
                               registerGetChildDelegate &&
-                              stringToUpperDelegate;
+                              stringToUpperDelegate &&
+                              gCCollectDelegate &&
+                              coTaskMemAllocDelegate &&
+                              coTaskMemFreeDelegate &&
+                              sysAllocStringLenDelegate &&
+                              sysFreeStringDelegate;
 
     if (!allDelegatesInited)
         throw std::runtime_error("Some delegates nulled");
@@ -278,14 +307,19 @@ void Init(const std::string &coreClrPath)
         throw std::runtime_error("GetChildDelegate failed");
 
     // Warm up Roslyn
-    std::thread( [](ParseExpressionDelegate Delegate){
+    std::thread( [](ParseExpressionDelegate parseExpressionDelegate, GCCollectDelegate gCCollectDelegate,
+                    SysFreeStringDelegate sysFreeStringDelegate, CoTaskMemFreeDelegate coTaskMemFreeDelegate){
         BSTR werrorText;
         PVOID dataPtr;
         int dataSize = 0;
-        Delegate(W("1"), W("System.Int32"), &dataPtr, &dataSize, &werrorText);
-        InteropPlatform::SysFreeString(werrorText);
-        InteropPlatform::CoTaskMemFree(dataPtr);
-    }, parseExpressionDelegate).detach();
+        parseExpressionDelegate(W("1"), W("System.Int32"), &dataPtr, &dataSize, &werrorText);
+        // Dirty workaround, in order to prevent memory leak by Roslyn, since it create assembly that can't be unloaded each eval.
+        // https://github.com/dotnet/roslyn/issues/22219
+        // https://github.com/dotnet/roslyn/issues/41722
+        gCCollectDelegate();
+        sysFreeStringDelegate(werrorText);
+        coTaskMemFreeDelegate(dataPtr);
+    }, parseExpressionDelegate, gCCollectDelegate, sysFreeStringDelegate, coTaskMemFreeDelegate).detach();
 }
 
 // WARNING! Due to CoreCLR limitations, Shutdown() can't be called out of the Main() scope, for example, from global object destructor.
@@ -303,11 +337,11 @@ void Shutdown()
     shutdownCoreClr = nullptr;
     loadSymbolsForModuleDelegate = nullptr;
     disposeDelegate = nullptr;
-    resolveSequencePointDelegate = nullptr;
     getLocalVariableNameAndScopeDelegate = nullptr;
     getSequencePointByILOffsetDelegate = nullptr;
     getStepRangesFromIPDelegate = nullptr;
-    getSequencePointsDelegate = nullptr;
+    getModuleMethodsRangesDelegate = nullptr;
+    resolveBreakPointsDelegate = nullptr;
     hasSourceLocationDelegate = nullptr;
     getMethodLastIlOffsetDelegate = nullptr;
     getAsyncMethodsSteppingInfoDelegate = nullptr;
@@ -315,67 +349,56 @@ void Shutdown()
     evalExpressionDelegate = nullptr;
     registerGetChildDelegate = nullptr;
     stringToUpperDelegate = nullptr;
-}
-
-HRESULT ResolveSequencePoint(PVOID pSymbolReaderHandle, const char *filename, ULONG32 lineNumber, mdMethodDef* pToken, ULONG32* pIlOffset)
-{
-    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!resolveSequencePointDelegate || !pSymbolReaderHandle)
-        return E_FAIL;
-
-    if (resolveSequencePointDelegate(pSymbolReaderHandle, to_utf16({filename}).c_str(), lineNumber, pToken, pIlOffset) == FALSE)
-        return E_FAIL;
-
-    return S_OK;
+    gCCollectDelegate = nullptr;
+    coTaskMemAllocDelegate = nullptr;
+    coTaskMemFreeDelegate = nullptr;
+    sysAllocStringLenDelegate = nullptr;
+    sysFreeStringDelegate = nullptr;
 }
 
 HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG64 ilOffset, SequencePoint *sequencePoint)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getSequencePointByILOffsetDelegate || !pSymbolReaderHandle)
+    if (!getSequencePointByILOffsetDelegate || !pSymbolReaderHandle || !sequencePoint)
         return E_FAIL;
 
     // Sequence points with startLine equal to 0xFEEFEE marker are filtered out on the managed side.
-    if (getSequencePointByILOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset, sequencePoint) == FALSE)
-        return E_FAIL;
-
-    return S_OK;
+    RetCode retCode = getSequencePointByILOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset, sequencePoint);
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
 HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getStepRangesFromIPDelegate || !pSymbolReaderHandle)
+    if (!getStepRangesFromIPDelegate || !pSymbolReaderHandle || !ilStartOffset || !ilEndOffset)
         return E_FAIL;
 
-    if (getStepRangesFromIPDelegate(pSymbolReaderHandle, ip, MethodToken, ilStartOffset, ilEndOffset) == FALSE)
-        return E_FAIL;
-
-    return S_OK;
+    RetCode retCode = getStepRangesFromIPDelegate(pSymbolReaderHandle, ip, MethodToken, ilStartOffset, ilEndOffset);
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
-HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFrame * pILFrame, mdMethodDef methodToken, ULONG localIndex,
-                                                   WCHAR* paramName, ULONG paramNameLen, ICorDebugValue** ppValue, ULONG32* pIlStart, ULONG32* pIlEnd)
+HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFrame *pILFrame, mdMethodDef methodToken, ULONG localIndex,
+                                      WCHAR *paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32 *pIlStart, ULONG32 *pIlEnd)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getLocalVariableNameAndScopeDelegate || !pSymbolReaderHandle)
+    if (!getLocalVariableNameAndScopeDelegate || !pSymbolReaderHandle || !pILFrame || !paramName || !ppValue || !pIlStart || !pIlEnd)
         return E_FAIL;
 
-    BSTR wszParamName = InteropPlatform::SysAllocStringLen(0, mdNameLen);
+    BSTR wszParamName = Interop::SysAllocStringLen(mdNameLen);
     if (InteropPlatform::SysStringLen(wszParamName) == 0)
         return E_OUTOFMEMORY;
 
-    BOOL ok = getLocalVariableNameAndScopeDelegate(pSymbolReaderHandle, methodToken, localIndex, &wszParamName, pIlStart, pIlEnd);
+    RetCode retCode = getLocalVariableNameAndScopeDelegate(pSymbolReaderHandle, methodToken, localIndex, &wszParamName, pIlStart, pIlEnd);
     read_lock.unlock();
 
-    if (!ok)
+    if (retCode != RetCode::OK)
     {
-        InteropPlatform::SysFreeString(wszParamName);
+        Interop::SysFreeString(wszParamName);
         return E_FAIL;
     }
 
     wcscpy_s(paramName, paramNameLen, wszParamName);
-    InteropPlatform::SysFreeString(wszParamName);
+    Interop::SysFreeString(wszParamName);
 
     if (FAILED(pILFrame->GetLocalVariable(localIndex, ppValue)) || (*ppValue == NULL))
     {
@@ -385,46 +408,44 @@ HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFram
     return S_OK;
 }
 
-HRESULT GetSequencePoints(PVOID pSymbolReaderHandle, mdMethodDef methodToken, std::vector<SequencePoint> &points)
-{
-    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getSequencePointsDelegate || !pSymbolReaderHandle)
-        return E_FAIL;
-
-    SequencePoint *allocatedPoints = nullptr;
-    int pointsCount = 0;
-
-    BOOL ok = getSequencePointsDelegate(pSymbolReaderHandle, methodToken, (PVOID*)&allocatedPoints, &pointsCount);
-    read_lock.unlock();
-
-    if (!ok)
-        return E_FAIL;
-
-    points.resize(pointsCount);
-    std::move(allocatedPoints, allocatedPoints + pointsCount, points.begin());
-
-    InteropPlatform::CoTaskMemFree(allocatedPoints);
-    return S_OK;
-}
-
 bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodToken)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
     if (!hasSourceLocationDelegate || !pSymbolReaderHandle)
         return false;
 
-    BOOL ok = hasSourceLocationDelegate(pSymbolReaderHandle, methodToken);
-    return !!(ok);
+    RetCode retCode = hasSourceLocationDelegate(pSymbolReaderHandle, methodToken);
+    return retCode == RetCode::OK;
 }
 
 HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getMethodLastIlOffsetDelegate || !pSymbolReaderHandle)
+    if (!getMethodLastIlOffsetDelegate || !pSymbolReaderHandle || !ilOffset)
         return E_FAIL;
 
-    BOOL ok = getMethodLastIlOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset);
-    return ok ? S_OK : E_FAIL;
+    RetCode retCode = getMethodLastIlOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset);
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
+}
+
+HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, int32_t constrTokensNum, PVOID constrTokens, int32_t normalTokensNum, PVOID normalTokens, PVOID *data)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!getModuleMethodsRangesDelegate || !pSymbolReaderHandle || !constrTokens || !normalTokens || !data)
+        return E_FAIL;
+
+    RetCode retCode = getModuleMethodsRangesDelegate(pSymbolReaderHandle, constrTokensNum, constrTokens, normalTokensNum, normalTokens, data);
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
+}
+
+HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandle, int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t nestedToken, int32_t &Count, PVOID *data)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!resolveBreakPointsDelegate || !pSymbolReaderHandle || !Tokens || !data)
+        return E_FAIL;
+
+    RetCode retCode = resolveBreakPointsDelegate(pSymbolReaderHandle, tokenNum, Tokens, sourceLine, nestedToken, &Count, data);
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
 HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo)
@@ -434,10 +455,13 @@ HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<Async
         return E_FAIL;
 
     AsyncAwaitInfoBlock *allocatedAsyncInfo = nullptr;
-    int asyncInfoCount = 0;
+    int32_t asyncInfoCount = 0;
 
-    getAsyncMethodsSteppingInfoDelegate(pSymbolReaderHandle, (PVOID*)&allocatedAsyncInfo, &asyncInfoCount);
+    RetCode retCode = getAsyncMethodsSteppingInfoDelegate(pSymbolReaderHandle, (PVOID*)&allocatedAsyncInfo, &asyncInfoCount);
     read_lock.unlock();
+
+    if (retCode != RetCode::OK)
+        return E_FAIL;
 
     if (asyncInfoCount == 0)
     {
@@ -447,39 +471,44 @@ HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<Async
 
     AsyncAwaitInfo.assign(allocatedAsyncInfo, allocatedAsyncInfo + asyncInfoCount);
 
-    InteropPlatform::CoTaskMemFree(allocatedAsyncInfo);
+    Interop::CoTaskMemFree(allocatedAsyncInfo);
     return S_OK;
 }
 
 HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!parseExpressionDelegate)
+    if (!parseExpressionDelegate || !gCCollectDelegate)
         return E_FAIL;
 
     BSTR werrorText;
     PVOID dataPtr;
-    int dataSize = 0;
-    BOOL ok = parseExpressionDelegate(to_utf16(expr).c_str(), to_utf16(typeName).c_str(), &dataPtr, &dataSize, &werrorText);
+    int32_t dataSize = 0;
+    RetCode retCode = parseExpressionDelegate(to_utf16(expr).c_str(), to_utf16(typeName).c_str(), &dataPtr, &dataSize, &werrorText);
+    // Dirty workaround, in order to prevent memory leak by Roslyn, since it create assembly that can't be unloaded each eval.
+    // https://github.com/dotnet/roslyn/issues/22219
+    // https://github.com/dotnet/roslyn/issues/41722
+    gCCollectDelegate();
+
     read_lock.unlock();
     
-    if (!ok)
+    if (retCode != RetCode::OK)
     {
         errorText = to_utf8(werrorText);
-        InteropPlatform::SysFreeString(werrorText);
+        Interop::SysFreeString(werrorText);
         return E_FAIL;
     }
 
     if (typeName == "System.String")
     {
         data = to_utf8((BSTR)dataPtr);
-        InteropPlatform::SysFreeString((BSTR)dataPtr);
+        Interop::SysFreeString((BSTR)dataPtr);
     }
     else
     {
         data.resize(dataSize);
         memmove(&data[0], dataPtr, dataSize);
-        InteropPlatform::CoTaskMemFree(dataPtr);
+        Interop::CoTaskMemFree(dataPtr);
     }
 
     return S_OK;
@@ -488,22 +517,27 @@ HRESULT ParseExpression(const std::string &expr, const std::string &typeName, st
 HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!evalExpressionDelegate)
+    if (!evalExpressionDelegate || !gCCollectDelegate || !typeId || !ppValue)
         return E_FAIL;
 
     GetChildProxy proxy { cb };
     PVOID valuePtr = nullptr;
-    int size = 0;
+    int32_t size = 0;
     BSTR resultText;
-    BOOL ok = evalExpressionDelegate(to_utf16(expr).c_str(), &proxy, &resultText, typeId, &size, &valuePtr);
+    RetCode retCode = evalExpressionDelegate(to_utf16(expr).c_str(), &proxy, &resultText, typeId, &size, &valuePtr);
+    // Dirty workaround, in order to prevent memory leak by Roslyn, since it create assembly that can't be unloaded each eval.
+    // https://github.com/dotnet/roslyn/issues/22219
+    // https://github.com/dotnet/roslyn/issues/41722
+    gCCollectDelegate();
+
     read_lock.unlock();
 
-    if (!ok)
+    if (retCode != RetCode::OK)
     {
         if (resultText)
         {
             result = to_utf8(resultText);
-            InteropPlatform::SysFreeString(resultText);
+            Interop::SysFreeString(resultText);
         }
         return E_FAIL;
     }
@@ -520,21 +554,16 @@ HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId
             break;
         case TypeString:
             result = to_utf8((BSTR)valuePtr);
-            InteropPlatform::SysFreeString((BSTR)valuePtr);
+            Interop::SysFreeString((BSTR)valuePtr);
             break;
         default:
             result.resize(size);
             memmove(&result[0], valuePtr, size);
-            InteropPlatform::CoTaskMemFree(valuePtr);
+            Interop::CoTaskMemFree(valuePtr);
             break;
     }
 
     return S_OK;
-}
-
-PVOID AllocBytes(size_t size)
-{
-    return InteropPlatform::CoTaskMemAlloc(size);
 }
 
 PVOID AllocString(const std::string &str)
@@ -543,7 +572,7 @@ PVOID AllocString(const std::string &str)
         return nullptr;
 
     auto wstr = to_utf16(str);
-    BSTR bstr = InteropPlatform::SysAllocStringLen(0, (UINT)wstr.size());
+    BSTR bstr = Interop::SysAllocStringLen((int32_t)wstr.size());
     if (InteropPlatform::SysStringLen(bstr) == 0)
         return nullptr;
 
@@ -558,16 +587,52 @@ HRESULT StringToUpper(std::string &String)
         return E_FAIL;
 
     BSTR wString;
-    stringToUpperDelegate(to_utf16(String).c_str(), &wString);
+    RetCode retCode = stringToUpperDelegate(to_utf16(String).c_str(), &wString);
     read_lock.unlock();
 
-    if (!wString)
+    if (retCode != RetCode::OK || !wString)
         return E_FAIL;
 
     String = to_utf8(wString);
-    InteropPlatform::SysFreeString(wString);
+    Interop::SysFreeString(wString);
 
     return S_OK;
+}
+
+BSTR SysAllocStringLen(int32_t size)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!sysAllocStringLenDelegate)
+        return nullptr;
+
+    return (BSTR)sysAllocStringLenDelegate(size);
+}
+
+void SysFreeString(BSTR ptrBSTR)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!sysFreeStringDelegate)
+        return;
+
+    sysFreeStringDelegate(ptrBSTR);
+}
+
+PVOID CoTaskMemAlloc(int32_t size)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!coTaskMemAllocDelegate)
+        return nullptr;
+
+    return coTaskMemAllocDelegate(size);
+}
+
+void CoTaskMemFree(PVOID ptr)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!coTaskMemFreeDelegate)
+        return;
+
+    coTaskMemFreeDelegate(ptr);
 }
 
 } // namespace Interop

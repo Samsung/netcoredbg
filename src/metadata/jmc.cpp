@@ -141,22 +141,8 @@ static HRESULT GetNonJMCMethodsForTypeDef(
     {
         mdMethodDef mdSetter;
         mdMethodDef mdGetter;
-        if (SUCCEEDED(pMD->GetPropertyProps(propertyDef,
-                                            nullptr,
-                                            nullptr,
-                                            0,
-                                            nullptr,
-                                            nullptr,
-                                            nullptr,
-                                            nullptr,
-                                            nullptr,
-                                            nullptr,
-                                            nullptr,
-                                            &mdSetter,
-                                            &mdGetter,
-                                            nullptr,
-                                            0,
-                                            nullptr)))
+        if (SUCCEEDED(pMD->GetPropertyProps(propertyDef, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr,
+                                            nullptr, nullptr, nullptr, &mdSetter, &mdGetter, nullptr, 0, nullptr)))
         {
             if (mdSetter != mdMethodDefNil)
                 excludeMethods.push_back(mdSetter);
@@ -193,7 +179,8 @@ static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, PVOID pSymbo
     return S_OK;
 }
 
-HRESULT Modules::SetJMCFromAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHandle)
+// Disable JMC by exception list: operators, getters/setters and by attributes (DebuggerNonUserCode and DebuggerStepThrough).
+HRESULT Modules::DisableJMCByExceptionList(ICorDebugModule *pModule, PVOID pSymbolReaderHandle)
 {
     std::vector<mdToken> excludeTokens;
 

@@ -7,11 +7,61 @@ using System.Runtime.InteropServices;
 
 namespace NetCoreDbg
 {
+    enum RetCode : int
+    {
+        OK = 0,
+        Fail = 1,
+        Exception = 2
+    }
+
     public class Utils
     {
-        internal static void StringToUpper([MarshalAs(UnmanagedType.LPWStr)] string srcString, out IntPtr dstString)
+        internal static RetCode StringToUpper([MarshalAs(UnmanagedType.LPWStr)] string srcString, out IntPtr dstString)
         {
-            dstString = Marshal.StringToBSTR(srcString.ToUpper());
+            dstString = IntPtr.Zero;
+
+            try
+            {
+                dstString = Marshal.StringToBSTR(srcString.ToUpper());
+            }
+            catch
+            {
+                return RetCode.Exception;
+            }
+
+            return RetCode.OK;
+        }
+
+        internal static IntPtr SysAllocStringLen(int size)
+        {
+            string empty = new String('\0', size);
+            return Marshal.StringToBSTR(empty);
+        }
+
+        internal static void SysFreeString(IntPtr ptr)
+        {
+            Marshal.FreeBSTR(ptr);
+        }
+
+        internal static IntPtr CoTaskMemAlloc(int size)
+        {
+            return Marshal.AllocCoTaskMem(size);
+        }
+
+        internal static void CoTaskMemFree(IntPtr ptr)
+        {
+            Marshal.FreeCoTaskMem(ptr);
+        }
+
+        internal static void GCCollect()
+        {
+            try
+            {
+                GC.Collect();
+            }
+            catch
+            {
+            }
         }
     }
 }

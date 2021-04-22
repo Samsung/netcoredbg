@@ -69,7 +69,7 @@ Breakpoints::ManagedBreakpoint::ManagedBreakpoint() :
 Breakpoints::ManagedBreakpoint::~ManagedBreakpoint()
 {
     if (iCorBreakpoint)
-        iCorBreakpoint->Activate(0);
+        iCorBreakpoint->Activate(FALSE);
 }
 
 void Breakpoints::ManagedBreakpoint::ToBreakpoint(Breakpoint &breakpoint)
@@ -264,7 +264,7 @@ bool Breakpoints::HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreak
     if (FAILED(IsSameFunctionBreakpoint(pFunctionBreakpoint, m_entryBreakpoint)))
         return false;
 
-    m_entryBreakpoint->Activate(0);
+    m_entryBreakpoint->Activate(FALSE);
     m_entryBreakpoint.Free();
     return true;
 }
@@ -281,42 +281,47 @@ void Breakpoints::DeleteAllBreakpoints()
     m_entryPoint = mdMethodDefNil;
 }
 
-HRESULT Breakpoints::ResolveBreakpointInModule(ICorDebugModule *pModule, ManagedBreakpoint &bp)
+// [in] pModule - optional, provide filter by module during resolve
+// [in,out] bp - breakpoint data for resolve
+HRESULT Breakpoints::ResolveBreakpoint(ICorDebugModule *pModule, ManagedBreakpoint &bp)
 {
+    if (bp.fullname.empty() || bp.linenum <= 0 || bp.endLine <= 0)
+        return E_INVALIDARG;
+
     HRESULT Status;
+    CORDB_ADDRESS modAddress = 0;
+    if (pModule) // Filter data from only one module during resolve, if need.
+        IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    mdMethodDef methodToken;
-    ULONG32 ilOffset;
     std::string fullname = bp.fullname;
-    int linenum = bp.linenum;
-    int endLine = bp.endLine;
+    std::vector<Modules::resolved_bp_t> resolvedPoints;
 
-    IfFailRet(m_modules.ResolveBreakpointFileAndLine(fullname, linenum, endLine));
+    IfFailRet(m_modules.ResolveBreakpoint(modAddress, fullname, bp.linenum, resolvedPoints));
+    if (resolvedPoints.size() == 0)
+        return E_FAIL;
 
-    IfFailRet(m_modules.GetLocationInModule(
-        pModule,
-        fullname,
-        linenum,
-        ilOffset,
-        methodToken));
+    // FIXME care about multiple breakpoints (constructors lines, same source path in different modules)
+    // Note, in case breakpoints for source path in different modules, we will have different startLine/endLine too.
+    if (resolvedPoints.size() > 1)
+        LOGW("During breakpoint resolve, multiple breakpoint locations were detected, but debugger support only one.");
+
+    Modules::resolved_bp_t &resolvedBP = resolvedPoints[0]; // Only one breakpoint supported for now, take first.
 
     ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(resolvedBP.iCorModule->GetFunctionFromToken(resolvedBP.methodToken, &pFunc));
     ToRelease<ICorDebugCode> pCode;
-    IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
     IfFailRet(pFunc->GetILCode(&pCode));
 
     ToRelease<ICorDebugFunctionBreakpoint> pBreakpoint;
-    IfFailRet(pCode->CreateBreakpoint(ilOffset, &pBreakpoint));
-    IfFailRet(pBreakpoint->Activate(TRUE));
+    IfFailRet(pCode->CreateBreakpoint(resolvedBP.ilOffset, &pBreakpoint));
+    IfFailRet(pBreakpoint->Activate(bp.enabled ? TRUE : FALSE));
+    IfFailRet(resolvedBP.iCorModule->GetBaseAddress(&modAddress));
 
-    CORDB_ADDRESS modAddress;
-    IfFailRet(pModule->GetBaseAddress(&modAddress));
-
-    bp.linenum = linenum;
-    bp.endLine = endLine;
+    bp.linenum = resolvedBP.startLine;
+    bp.endLine = resolvedBP.endLine;
     bp.modAddress = modAddress;
-    bp.methodToken = methodToken;
-    bp.ilOffset = ilOffset;
+    bp.methodToken = resolvedBP.methodToken;
+    bp.ilOffset = resolvedBP.ilOffset;
     bp.fullname = fullname;
     bp.iCorBreakpoint = pBreakpoint.Detach();
 
@@ -416,13 +421,13 @@ HRESULT Breakpoints::EnableOneICorBreakpointForLine(std::list<ManagedBreakpoint>
     {
         if ((*it).iCorBreakpoint)
         {
-            if((*it).enabled)
+            if ((*it).enabled)
             {
                 res = (*it).iCorBreakpoint->Activate(needEnable);
                 needEnable = FALSE;
-            } else {
-                (*it).iCorBreakpoint->Activate(FALSE);
             }
+            else
+                (*it).iCorBreakpoint->Activate(FALSE);
         }
     }
     return res;
@@ -565,7 +570,7 @@ void Breakpoints::TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::
             bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
 
-            if (SUCCEEDED(ResolveBreakpointInModule(pModule, bp)))
+            if (SUCCEEDED(ResolveBreakpoint(pModule, bp)))
             {
                 Breakpoint breakpoint;
                 bp.ToBreakpoint(breakpoint);
@@ -596,50 +601,6 @@ void Breakpoints::TryResolveBreakpointsForModule(ICorDebugModule *pModule, std::
     }
 
     TrySetupEntryBreakpoint(pModule);
-}
-
-HRESULT Breakpoints::ResolveBreakpoint(ManagedBreakpoint &bp)
-{
-    HRESULT Status;
-
-    mdMethodDef methodToken;
-    ULONG32 ilOffset;
-    std::string fullname = bp.fullname;
-    int linenum = bp.linenum;
-    int endLine = bp.endLine;
-
-    IfFailRet(m_modules.ResolveBreakpointFileAndLine(fullname, linenum, endLine));
-
-    ToRelease<ICorDebugModule> pModule;
-
-    IfFailRet(m_modules.GetLocationInAny(
-        fullname,
-        linenum,
-        ilOffset,
-        methodToken,
-        &pModule));
-
-    ToRelease<ICorDebugFunction> pFunc;
-    ToRelease<ICorDebugCode> pCode;
-    IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
-    IfFailRet(pFunc->GetILCode(&pCode));
-
-    ToRelease<ICorDebugFunctionBreakpoint> pBreakpoint;
-    IfFailRet(pCode->CreateBreakpoint(ilOffset, &pBreakpoint));
-    IfFailRet(pBreakpoint->Activate(TRUE));
-
-    CORDB_ADDRESS modAddress;
-    IfFailRet(pModule->GetBaseAddress(&modAddress));
-
-    bp.linenum = linenum;
-    bp.endLine = endLine;
-    bp.modAddress = modAddress;
-    bp.methodToken = methodToken;
-    bp.ilOffset = ilOffset;
-    bp.fullname = fullname;
-    bp.iCorBreakpoint = pBreakpoint.Detach();
-
-    return S_OK;
 }
 
 HRESULT Breakpoints::SetBreakpoints(
@@ -743,7 +704,7 @@ HRESULT Breakpoints::SetBreakpoints(
             bp.endLine = line;
             bp.condition = initialBreakpoint.breakpoint.condition;
 
-            if (pProcess && SUCCEEDED(ResolveBreakpoint(bp)))
+            if (pProcess && SUCCEEDED(ResolveBreakpoint(nullptr, bp)))
             {
                 initialBreakpoint.resolved_fullname = bp.fullname;
                 initialBreakpoint.resolved_linenum = bp.linenum;
@@ -927,7 +888,7 @@ HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
 
         ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
         IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
-        IfFailRet(pFunctionBreakpoint->Activate(fbp.enabled));
+        IfFailRet(pFunctionBreakpoint->Activate(fbp.enabled ? TRUE : FALSE));
 
         CORDB_ADDRESS modAddress;
         IfFailRet(pModule->GetBaseAddress(&modAddress));
@@ -957,7 +918,7 @@ HRESULT Breakpoints::ResolveFunctionBreakpointInModule(ICorDebugModule *pModule,
 
         ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
         IfFailRet(pFunc->CreateBreakpoint(&pFunctionBreakpoint));
-        IfFailRet(pFunctionBreakpoint->Activate(TRUE));
+        IfFailRet(pFunctionBreakpoint->Activate(fbp.enabled ? TRUE : FALSE));
 
         CORDB_ADDRESS modAddress;
         IfFailRet(pModule->GetBaseAddress(&modAddress));
@@ -1082,7 +1043,7 @@ bool Breakpoints::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEvent
 HRESULT Breakpoints::BreakpointActivate(uint32_t id, bool act)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
-    bool found = FALSE;
+    bool found = false;
     // source resolved breakpoints
     for (auto fileit = m_srcResolvedBreakpoints.begin(); fileit != m_srcResolvedBreakpoints.end(); fileit++)
     {
@@ -1093,7 +1054,7 @@ HRESULT Breakpoints::BreakpointActivate(uint32_t id, bool act)
                 if (rbp.id == id)
                 {
                     rbp.enabled = act;
-                    found = TRUE;
+                    found = true;
                     break;
                 }
             }
@@ -1127,7 +1088,7 @@ HRESULT Breakpoints::BreakpointActivate(uint32_t id, bool act)
             {
                 if (fbel.funcBreakpoint)
                 {
-                    if (SUCCEEDED(fbel.funcBreakpoint->Activate(act)))
+                    if (SUCCEEDED(fbel.funcBreakpoint->Activate(act ? TRUE : FALSE)))
                     {
                         res = S_OK;
                     }
@@ -1173,7 +1134,7 @@ HRESULT Breakpoints::AllBreakpointsActivate(bool act)
         for (auto &fbel : fbp.second.breakpoints)
         {
             if (fbel.funcBreakpoint)
-                fbel.funcBreakpoint->Activate(act);
+                fbel.funcBreakpoint->Activate(act ? TRUE : FALSE);
         }
         fbp.second.enabled = act;
         res = S_OK;

@@ -82,39 +82,11 @@ void InteropTraits<Win32PlatformTag>::UnsetCoreCLREnv()
     _putenv("CORECLR_ENABLE_PROFILING=");
 }
 
-// Allocates a new string, copies the specified number of characters from the passed string, and appends a null-terminating character.
-template <>
-BSTR InteropTraits<Win32PlatformTag>::SysAllocStringLen(const OLECHAR *strIn, UINT ui)
-{
-    return ::SysAllocStringLen(strIn, ui);
-}
-
-// Deallocates a string allocated previously by SysAllocString, SysAllocStringByteLen, SysReAllocString, SysAllocStringLen, or SysReAllocStringLen.
-template <>
-void InteropTraits<Win32PlatformTag>::SysFreeString(BSTR bstrString)
-{
-    ::SysFreeString(bstrString);
-}
-
 // Returns the length of a BSTR.
 template <>
 UINT InteropTraits<Win32PlatformTag>::SysStringLen(BSTR bstrString)
 {
     return ::SysStringLen(bstrString);
-}
-
-// Allocates a block of task memory in the same way that IMalloc::Alloc does.
-template <>
-LPVOID InteropTraits<Win32PlatformTag>::CoTaskMemAlloc(size_t cb)
-{
-    return ::CoTaskMemAlloc(cb);
-}
-
-// Frees a block of task memory previously allocated through a call to the CoTaskMemAlloc or CoTaskMemRealloc function.
-template <>
-void InteropTraits<Win32PlatformTag>::CoTaskMemFree(LPVOID pv)
-{
-    ::CoTaskMemFree(pv);
 }
 
 }  // ::netcoredbg

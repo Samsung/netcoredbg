@@ -286,14 +286,106 @@ Label.Breakpoint("bp8");
 Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                                                           "Hello World!");          Label.Breakpoint("bp9");
 
-            Label.Checkpoint("bp_test4", "finish", (Object context) => {
+            Label.Checkpoint("bp_test4", "bp_test_nested", (Object context) => {
                 Context Context = (Context)context;
                 // check, that actually we have only one active breakpoint per line
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "resolved_bp4");
+
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp10");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp11");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp12");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp13");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp14");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp15");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp16");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp17");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp18");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp19");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp20");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp21");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp22");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
             MITestSrcBreakpointResolve2.Program.testfunc();
+
+            // tests resolve for nested methods
+                                                                                    Label.Breakpoint("bp10");
+            void nested_func1()
+            {                                                                       Label.Breakpoint("resloved_bp10");
+                Console.WriteLine("Hello World!");                                  
+                                                                                    Label.Breakpoint("bp11");
+            }                                                                       Label.Breakpoint("resloved_bp11");
+            nested_func1();
+                                                                                    Label.Breakpoint("bp12");
+            void nested_func2()
+            {                                                                       Label.Breakpoint("resloved_bp12");
+                Console.WriteLine("Hello World!");                                  Label.Breakpoint("bp13");
+            }
+            nested_func2();
+                                                                                    Label.Breakpoint("bp14");
+            Console.WriteLine("Hello World!");                                      Label.Breakpoint("resloved_bp14");
+
+            void nested_func3()
+            {
+                Console.WriteLine("Hello World!");                                  Label.Breakpoint("bp15");
+            }
+            nested_func3();
+
+            void nested_func4() { }; void nested_func5() { };                       Label.Breakpoint("bp16");
+            nested_func4();
+
+            void nested_func6() {
+            }; void nested_func7() { };                                             Label.Breakpoint("bp17");
+            nested_func6();
+
+            void nested_func8() { }; void nested_func9() {
+            }; void nested_func10() { };                                            Label.Breakpoint("bp18");
+            nested_func9();
+
+            void nested_func11() { void nested_func12() { void nested_func13() { 
+                                                                                    Label.Breakpoint("bp19");
+            };                                                                      Label.Breakpoint("resloved_bp19");
+            nested_func13(); }; 
+            nested_func12(); };
+            nested_func11();
+
+            Console.WriteLine("1111Hello World!"); void nested_func14() {           Label.Breakpoint("bp20");
+            Console.WriteLine("2222Hello World!");
+            };                                                                      Label.Breakpoint("bp22");
+            nested_func14();                                                        Label.Breakpoint("bp21");
+
+            Label.Checkpoint("bp_test_nested", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp10");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp11");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp12");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp13");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp14");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp15");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp16");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp17");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp18");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp19");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp20");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22");
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // TODO as soon, as debugger will be fixed, add tests for constructors
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;

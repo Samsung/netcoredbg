@@ -1087,7 +1087,7 @@ HRESULT MarshalValue(ICorDebugValue *pInputValue, int *typeId, void **data)
 
     }
 
-    *data = Interop::AllocBytes(cbSize);
+    *data = Interop::CoTaskMemAlloc(cbSize);
     if (*data == nullptr)
     {
         return E_FAIL;

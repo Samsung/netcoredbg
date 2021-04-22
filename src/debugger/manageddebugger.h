@@ -381,7 +381,7 @@ private:
         ~asyncBreakpoint_t()
         {
             if (iCorBreakpoint)
-                iCorBreakpoint->Activate(0);
+                iCorBreakpoint->Activate(FALSE);
         }
     };
 
