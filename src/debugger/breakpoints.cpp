@@ -513,7 +513,9 @@ HRESULT Breakpoints::TrySetupEntryBreakpoint(ICorDebugModule *pModule)
 
     HRESULT Status;
     mdMethodDef entryPointToken = GetEntryPointTokenFromFile(Modules::GetModuleFileName(pModule));
-    if (entryPointToken == mdMethodDefNil)
+    // Note, by some reason, in CoreCLR 6.0 System.Private.CoreLib.dll have Token "0" as entry point RVA.
+    if (entryPointToken == mdMethodDefNil ||
+        TypeFromToken(entryPointToken) != mdtMethodDef)
         return S_FALSE;
 
     ULONG32 entryPointOffset = 0;
