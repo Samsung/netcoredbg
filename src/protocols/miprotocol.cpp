@@ -345,6 +345,7 @@ HRESULT MIProtocol::ListChildren(ThreadId threadId, FrameLevel level, int childS
 }
 
 HRESULT MIProtocol::SetBreakpoint(
+    const std::string &module,
     const std::string &filename,
     int linenum,
     const std::string &condition,
@@ -357,7 +358,7 @@ HRESULT MIProtocol::SetBreakpoint(
     for (auto it : breakpointsInSource)
         srcBreakpoints.push_back(it.second);
 
-    srcBreakpoints.emplace_back(linenum, condition);
+    srcBreakpoints.emplace_back(module, linenum, condition);
 
     std::vector<Breakpoint> breakpoints;
     IfFailRet(m_sharedDebugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
@@ -726,7 +727,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
             struct LineBreak lb;
 
             if (ProtocolUtils::ParseBreakpoint(args, lb)
-                && SUCCEEDED(SetBreakpoint(lb.filename, lb.linenum, lb.condition, breakpoint)))
+                && SUCCEEDED(SetBreakpoint(lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
                 Status = S_OK;
         }
         else if (bt == BreakType::FuncBreak)

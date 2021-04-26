@@ -207,14 +207,21 @@ public:
         ULONG32 &ilOffset,
         SequencePoint &sequencePoint);
 
+    static HRESULT Modules::IsModuleHaveSameName(
+        ICorDebugModule *pModule,
+        const std::string &Name,
+        bool isFullPath);
+
     HRESULT ResolveFunctionInAny(
         const std::string &module,
+        bool &module_checked,
         const std::string &funcname,
         ResolveFunctionBreakpointCallback cb);
 
     HRESULT ResolveFunctionInModule(
         ICorDebugModule *pModule,
         const std::string &module,
+        bool &module_checked,
         std::string &funcname,
         ResolveFunctionBreakpointCallback cb);
 

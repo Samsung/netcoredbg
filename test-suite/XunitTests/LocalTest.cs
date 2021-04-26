@@ -40,6 +40,7 @@ namespace XUnitTests
         [InlineData("MITestSrcBreakpointResolve", "Program.cs;folder/Program.cs")]
         [InlineData("MITestEnum", "Program.cs")]
         [InlineData("MITestBreak", "Program.cs")]
+        [InlineData("MITestBreakpointToModule", "Program.cs")]
         [InlineData("MITestAsyncStepping", "Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]

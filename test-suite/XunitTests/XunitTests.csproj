@@ -57,6 +57,7 @@
     <ProjectReference Include="..\VSCodeTestEnum\VSCodeTestEnum.csproj" />
     <ProjectReference Include="..\VSCodeTestAsyncStepping\VSCodeTestAsyncStepping.csproj" />
     <ProjectReference Include="..\VSCodeTestBreak\VSCodeTestBreak.csproj" />
+    <ProjectReference Include="..\MITestBreakpointToModule\MITestBreakpointToModule.csproj" />
   </ItemGroup>
 
 </Project>

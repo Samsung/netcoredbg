@@ -476,7 +476,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         std::vector<SourceBreakpoint> srcBreakpoints;
         for (auto &b : arguments.at("breakpoints"))
-            srcBreakpoints.emplace_back(b.at("line"), b.value("condition", std::string()));
+            srcBreakpoints.emplace_back(std::string(), b.at("line"), b.value("condition", std::string()));
 
         std::vector<Breakpoint> breakpoints;
         IfFailRet(m_sharedDebugger->SetBreakpoints(arguments.at("source").at("path"), srcBreakpoints, breakpoints));

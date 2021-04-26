@@ -410,11 +410,29 @@ string_view Modules::GetFileName(string_view path)
     return i == string_view::npos ? path : path.substr(i + 1);
 }
 
+HRESULT Modules::IsModuleHaveSameName(ICorDebugModule *pModule, const std::string &Name, bool isFullPath)
+{
+    HRESULT Status;
+    ULONG32 len;
+    WCHAR szModuleName[mdNameLen] = {0};
+    std::string modName;
+
+    IfFailRet(pModule->GetName(_countof(szModuleName), &len, szModuleName));
+
+    if (isFullPath)
+        modName = to_utf8(szModuleName);
+    else
+        modName = GetBasename(to_utf8(szModuleName));
+
+    return modName == Name ? S_OK : S_FALSE;
+}
+
 HRESULT Modules::ResolveFunctionInAny(const std::string &module,
+                                      bool &module_checked,
                                       const std::string &funcname,
                                       ResolveFunctionBreakpointCallback cb)
 {
-    bool isFull = IsFullPath(module);
+    bool isFullPath = IsFullPath(module);
     HRESULT Status;
 
     std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
@@ -424,57 +442,43 @@ HRESULT Modules::ResolveFunctionInAny(const std::string &module,
         ModuleInfo &mdInfo = info_pair.second;
         ICorDebugModule *pModule = mdInfo.m_iCorModule.GetPtr();
 
-        if (module != "") {
-            ULONG32 nameLen;
-            WCHAR szModuleName[mdNameLen] = {0};
-            std::string modName;
-
-            IfFailRet(pModule->GetName(_countof(szModuleName), &nameLen, szModuleName));
-
-            if (isFull)
-                modName = to_utf8(szModuleName);
-            else
-                modName = GetBasename(to_utf8(szModuleName));
-
-            if (modName != module)
-                continue;
-        }
-
-        if (SUCCEEDED(ResolveMethodInModule(mdInfo.m_iCorModule, funcname, cb)))
+        if (!module.empty())
         {
-            mdInfo.m_iCorModule->AddRef();
+            IfFailRet(IsModuleHaveSameName(pModule, module, isFullPath));
+            if (Status == S_FALSE)
+                continue;
+
+            module_checked = true;
         }
+
+        ResolveMethodInModule(mdInfo.m_iCorModule, funcname, cb);
+
+        if (module_checked)
+            break;
     }
 
-    return E_FAIL;
+    return S_OK;
 }
 
 
 HRESULT Modules::ResolveFunctionInModule(ICorDebugModule *pModule,
                                          const std::string &module,
+                                         bool &module_checked,
                                          std::string &funcname,
                                          ResolveFunctionBreakpointCallback cb)
 {
     HRESULT Status;
-    CORDB_ADDRESS modAddress;
 
-    if (module != "")
+    if (!module.empty())
     {
-        ULONG32 len;
-        WCHAR szModuleName[mdNameLen] = {0};
-        std::string modName;
-
-        IfFailRet(pModule->GetName(_countof(szModuleName), &len, szModuleName));
-
-        if (IsFullPath(module))
-            modName = to_utf8(szModuleName);
-        else
-            modName = GetBasename(to_utf8(szModuleName));
-
-        if (modName != module)
+        IfFailRet(IsModuleHaveSameName(pModule, module, IsFullPath(module)));
+        if (Status == S_FALSE)
             return E_FAIL;
+
+        module_checked = true;
     }
 
+    CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
     std::lock_guard<std::mutex> lock(m_modulesInfoMutex);

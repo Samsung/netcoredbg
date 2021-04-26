@@ -58,6 +58,9 @@ ALL_TEST_NAMES=(
     "VSCodeTestBreak"
 )
 
+# Skipped tests:
+# MITestBreakpointToModule - script don't support multiple DLLs copy to target
+
 SDB=${SDB:-sdb}
 PORT=${PORT:-4712}
 DOTNET=${DOTNET:-dotnet}

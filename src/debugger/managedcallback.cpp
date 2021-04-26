@@ -140,7 +140,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
 
     // Check async stepping related breakpoints first, since user can't setup breakpoints to await block yield or resume offsets manually,
     // so, async stepping related breakpoints not a part of any user breakpoints related data (that will be checked in separate thread. see code below).
-    if (m_debugger.HitAsyncStepBreakpoint(pAppDomain, pThread, pBreakpoint))
+    if (m_debugger.HitAsyncStepBreakpoint(pAppDomain, pThread))
         return S_OK;
 
     auto stepForcedIgnoreBP = [&] () {

@@ -45,6 +45,7 @@ $ALL_TEST_NAMES = @(
 # Skipped tests:
 # MITest中文目录 and VSCodeTest中文目录 - sdb related issue with non-English assembly/pdb name during 'push'
 # VSCodeTestSrcBreakpointResolve and MITestSrcBreakpointResolve - case sensitive test for paths work different on Linux/Windows parts
+# MITestBreakpointToModule - script don't support multiple DLLs copy to target
 
 $TEST_NAMES = $args
 

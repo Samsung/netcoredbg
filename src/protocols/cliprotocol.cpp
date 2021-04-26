@@ -215,7 +215,9 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
 
     {CommandTag::Break, {}, {{{1, CompletionTag::Break}}}, {{"break", "b"}},
         {"<loc>", "Set breakpoint at specified location, where the\n"
-                        "location might be filename.cs:line or function name."}},
+                  "location might be filename.cs:line or function name.\n"
+                  "Optional, module name also could be provided as part\n"
+                  "of location: module.dll!filename.cs:line"}},
 
     {CommandTag::Continue, {}, {}, {{"continue", "c"}},
         {{}, "Continue debugging after stop/pause."}},
@@ -726,6 +728,7 @@ void CLIProtocol::Cleanup()
 }
 
 HRESULT CLIProtocol::SetBreakpoint(
+    const std::string &module,
     const std::string &filename,
     int linenum,
     const std::string &condition,
@@ -741,7 +744,7 @@ HRESULT CLIProtocol::SetBreakpoint(
           srcBreakpoints.push_back(it.second);
     }
 
-    srcBreakpoints.emplace_back(linenum, condition);
+    srcBreakpoints.emplace_back(module, linenum, condition);
 
     HRESULT Status;
     std::vector<Breakpoint> breakpoints;
@@ -1053,7 +1056,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
         struct LineBreak lb;
 
         if (ProtocolUtils::ParseBreakpoint(args, lb)
-            && SUCCEEDED(SetBreakpoint(lb.filename, lb.linenum, lb.condition, breakpoint)))
+            && SUCCEEDED(SetBreakpoint(lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
             Status = S_OK;
     }
     else if (bt == BreakType::FuncBreak)

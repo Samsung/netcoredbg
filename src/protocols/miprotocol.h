@@ -86,7 +86,7 @@ private:
     HRESULT PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output);
     HRESULT PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
     HRESULT ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
-    HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
+    HRESULT SetBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
     HRESULT SetBreakpointCondition(uint32_t id, const std::string &condition);
     HRESULT SetFunctionBreakpointCondition(uint32_t id, const std::string &condition);

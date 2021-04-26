@@ -26,23 +26,44 @@ class Breakpoints
 {
     class AnyBPReference;
 
-    struct ManagedBreakpoint {
+    struct ManagedBreakpoint
+    {
+        // In case of code line in constructor, we could resolve multiple methods for breakpoints.
+        struct BreakpointElement
+        {
+            mdMethodDef methodToken;
+            ULONG32 ilOffset;
+            ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
+
+            BreakpointElement(mdMethodDef mt, ULONG32 il, ICorDebugFunctionBreakpoint *bp) :
+                methodToken(mt), ilOffset(il), iCorFuncBreakpoint(bp) {}
+        };
+
         uint32_t id;
+        std::string module;
         CORDB_ADDRESS modAddress;
-        mdMethodDef methodToken;
-        ULONG32 ilOffset;
         std::string fullname;
         int linenum;
         int endLine;
-        ToRelease<ICorDebugBreakpoint> iCorBreakpoint;
         bool enabled;
         ULONG32 times;
         std::string condition;
+        std::vector<BreakpointElement> breakpoints;
 
-        bool IsResolved() const { return modAddress != 0; }
+        bool IsVerified() const { return modAddress != 0; }
 
-        ManagedBreakpoint();
-        ~ManagedBreakpoint();
+        ManagedBreakpoint() :
+            id(0), modAddress(0), linenum(0), endLine(0), enabled(true), times(0)
+        {}
+
+        ~ManagedBreakpoint()
+        {
+            for (auto &bp : breakpoints)
+            {
+                if (bp.iCorFuncBreakpoint)
+                    bp.iCorFuncBreakpoint->Activate(FALSE);
+            }
+        }
 
         void ToBreakpoint(Breakpoint &breakpoint);
 
@@ -50,19 +71,21 @@ class Breakpoints
         ManagedBreakpoint(const ManagedBreakpoint &that) = delete;
     };
 
-    struct ManagedFunctionBreakpoint {
-
-        struct FuncBreakpointElement {
+    struct ManagedFunctionBreakpoint
+    {
+        struct FuncBreakpointElement
+        {
             CORDB_ADDRESS modAddress;
             mdMethodDef methodToken;
-            ToRelease<ICorDebugFunctionBreakpoint> funcBreakpoint;
+            ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
 
             FuncBreakpointElement(CORDB_ADDRESS ma, mdMethodDef mt, ICorDebugFunctionBreakpoint *fb) :
-                modAddress(ma), methodToken(mt), funcBreakpoint(fb) {}
+                modAddress(ma), methodToken(mt), iCorFuncBreakpoint(fb) {}
         };
 
         uint32_t id;
         std::string module;
+        bool module_checked; // in case "module" provided, we need mark that module was checked or not (since function could be not found by name)
         std::string name;
         std::string params;
         ULONG32 times;
@@ -70,19 +93,19 @@ class Breakpoints
         std::string condition;
         std::vector<FuncBreakpointElement> breakpoints;
 
-        bool IsResolved() const { return !breakpoints.empty(); }
+        bool IsResolved() const { return module_checked; }
+        bool IsVerified() const { return !breakpoints.empty(); }
 
-        ManagedFunctionBreakpoint() : id(0),
-                                      times(0),
-                                      enabled(true)
+        ManagedFunctionBreakpoint() :
+            id(0), module_checked(false), times(0), enabled(true)
         {}
 
         ~ManagedFunctionBreakpoint()
         {
-            for (auto &fbel : breakpoints)
+            for (auto &fb : breakpoints)
             {
-                if (fbel.funcBreakpoint)
-                    fbel.funcBreakpoint->Activate(FALSE);
+                if (fb.iCorFuncBreakpoint)
+                    fb.iCorFuncBreakpoint->Activate(FALSE);
             }
         }
 
@@ -100,7 +123,7 @@ class Breakpoints
         std::string resolved_fullname; // if string is empty - no resolved breakpoint available in m_resolvedBreakpoints
         int resolved_linenum = 0;
 
-        SourceBreakpointMapping() : breakpoint(0, ""), id(0), enabled(true), resolved_fullname(), resolved_linenum(0) {}
+        SourceBreakpointMapping() : breakpoint("", 0, ""), id(0), enabled(true), resolved_fullname(), resolved_linenum(0) {}
         ~SourceBreakpointMapping() = default;
     };
 

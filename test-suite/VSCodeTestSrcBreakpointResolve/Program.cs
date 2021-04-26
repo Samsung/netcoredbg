@@ -212,6 +212,55 @@ namespace NetcoreDbgTest.Script
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void AddManualBreakpoint(string caller_trace, string bp_fileName, int bp_line)
+        {
+            List<SourceBreakpoint> listBp;
+            if (!SrcBreakpoints.TryGetValue(bp_fileName, out listBp)) {
+                listBp = new List<SourceBreakpoint>();
+                SrcBreakpoints[bp_fileName] = listBp;
+            }
+            listBp.Add(new SourceBreakpoint(bp_line, null));
+
+            List<int?> listBpId;
+            if (!SrcBreakpointIds.TryGetValue(bp_fileName, out listBpId)) {
+                listBpId = new List<int?>();
+                SrcBreakpointIds[bp_fileName] = listBpId;
+            }
+            listBpId.Add(null);
+        }
+
+        public void WasManualBreakpointHit(string caller_trace, string bp_fileName, int bp_line)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
+
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+
+            foreach (var Frame in stackTraceResponse.body.stackFrames) {
+                if (Frame.line == bp_line
+                    && Frame.source.name == bp_fileName)
+                    return;
+            }
+
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void Continue(string caller_trace)
         {
             ContinueRequest continueRequest = new ContinueRequest();
@@ -237,6 +286,21 @@ namespace NetcoreDbgTest.Script
 
 namespace VSCodeTestSrcBreakpointResolve
 {
+    class test_constructors
+    {
+        int test_field = 5; // bp here! make sure you correct code (test constructor)!
+
+        public test_constructors()
+        {
+
+        }
+
+        public test_constructors(int i)
+        {
+            
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -380,6 +444,7 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp20");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp21");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp22");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp23");
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -432,7 +497,7 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
             };                                                                      Label.Breakpoint("bp22");
             nested_func14();                                                        Label.Breakpoint("bp21");
 
-            Label.Checkpoint("bp_test_nested", "finish", (Object context) => {
+            Label.Checkpoint("bp_test_nested", "bp_test_constructor", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp10");
                 Context.Continue(@"__FILE__:__LINE__");
@@ -462,7 +527,24 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
-            // TODO as soon, as debugger will be fixed, add tests for constructors
+            // test constructor
+
+            int bp = 23;                                                            Label.Breakpoint("bp23");
+            test_constructors test_constr1 = new test_constructors();
+            test_constructors test_constr2 = new test_constructors(5);
+
+            Label.Checkpoint("bp_test_constructor", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp23");
+
+                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 291);
+                Context.SetBreakpoints(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291);
+                Context.Continue(@"__FILE__:__LINE__");
+            });
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;

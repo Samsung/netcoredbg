@@ -149,6 +149,43 @@ namespace NetcoreDbgTest.Script
             return ((MIConst)((MITuple)BpResp["bkpt"])["number"]).CString;
         }
 
+        public void ManualEnableBreakpoint(string caller_trace, string bp_fileName, int bp_line)
+        {
+            var BpResp =  MIDebugger.Request("-break-insert -f " + bp_fileName  + ":" + bp_line.ToString());
+
+            Assert.Equal(MIResultClass.Done, BpResp.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasManualBreakpointHit(string caller_trace, string bp_fileName, int bp_line)
+        {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+
+                if (reason.CString != "breakpoint-hit") {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
+
+                if (fileName.CString == bp_fileName &&
+                    line == bp_line) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void DeleteBreakpoint(string caller_trace, string id)
         {
             Assert.Equal(MIResultClass.Done,
@@ -181,6 +218,21 @@ namespace NetcoreDbgTest.Script
 
 namespace MITestSrcBreakpointResolve
 {
+    class test_constructors
+    {
+        int test_field = 5; // bp here! make sure you correct code (test constructor)!
+
+        public test_constructors()
+        {
+
+        }
+
+        public test_constructors(int i)
+        {
+            
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -304,6 +356,7 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp20");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp21");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp22");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp23");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -355,7 +408,7 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
             };                                                                      Label.Breakpoint("bp22");
             nested_func14();                                                        Label.Breakpoint("bp21");
 
-            Label.Checkpoint("bp_test_nested", "finish", (Object context) => {
+            Label.Checkpoint("bp_test_nested", "bp_test_constructor", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp10");
                 Context.Continue(@"__FILE__:__LINE__");
@@ -385,7 +438,23 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
-            // TODO as soon, as debugger will be fixed, add tests for constructors
+            // test constructor
+
+            int bp = 23;                                                            Label.Breakpoint("bp23");
+            test_constructors test_constr1 = new test_constructors();
+            test_constructors test_constr2 = new test_constructors(5);
+
+            Label.Checkpoint("bp_test_constructor", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp23");
+
+                Context.ManualEnableBreakpoint(@"__FILE__:__LINE__", "Program.cs", 223);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 223);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 223);
+                Context.Continue(@"__FILE__:__LINE__");
+            });
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;

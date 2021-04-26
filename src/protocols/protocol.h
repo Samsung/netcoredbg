@@ -388,10 +388,17 @@ enum VariablesFilter
 
 struct SourceBreakpoint
 {
+    std::string module;
     int line;
     std::string condition;
 
-    SourceBreakpoint(int linenum, const std::string &cond = std::string()) : line(linenum), condition(cond) {}
+    SourceBreakpoint(const std::string &module,
+                     int linenum,
+                     const std::string &cond = std::string()) :
+        module(module),
+        line(linenum),
+        condition(cond)
+    {}
 };
 
 struct FunctionBreakpoint

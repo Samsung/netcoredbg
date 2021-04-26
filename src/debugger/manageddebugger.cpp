@@ -462,13 +462,13 @@ HRESULT ManagedDebugger::SetBreakpointIntoNotifyDebuggerOfWaitCompletion()
     ToRelease<ICorDebugCode> pCode;
     IfFailRet(pFunc->GetILCode(&pCode));
 
-    ToRelease<ICorDebugFunctionBreakpoint> pBreakpoint;
-    IfFailRet(pCode->CreateBreakpoint(0, &pBreakpoint));
-    IfFailRet(pBreakpoint->Activate(TRUE));
+    ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
+    IfFailRet(pCode->CreateBreakpoint(0, &iCorFuncBreakpoint));
+    IfFailRet(iCorFuncBreakpoint->Activate(TRUE));
 
     const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
     m_asyncStepNotifyDebuggerOfWaitCompletion.reset(new asyncBreakpoint_t());
-    m_asyncStepNotifyDebuggerOfWaitCompletion->iCorBreakpoint = pBreakpoint.Detach();
+    m_asyncStepNotifyDebuggerOfWaitCompletion->iCorFuncBreakpoint = iCorFuncBreakpoint.Detach();
     m_asyncStepNotifyDebuggerOfWaitCompletion->modAddress = modAddress;
     m_asyncStepNotifyDebuggerOfWaitCompletion->methodToken = notifyDef;
 
@@ -754,10 +754,10 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, StepType stepType)
         m_asyncStep->m_Breakpoint->methodToken = methodToken;
         m_asyncStep->m_Breakpoint->ilOffset = awaitInfo->yield_offset;
 
-        ToRelease<ICorDebugFunctionBreakpoint> pBreakpoint;
-        IfFailRet(pCode->CreateBreakpoint(m_asyncStep->m_Breakpoint->ilOffset, &pBreakpoint));
-        IfFailRet(pBreakpoint->Activate(TRUE));
-        m_asyncStep->m_Breakpoint->iCorBreakpoint = pBreakpoint.Detach();
+        ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
+        IfFailRet(pCode->CreateBreakpoint(m_asyncStep->m_Breakpoint->ilOffset, &iCorFuncBreakpoint));
+        IfFailRet(iCorFuncBreakpoint->Activate(TRUE));
+        m_asyncStep->m_Breakpoint->iCorFuncBreakpoint = iCorFuncBreakpoint.Detach();
     }
 
     return SetupSimpleStep(pThread, stepType);
@@ -1770,8 +1770,7 @@ void ManagedDebugger::InputCallback(IORedirectHelper::StreamType type, span<char
 // Check if breakpoint is part of async stepping routine and do next action for async stepping if need.
 // [in] pAppDomain - object that represents the application domain that contains the breakpoint.
 // [in] pThread - object that represents the thread that contains the breakpoint.
-// [in] pBreakpoint - object that represents the breakpoint.
-bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
+bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
 {
     ToRelease<ICorDebugFrame> pFrame;
     mdMethodDef methodToken;
@@ -1859,17 +1858,17 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
         m_asyncStep->m_stepStatus = ManagedDebugger::asyncStepStatus::resume_offset_breakpoint;
 
         ToRelease<ICorDebugCode> pCode;
-        ToRelease<ICorDebugFunctionBreakpoint> pBreakpoint;
+        ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
         if (FAILED(pFunc->GetILCode(&pCode)) ||
-            FAILED(pCode->CreateBreakpoint(m_asyncStep->m_resume_offset, &pBreakpoint)) ||
-            FAILED(pBreakpoint->Activate(TRUE)))
+            FAILED(pCode->CreateBreakpoint(m_asyncStep->m_resume_offset, &iCorFuncBreakpoint)) ||
+            FAILED(iCorFuncBreakpoint->Activate(TRUE)))
         {
             LOGE("Could not setup second breakpoint (resume_offset) for await block");
             return false;
         }
 
-        m_asyncStep->m_Breakpoint->iCorBreakpoint->Activate(FALSE);
-        m_asyncStep->m_Breakpoint->iCorBreakpoint = pBreakpoint.Detach();
+        m_asyncStep->m_Breakpoint->iCorFuncBreakpoint->Activate(FALSE);
+        m_asyncStep->m_Breakpoint->iCorFuncBreakpoint = iCorFuncBreakpoint.Detach();
         m_asyncStep->m_Breakpoint->ilOffset = m_asyncStep->m_resume_offset;
 
         ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);

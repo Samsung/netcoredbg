@@ -202,13 +202,13 @@ private:
 
     struct asyncBreakpoint_t
     {
-        ToRelease<ICorDebugBreakpoint> iCorBreakpoint;
+        ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
         CORDB_ADDRESS modAddress;
         mdMethodDef methodToken;
         ULONG32 ilOffset;
 
         asyncBreakpoint_t() :
-            iCorBreakpoint(nullptr),
+            iCorFuncBreakpoint(nullptr),
             modAddress(0),
             methodToken(0),
             ilOffset(0)
@@ -216,8 +216,8 @@ private:
 
         ~asyncBreakpoint_t()
         {
-            if (iCorBreakpoint)
-                iCorBreakpoint->Activate(FALSE);
+            if (iCorFuncBreakpoint)
+                iCorFuncBreakpoint->Activate(FALSE);
         }
     };
 
@@ -246,7 +246,7 @@ private:
     // System.Threading.Tasks.Task.NotifyDebuggerOfWaitCompletion() method function breakpoint data, will be configured at async method step-out setup.
     std::unique_ptr<asyncBreakpoint_t> m_asyncStepNotifyDebuggerOfWaitCompletion;
 
-    bool HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
+    bool HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread);
     HRESULT SetBreakpointIntoNotifyDebuggerOfWaitCompletion();
 };
 

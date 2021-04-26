@@ -93,7 +93,7 @@ public:
         string_view name;      // file name or function name, depending on type.
         int         line;      // first line, 0 for function breakpoint
         int         last_line;
-        string_view module;    // module name, non empty for function breakpoints
+        string_view module;    // module name
         string_view funcsig;   // might be non-empty for function breakpoints
     };
 

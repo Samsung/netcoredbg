@@ -25,6 +25,7 @@ $ALL_TEST_NAMES = @(
     "MITestEnum"
     "MITestAsyncStepping"
     "MITestBreak"
+    "MITestBreakpointToModule"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"

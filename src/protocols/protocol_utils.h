@@ -19,6 +19,7 @@ enum BreakType
 
 struct LineBreak
 {
+    std::string module;
     std::string filename;
     unsigned int linenum;
     std::string condition;

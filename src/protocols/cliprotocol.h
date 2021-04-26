@@ -171,7 +171,7 @@ private:
                         std::string &output,
                         IDebugger::StepType stepType);
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
-    HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
+    HRESULT SetBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
     HRESULT PrintVariable(const Variable &v, std::ostringstream &output, bool expand, bool is_static);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);

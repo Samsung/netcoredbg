@@ -136,13 +136,31 @@ std::string GetConditionPrepareArgs(std::vector<std::string> &args)
 bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb)
 {
     bool ok;
-
     lb.condition = GetConditionPrepareArgs(args);
+    std::string prepString("");
 
-    std::size_t i = args.at(0).rfind(':');
+    if (args.size() == 1)
+        prepString = args.at(0);
+    else
+        for (auto &str : args)
+            prepString += str;
 
-    lb.filename = args.at(0).substr(0, i);
-    lb.linenum = ProtocolUtils::ParseInt(args.at(0).substr(i + 1), ok);
+    std::size_t i = prepString.find('!');
+
+    if (i == std::string::npos)
+    {
+        lb.module.clear();
+    }
+    else
+    {
+        lb.module = std::string(prepString, 0, i);
+        prepString.erase(0, i + 1);
+    }
+
+    i = prepString.rfind(':');
+
+    lb.filename = prepString.substr(0, i);
+    lb.linenum = ProtocolUtils::ParseInt(prepString.substr(i + 1), ok);
 
     return ok && lb.linenum > 0;
 }
@@ -162,7 +180,7 @@ bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
 
     if (i == std::string::npos)
     {
-        fb.module = "";
+        fb.module.clear();
     }
     else
     {
@@ -180,7 +198,7 @@ bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
     }
     else
     {
-        fb.params = "";
+        fb.params.clear();
     }
 
     fb.funcname = prepString;
