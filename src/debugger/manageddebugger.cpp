@@ -12,7 +12,6 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include "debugger/dbgshim.h"
 #include "debugger/manageddebugger.h"
 #include "debugger/managedcallback.h"
 #include "valueprint.h"
@@ -66,8 +65,6 @@ namespace
         return 0;
     }
 }
-
-dbgshim_t g_dbgshim;
 
 ThreadId getThreadId(ICorDebugThread *pThread)
 {
@@ -954,7 +951,7 @@ VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT
 
     if (self->m_unregisterToken)
     {
-        g_dbgshim.UnregisterForRuntimeStartup(self->m_unregisterToken);
+        self->m_dbgshim.UnregisterForRuntimeStartup(self->m_unregisterToken);
         self->m_unregisterToken = nullptr;
     }
 
@@ -976,15 +973,14 @@ static bool AreAllHandlesValid(HANDLE *handleArray, DWORD arrayLength)
     return true;
 }
 
-static HRESULT InternalEnumerateCLRs(
-    DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength, int tryCount)
+static HRESULT InternalEnumerateCLRs(dbgshim_t &dbgshim, DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength, int tryCount)
 {
     int numTries = 0;
     HRESULT hr;
 
     while (numTries < tryCount)
     {
-        hr = g_dbgshim.EnumerateCLRs(pid, ppHandleArray, ppStringArray, pdwArrayLength);
+        hr = dbgshim.EnumerateCLRs(pid, ppHandleArray, ppStringArray, pdwArrayLength);
 
         // From dbgshim.cpp:
         // EnumerateCLRs uses the OS API CreateToolhelp32Snapshot which can return ERROR_BAD_LENGTH or
@@ -1007,7 +1003,7 @@ static HRESULT InternalEnumerateCLRs(
                     return hr;
                 }
                 // Clean up memory allocated in EnumerateCLRs since this path it succeeded
-                g_dbgshim.CloseCLREnumeration(*ppHandleArray, *ppStringArray, *pdwArrayLength);
+                dbgshim.CloseCLREnumeration(*ppHandleArray, *ppStringArray, *pdwArrayLength);
 
                 *ppHandleArray = NULL;
                 *ppStringArray = NULL;
@@ -1035,18 +1031,18 @@ static HRESULT InternalEnumerateCLRs(
     return hr;
 }
 
-static string GetCLRPath(DWORD pid, int timeoutSec = 3)
+static string GetCLRPath(dbgshim_t &dbgshim, DWORD pid, int timeoutSec = 3)
 {
     HANDLE* pHandleArray;
     LPWSTR* pStringArray;
     DWORD dwArrayLength;
     const int tryCount = timeoutSec * 10; // 100ms interval between attempts
-    if (FAILED(InternalEnumerateCLRs(pid, &pHandleArray, &pStringArray, &dwArrayLength, tryCount)) || dwArrayLength == 0)
+    if (FAILED(InternalEnumerateCLRs(dbgshim, pid, &pHandleArray, &pStringArray, &dwArrayLength, tryCount)) || dwArrayLength == 0)
         return string();
 
     string result = to_utf8(pStringArray[0]);
 
-    g_dbgshim.CloseCLREnumeration(pHandleArray, pStringArray, dwArrayLength);
+    dbgshim.CloseCLREnumeration(pHandleArray, pStringArray, dwArrayLength);
 
     return result;
 }
@@ -1061,7 +1057,7 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     IfFailRet(pCorDebug->Initialize());
 
     if (m_clrPath.empty())
-        m_clrPath = GetCLRPath(pid);
+        m_clrPath = GetCLRPath(m_dbgshim, pid);
 
     // Note, ManagedPart must be initialized before callbacks setup, since callbacks use it.
     // ManagedPart must be initialized only once for process, since CoreCLR don't support unload and reinit
@@ -1183,7 +1179,7 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
             m_cwd.clear();
 
     Status = m_ioredirect.exec([&]() -> HRESULT {
-            IfFailRet(g_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
+            IfFailRet(m_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
                                      /* Suspend process */ TRUE,
                                      outEnv.empty() ? NULL : &outEnv[0],
                                      m_cwd.empty() ? NULL : reinterpret_cast<LPCWSTR>(to_utf16(m_cwd).c_str()),
@@ -1198,11 +1194,11 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
     GetWaitpid().SetupTrackingPID(m_processId);
 #endif // FEATURE_PAL
 
-    IfFailRet(g_dbgshim.RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
+    IfFailRet(m_dbgshim.RegisterForRuntimeStartup(m_processId, ManagedDebugger::StartupCallback, this, &m_unregisterToken));
 
     // Resume the process so that StartupCallback can run
-    IfFailRet(g_dbgshim.ResumeProcess(resumeHandle));
-    g_dbgshim.CloseResumeHandle(resumeHandle);
+    IfFailRet(m_dbgshim.ResumeProcess(resumeHandle));
+    m_dbgshim.CloseResumeHandle(resumeHandle);
 
     // Wait for ManagedDebugger::StartupCallback to complete
 
@@ -1215,7 +1211,7 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
     if (!m_startupCV.wait_until(lock, now + startupCallbackWaitTimeout, [this](){return m_startupReady;}))
     {
         // Timed out
-        g_dbgshim.UnregisterForRuntimeStartup(m_unregisterToken);
+        m_dbgshim.UnregisterForRuntimeStartup(m_unregisterToken);
         m_unregisterToken = nullptr;
         return E_FAIL;
     }
@@ -1314,13 +1310,13 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 
     IfFailRet(CheckNoProcess());
 
-    m_clrPath = GetCLRPath(pid);
+    m_clrPath = GetCLRPath(m_dbgshim, pid);
     if (m_clrPath.empty())
         return E_INVALIDARG; // Unable to find libcoreclr.so
 
     WCHAR pBuffer[100];
     DWORD dwLength;
-    IfFailRet(g_dbgshim.CreateVersionStringFromModule(
+    IfFailRet(m_dbgshim.CreateVersionStringFromModule(
         pid,
         reinterpret_cast<LPCWSTR>(to_utf16(m_clrPath).c_str()),
         pBuffer,
@@ -1329,7 +1325,7 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 
     ToRelease<IUnknown> pCordb;
 
-    IfFailRet(g_dbgshim.CreateDebuggingInterfaceFromVersionEx(CorDebugVersion_4_0, pBuffer, &pCordb));
+    IfFailRet(m_dbgshim.CreateDebuggingInterfaceFromVersionEx(CorDebugVersion_4_0, pBuffer, &pCordb));
 
     m_unregisterToken = nullptr;
     return Startup(pCordb, pid);

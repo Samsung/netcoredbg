@@ -8,6 +8,7 @@
 #include "protocols/protocol.h"
 #include "debugger/breakpoints.h"
 #include "debugger/evaluator.h"
+#include "debugger/dbgshim.h"
 #include "string_view.h"
 
 #include <unordered_map>
@@ -274,6 +275,7 @@ private:
     PVOID m_unregisterToken;
     DWORD m_processId;
     std::string m_clrPath;
+    dbgshim_t m_dbgshim;
 
     IORedirectHelper m_ioredirect;
 

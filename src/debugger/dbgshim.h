@@ -83,12 +83,27 @@ struct dbgshim_t
         *((void**)&CloseCLREnumeration) = DLSym(m_module, "CloseCLREnumeration");
         *((void**)&CreateVersionStringFromModule) = DLSym(m_module, "CreateVersionStringFromModule");
         *((void**)&CreateDebuggingInterfaceFromVersionEx) = DLSym(m_module, "CreateDebuggingInterfaceFromVersionEx");
+
+        bool dlsym_ok = CreateProcessForLaunch &&
+                        ResumeProcess &&
+                        CloseResumeHandle &&
+                        RegisterForRuntimeStartup &&
+                        UnregisterForRuntimeStartup &&
+                        EnumerateCLRs &&
+                        CloseCLREnumeration &&
+                        CreateVersionStringFromModule &&
+                        CreateDebuggingInterfaceFromVersionEx;
+
+        if (!dlsym_ok)
+            throw std::invalid_argument("Unable to dlsym for dbgshim module");
     }
+
     ~dbgshim_t()
     {
-        // if (m_module)
-        //     DLClose(m_module);
+        if (m_module)
+            DLClose(m_module);
     }
+
 private:
     DLHandle m_module;
 };
