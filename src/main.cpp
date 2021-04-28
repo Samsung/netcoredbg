@@ -161,8 +161,23 @@ Streams open_streams(Holder& holder, unsigned server_port, ProtocolConstructor c
 
 using namespace netcoredbg;
 
-int main(int argc, char *argv[])
+void FindAndParseArgs(char **argv, std::vector<std::pair<std::string, std::function<void(int& i)>>> &partialArguments, int i)
 {
+    for(auto argument:partialArguments)
+    {
+        if (strstr(argv[i], argument.first.c_str()) == argv[i])
+        {
+            argument.second(i);
+            return;
+        }
+    }
+    fprintf(stderr, "Error: Unknown option %s\n", argv[i]);
+    exit(EXIT_FAILURE);
+}
+
+int main(int argc, char* argv[])
+{
+
     DWORD pidDebuggee = 0;
     // prevent std::cout flush triggered by read operation on std::cin
     std::cin.tie(nullptr);
@@ -187,90 +202,84 @@ int main(int argc, char *argv[])
 
     bool run = false;
 
-    for (int i = 1; i < argc; i++)
+    std::unordered_map<std::string, std::function<void(int& i)>> entireArguments
     {
-        if (strcmp(argv[i], "--attach") == 0)
-        {
+        {"--attach", [&](int& i){
+
             i++;
             if (i >= argc)
             {
                 fprintf(stderr, "Error: Missing process id\n");
-                return EXIT_FAILURE;
+                exit(EXIT_FAILURE);
             }
             char *err;
             pidDebuggee = strtoul(argv[i], &err, 10);
             if (*err != 0)
             {
                 fprintf(stderr, "Error: Missing process id\n");
-                return EXIT_FAILURE;
+                exit(EXIT_FAILURE);
             }
-        }
-        else if (strcmp(argv[i], "--interpreter=mi") == 0)
-        {
+
+        } },
+        { "--interpreter=mi", [&](int& i){
+
             protocol_constructor = &instantiate_protocol<MIProtocol>;
-            continue;
-        }
-        else if (strcmp(argv[i], "--interpreter=vscode") == 0)
-        {
+
+        } },
+        { "--interpreter=vscode", [&](int& i){
+
             protocol_constructor = &instantiate_protocol<VSCodeProtocol>;
-            continue;
-        }
-        else if (strcmp(argv[i], "--interpreter=cli") == 0)
-        {
+
+        } },
+        { "--interpreter=cli", [&](int& i){
+
             protocol_constructor = &instantiate_protocol<CLIProtocol>;
-            continue;
-        }
-        else if (strcmp(argv[i], "--run") == 0)
-        {
+
+        } },
+        { "--run", [&](int& i){
+
             run = true;
-            continue;
-        }
-        else if (string_view{argv[i]}.starts_with("--command="))
-        {
-            initTexts.push_back(std::string() + "source " + (strchr(argv[i], '=') + 1));
-            initCommands.push_back(initTexts.back());
-        }
-        else if (strcmp(argv[i], "-ex") == 0)
-        {
+
+        } },
+        { "-ex", [&](int& i){
+
             if (++i >= argc)
             {
                 fprintf(stderr, "%s: -ex option requires an argument!\n", argv[0]);
                 exit(EXIT_FAILURE);
             }
             initCommands.emplace_back(argv[i]);
-        }
-        else if (strcmp(argv[i], "--engineLogging") == 0)
-        {
+
+        } },
+        { "--engineLogging", [&](int& i){
+
             engineLogging = true;
-            continue;
-        }
-        else if (strstr(argv[i], "--engineLogging=") == argv[i])
-        {
-            engineLogging = true;
-            logFilePath = argv[i] + strlen("--engineLogging=");
-            continue;
-        }
-        else if (strcmp(argv[i], "--help") == 0)
-        {
+
+        } },
+        { "--help", [&](int& i){
+
             print_help();
             return EXIT_SUCCESS;
-        }
-        else if (strcmp(argv[i], "--buildinfo") == 0)
-        {
+
+        } },
+        { "--buildinfo", [&](int& i){
+
             print_buildinfo();
             return EXIT_SUCCESS;
-        }
-        else if (strcmp(argv[i], "--version") == 0)
-        {
+
+        } },
+        { "--version", [&](int& i){
+
             fprintf(stdout, "NET Core debugger %s (%s, %s)\n",
                 __VERSION, BuildInfo::netcoredbg_vcs_info, BuildInfo::build_type);
             fprintf(stdout, "\nCopyright (c) 2020 Samsung Electronics Co., LTD\n");
             fprintf(stdout, "Distributed under the MIT License.\n");
             fprintf(stdout, "See the LICENSE file in the project root for more information.\n");
             return EXIT_SUCCESS;
-        }
-        else if (strcmp(argv[i], "--log") == 0)
-        {
+
+        } },
+        { "--log", [&](int& i){
+
             #ifdef _WIN32
             static const char path_separator[] = "/\\";
             #else
@@ -285,29 +294,15 @@ int main(int argc, char *argv[])
             auto tempdir = GetTempDir();
             snprintf(tmp, sizeof(tmp), "%.*s/%s.%u.log", int(tempdir.size()), tempdir.data(), s, getpid());
             setenv("LOG_OUTPUT", tmp, 1);
-        }
-        else if (strstr(argv[i], "--log=") == argv[i])
-        {
-            setenv("LOG_OUTPUT", argv[i] + strlen("--log="), 1);
-        }
-        else if (strcmp(argv[i], "--server") == 0)
-        {
+
+        } },
+        { "--server", [&](int& i){
+
             serverPort = DEFAULT_SERVER_PORT;
-            continue;
-        }
-        else if (strstr(argv[i], "--server=") == argv[i])
-        {
-            char *err;
-            serverPort = static_cast<uint16_t>(strtoul(argv[i] + strlen("--server="), &err, 10));
-            if (*err != 0)
-            {
-                fprintf(stderr, "Error: Missing process id\n");
-                return EXIT_FAILURE;
-            }
-            continue;
-        }
-        else if (strcmp(argv[i], "--") == 0)
-        {
+
+        } },
+        { "--", [&](int& i){
+
             ++i;
             if (i < argc)
             {
@@ -316,18 +311,57 @@ int main(int argc, char *argv[])
             else
             {
                 fprintf(stderr, "Error: Missing program argument\n");
-                return EXIT_FAILURE;
+                exit(EXIT_FAILURE);
             }
             for (++i; i < argc; ++i)
             {
                 execArgs.push_back(argv[i]);
             }
-            break;
+        } }
+    };
+
+    std::vector<std::pair<std::string, std::function<void(int& i)>>> partialArguments
+    {
+        { "--command=", [&](int& i){
+
+            initTexts.push_back(std::string() + "source " + (strchr(argv[i], '=') + 1));
+            initCommands.push_back(initTexts.back());
+
+        } },
+        { "--engineLogging=", [&](int& i){
+
+            engineLogging = true;
+            logFilePath = argv[i] + strlen("--engineLogging=");
+
+        } },
+        { "--log=", [&](int& i){
+
+            setenv("LOG_OUTPUT", *argv + strlen("--log="), 1);
+
+        } },
+        { "--server=", [&](int& i){
+
+            char *err;
+            serverPort = static_cast<uint16_t>(strtoul(argv[i] + strlen("--server="), &err, 10));
+            if (*err != 0)
+            {
+                fprintf(stderr, "Error: Missing process id\n");
+                exit(EXIT_FAILURE);
+            }
+
+        } },
+    };
+
+    for (int i = 1; i < argc; i++)
+    {
+        auto args = entireArguments.find(std::string(argv[i]));
+        if (args != entireArguments.end())
+        {
+            args->second(i);
         }
         else
         {
-            fprintf(stderr, "Error: Unknown option %s\n", argv[i]);
-            return EXIT_FAILURE;
+            FindAndParseArgs(argv, partialArguments, i);
         }
     }
 
