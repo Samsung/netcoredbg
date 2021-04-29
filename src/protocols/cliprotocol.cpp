@@ -1393,58 +1393,32 @@ HRESULT CLIProtocol::doCommand<CommandTag::Next>(const std::vector<std::string> 
     return StepCommand(args, output, Debugger::STEP_OVER);    
 }
 
-HRESULT CLIProtocol::PrintVariable(ThreadId threadId, FrameId frameId, std::list<std::string>::iterator token_iterator, const Variable &v, std::ostringstream &ss, bool expand)
+HRESULT CLIProtocol::PrintVariable(const Variable &v, std::ostringstream &ss, bool expand, bool is_static)
 {
-    if(!token_iterator->empty())
-    {
-        token_iterator++;
-    }
-
-    bool empty = token_iterator->empty();
-    ss << v.name;
-    if (empty)
-    {
-        ss << " = " << v.value;
-    } else if (token_iterator->front() != '[')
-    {
-        ss << ".";
-    }
-
     if (v.namedVariables > 0 && expand)
     {
         std::vector<Variable> children;
-        if (empty) 
-        {
-            ss << ": {";
-        }
+
+        if (is_static)
+            ss << "" << v.name << ": {";
+        else
+            ss << v.name << " = " << v.value << ": {";
+
         m_debugger->GetVariables(v.variablesReference, VariablesBoth, 0, v.namedVariables, children);
-        int count = 0;
         for (auto &child : children)
         {
-            if (empty)
-            {
-                PrintVariable(threadId, frameId, token_iterator, child, ss, false);
-                ss << ", ";
-                count++;
-            } else if (child.name == *token_iterator)
-            {
-                PrintVariable(threadId, frameId, token_iterator, child, ss, true);
-                count++;
-            }
+            bool stm = (child.name == "Static members") ? true : false;
+            PrintVariable (child, ss, stm, stm);
+            ss << ", ";
         }
-        if (count == 0)
-        {
-            ss << *token_iterator << " -- Not found!\n";
-        }
-        ss << "\b\b";
-        if (empty)
-        {
-            ss << "}";
-        }
+        ss << "\b\b}";
+    }
+    else
+    {
+        ss << v.name << " = " << v.value;
     }
     return S_OK;
 }
-
 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string> &args, std::string &output)
@@ -1452,7 +1426,6 @@ HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string>
     ThreadId threadId;
     FrameId frameId;
     Variable v(0);
-    std::list<std::string> tokens;
     std::ostringstream ss;
 
     {
@@ -1471,27 +1444,12 @@ HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string>
         // call of getter should not fire callback, so we can call it with locked mutex
         threadId = m_debugger->GetLastStoppedThreadId();
         frameId = StackFrame(threadId, FrameLevel{0}, "").id;
-
-        ss << "\n";
-        std::string result;
-        Tokenizer tokenizer(m_lastPrintArg, ".[");
-        while (tokenizer.Next(result))
-        {
-            if (result.back() == ']')
-            {
-                tokens.push_back('[' + result);
-            }
-            else {
-                tokens.push_back(result);
-            }
-        }
-        tokens.push_back("");
     }
 
     HRESULT Status;
-    IfFailRet(m_debugger->Evaluate(frameId, tokens.front(), v, output));
-    v.name = tokens.front();
-    PrintVariable (threadId, frameId, tokens.begin(), v, ss, true);
+    IfFailRet(m_debugger->Evaluate(frameId, m_lastPrintArg, v, output));
+    v.name = m_lastPrintArg;
+    PrintVariable (v, ss, true, false);
     output = ss.str();
     return S_OK;
 }

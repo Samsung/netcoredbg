@@ -412,13 +412,13 @@ namespace VSCodeTestEvaluate
                         // nested tests:
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "nested_static_i");
                         // FIXME debugger have wrong behavior and should be fixed first
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "test_static_class1_t.static_field_i1");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "test_static_struct1_t.static_field_i1");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "53", "int", "test_nested.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested.test_nested_1.test_nested_2.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested_1.test_nested_2.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested_2.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "353", "int", "test_nested_3.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "test_static_class1_t.static_field_i1");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "test_static_struct1_t.static_field_i1");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "53", "int", "test_nested.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested.test_nested_1.test_nested_2.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested_1.test_nested_2.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested_2.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "353", "int", "test_nested_3.nested_static_i");
                         Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested.nested_i"); // error, cannot be accessed
                         Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested.test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
                         Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
@@ -472,6 +472,7 @@ namespace VSCodeTestEvaluate
     class Program
     {
         int int_i = 505;
+        static test_nested test_nested_static_instance;
 
         static void Main(string[] args)
         {
@@ -598,11 +599,14 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", frameId, "2", "int", "st", "field_i1");
                 // test direct eval for class and struct static fields/properties
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "VSCodeTestEvaluate.test_static_class1_t.static_field_i1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "test_static_class1_t.static_field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "VSCodeTestEvaluate . test_static_class1_t  .  static_field_i1  "); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "int", "VSCodeTestEvaluate.test_static_class1_t.static_property_i2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "int", "test_static_class1_t.static_property_i2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "VSCodeTestEvaluate.test_static_struct1_t.static_field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "3", "float", "VSCodeTestEvaluate.test_static_struct1_t.static_field_f1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "6", "int", "VSCodeTestEvaluate.test_static_struct1_t.static_property_i2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "6", "int", "test_static_struct1_t.static_property_i2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "8", "int", "VSCodeTestEvaluate.test_static_class1_t.st.field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7.1", "double", "VSCodeTestEvaluate.test_static_class1_t.cl.field_d1");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_class1_t.not_declared"); // error, no such field in class
@@ -618,6 +622,8 @@ namespace VSCodeTestEvaluate
 
             test_nested.test_nested_1.test_nested_2 test_nested = new test_nested.test_nested_1.test_nested_2();
             test_nested.func();
+
+            test_nested_static_instance  = new test_nested();
 
             test_child child = new test_child();
 
@@ -636,6 +642,9 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "301", "int", "VSCodeTestEvaluate.test_static_child.static_i_f_parent");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "302", "int", "VSCodeTestEvaluate.test_static_child.static_i_p_parent");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{VSCodeTestEvaluate.test_static_child}", "VSCodeTestEvaluate.test_static_child", "VSCodeTestEvaluate.test_static_child");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "55", "int", "test_nested_static_instance.nested_i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "55", "int", "Program.test_nested_static_instance.nested_i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "55", "int", "VSCodeTestEvaluate.Program.test_nested_static_instance.nested_i");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

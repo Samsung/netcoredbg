@@ -338,13 +338,13 @@ namespace MITestEvaluate
                         // nested tests:
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "nested_static_i");
                         // FIXME debugger have wrong behavior and should be fixed first
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "test_static_class1_t.static_field_i1");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "test_static_struct1_t.static_field_i1");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", "53", "int", "test_nested.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested.test_nested_1.test_nested_2.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested_1.test_nested_2.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested_2.nested_static_i");
-                        //Context.GetAndCheckValue(@"__FILE__:__LINE__", "353", "int", "test_nested_3.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "test_static_class1_t.static_field_i1");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "test_static_struct1_t.static_field_i1");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", "53", "int", "test_nested.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested.test_nested_1.test_nested_2.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested_1.test_nested_2.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested_2.nested_static_i");
+                        Context.GetAndCheckValue(@"__FILE__:__LINE__", "353", "int", "test_nested_3.nested_static_i");
                         Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested.nested_i"); // error, cannot be accessed
                         Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested.test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
                         Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
@@ -398,6 +398,7 @@ namespace MITestEvaluate
     class Program
     {
         int int_i = 505;
+        static test_nested test_nested_static_instance;
 
         static void Main(string[] args)
         {
@@ -535,9 +536,11 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "MITestEvaluate.test_static_class1_t.static_field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "MITestEvaluate . test_static_class1_t  .  static_field_i1  "); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "MITestEvaluate.test_static_class1_t.static_property_i2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "test_static_class1_t.static_property_i2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "MITestEvaluate.test_static_struct1_t.static_field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "3", "float", "MITestEvaluate.test_static_struct1_t.static_field_f1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MITestEvaluate.test_static_struct1_t.static_property_i2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "test_static_struct1_t.static_property_i2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "8", "int", "MITestEvaluate.test_static_class1_t.st.field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "7.1", "double", "MITestEvaluate.test_static_class1_t.cl.field_d1");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_class1_t.not_declared"); // error, no such field in class
@@ -553,6 +556,8 @@ namespace MITestEvaluate
 
             test_nested.test_nested_1.test_nested_2 test_nested = new test_nested.test_nested_1.test_nested_2();
             test_nested.func();
+
+            test_nested_static_instance = new test_nested();
 
             test_child child = new test_child();
 
@@ -570,6 +575,9 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "301", "int", "MITestEvaluate.test_static_child.static_i_f_parent");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "302", "int", "MITestEvaluate.test_static_child.static_i_p_parent");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.test_static_child}", "MITestEvaluate.test_static_child", "MITestEvaluate.test_static_child");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "test_nested_static_instance.nested_i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "Program.test_nested_static_instance.nested_i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "MITestEvaluate.Program.test_nested_static_instance.nested_i");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

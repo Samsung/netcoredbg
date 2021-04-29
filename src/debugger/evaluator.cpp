@@ -560,26 +560,54 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
     std::vector<int> ranks;
     std::vector<std::string> classParts = ParseType(methodClass, ranks);
     int nextClassPart = 0;
+    int partsNum = (int)parts.size() -1;
+    std::vector<std::string> fieldName {parts.back()};
+    std::vector<std::string> fullpath;
 
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(FindType(classParts, nextClassPart, pThread, nullptr, nullptr, &pModule));
 
+    bool trim = false;
     while (!classParts.empty())
     {
         ToRelease<ICorDebugType> pType;
         nextClassPart = 0;
-        if (FAILED(FindType(classParts, nextClassPart, pThread, pModule, &pType)))  // NOLINT(clang-analyzer-cplusplus.Move)
+        if (trim)
+            classParts.pop_back();
+
+        fullpath = classParts;
+        for (int i = 0; i < partsNum; i++)
+            fullpath.push_back(parts[i]);
+
+        if (FAILED(FindType(fullpath, nextClassPart, pThread, pModule, &pType)))  // NOLINT(clang-analyzer-cplusplus.Move)
             break;
+
+        if(nextClassPart < (int)fullpath.size())
+        {
+            // try to check non-static fields inside a static member
+            std::vector<std::string> staticName;
+            for (int i = nextClassPart; i < (int)fullpath.size(); i++)
+            {
+                staticName.push_back(fullpath[i]);
+            }
+            staticName.push_back(fieldName[0]);
+            ToRelease<ICorDebugValue> pTypeObject;
+            if (S_OK == CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject))
+            {
+                if (SUCCEEDED(FollowFields(pThread, pILFrame, pTypeObject, ValueIsClass, staticName, 0, ppResult, evalFlags)))
+                    return S_OK;
+            }
+            trim = true;
+            continue;
+        }
 
         ToRelease<ICorDebugValue> pTypeObject;
         IfFailRet(CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject));
         if (Status == S_OK && // type have static members (S_FALSE if type don't have static members)
-            SUCCEEDED(FollowFields(pThread, pILFrame, pTypeObject, ValueIsClass, parts, 0, ppResult, evalFlags)))
+            SUCCEEDED(FollowFields(pThread, pILFrame, pTypeObject, ValueIsClass, fieldName, 0, ppResult, evalFlags)))
             return S_OK;
 
-        // FIXME care about all nested cases
-
-        classParts.pop_back();
+        trim = true;
     }
 
     return E_FAIL;
