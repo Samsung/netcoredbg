@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestRunner", "TestRunner\Te
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MIExampleTest", "MIExampleTest\MIExampleTest.csproj", "{F2A7FC35-7ACE-4C93-A191-4579E0E7B9D1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestVarObject", "MITestVarObject\MITestVarObject.csproj", "{642748E3-092B-4851-92CD-C003BFCD38D0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestEvaluate", "MITestEvaluate\MITestEvaluate.csproj", "{642748E3-092B-4851-92CD-C003BFCD38D0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestBreakpoint", "MITestBreakpoint\MITestBreakpoint.csproj", "{A4B20BF0-5498-4071-8D31-2E76D7289D96}"
 EndProject
@@ -17,7 +17,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestStepping", "MITestSte
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestExpression", "MITestExpression\MITestExpression.csproj", "{AAB544A5-6B14-4F24-937B-6A3AA57CD946}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestSetValue", "MITestSetValue\MITestSetValue.csproj", "{5A0E3736-322F-422C-A642-30098BF5E6AA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestVariables", "MITestVariables\MITestVariables.csproj", "{5A0E3736-322F-422C-A642-30098BF5E6AA}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestException", "MITestException\MITestException.csproj", "{6B89916D-7B57-40FF-802F-90629B9F8F5D}"
 EndProject

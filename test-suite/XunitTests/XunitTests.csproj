@@ -21,8 +21,8 @@
     <ProjectReference Include="..\MITestException\MITestException.csproj" />
     <ProjectReference Include="..\MITestExpression\MITestExpression.csproj" />
     <ProjectReference Include="..\MITestLambda\MITestLambda.csproj" />
-    <ProjectReference Include="..\MITestSetValue\MITestSetValue.csproj" />
-    <ProjectReference Include="..\MITestVarObject\MITestVarObject.csproj" />
+    <ProjectReference Include="..\MITestVariables\MITestVariables.csproj" />
+    <ProjectReference Include="..\MITestEvaluate\MITestEvaluate.csproj" />
     <ProjectReference Include="..\MITestBreakpoint\MITestBreakpoint.csproj" />
     <ProjectReference Include="..\MITestEnv\MITestEnv.csproj" />
     <ProjectReference Include="..\MITestGDB\MITestGDB.csproj" />

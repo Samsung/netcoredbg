@@ -57,7 +57,7 @@ namespace NetcoreDbgTest.Script
         }
 
         public void GetAndCheckChildValue(string caller_trace, string ExpectedResult, string variable,
-                                                 int childIndex, bool setEvalFlags, enum_EVALFLAGS evalFlags)
+                                          int childIndex, bool setEvalFlags, enum_EVALFLAGS evalFlags)
         {
             var res = MIDebugger.Request("-var-create - * " +
                                          "\"" + variable + "\"" +
@@ -214,7 +214,7 @@ namespace NetcoreDbgTest.Script
     }
 }
 
-namespace MITestSetValue
+namespace MITestVariables
 {
     public struct TestStruct1
     {
