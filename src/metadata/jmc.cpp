@@ -22,74 +22,74 @@ static const char *g_stepThrough = "System.Diagnostics.DebuggerStepThroughAttrib
 // TODO: DebuggerStepThroughAttribute also affects breakpoints when JMC is enabled
 
 // From ECMA-335
-static const std::unordered_set<std::string> g_operatorMethodNames
+static const std::unordered_set<WSTRING> g_operatorMethodNames
 {
 // Unary operators
-    "op_Decrement",                    // --
-    "op_Increment",                    // ++
-    "op_UnaryNegation",                // - (unary)
-    "op_UnaryPlus",                    // + (unary)
-    "op_LogicalNot",                   // !
-    "op_True",                         // Not defined
-    "op_False",                        // Not defined
-    "op_AddressOf",                    // & (unary)
-    "op_OnesComplement",               // ~
-    "op_PointerDereference",           // * (unary)
+    W("op_Decrement"),                    // --
+    W("op_Increment"),                    // ++
+    W("op_UnaryNegation"),                // - (unary)
+    W("op_UnaryPlus"),                    // + (unary)
+    W("op_LogicalNot"),                   // !
+    W("op_True"),                         // Not defined
+    W("op_False"),                        // Not defined
+    W("op_AddressOf"),                    // & (unary)
+    W("op_OnesComplement"),               // ~
+    W("op_PointerDereference"),           // * (unary)
 // Binary operators
-    "op_Addition",                     // + (binary)
-    "op_Subtraction",                  // - (binary)
-    "op_Multiply",                     // * (binary)
-    "op_Division",                     // /
-    "op_Modulus",                      // %
-    "op_ExclusiveOr",                  // ^
-    "op_BitwiseAnd",                   // & (binary)
-    "op_BitwiseOr",                    // |
-    "op_LogicalAnd",                   // &&
-    "op_LogicalOr",                    // ||
-    "op_Assign",                       // Not defined (= is not the same)
-    "op_LeftShift",                    // <<
-    "op_RightShift",                   // >>
-    "op_SignedRightShift",             // Not defined
-    "op_UnsignedRightShift",           // Not defined
-    "op_Equality",                     // ==
-    "op_GreaterThan",                  // >
-    "op_LessThan",                     // <
-    "op_Inequality",                   // !=
-    "op_GreaterThanOrEqual",           // >=
-    "op_LessThanOrEqual",              // <=
-    "op_UnsignedRightShiftAssignment", // Not defined
-    "op_MemberSelection",              // ->
-    "op_RightShiftAssignment",         // >>=
-    "op_MultiplicationAssignment",     // *=
-    "op_PointerToMemberSelection",     // ->*
-    "op_SubtractionAssignment",        // -=
-    "op_ExclusiveOrAssignment",        // ^=
-    "op_LeftShiftAssignment",          // <<=
-    "op_ModulusAssignment",            // %=
-    "op_AdditionAssignment",           // +=
-    "op_BitwiseAndAssignment",         // &=
-    "op_BitwiseOrAssignment",          // |=
-    "op_Comma",                        // ,
-    "op_DivisionAssignment"            // /=
+    W("op_Addition"),                     // + (binary)
+    W("op_Subtraction"),                  // - (binary)
+    W("op_Multiply"),                     // * (binary)
+    W("op_Division"),                     // /
+    W("op_Modulus"),                      // %
+    W("op_ExclusiveOr"),                  // ^
+    W("op_BitwiseAnd"),                   // & (binary)
+    W("op_BitwiseOr"),                    // |
+    W("op_LogicalAnd"),                   // &&
+    W("op_LogicalOr"),                    // ||
+    W("op_Assign"),                       // Not defined (= is not the same)
+    W("op_LeftShift"),                    // <<
+    W("op_RightShift"),                   // >>
+    W("op_SignedRightShift"),             // Not defined
+    W("op_UnsignedRightShift"),           // Not defined
+    W("op_Equality"),                     // ==
+    W("op_GreaterThan"),                  // >
+    W("op_LessThan"),                     // <
+    W("op_Inequality"),                   // !=
+    W("op_GreaterThanOrEqual"),           // >=
+    W("op_LessThanOrEqual"),              // <=
+    W("op_UnsignedRightShiftAssignment"), // Not defined
+    W("op_MemberSelection"),              // ->
+    W("op_RightShiftAssignment"),         // >>=
+    W("op_MultiplicationAssignment"),     // *=
+    W("op_PointerToMemberSelection"),     // ->*
+    W("op_SubtractionAssignment"),        // -=
+    W("op_ExclusiveOrAssignment"),        // ^=
+    W("op_LeftShiftAssignment"),          // <<=
+    W("op_ModulusAssignment"),            // %=
+    W("op_AdditionAssignment"),           // +=
+    W("op_BitwiseAndAssignment"),         // &=
+    W("op_BitwiseOrAssignment"),          // |=
+    W("op_Comma"),                        // ,
+    W("op_DivisionAssignment")            // /=
 };
 
-static bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const std::string &attrName)
+static bool HasAttributes(IMetaDataImport *pMD, mdToken tok, bool checkNonUserCode = true, bool checkStepThrough = true)
 {
     bool found = false;
-
     ULONG numAttributes = 0;
     HCORENUM fEnum = NULL;
     mdCustomAttribute attr;
     while(SUCCEEDED(pMD->EnumCustomAttributes(&fEnum, tok, 0, &attr, 1, &numAttributes)) && numAttributes != 0)
     {
+        std::string mdName;
         mdToken ptkObj = mdTokenNil;
         mdToken ptkType = mdTokenNil;
-        pMD->GetCustomAttributeProps(attr, &ptkObj, &ptkType, nullptr, nullptr);
+        if (FAILED(pMD->GetCustomAttributeProps(attr, &ptkObj, &ptkType, nullptr, nullptr)) ||
+            FAILED(TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr)))
+            continue;
 
-        std::string mdName;
-        TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr);
-
-        if (mdName == attrName)
+        if ((checkNonUserCode && mdName == g_nonUserCode) || 
+            (checkStepThrough && mdName == g_stepThrough))
         {
             found = true;
             break;
@@ -100,14 +100,17 @@ static bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const std::string &a
     return found;
 }
 
+static bool HasNonUserCodeAttribute(IMetaDataImport *pMD, mdToken tok)
+{
+    return HasAttributes(pMD, tok, true, false);
+}
+
 static HRESULT GetNonJMCMethodsForTypeDef(
     IMetaDataImport *pMD,
     PVOID pSymbolReaderHandle,
     mdTypeDef typeDef,
     std::vector<mdToken> &excludeMethods)
 {
-    HRESULT Status;
-
     ULONG numMethods = 0;
     HCORENUM fEnum = NULL;
     mdMethodDef methodDef;
@@ -117,16 +120,13 @@ static HRESULT GetNonJMCMethodsForTypeDef(
         ULONG nameLen;
         WCHAR szFunctionName[mdNameLen] = {0};
 
-        Status = pMD->GetMethodProps(methodDef, &memTypeDef,
-                                     szFunctionName, _countof(szFunctionName), &nameLen,
-                                     nullptr, nullptr, nullptr, nullptr, nullptr);
-
-        if (FAILED(Status))
+        if (FAILED(pMD->GetMethodProps(methodDef, &memTypeDef,
+                                       szFunctionName, _countof(szFunctionName), &nameLen,
+                                       nullptr, nullptr, nullptr, nullptr, nullptr)))
             continue;
 
-        if ((g_operatorMethodNames.find(to_utf8(szFunctionName)) != g_operatorMethodNames.end())
-            || HasAttribute(pMD, methodDef, g_nonUserCode)
-            || HasAttribute(pMD, methodDef, g_stepThrough)
+        if (g_operatorMethodNames.find(szFunctionName) != g_operatorMethodNames.end()
+            || HasAttributes(pMD, methodDef)
             || !Interop::HasSourceLocation(pSymbolReaderHandle, methodDef))
         {
             excludeMethods.push_back(methodDef);
@@ -169,7 +169,7 @@ static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, PVOID pSymbo
     mdTypeDef typeDef;
     while(SUCCEEDED(pMD->EnumTypeDefs(&fEnum, &typeDef, 1, &numTypedefs)) && numTypedefs != 0)
     {
-        if (HasAttribute(pMD, typeDef, g_nonUserCode))
+        if (HasNonUserCodeAttribute(pMD, typeDef))
             excludeTokens.push_back(typeDef);
         else
             GetNonJMCMethodsForTypeDef(pMD, pSymbolReaderHandle, typeDef, excludeTokens);
@@ -192,9 +192,8 @@ HRESULT Modules::DisableJMCByExceptionList(ICorDebugModule *pModule, PVOID pSymb
         {
             ToRelease<ICorDebugFunction> pFunction;
             ToRelease<ICorDebugFunction2> pFunction2;
-            if (FAILED(pModule->GetFunctionFromToken(token, &pFunction)))
-                continue;
-            if (FAILED(pFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID *)&pFunction2)))
+            if (FAILED(pModule->GetFunctionFromToken(token, &pFunction)) ||
+                FAILED(pFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID *)&pFunction2)))
                 continue;
 
             pFunction2->SetJMCStatus(FALSE);
@@ -203,9 +202,8 @@ HRESULT Modules::DisableJMCByExceptionList(ICorDebugModule *pModule, PVOID pSymb
         {
             ToRelease<ICorDebugClass> pClass;
             ToRelease<ICorDebugClass2> pClass2;
-            if (FAILED(pModule->GetClassFromToken(token, &pClass)))
-                continue;
-            if (FAILED(pClass->QueryInterface(IID_ICorDebugClass2, (LPVOID *)&pClass2)))
+            if (FAILED(pModule->GetClassFromToken(token, &pClass)) ||
+                FAILED(pClass->QueryInterface(IID_ICorDebugClass2, (LPVOID *)&pClass2)))
                 continue;
 
             pClass2->SetJMCStatus(FALSE);

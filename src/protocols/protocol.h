@@ -14,7 +14,6 @@
 #include <new>
 #include "filesystem.h"
 #include "utility.h"
-#include "string_view.h"
 
 #ifdef FEATURE_PAL
 #include "pal_mstypes.h"
@@ -22,8 +21,6 @@
 
 namespace netcoredbg
 {
-
-using Utility::string_view;
 
 // Types commonly used in the debugger:
 
@@ -137,7 +134,7 @@ struct Source
     std::string name;
     std::string path;
 
-    Source(string_view path = {});
+    Source(const std::string &path = {});
     bool IsNull() const { return name.empty() && path.empty(); }
 };
 

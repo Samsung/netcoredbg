@@ -404,10 +404,10 @@ std::string Modules::GetModuleFileName(ICorDebugModule *pModule)
     return ss.str();
 }
 
-string_view Modules::GetFileName(string_view path)
+std::string Modules::GetFileName(const std::string &path)
 {
-    size_t i = path.find_last_of("/\\");
-    return i == string_view::npos ? path : path.substr(i + 1);
+    std::size_t i = path.find_last_of("/\\");
+    return i == std::string::npos ? path : path.substr(i + 1);
 }
 
 HRESULT Modules::IsModuleHaveSameName(ICorDebugModule *pModule, const std::string &Name, bool isFullPath)

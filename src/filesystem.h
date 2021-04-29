@@ -40,10 +40,7 @@ namespace netcoredbg
     std::string GetExeAbsPath();
 
     /// Function returns only file name part of the full path.
-    string_view GetBasename(string_view path);
-
-    /// Function returns directory in which resides file or directory specified as an argument.
-    string_view GetDirname(string_view path);
+    std::string GetBasename(const std::string &path);
 
     /// Function changes current working directory. Return value is `false` in case of error.
     bool SetWorkDir(const std::string &path);
@@ -56,7 +53,7 @@ namespace netcoredbg
     /// Function checks, if given path contains directory names (strictly speaking,
     /// contains path separator) or consists only of a file name. Return value is `true`
     /// if argument is not the file name, but the path which includes directory names.
-    bool IsFullPath(string_view path);
+    bool IsFullPath(const std::string &path);
 
 }  // ::netcoredbg
 

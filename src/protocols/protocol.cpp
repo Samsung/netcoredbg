@@ -12,7 +12,7 @@
 #include "protocol.h"
 #include "utility.h"
 #include "utils/indexed_storage.h"
-#include "metadata/modules.h"  // need GetFileNAme()
+#include "metadata/modules.h"  // need GetFileName()
 
 namespace netcoredbg
 {
@@ -97,6 +97,6 @@ FrameLevel FrameId::getLevel() const noexcept
 }
 
 
-Source::Source(string_view path) : name(Modules::GetFileName(path)), path(path) {}
+Source::Source(const std::string &path) : name(Modules::GetFileName(path)), path(path) {}
 
 } // namespace netcoredbg

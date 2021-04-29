@@ -192,7 +192,7 @@ public:
     static std::string GetModuleFileName(ICorDebugModule *pModule);
 
     // This function strips directory path from file name.
-    static string_view GetFileName(string_view path);
+    static std::string GetFileName(const std::string &path);
 
     HRESULT ResolveBreakpoint(
         /*in*/ CORDB_ADDRESS modAddress,

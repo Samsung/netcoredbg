@@ -14,15 +14,9 @@ namespace netcoredbg
 // This functon load specified library and returns handle (which then
 // can be passed to DLSym and DLCLose functions).
 // In case of error function returns NULL.
-DLHandle DLOpen(string_view path)
+DLHandle DLOpen(const std::string &path)
 {
-    char str[MAX_PATH + 1];
-    if (path.size() >= sizeof(str))
-        return {};
-
-    path.copy(str, path.size());
-    str[path.size()] = 0;
-    return reinterpret_cast<DLHandle>(::LoadLibraryExA(str, NULL, 0));
+    return reinterpret_cast<DLHandle>(::LoadLibraryExA(path.c_str(), NULL, 0));
 }
 
 // This function resolves symbol address within library specified by handle,

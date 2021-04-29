@@ -3,9 +3,12 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
-#include "string_view.h"
 #include <string>
 #include <vector>
+
+#ifdef _MSC_VER
+#include <wtypes.h>
+#endif
 
 #pragma warning (disable:4068)  // Visual Studio should ignore GCC pragmas
 #pragma GCC diagnostic push
@@ -15,18 +18,16 @@
 
 namespace netcoredbg
 {
-using Utility::string_view;
 
-#ifdef _MSC_VER  // Visual Studio compiler
-std::string to_utf8(const wchar_t *wstr);
-std::wstring to_utf16(string_view utf8);
-
+#ifdef _MSC_VER
+typedef std::wstring WSTRING;
 #else
-std::string to_utf8(const char16_t *wstr);
-std::u16string to_utf16(string_view utf8);
+typedef std::u16string WSTRING;
 #endif
 
-std::string to_utf8(char16_t wch);
+std::string to_utf8(const WCHAR *wstr);
+WSTRING to_utf16(const std::string &utf8);
+std::string to_utf8(WCHAR wch);
 
 template <typename CharT, size_t Size>
 bool starts_with(const CharT *left, const CharT (&right)[Size])
