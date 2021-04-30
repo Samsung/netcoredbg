@@ -2,19 +2,18 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "iprotocol.h"
-
 #include <sstream>
 #include <algorithm>
 #include <iomanip>
-
-using std::string;
-using std::vector;
+#include "protocol_utils.h"
 
 namespace netcoredbg
 {
 
-int IProtocol::ParseInt(const std::string &s, bool &ok)
+namespace ProtocolUtils
+{
+
+int ParseInt(const std::string &s, bool &ok)
 {
     ok = false;
     try
@@ -33,7 +32,7 @@ int IProtocol::ParseInt(const std::string &s, bool &ok)
 }
 
 // Remove all --name value
-void IProtocol::StripArgs(std::vector<std::string> &args)
+void StripArgs(std::vector<std::string> &args)
 {
     auto it = args.begin();
 
@@ -46,7 +45,7 @@ void IProtocol::StripArgs(std::vector<std::string> &args)
     }
 }
 
-int IProtocol::GetIntArg(const std::vector<std::string> &args, const std::string& name, int defaultValue)
+int GetIntArg(const std::vector<std::string> &args, const std::string& name, int defaultValue)
 {
     auto it = std::find(args.begin(), args.end(), name);
 
@@ -59,17 +58,17 @@ int IProtocol::GetIntArg(const std::vector<std::string> &args, const std::string
         return defaultValue;
 
     bool ok;
-    int val = ParseInt(*it, ok);
+    int val = ProtocolUtils::ParseInt(*it, ok);
     return ok ? val : defaultValue;
 }
 
-bool IProtocol::GetIndices(const std::vector<std::string> &args, int &index1, int &index2)
+bool GetIndices(const std::vector<std::string> &args, int &index1, int &index2)
 {
     if (args.size() < 2)
         return false;
 
     bool ok;
-    int val1 = ParseInt(args.at(args.size() - 2), ok);
+    int val1 = ProtocolUtils::ParseInt(args.at(args.size() - 2), ok);
     if (!ok)
         return false;
     int val2 = ParseInt(args.at(args.size() - 1), ok);
@@ -80,7 +79,7 @@ bool IProtocol::GetIndices(const std::vector<std::string> &args, int &index1, in
     return true;
 }
 
-BreakType IProtocol::GetBreakpointType(const std::vector<std::string> &args)
+BreakType GetBreakpointType(const std::vector<std::string> &args)
 {
     unsigned ncnt = 0;
 
@@ -118,7 +117,7 @@ BreakType IProtocol::GetBreakpointType(const std::vector<std::string> &args)
     return BreakType::Error;
 }
 
-std::string IProtocol::GetConditionPrepareArgs(std::vector<std::string> &args)
+std::string GetConditionPrepareArgs(std::vector<std::string> &args)
 {
     std::string condition("");
 
@@ -134,7 +133,7 @@ std::string IProtocol::GetConditionPrepareArgs(std::vector<std::string> &args)
     return condition;
 }
 
-bool IProtocol::ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb)
+bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb)
 {
     bool ok;
 
@@ -143,12 +142,12 @@ bool IProtocol::ParseBreakpoint(std::vector<std::string> &args, struct LineBreak
     std::size_t i = args.at(0).rfind(':');
 
     lb.filename = args.at(0).substr(0, i);
-    lb.linenum = ParseInt(args.at(0).substr(i + 1), ok);
+    lb.linenum = ProtocolUtils::ParseInt(args.at(0).substr(i + 1), ok);
 
     return ok && lb.linenum > 0;
 }
 
-bool IProtocol::ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
+bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
 {
     fb.condition = GetConditionPrepareArgs(args);
     std::string prepString("");
@@ -189,81 +188,13 @@ bool IProtocol::ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak
     return true;
 }
 
-std::string IProtocol::AddrToString(uint64_t addr)
+std::string AddrToString(uint64_t addr)
 {
     std::ostringstream ss;
     ss << "0x" << std::setw(2 * sizeof(void*)) << std::setfill('0') << std::hex << addr;
     return ss.str();
 }
 
-class Tokenizer
-{
-    std::string m_str;
-    std::string m_delimiters;
-    size_t m_next;
-public:
-
-    Tokenizer(const std::string &str, const std::string &delimiters = " \t\n\r")
-        : m_str(str), m_delimiters(delimiters), m_next(0)
-    {
-        m_str.erase(m_str.find_last_not_of(m_delimiters) + 1);
-    }
-
-    bool Next(std::string &token)
-    {
-        token = "";
-
-        if (m_next >= m_str.size())
-            return false;
-
-        enum {
-            StateSpace,
-            StateToken,
-            StateQuotedToken,
-            StateEscape
-        } state = StateSpace;
-
-        for (; m_next < m_str.size(); m_next++)
-        {
-            char c = m_str.at(m_next);
-            switch(state)
-            {
-                case StateSpace:
-                    if (m_delimiters.find(c) != std::string::npos)
-                        continue;
-                    if (!token.empty())
-                        return true;
-                    state = c == '"' ? StateQuotedToken : StateToken;
-                    if (state != StateQuotedToken)
-                        token +=c;
-                    break;
-                case StateToken:
-                    if (m_delimiters.find(c) != std::string::npos)
-                        state = StateSpace;
-                    else
-                        token += c;
-                    break;
-                case StateQuotedToken:
-                    if (c == '\\')
-                        state = StateEscape;
-                    else if (c == '"')
-                        state = StateSpace;
-                    else
-                        token += c;
-                    break;
-                case StateEscape:
-                    token += c;
-                    state = StateQuotedToken;
-                    break;
-            }
-        }
-        return state != StateEscape || token.empty();
-    }
-
-    std::string Remain() const
-    {
-        return m_str.substr(m_next);
-    }
-};
+} // namespace ProtocolUtils
 
 } // namespace netcoredbg

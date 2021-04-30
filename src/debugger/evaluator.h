@@ -4,29 +4,34 @@
 
 #pragma once
 
+#include "cor.h"
+#include "cordebug.h"
+
+#include <list>
 #include <future>
 #include <unordered_set>
-
-#include "debugger/manageddebugger.h"
+#include "protocols/protocol.h"
+#include "torelease.h"
 
 namespace netcoredbg
 {
 
-enum ValueKind
-{
-    ValueIsScope,
-    ValueIsClass,
-    ValueIsVariable
-};
+class Modules;
 
 class Evaluator
 {
 public:
-
     typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
     typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
-    Modules &m_modules;
+    enum ValueKind
+    {
+        ValueIsScope,
+        ValueIsClass,
+        ValueIsVariable
+    };
+
+    std::shared_ptr<Modules> m_sharedModules;
 
     std::mutex m_evalQueueMutex;
     std::list<ThreadId> m_evalQueue;
@@ -164,7 +169,7 @@ private:
 
 public:
 
-    Evaluator(Modules &modules) : m_modules(modules) {}
+    Evaluator(std::shared_ptr<Modules> &sharedModules) : m_sharedModules(sharedModules) {}
 
     HRESULT CreatTypeObjectStaticConstructor(
         ICorDebugThread *pThread,

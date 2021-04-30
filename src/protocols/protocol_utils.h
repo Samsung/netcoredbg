@@ -7,8 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "debugger/debugger.h"
-
 namespace netcoredbg
 {
 
@@ -34,12 +32,8 @@ struct FuncBreak
     std::string condition;
 };
 
-class IProtocol : public Protocol
+namespace ProtocolUtils
 {
-public:
-    IProtocol(std::istream& input, std::ostream& output) : Protocol(input, output) {}
-
-protected:
     int ParseInt(const std::string &s, bool &ok);
     void StripArgs(std::vector<std::string> &args);
     int GetIntArg(const std::vector<std::string> &args, const std::string& name, int defaultValue);
@@ -48,7 +42,8 @@ protected:
     std::string GetConditionPrepareArgs(std::vector<std::string> &args);
     bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb);
     bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb);
-    static std::string AddrToString(uint64_t addr);
-};
+    std::string AddrToString(uint64_t addr);
+
+} // namespace ProtocolUtils
 
 } // namespace netcoredbg

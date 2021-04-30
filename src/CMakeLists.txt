@@ -95,7 +95,7 @@ set(netcoredbg_SRC
     metadata/modules.cpp
     metadata/typeprinter.cpp
     protocols/cliprotocol.cpp
-    protocols/iprotocol.cpp
+    protocols/protocol_utils.cpp
     protocols/miprotocol.cpp
     protocols/protocol.cpp
     protocols/tokenizer.cpp

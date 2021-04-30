@@ -13,7 +13,7 @@
 #include "json/json.hpp"
 #pragma GCC diagnostic pop
 
-#include "debugger/debugger.h"
+#include "interfaces/iprotocol.h"
 
 namespace netcoredbg
 {
@@ -28,7 +28,7 @@ namespace VSCodeExceptionBreakModeKeyWord
     static const std::string UNHANDLED = "unhandled";
 }
 
-class VSCodeProtocol : public Protocol
+class VSCodeProtocol : public IProtocol
 {
     static const std::string TWO_CRLF;
     static const std::string CONTENT_LENGTH;
@@ -59,7 +59,7 @@ class VSCodeProtocol : public Protocol
 
 public:
 
-    VSCodeProtocol(std::istream& input, std::ostream& output) : Protocol(input, output), m_engineLogOutput(LogNone), m_seqCounter(1) {}
+    VSCodeProtocol(std::istream& input, std::ostream& output) : IProtocol(input, output), m_engineLogOutput(LogNone), m_seqCounter(1) {}
     void EngineLogging(const std::string &path);
     void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) override
     {

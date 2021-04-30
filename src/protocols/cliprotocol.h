@@ -13,10 +13,9 @@
 #include <memory>
 #include <atomic>
 
+#include "interfaces/iprotocol.h"
 #include "string_view.h"
 #include "streams.h"
-#include "debugger/debugger.h"
-#include "iprotocol.h"
 #include "string_view.h"
 #include "span.h"
 
@@ -170,7 +169,7 @@ private:
 
     HRESULT StepCommand(const std::vector<std::string> &args,
                         std::string &output,
-                        Debugger::StepType stepType);
+                        IDebugger::StepType stepType);
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
     HRESULT SetBreakpoint(const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);

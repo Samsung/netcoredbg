@@ -4,20 +4,23 @@
 
 #pragma once
 
+#include "cor.h"
+#include "cordebug.h"
+
 #include <cstdint>
 #include <string>
 #include <list>
 #include <functional>
-#include "string_view.h"
-#include "metadata/modules.h"
-#include "debugger/debugger.h"
-#include "protocols/protocol.h"
+#include <mutex>
+#include <memory>
+#include "interfaces/idebugger.h"
 #include "debugger/exceptionbreakpointstorage.h"
+#include "torelease.h"
 
 namespace netcoredbg
 {
 
-using Utility::string_view;
+class Modules;
 
 class Breakpoints
 {
@@ -101,7 +104,7 @@ class Breakpoints
         ~SourceBreakpointMapping() = default;
     };
 
-    Modules &m_modules;
+    std::shared_ptr<Modules> m_sharedModules;
     uint32_t m_nextBreakpointId;
     std::mutex m_breakpointsMutex;
     std::unordered_map<std::string, std::unordered_map<int, std::list<ManagedBreakpoint> > > m_srcResolvedBreakpoints;
@@ -124,16 +127,17 @@ class Breakpoints
     bool HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
 
     template <typename BreakpointType>
-    HRESULT HandleEnabled(BreakpointType &bp, Debugger *debugger, ICorDebugThread *pThread, Breakpoint &breakpoint);
+    HRESULT HandleEnabled(BreakpointType &bp, IDebugger *debugger, ICorDebugThread *pThread, Breakpoint &breakpoint);
 
     HRESULT HitManagedBreakpoint(
-        Debugger *debugger,
+        IDebugger *debugger,
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         mdMethodDef methodToken,
         Breakpoint &breakpoint);
 
-    HRESULT HitManagedFunctionBreakpoint(Debugger *debugger,
+    HRESULT HitManagedFunctionBreakpoint(
+        IDebugger *debugger,
         ICorDebugThread *pThread,
         ICorDebugFrame *pFrame,
         ICorDebugBreakpoint *pBreakpoint,
@@ -141,11 +145,11 @@ class Breakpoints
         Breakpoint &breakpoint);
 
 public:
-    Breakpoints(Modules &modules) :
-        m_modules(modules), m_nextBreakpointId(1), m_stopAtEntry(false), m_entryPoint(mdMethodDefNil) {}
+    Breakpoints(std::shared_ptr<Modules> &sharedModules) :
+        m_sharedModules(sharedModules), m_nextBreakpointId(1), m_stopAtEntry(false), m_entryPoint(mdMethodDefNil) {}
 
     HRESULT HitBreakpoint(
-        Debugger *debugger,
+        IDebugger *debugger,
         ICorDebugThread *pThread,
         ICorDebugBreakpoint *pBreakpoint,
         Breakpoint &breakpoint,
@@ -175,7 +179,7 @@ public:
     // This function allows to enumerate breakpoints (sorted by number).
     // Callback which is called for each breakpoint might return `false` to stop iteration
     // over breakpoints list.
-    void EnumerateBreakpoints(std::function<bool (const Debugger::BreakpointInfo&)>&& callback);
+    void EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback);
 
     HRESULT BreakpointActivate(uint32_t id, bool act);
     HRESULT AllBreakpointsActivate(bool act);

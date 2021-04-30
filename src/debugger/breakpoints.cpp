@@ -9,6 +9,7 @@
 #include <fstream>
 #include <algorithm>
 #include <iterator>
+#include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "utils/logger.h"
 #include "utils/utf.h"
@@ -94,7 +95,7 @@ void Breakpoints::ManagedFunctionBreakpoint::ToBreakpoint(Breakpoint &breakpoint
 }
 
 template <typename BreakpointType>
-HRESULT Breakpoints::HandleEnabled(BreakpointType &bp, Debugger *debugger, ICorDebugThread *pThread, Breakpoint &breakpoint)
+HRESULT Breakpoints::HandleEnabled(BreakpointType &bp, IDebugger *debugger, ICorDebugThread *pThread, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
@@ -117,7 +118,7 @@ HRESULT Breakpoints::HandleEnabled(BreakpointType &bp, Debugger *debugger, ICorD
     return S_OK;
 }
 
-HRESULT Breakpoints::HitManagedBreakpoint(Debugger *debugger,
+HRESULT Breakpoints::HitManagedBreakpoint(IDebugger *debugger,
                                           ICorDebugThread *pThread,
                                           ICorDebugFrame *pFrame,
                                           mdMethodDef methodToken,
@@ -127,7 +128,7 @@ HRESULT Breakpoints::HitManagedBreakpoint(Debugger *debugger,
     Modules::SequencePoint sp;
     HRESULT Status;
 
-    IfFailRet(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
+    IfFailRet(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
 
     auto breakpoints = m_srcResolvedBreakpoints.find(sp.document);
     if (breakpoints == m_srcResolvedBreakpoints.end())
@@ -155,7 +156,7 @@ HRESULT Breakpoints::HitManagedBreakpoint(Debugger *debugger,
     return E_FAIL;
 }
 
-HRESULT Breakpoints::HitManagedFunctionBreakpoint(Debugger *debugger,
+HRESULT Breakpoints::HitManagedFunctionBreakpoint(IDebugger *debugger,
                                                   ICorDebugThread *pThread,
                                                   ICorDebugFrame *pFrame,
                                                   ICorDebugBreakpoint *pBreakpoint,
@@ -219,7 +220,7 @@ HRESULT Breakpoints::HitManagedFunctionBreakpoint(Debugger *debugger,
     return E_FAIL;
 }
 
-HRESULT Breakpoints::HitBreakpoint(Debugger *debugger,
+HRESULT Breakpoints::HitBreakpoint(IDebugger *debugger,
                                    ICorDebugThread *pThread,
                                    ICorDebugBreakpoint *pBreakpoint,
                                    Breakpoint &breakpoint,
@@ -291,7 +292,7 @@ HRESULT Breakpoints::ResolveBreakpoint(ICorDebugModule *pModule, ManagedBreakpoi
     std::string fullname = bp.fullname;
     std::vector<Modules::resolved_bp_t> resolvedPoints;
 
-    IfFailRet(m_modules.ResolveBreakpoint(modAddress, fullname, bp.linenum, resolvedPoints));
+    IfFailRet(m_sharedModules->ResolveBreakpoint(modAddress, fullname, bp.linenum, resolvedPoints));
     if (resolvedPoints.size() == 0)
         return E_FAIL;
 
@@ -435,8 +436,8 @@ HRESULT Breakpoints::EnableOneICorBreakpointForLine(std::list<ManagedBreakpoint>
 // [in] mdMainClass - class token with Main method in module pModule;
 // [out] entryPointToken - corrected method token;
 // [out] entryPointOffset - corrected IL offset on first user code line.
-static HRESULT TrySetupAsyncEntryBreakpoint(ICorDebugModule *pModule, IMetaDataImport *pMD, Modules &modules, mdTypeDef mdMainClass,
-                                            mdMethodDef &entryPointToken, ULONG32 &entryPointOffset)
+static HRESULT TrySetupAsyncEntryBreakpoint(ICorDebugModule *pModule, IMetaDataImport *pMD, std::shared_ptr<Modules> &sharedModules,
+                                            mdTypeDef mdMainClass, mdMethodDef &entryPointToken, ULONG32 &entryPointOffset)
 {
     // In case of async method, compiler use `Namespace.ClassName.<Main>()` as entry method, that call
     // `Namespace.ClassName.Main()`, that create `Namespace.ClassName.<Main>d__0` and start state machine routine.
@@ -493,7 +494,7 @@ static HRESULT TrySetupAsyncEntryBreakpoint(ICorDebugModule *pModule, IMetaDataI
 
     // Note, in case of async `MoveNext` method, user code don't start from 0 IL offset.
     Modules::SequencePoint sequencePoint;
-    IfFailRet(modules.GetNextSequencePointInMethod(pModule, resultToken, 0, sequencePoint));
+    IfFailRet(sharedModules->GetNextSequencePointInMethod(pModule, resultToken, 0, sequencePoint));
 
     entryPointToken = resultToken;
     entryPointOffset = sequencePoint.offset;
@@ -530,9 +531,9 @@ HRESULT Breakpoints::TrySetupEntryBreakpoint(ICorDebugModule *pModule)
         // In case of async method as entry method, GetEntryPointTokenFromFile() should return compiler's generated method `<Main>`, plus,
         // this should be method without user code.
         str_equal(funcName, W("<Main>")) &&
-        FAILED(m_modules.GetNextSequencePointInMethod(pModule, entryPointToken, 0, sequencePoint)))
+        FAILED(m_sharedModules->GetNextSequencePointInMethod(pModule, entryPointToken, 0, sequencePoint)))
     {
-        TrySetupAsyncEntryBreakpoint(pModule, pMD, m_modules, mdMainClass, entryPointToken, entryPointOffset);
+        TrySetupAsyncEntryBreakpoint(pModule, pMD, m_sharedModules, mdMainClass, entryPointToken, entryPointOffset);
     }
 
     ToRelease<ICorDebugFunction> pFunction;
@@ -786,7 +787,7 @@ HRESULT Breakpoints::SetBreakpoints(
 //
 class Breakpoints::AnyBPReference
 {
-    using BreakpointInfo = Debugger::BreakpointInfo;
+    using BreakpointInfo = IDebugger::BreakpointInfo;
     using Key = const std::string *;
 
     const void *ptr;  // pointer to class which store breakpoint info
@@ -833,7 +834,7 @@ public:
 };
 
 
-void Breakpoints::EnumerateBreakpoints(std::function<bool (const Debugger::BreakpointInfo&)>&& callback)
+void Breakpoints::EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback)
 {
     // create (empty) list of references to all three types of input data, reserve memory
     std::vector<AnyBPReference> list;
@@ -876,7 +877,7 @@ HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
 {
     HRESULT Status;
 
-    IfFailRet(m_modules.ResolveFunctionInAny(fbp.module, fbp.name, [&](
+    IfFailRet(m_sharedModules->ResolveFunctionInAny(fbp.module, fbp.name, [&](
         ICorDebugModule *pModule,
         mdMethodDef &methodToken) -> HRESULT
     {
@@ -903,7 +904,7 @@ HRESULT Breakpoints::ResolveFunctionBreakpointInModule(ICorDebugModule *pModule,
 {
     HRESULT Status;
 
-    IfFailRet(m_modules.ResolveFunctionInModule(
+    IfFailRet(m_sharedModules->ResolveFunctionInModule(
         pModule,
         fbp.module,
         fbp.name,

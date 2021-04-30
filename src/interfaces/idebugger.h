@@ -4,11 +4,11 @@
 
 #pragma once
 
-#include <iostream>
 #include <string>
 #include <vector>
 #include <functional>
 #include <map>
+#include <memory>
 #include "string_view.h"
 #include "streams.h"
 
@@ -25,12 +25,13 @@ namespace netcoredbg
 {
 using Utility::string_view;
 
-using Utility::string_view;
+class IProtocol;
 
-class Debugger
+class IDebugger
 {
 public:
-    enum StepType {
+    enum StepType
+    {
         STEP_IN = 0,
         STEP_OVER,
         STEP_OUT
@@ -43,21 +44,21 @@ public:
         DisconnectDetach
     };
 
-    virtual ~Debugger() {}
+protected:
+    std::shared_ptr<IProtocol> m_sharedProtocol;
 
+public:
+    void SetProtocol(std::shared_ptr<IProtocol> &sharedProtocol)  { m_sharedProtocol = sharedProtocol; }
+    virtual ~IDebugger() {}
     virtual bool IsJustMyCode() const = 0;
     virtual void SetJustMyCode(bool enable) = 0;
-
     virtual HRESULT Initialize() = 0;
     virtual HRESULT Attach(int pid) = 0;
     virtual HRESULT Launch(const std::string &fileExec, const std::vector<std::string> &execArgs, const std::map<std::string, std::string> &env,
         const std::string &cwd, bool stopAtEntry = false) = 0;
     virtual HRESULT ConfigurationDone() = 0;
-
     virtual HRESULT Disconnect(DisconnectAction action = DisconnectDefault) = 0;
-
     virtual ThreadId GetLastStoppedThreadId() = 0;
-
     virtual HRESULT Continue(ThreadId threadId) = 0;
     virtual HRESULT Pause() = 0;
     virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
@@ -76,12 +77,10 @@ public:
     virtual HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) = 0;
     virtual HRESULT DeleteExceptionBreakpoint(const uint32_t id) = 0;
     virtual HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string& names, uint32_t &id) = 0;
-
     typedef std::function<void(const char *)> SearchCallback;
     virtual void FindFileNames(string_view pattern, unsigned limit, SearchCallback) = 0;
     virtual void FindFunctions(string_view pattern, unsigned limit, SearchCallback) = 0;
     virtual void FindVariables(ThreadId, FrameLevel, string_view, unsigned limit, SearchCallback) = 0;
-
 
     // This is lightweight structure which carry breakpoint information.
     struct BreakpointInfo
@@ -109,38 +108,7 @@ public:
         Error,      // IO error
         Eof         // EOF reached
     };
-
-    virtual AsyncResult ProcessStdin(InStream &) { return AsyncResult::Eof; }
-};
-
-class Protocol
-{
-protected:
-    bool m_exit;
-    Debugger *m_debugger;
-
-    // File streams used to read commands and write responses.
-    std::istream& cin;
-    std::ostream& cout;
-
-public:
-    Protocol(std::istream& input, std::ostream& output) : m_exit(false), m_debugger(nullptr), cin(input), cout(output)  {}
-    void SetDebugger(Debugger *debugger) { m_debugger = debugger; }
-
-    virtual void EmitInitializedEvent() = 0;
-    virtual void EmitExecEvent(PID, const std::string& argv0) = 0;
-    virtual void EmitStoppedEvent(const StoppedEvent &event) = 0;
-    virtual void EmitExitedEvent(const ExitedEvent &event) = 0;
-    virtual void EmitTerminatedEvent() = 0;
-    virtual void EmitContinuedEvent(ThreadId threadId) = 0;
-    virtual void EmitThreadEvent(const ThreadEvent &event) = 0;
-    virtual void EmitModuleEvent(const ModuleEvent &event) = 0;
-    virtual void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") = 0;
-    virtual void EmitBreakpointEvent(const BreakpointEvent &event) = 0;
-    virtual void Cleanup() = 0;
-    virtual void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) = 0;
-    virtual void CommandLoop() = 0;
-    virtual ~Protocol() {}
+    virtual IDebugger::AsyncResult ProcessStdin(InStream &) { return IDebugger::AsyncResult::Eof; }
 };
 
 } // namespace netcoredbg

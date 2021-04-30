@@ -6,6 +6,7 @@
 
 #include <sstream>
 #include <vector>
+#include <map>
 #include <iomanip>
 #include <algorithm>
 
@@ -1193,35 +1194,6 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in,out*/ s
 
     return S_OK;
 }
-
-
-HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module)
-{
-    HRESULT Status;
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-    if (pFrame == nullptr)
-        return E_FAIL;
-
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*)&pMDImport));
-
-    WCHAR mdName[mdNameLen];
-    ULONG nameLen;
-    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
-    module = to_utf8(mdName);
-
-    return S_OK;
-}
-
 
 void Modules::FindFileNames(string_view pattern, unsigned limit, std::function<void(const char *)> cb)
 {

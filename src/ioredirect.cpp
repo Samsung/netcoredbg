@@ -8,6 +8,7 @@
 #include "limits.h"
 #include "streams.h"
 #include "ioredirect.h"
+#include "interfaces/idebugger.h"
 #include "utils/logger.h"
 #include "utils/rwlock.h"
 
@@ -340,7 +341,7 @@ void IORedirectHelper::async_cancel()
 
 
 
-Debugger::AsyncResult IORedirectHelper::async_input(InStream& in)
+IDebugger::AsyncResult IORedirectHelper::async_input(InStream& in)
 {
     if (m_eof)
         return AsyncResult::Eof;

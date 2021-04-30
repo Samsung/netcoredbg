@@ -3,8 +3,6 @@
 // See the LICENSE file in the project root for more information.
 
 #include <regex>
-#include "debugger/manageddebugger.h"
-
 #include <unordered_set>
 #include <vector>
 #include <cstring>
@@ -13,6 +11,8 @@
 
 #include "metadata/typeprinter.h"
 #include "valueprint.h"
+#include "debugger/variables.h"
+#include "debugger/evaluator.h"
 #include "debugger/frames.h"
 #include "managed/interop.h"
 #include "utils/logger.h"
@@ -29,7 +29,7 @@ static HRESULT WriteValue(
     ICorDebugValue *pValue,
     const std::string &value,
     ICorDebugThread *pThread,
-    Evaluator &evaluator,
+    std::shared_ptr<Evaluator> &sharedEvaluator,
     std::string &errorText)
 {
     HRESULT Status;
@@ -68,7 +68,7 @@ static HRESULT WriteValue(
         IfFailRet(Interop::ParseExpression(value, "System.String", data, errorText));
 
         ToRelease<ICorDebugValue> pNewString;
-        IfFailRet(evaluator.CreateString(pThread, data, &pNewString));
+        IfFailRet(sharedEvaluator->CreateString(pThread, data, &pNewString));
 
         // Switch object addresses
         ToRelease<ICorDebugReferenceValue> pRefNew;
@@ -124,7 +124,7 @@ void Variables::GetNumChild(
 
     int numStatic = 0;
     int numInstance = 0;
-    if (FAILED(m_evaluator.WalkMembers(pValue, nullptr, nullptr, [&numStatic, &numInstance](
+    if (FAILED(m_sharedEvaluator->WalkMembers(pValue, nullptr, nullptr, [&numStatic, &numInstance](
         mdMethodDef,
         ICorDebugModule *,
         ICorDebugType *,
@@ -197,7 +197,7 @@ HRESULT Variables::FetchFieldsAndProperties(
 
     int currentIndex = -1;
 
-    IfFailRet(m_evaluator.WalkMembers(pInputValue, pThread, pILFrame, [&](
+    IfFailRet(m_sharedEvaluator->WalkMembers(pInputValue, pThread, pILFrame, [&](
         mdMethodDef mdGetter,
         ICorDebugModule *pModule,
         ICorDebugType *pType,
@@ -230,9 +230,9 @@ HRESULT Variables::FetchFieldsAndProperties(
             if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
             {
                 if (is_static)
-                    m_evaluator.EvalFunction(pThread, pFunc, &pType, 1, nullptr, 0, &pResultValue, evalFlags);
+                    m_sharedEvaluator->EvalFunction(pThread, pFunc, &pType, 1, nullptr, 0, &pResultValue, evalFlags);
                 else
-                    m_evaluator.EvalFunction(pThread, pFunc, &pType, 1, &pInputValue, 1, &pResultValue, evalFlags);
+                    m_sharedEvaluator->EvalFunction(pThread, pFunc, &pType, 1, &pInputValue, 1, &pResultValue, evalFlags);
             }
         }
         else
@@ -316,6 +316,33 @@ HRESULT Variables::AddVariableReference(Variable &variable, FrameId frameId, ICo
     return S_OK;
 }
 
+static HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMDImport;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*)&pMDImport));
+
+    WCHAR mdName[mdNameLen];
+    ULONG nameLen;
+    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
+    module = to_utf8(mdName);
+
+    return S_OK;
+}
+
 HRESULT Variables::GetExceptionVariable(
     FrameId frameId,
     ICorDebugThread *pThread,
@@ -361,7 +388,7 @@ HRESULT Variables::GetStackVariables(
         ++currentIndex;
     }
 
-    IfFailRet(m_evaluator.WalkStackVars(pFrame, [&](
+    IfFailRet(m_sharedEvaluator->WalkStackVars(pFrame, [&](
         ICorDebugILFrame *pILFrame,
         ICorDebugValue *pValue,
         const std::string &name) -> HRESULT
@@ -407,7 +434,7 @@ HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::v
     if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
         namedVariables++;
 
-    IfFailRet(m_evaluator.WalkStackVars(pFrame, [&](
+    IfFailRet(m_sharedEvaluator->WalkStackVars(pFrame, [&](
         ICorDebugILFrame *pILFrame,
         ICorDebugValue *pValue,
         const std::string &name) -> HRESULT
@@ -502,7 +529,7 @@ HRESULT Variables::GetChildren(
             ToRelease<ICorDebugType> pType;
             IfFailRet(pValue2->GetExactType(&pType));
             // Note, this call could return S_FALSE without ICorDebugValue creation in case type don't have static members.
-            IfFailRet(m_evaluator.CreatTypeObjectStaticConstructor(pThread, pType, nullptr, false));
+            IfFailRet(m_sharedEvaluator->CreatTypeObjectStaticConstructor(pThread, pType, nullptr, false));
 
             Variable var(ref.evalFlags);
             var.name = "Static members";
@@ -550,7 +577,7 @@ HRESULT Variables::Evaluate(
         // Use simple name parser
         // Note, in case of fail we don't call Roslyn, since it will use simple eval check with same `expression`,
         // but in case we miss something with `regex_match`, Roslyn will use simple eval check from managed part.
-        IfFailRet(m_evaluator.EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags));
+        IfFailRet(m_sharedEvaluator->EvalExpr(pThread, pFrame, expression, &pResultValue, variable.evalFlags));
     }
 
     int typeId;
@@ -567,7 +594,7 @@ HRESULT Variables::Evaluate(
         if (!corValue) // Scope
         {
             bool found = false;
-            if (FAILED(m_evaluator.WalkStackVars(pFrame, [&](
+            if (FAILED(m_sharedEvaluator->WalkStackVars(pFrame, [&](
                 ICorDebugILFrame *pILFrame,
                 ICorDebugValue *pValue,
                 const std::string &varName) -> HRESULT
@@ -696,14 +723,14 @@ HRESULT Variables::SetStackVariable(
 
     // TODO Exception?
 
-    IfFailRet(m_evaluator.WalkStackVars(pFrame, [&](
+    IfFailRet(m_sharedEvaluator->WalkStackVars(pFrame, [&](
         ICorDebugILFrame *pILFrame,
         ICorDebugValue *pValue,
         const std::string &varName) -> HRESULT
     {
         if (varName == name)
         {
-            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator, output));
+            IfFailRet(WriteValue(pValue, value, pThread, m_sharedEvaluator, output));
             bool escape = true;
             PrintValue(pValue, output, escape);
         }
@@ -734,7 +761,7 @@ HRESULT Variables::SetChild(
     if (pFrame)
         IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
-    IfFailRet(m_evaluator.WalkMembers(ref.iCorValue, pThread, pILFrame, [&](
+    IfFailRet(m_sharedEvaluator->WalkMembers(ref.iCorValue, pThread, pILFrame, [&](
         mdMethodDef mdGetter,
         ICorDebugModule *pModule,
         ICorDebugType *pType,
@@ -744,7 +771,7 @@ HRESULT Variables::SetChild(
     {
         if (varName == name)
         {
-            IfFailRet(WriteValue(pValue, value, pThread, m_evaluator, output));
+            IfFailRet(WriteValue(pValue, value, pThread, m_sharedEvaluator, output));
             bool escape = true;
             PrintValue(pValue, output, escape);
         }
@@ -772,7 +799,7 @@ HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId fram
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(GetFrameAt(pThread, stackFrame.GetLevel(), &pFrame));
 
-    return m_evaluator.EvalExpr(pThread, pFrame, variable.evaluateName, ppResult, variable.evalFlags);
+    return m_sharedEvaluator->EvalExpr(pThread, pFrame, variable.evaluateName, ppResult, variable.evalFlags);
 }
 
 HRESULT Variables::SetVariable(
@@ -795,7 +822,7 @@ HRESULT Variables::SetVariable(
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(pProcess->GetThread(int(threadId), &pThread));
 
-    IfFailRet(WriteValue(pVariable, value, pThread, m_evaluator, output));
+    IfFailRet(WriteValue(pVariable, value, pThread, m_sharedEvaluator, output));
     bool escape = true;
     PrintValue(pVariable, output, escape);
     return S_OK;

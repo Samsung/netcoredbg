@@ -6,6 +6,7 @@
 #include "platform.h"
 #include "torelease.h"
 #include "protocols/miprotocol.h"
+#include "protocols/protocol_utils.h"
 #include "tokenizer.h"
 
 #include <sstream>
@@ -75,11 +76,11 @@ void MIProtocol::EmitBreakpointEvent(const BreakpointEvent &event)
 
 HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
                                 std::string &output,
-                                Debugger::StepType stepType)
+                                IDebugger::StepType stepType)
 {
-    ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+    ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
     HRESULT Status;
-    IfFailRet(m_debugger->StepCommand(threadId, stepType));
+    IfFailRet(m_sharedDebugger->StepCommand(threadId, stepType));
     m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
     output = "^running";
     return S_OK;
@@ -110,7 +111,7 @@ HRESULT MIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string
 
     ss << "func=\"" << stackFrame.name << "\"";
     if (stackFrame.id != 0)
-        ss << ",addr=\"" << AddrToString(stackFrame.addr) << "\"";
+        ss << ",addr=\"" << ProtocolUtils::AddrToString(stackFrame.addr) << "\"";
 
     output = ss.str();
 
@@ -124,7 +125,7 @@ HRESULT MIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLev
 
     int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
-    IfFailRet(m_debugger->GetStackTrace(threadId,
+    IfFailRet(m_sharedDebugger->GetStackTrace(threadId,
         lowFrame, int(highFrame) - int(lowFrame), stackFrames, totalFrames));
 
     int currentFrame = int(lowFrame);
@@ -248,7 +249,7 @@ HRESULT MIProtocol::CreateVar(ThreadId threadId, FrameLevel level, int evalFlags
     FrameId frameId = StackFrame(threadId, level, "").id;
 
     Variable variable(evalFlags);
-    IfFailRet(m_debugger->Evaluate(frameId, expression, variable, output));
+    IfFailRet(m_sharedDebugger->Evaluate(frameId, expression, variable, output));
 
     int print_values = 1;
     return PrintNewVar(varobjName, variable, threadId, print_values, output);
@@ -336,8 +337,8 @@ HRESULT MIProtocol::ListChildren(ThreadId threadId, FrameLevel level, int childS
 
     if (variablesReference > 0)
     {
-        IfFailRet(m_debugger->GetVariables(variablesReference, VariablesNamed, childStart, childEnd - childStart, variables));
-        has_more = childEnd < m_debugger->GetNamedVariables(variablesReference);
+        IfFailRet(m_sharedDebugger->GetVariables(variablesReference, VariablesNamed, childStart, childEnd - childStart, variables));
+        has_more = childEnd < m_sharedDebugger->GetNamedVariables(variablesReference);
     }
 
     return PrintChildren(variables, threadId, print_values, has_more, output);
@@ -359,7 +360,7 @@ HRESULT MIProtocol::SetBreakpoint(
     srcBreakpoints.emplace_back(linenum, condition);
 
     std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_debugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
+    IfFailRet(m_sharedDebugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
 
     // Note, SetBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "srcBreakpoints".
     breakpoint = breakpoints.back();
@@ -383,7 +384,7 @@ HRESULT MIProtocol::SetFunctionBreakpoint(
     funcBreakpoints.emplace_back(module, funcname, params, condition);
 
     std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+    IfFailRet(m_sharedDebugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
 
     // Note, SetFunctionBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
     breakpoint = breakpoints.back();
@@ -415,7 +416,7 @@ HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condi
         // Update breakpoints data for this file
         const std::string &filename = breakpointsIter.first;
         std::vector<Breakpoint> tmpBreakpoints;
-        return m_debugger->SetBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
+        return m_sharedDebugger->SetBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
     }
 
     return E_FAIL;
@@ -435,7 +436,7 @@ HRESULT MIProtocol::SetFunctionBreakpointCondition(uint32_t id, const std::strin
         existingFuncBreakpoints.emplace_back(fb.second);
 
     std::vector<Breakpoint> tmpBreakpoints;
-    return m_debugger->SetFunctionBreakpoints(existingFuncBreakpoints, tmpBreakpoints);
+    return m_sharedDebugger->SetFunctionBreakpoints(existingFuncBreakpoints, tmpBreakpoints);
 }
 
 void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
@@ -461,7 +462,7 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
         std::string filename = breakpointsIter.first;
 
         std::vector<Breakpoint> tmpBreakpoints;
-        m_debugger->SetBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
+        m_sharedDebugger->SetBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
     }
 }
 
@@ -484,7 +485,7 @@ void MIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &i
         return;
 
     std::vector<Breakpoint> tmpBreakpoints;
-    m_debugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
+    m_sharedDebugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
 HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode,
@@ -497,7 +498,7 @@ HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode,
     string buf = "";
     uint32_t id = 0;
     for (const auto &name : names) {
-        Status = m_debugger->InsertExceptionBreakpoint(mode, name, id);
+        Status = m_sharedDebugger->InsertExceptionBreakpoint(mode, name, id);
         if (S_OK != Status) {
             return Status;
         }
@@ -523,7 +524,7 @@ HRESULT MIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t
 {
     HRESULT Status;
     for (const auto &id : ids) {
-        Status = m_debugger->DeleteExceptionBreakpoint(id);
+        Status = m_sharedDebugger->DeleteExceptionBreakpoint(id);
         if (S_OK != Status) {
             output = "Cannot delete exception breakpoint by id=:'" + std::to_string(id) + "'";
             return Status;
@@ -673,7 +674,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         HRESULT Status = S_OK;
 
         std::vector<Thread> threads;
-        IfFailRet(m_debugger->GetThreads(threads));
+        IfFailRet(m_sharedDebugger->GetThreads(threads));
 
         std::ostringstream ss;
 
@@ -694,14 +695,14 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
     } },
     { "exec-continue", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
-        IfFailRet(m_debugger->Continue(ThreadId::AllThreads));
+        IfFailRet(m_sharedDebugger->Continue(ThreadId::AllThreads));
         m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
         output = "^running";
         return S_OK;
     } },
     { "exec-interrupt", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
-        IfFailRet(m_debugger->Pause());
+        IfFailRet(m_sharedDebugger->Pause());
         output = "^done";
         return S_OK;
     } },
@@ -710,9 +711,9 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         Breakpoint breakpoint;
         std::vector<std::string> args = unmutable_args;
 
-        StripArgs(args);
+        ProtocolUtils::StripArgs(args);
 
-        BreakType bt = GetBreakpointType(args);
+        BreakType bt = ProtocolUtils::GetBreakpointType(args);
 
         if (bt == BreakType::Error)
         {
@@ -724,7 +725,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         {
             struct LineBreak lb;
 
-            if (ParseBreakpoint(args, lb)
+            if (ProtocolUtils::ParseBreakpoint(args, lb)
                 && SUCCEEDED(SetBreakpoint(lb.filename, lb.linenum, lb.condition, breakpoint)))
                 Status = S_OK;
         }
@@ -732,7 +733,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         {
             struct FuncBreak fb;
 
-            if (ParseBreakpoint(args, fb)
+            if (ProtocolUtils::ParseBreakpoint(args, fb)
                 && SUCCEEDED(SetFunctionBreakpoint(fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
                 Status = S_OK;
         }
@@ -749,7 +750,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         for (const std::string &idStr : args)
         {
             bool ok;
-            int id = ParseInt(idStr, ok);
+            int id = ProtocolUtils::ParseInt(idStr, ok);
             if (ok)
                 ids.insert(id);
         }
@@ -765,7 +766,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         }
 
         bool ok;
-        int id = ParseInt(args.at(0), ok);
+        int id = ProtocolUtils::ParseInt(args.at(0), ok);
         if (!ok)
         {
             output = "Unknown breakpoint id";
@@ -779,16 +780,16 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         return SetFunctionBreakpointCondition(id, args.at(1));
     } },
     { "exec-step", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        return StepCommand(args, output, Debugger::STEP_IN);
+        return StepCommand(args, output, IDebugger::StepType::STEP_IN);
     }},
     { "exec-next", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        return StepCommand(args, output, Debugger::STEP_OVER);
+        return StepCommand(args, output, IDebugger::StepType::STEP_OVER);
     }},
     { "exec-finish", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        return StepCommand(args, output, Debugger::STEP_OUT);
+        return StepCommand(args, output, IDebugger::StepType::STEP_OUT);
     }},
     { "exec-abort", [this](const std::vector<std::string> &, std::string &output) -> HRESULT {
-        m_debugger->Disconnect(Debugger::DisconnectTerminate);
+        m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
         return S_OK;
     }},
     { "target-attach", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -799,39 +800,39 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
             return E_INVALIDARG;
         }
         bool ok;
-        int pid = ParseInt(args.at(0), ok);
+        int pid = ProtocolUtils::ParseInt(args.at(0), ok);
         if (!ok) return E_INVALIDARG;
 
-        m_debugger->Initialize();
-        IfFailRet(m_debugger->Attach(pid));
-        IfFailRet(m_debugger->ConfigurationDone());
+        m_sharedDebugger->Initialize();
+        IfFailRet(m_sharedDebugger->Attach(pid));
+        IfFailRet(m_sharedDebugger->ConfigurationDone());
         // TODO: print successful result
         return S_OK;
     }},
     { "target-detach", [this](const std::vector<std::string> &, std::string &output) -> HRESULT {
-        m_debugger->Disconnect(Debugger::DisconnectDetach);
+        m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectDetach);
         return S_OK;
     }},
     { "stack-list-frames", [this](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         std::vector<std::string> args = args_orig;
-        ThreadId threadId { GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
+        ThreadId threadId { ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
         int lowFrame = 0;
         int highFrame = FrameLevel::MaxFrameLevel;
-        StripArgs(args);
-        GetIndices(args, lowFrame, highFrame);
+        ProtocolUtils::StripArgs(args);
+        ProtocolUtils::GetIndices(args, lowFrame, highFrame);
         return PrintFrames(threadId, output, FrameLevel{lowFrame}, FrameLevel{highFrame});
     }},
     { "stack-list-variables", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
 
-        ThreadId threadId { GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
-        StackFrame stackFrame(threadId, FrameLevel{GetIntArg(args, "--frame", 0)}, "");
+        ThreadId threadId { ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
+        StackFrame stackFrame(threadId, FrameLevel{ProtocolUtils::GetIntArg(args, "--frame", 0)}, "");
         std::vector<Scope> scopes;
         std::vector<Variable> variables;
-        IfFailRet(m_debugger->GetScopes(stackFrame.id, scopes));
+        IfFailRet(m_sharedDebugger->GetScopes(stackFrame.id, scopes));
         if (!scopes.empty() && scopes[0].variablesReference != 0)
         {
-            IfFailRet(m_debugger->GetVariables(scopes[0].variablesReference, VariablesNamed, 0, 0, variables));
+            IfFailRet(m_sharedDebugger->GetVariables(scopes[0].variablesReference, VariablesNamed, 0, 0, variables));
         }
 
         PrintVariables(variables, output);
@@ -845,9 +846,9 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
             return E_FAIL;
         }
 
-        ThreadId threadId { GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
-        FrameLevel level { GetIntArg(args, "--frame", 0) };
-        int evalFlags = GetIntArg(args, "--evalFlags", 0);
+        ThreadId threadId { ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
+        FrameLevel level { ProtocolUtils::GetIntArg(args, "--frame", 0) };
+        int evalFlags = ProtocolUtils::GetIntArg(args, "--evalFlags", 0);
 
         std::string varName = args.at(0);
         std::string varExpr = args.at(1);
@@ -881,13 +882,13 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
             return E_FAIL;
         }
 
-        ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
-        FrameLevel level{ GetIntArg(args, "--frame", 0) };
+        ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
+        FrameLevel level{ ProtocolUtils::GetIntArg(args, "--frame", 0) };
 
         int childStart = 0;
         int childEnd = INT_MAX;
-        StripArgs(args);
-        GetIndices(args, childStart, childEnd);
+        ProtocolUtils::StripArgs(args);
+        ProtocolUtils::GetIndices(args, childStart, childEnd);
         std::string varName = args.at(0);
 
         return ListChildren(threadId, level, childStart, childEnd, varName, print_values, output);
@@ -903,7 +904,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
     { "gdb-exit", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         this->m_exit = true;
 
-        m_debugger->Disconnect(Debugger::DisconnectTerminate);
+        m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
 
         return S_OK;
     }},
@@ -919,11 +920,11 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
     }},
     { "exec-run", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
-        m_debugger->Initialize();
+        m_sharedDebugger->Initialize();
         // Note, in case of MI protocol, we enable stop at entry point all the time from debugger side,
         // MIEngine will continue debuggee process at entry point stop event if IDE configured to ignore it.
-        IfFailRet(m_debugger->Launch(m_fileExec, m_execArgs, {}, "", true));
-        Status = m_debugger->ConfigurationDone();
+        IfFailRet(m_sharedDebugger->Launch(m_fileExec, m_execArgs, {}, "", true));
+        Status = m_sharedDebugger->ConfigurationDone();
         if (SUCCEEDED(Status))
             output = "^running";
         return Status;
@@ -944,7 +945,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         {
             if (args.at(0) == "just-my-code")
             {
-                m_debugger->SetJustMyCode(args.at(1) == "1");
+                m_sharedDebugger->SetJustMyCode(args.at(1) == "1");
             }
         }
         return S_OK;
@@ -955,7 +956,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
             return E_FAIL;
 
         std::ostringstream ss;
-        ss << "value=\"" << (m_debugger->IsJustMyCode() ? "1" : "0") << "\"";
+        ss << "value=\"" << (m_sharedDebugger->IsJustMyCode() ? "1" : "0") << "\"";
         output = ss.str();
         return S_OK;
     }},
@@ -1022,7 +1023,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         for (const string &id : args)
         {
             bool isTrue = false;
-            int value = ParseInt(id, isTrue);
+            int value = ProtocolUtils::ParseInt(id, isTrue);
             if (isTrue) {
                 indexes.insert(value);
             }
@@ -1063,14 +1064,14 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
         if (varExpr.size() >= 2 && varExpr.front() == '"' && varExpr.back() == '"')
             varExpr = varExpr.substr(1, varExpr.size() - 2);
 
-        ThreadId threadId{ GetIntArg(args, "--thread", int(m_debugger->GetLastStoppedThreadId())) };
-        FrameLevel level{ GetIntArg(args, "--frame", 0) };
+        ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
+        FrameLevel level{ ProtocolUtils::GetIntArg(args, "--frame", 0) };
         FrameId frameId = StackFrame(threadId, level, "").id;
 
         Variable variable;
         IfFailRet(FindVar(varName, variable));
 
-        IfFailRet(m_debugger->SetVariableByExpression(frameId, variable, varExpr, output));
+        IfFailRet(m_sharedDebugger->SetVariableByExpression(frameId, variable, varExpr, output));
 
         output = "value=\"" + MIProtocol::EscapeMIValue(output) + "\"";
 
@@ -1191,7 +1192,7 @@ void MIProtocol::CommandLoop()
     }
 
     if (!m_exit)
-        m_debugger->Disconnect(Debugger::DisconnectTerminate);
+        m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
 
     Printf("%s^exit\n", token.c_str());
     Printf("(gdb)\n");

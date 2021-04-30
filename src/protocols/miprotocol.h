@@ -12,8 +12,8 @@
 #include <memory>
 #include "string_view.h"
 #include "utils/escaped_string.h"
-#include "debugger/debugger.h"
-#include "iprotocol.h"
+#include "interfaces/idebugger.h"
+#include "interfaces/iprotocol.h"
 
 namespace netcoredbg
 {
@@ -77,7 +77,7 @@ private:
 
     HRESULT StepCommand(const std::vector<std::string> &args,
                         std::string &output,
-                        Debugger::StepType stepType);
+                        IDebugger::StepType stepType);
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
     HRESULT PrintVariables(const std::vector<Variable> &variables, std::string &output);
     HRESULT CreateVar(ThreadId threadId, FrameLevel level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output);

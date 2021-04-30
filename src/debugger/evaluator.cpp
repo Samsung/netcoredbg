@@ -11,7 +11,9 @@
 #include <vector>
 #include <list>
 
+#include "debugger/evaluator.h"
 #include "utils/utf.h"
+#include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "valueprint.h"
 
@@ -489,7 +491,7 @@ HRESULT Evaluator::FindType(
 
     if (!pTypeModule)
     {
-        m_modules.ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
+        m_sharedModules->ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
             if (typeToken != mdTypeDefNil) // already found
                 return S_OK;
 
@@ -1111,7 +1113,7 @@ HRESULT Evaluator::CreatTypeObjectStaticConstructor(
         if (!m_pSuppressFinalize)
         {
             ToRelease<ICorDebugModule> pModule;
-            IfFailRet(m_modules.GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+            IfFailRet(m_sharedModules->GetModuleWithName("System.Private.CoreLib.dll", &pModule));
 
             static const WCHAR gcName[] = W("System.GC");
             static const WCHAR suppressFinalizeMethodName[] = W("SuppressFinalize");
@@ -1850,7 +1852,7 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
             ToRelease<ICorDebugValue> pValue;
             ULONG32 ilStart;
             ULONG32 ilEnd;
-            if (FAILED(m_modules.GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd)))
+            if (FAILED(m_sharedModules->GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd)))
                 continue;
 
             if (currentIlOffset < ilStart || currentIlOffset >= ilEnd)

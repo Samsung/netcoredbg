@@ -12,12 +12,17 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include "interfaces/iprotocol.h"
+#include "debugger/evaluator.h"
+#include "debugger/variables.h"
+#include "debugger/breakpoints.h"
 #include "debugger/manageddebugger.h"
 #include "debugger/managedcallback.h"
 #include "valueprint.h"
 #include "managed/interop.h"
 #include "utils/utf.h"
 #include "dynlibs.h"
+#include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "debugger/frames.h"
 #include "utils/logger.h"
@@ -257,7 +262,7 @@ static HRESULT GetAsyncTBuilder(ICorDebugFrame *pFrame, ICorDebugValue **ppValue
 // [in] pFrame - frame that used for get all info needed (function, module, etc);
 // [in] evaluator - reference to managed debugger evaluator;
 // [out] ppValueAsyncIdRef - result value (reference to created by builder object).
-static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFrame, Evaluator &evaluator, ICorDebugValue **ppValueAsyncIdRef)
+static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::shared_ptr<Evaluator> &sharedEvaluator, ICorDebugValue **ppValueAsyncIdRef)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pValue;
@@ -309,7 +314,7 @@ static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFr
     // Call 'ObjectIdForDebugger' property getter.
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pModule->GetFunctionFromToken(mdObjectIdForDebuggerGetter, &pFunc));
-    IfFailRet(evaluator.EvalFunction(pThread, pFunc, pType.GetRef(), 1, pValue.GetRef(), 1, ppValueAsyncIdRef, defaultEvalFlags));
+    IfFailRet(sharedEvaluator->EvalFunction(pThread, pFunc, pType.GetRef(), 1, pValue.GetRef(), 1, ppValueAsyncIdRef, defaultEvalFlags));
 
     return S_OK;
 }
@@ -318,7 +323,7 @@ static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFr
 // [in] pThread - managed thread for evaluation (related to pFrame);
 // [in] pFrame - frame that used for get all info needed (function, module, etc);
 // [in] evaluator - reference to managed debugger evaluator;
-static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDebugFrame *pFrame, Evaluator &evaluator)
+static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::shared_ptr<Evaluator> &sharedEvaluator)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pValue;
@@ -397,7 +402,7 @@ static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDe
 
     ICorDebugType *ppArgsType[] = {pType, pNewBooleanType};
     ICorDebugValue *ppArgsValue[] = {pValue, pNewBoolean};
-    IfFailRet(evaluator.EvalFunction(pThread, pFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, defaultEvalFlags));
+    IfFailRet(sharedEvaluator->EvalFunction(pThread, pFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, defaultEvalFlags));
 
     return S_OK;
 }
@@ -411,7 +416,7 @@ HRESULT ManagedDebugger::SetBreakpointIntoNotifyDebuggerOfWaitCompletion()
     HRESULT Status = S_OK;
 
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(m_modules.GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+    IfFailRet(m_sharedModules->GetModuleWithName("System.Private.CoreLib.dll", &pModule));
 
     ToRelease<IUnknown> pMDUnknown;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
@@ -546,10 +551,10 @@ ManagedDebugger::ManagedDebugger() :
     m_startMethod(StartNone),
     m_stopAtEntry(false),
     m_isConfigurationDone(false),
-    m_evaluator(m_modules),
-    m_breakpoints(m_modules),
-    m_variables(m_evaluator),
-    m_protocol(nullptr),
+    m_sharedModules(new Modules),
+    m_sharedEvaluator(new Evaluator(m_sharedModules)),
+    m_uniqueBreakpoints(new Breakpoints(m_sharedModules)),
+    m_sharedVariables(new Variables(m_sharedEvaluator)),
     m_managedCallback(nullptr),
     m_enabledSimpleStepId(0),
     m_justMyCode(true),
@@ -576,7 +581,7 @@ HRESULT ManagedDebugger::Initialize()
 
     // TODO: Report capabilities and check client support
     m_startMethod = StartNone;
-    m_protocol->EmitInitializedEvent();
+    m_sharedProtocol->EmitInitializedEvent();
     return S_OK;
 }
 
@@ -620,7 +625,7 @@ HRESULT ManagedDebugger::Launch(const string &fileExec, const vector<string> &ex
     m_stopAtEntry = stopAtEntry;
     m_cwd = cwd;
     m_env = env;
-    m_breakpoints.SetStopAtEntry(m_stopAtEntry);
+    m_uniqueBreakpoints->SetStopAtEntry(m_stopAtEntry);
     return RunIfReady();
 }
 
@@ -667,7 +672,7 @@ HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
     {
         HRESULT Status = DetachFromProcess();
         if (SUCCEEDED(Status))
-            m_protocol->EmitTerminatedEvent();
+            m_sharedProtocol->EmitTerminatedEvent();
 
         m_ioredirect.async_cancel();
         return Status;
@@ -701,7 +706,7 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, StepType stepType)
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    if (!m_modules.IsMethodHaveAwait(modAddress, methodToken))
+    if (!m_sharedModules->IsMethodHaveAwait(modAddress, methodToken))
         return SetupSimpleStep(pThread, stepType);
 
     ToRelease<ICorDebugILFrame> pILFrame;
@@ -714,22 +719,22 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, StepType stepType)
     // If we are at end of async method with await blocks and doing step-in or step-over,
     // switch to step-out, so whole NotifyDebuggerOfWaitCompletion magic happens.
     ULONG32 lastIlOffset;
-    if (stepType != Debugger::StepType::STEP_OUT &&
-        m_modules.FindLastIlOffsetAwaitInfo(modAddress, methodToken, lastIlOffset) &&
+    if (stepType != IDebugger::StepType::STEP_OUT &&
+        m_sharedModules->FindLastIlOffsetAwaitInfo(modAddress, methodToken, lastIlOffset) &&
         ipOffset >= lastIlOffset)
     {
-        stepType = Debugger::StepType::STEP_OUT;
+        stepType = IDebugger::StepType::STEP_OUT;
     }
-    if (stepType == Debugger::StepType::STEP_OUT)
+    if (stepType == IDebugger::StepType::STEP_OUT)
     {
-        IfFailRet(SetNotificationForWaitCompletion(pThread, pFrame, m_evaluator));
+        IfFailRet(SetNotificationForWaitCompletion(pThread, pFrame, m_sharedEvaluator));
         IfFailRet(SetBreakpointIntoNotifyDebuggerOfWaitCompletion());
         // Note, we don't create stepper here, since all we need in case of breakpoint is call Continue() from StepCommand().
         return S_OK;
     }
 
     Modules::AwaitInfo *awaitInfo = nullptr;
-    if (m_modules.FindNextAwaitInfo(modAddress, methodToken, ipOffset, &awaitInfo))
+    if (m_sharedModules->FindNextAwaitInfo(modAddress, methodToken, ipOffset, &awaitInfo))
     {
         // We have step inside async function with await, setup breakpoint at closest await's yield_offset.
         // Two possible cases here:
@@ -794,7 +799,7 @@ HRESULT ManagedDebugger::SetupSimpleStep(ICorDebugThread *pThread, StepType step
     BOOL bStepIn = stepType == STEP_IN;
 
     COR_DEBUG_STEP_RANGE range;
-    if (SUCCEEDED(m_modules.GetStepRangeFromCurrentIP(pThread, &range)))
+    if (SUCCEEDED(m_sharedModules->GetStepRangeFromCurrentIP(pThread, &range)))
     {
         IfFailRet(pStepper->StepRange(bStepIn, &range, 1));
     } else {
@@ -831,7 +836,7 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
 
     HRESULT res;
     // FIXME if not all threads switched back to THREAD_RUN state after eval finished - something wrong with logic at eval complete/exception point
-    if (!m_evaluator.IsEvalRunning() && m_evaluator.is_empty_eval_queue())
+    if (!m_sharedEvaluator->IsEvalRunning() && m_sharedEvaluator->is_empty_eval_queue())
         if (FAILED(res = m_iCorProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr)))
             LOGE("Continue failed: %s", errormessage(res));
 
@@ -840,9 +845,9 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
 
     if (SUCCEEDED(res))
     {
-        m_variables.Clear(); // Important, must be sync with MIProtocol m_vars.clear()
+        m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
         FrameId::invalidate();
-        m_protocol->EmitContinuedEvent(threadId);
+        m_sharedProtocol->EmitContinuedEvent(threadId);
         m_stopCounterMutex.lock();
         --m_stopCounter;
         m_stopCounterMutex.unlock();
@@ -906,13 +911,13 @@ HRESULT ManagedDebugger::Pause()
             StoppedEvent event(StopPause, thread.id);
             event.frame = stackFrame;
             SetLastStoppedThreadId(thread.id);
-            m_protocol->EmitStoppedEvent(event);
+            m_sharedProtocol->EmitStoppedEvent(event);
             m_ioredirect.async_cancel();
             return Status;
         }
     }
 
-    m_protocol->EmitStoppedEvent(StoppedEvent(StopPause, ThreadId::Invalid));
+    m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, ThreadId::Invalid));
     m_ioredirect.async_cancel();
     return Status;
 }
@@ -1215,7 +1220,7 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
     }
 
     if (SUCCEEDED(m_startupResult))
-        m_protocol->EmitExecEvent(PID{m_processId}, fileExec);
+        m_sharedProtocol->EmitExecEvent(PID{m_processId}, fileExec);
 
     return m_startupResult;
 }
@@ -1241,7 +1246,7 @@ HRESULT ManagedDebugger::DetachFromProcess()
 
     if (SUCCEEDED(m_iCorProcess->Stop(0)))
     {
-        m_breakpoints.DeleteAllBreakpoints();
+        m_uniqueBreakpoints->DeleteAllBreakpoints();
         DisableAllBreakpointsAndSteppers();
         m_iCorProcess->Detach();
     }
@@ -1294,10 +1299,10 @@ HRESULT ManagedDebugger::TerminateProcess()
 
 void ManagedDebugger::Cleanup()
 {
-    m_modules.CleanupAllModules();
-    m_evaluator.Cleanup();
-    m_variables.Clear(); // Important, must be sync with MIProtocol m_vars.clear()
-    m_protocol->Cleanup();
+    m_sharedModules->CleanupAllModules();
+    m_sharedEvaluator->Cleanup();
+    m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
+    m_sharedProtocol->Cleanup();
 }
 
 HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
@@ -1335,7 +1340,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
 
     // Are needed to move next line to Exception() callback?
     assert(int(threadId) != -1);
-    m_evaluator.push_eval_queue(threadId);
+    m_sharedEvaluator->push_eval_queue(threadId);
 
     HRESULT res = E_FAIL;
     HRESULT Status = S_OK;
@@ -1357,7 +1362,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
         lock.unlock();
         ExceptionBreakMode mode;
 
-        if ((res = m_breakpoints.GetExceptionBreakMode(mode, "*")) && FAILED(res))
+        if ((res = m_uniqueBreakpoints->GetExceptionBreakMode(mode, "*")) && FAILED(res))
             goto failed;
 
         exceptionInfoResponse.breakMode = mode;
@@ -1373,7 +1378,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
 
     PrintStringField(pExceptionValue, message, exceptionInfoResponse.description);
 
-    if ((res = m_variables.GetExceptionVariable(frameId, pThread, varException)) && FAILED(res))
+    if ((res = m_sharedVariables->GetExceptionVariable(frameId, pThread, varException)) && FAILED(res))
         goto failed;
 
     if (exceptionInfoResponse.breakMode.OnlyUnhandled() || exceptionInfoResponse.breakMode.UserUnhandled()) {
@@ -1391,7 +1396,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
     exceptionInfoResponse.details.typeName = varException.type;
     exceptionInfoResponse.details.fullTypeName = varException.type;
 
-    if (FAILED(m_evaluator.getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue, defaultEvalFlags))) {
+    if (FAILED(m_sharedEvaluator->getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue, defaultEvalFlags))) {
         exceptionInfoResponse.details.stackTrace = "<undefined>"; // Evaluating problem entire object
     }
     else {
@@ -1401,7 +1406,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
 
         ICorDebugValue *evalValueInner = pExceptionValue;
         while (isNotNull) {
-            if ((res = m_evaluator.getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut, defaultEvalFlags)) && FAILED(res))
+            if ((res = m_sharedEvaluator->getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut, defaultEvalFlags)) && FAILED(res))
                 goto failed;
 
             string tmpstr;
@@ -1419,7 +1424,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
             ExceptionDetails inner;
             PrintStringField(evalValueOut, message, inner.message);
 
-            if ((res = m_evaluator.getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp, defaultEvalFlags)) && FAILED(res))
+            if ((res = m_sharedEvaluator->getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp, defaultEvalFlags)) && FAILED(res))
                 goto failed;
 
             PrintValue(pValueTmp, inner.stackTrace);
@@ -1432,11 +1437,11 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
     if (hasInner)
         exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
 
-    m_evaluator.pop_eval_queue(); // CompleteException
+    m_sharedEvaluator->pop_eval_queue(); // CompleteException
     return S_OK;
 
 failed:
-    m_evaluator.pop_eval_queue(); // CompleteException
+    m_sharedEvaluator->pop_eval_queue(); // CompleteException
     IfFailRet(res);
     return res;
 }
@@ -1446,21 +1451,21 @@ HRESULT ManagedDebugger::InsertExceptionBreakpoint(const ExceptionBreakMode &mod
     const string &name, uint32_t &id)
 {
     LogFuncEntry();
-    return m_breakpoints.InsertExceptionBreakpoint(mode, name, id);
+    return m_uniqueBreakpoints->InsertExceptionBreakpoint(mode, name, id);
 }
 
 // MI
 HRESULT ManagedDebugger::DeleteExceptionBreakpoint(const uint32_t id)
 {
     LogFuncEntry();
-    return m_breakpoints.DeleteExceptionBreakpoint(id);
+    return m_uniqueBreakpoints->DeleteExceptionBreakpoint(id);
 }
 
 // MI and VSCode
 bool ManagedDebugger::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const string &exceptionName,
     const ExceptionBreakCategory category)
 {
-    return m_breakpoints.MatchExceptionBreakpoint(dwEventType, exceptionName, category);
+    return m_uniqueBreakpoints->MatchExceptionBreakpoint(dwEventType, exceptionName, category);
 }
 
 HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
@@ -1468,7 +1473,7 @@ HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
     HRESULT Status = S_OK;
 
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(m_modules.GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+    IfFailRet(m_sharedModules->GetModuleWithName("System.Private.CoreLib.dll", &pModule));
 
     ToRelease<IUnknown> pMDUnknown;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
@@ -1504,7 +1509,7 @@ HRESULT ManagedDebugger::SetBreakpoints(
 {
     LogFuncEntry();
 
-    return m_breakpoints.SetBreakpoints(m_iCorProcess, filename, srcBreakpoints, breakpoints);
+    return m_uniqueBreakpoints->SetBreakpoints(m_iCorProcess, filename, srcBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::SetFunctionBreakpoints(
@@ -1513,17 +1518,17 @@ HRESULT ManagedDebugger::SetFunctionBreakpoints(
 {
     LogFuncEntry();
 
-    return m_breakpoints.SetFunctionBreakpoints(m_iCorProcess, funcBreakpoints, breakpoints);
+    return m_uniqueBreakpoints->SetFunctionBreakpoints(m_iCorProcess, funcBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::BreakpointActivate(int id, bool act)
 {
-    return m_breakpoints.BreakpointActivate(id, act);
+    return m_uniqueBreakpoints->BreakpointActivate(id, act);
 }
 
 HRESULT ManagedDebugger::AllBreakpointsActivate(bool act)
 {
-    return m_breakpoints.AllBreakpointsActivate(act);
+    return m_uniqueBreakpoints->AllBreakpointsActivate(act);
 }
 
 HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
@@ -1535,7 +1540,7 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
 
-    if (SUCCEEDED(m_modules.GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
+    if (SUCCEEDED(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
     {
         stackFrame.source = Source(sp.document);
         stackFrame.line = sp.startLine;
@@ -1651,7 +1656,7 @@ int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)
 {
     LogFuncEntry();
 
-    return m_variables.GetNamedVariables(variablesReference);
+    return m_sharedVariables->GetNamedVariables(variablesReference);
 }
 
 HRESULT ManagedDebugger::GetVariables(
@@ -1663,26 +1668,26 @@ HRESULT ManagedDebugger::GetVariables(
 {
     LogFuncEntry();
 
-    return m_variables.GetVariables(m_iCorProcess, variablesReference, filter, start, count, variables);
+    return m_sharedVariables->GetVariables(m_iCorProcess, variablesReference, filter, start, count, variables);
 }
 
 HRESULT ManagedDebugger::GetScopes(FrameId frameId, std::vector<Scope> &scopes)
 {
     LogFuncEntry();
 
-    return m_variables.GetScopes(m_iCorProcess, frameId, scopes);
+    return m_sharedVariables->GetScopes(m_iCorProcess, frameId, scopes);
 }
 
 HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output)
 {
     LogFuncEntry();
 
-    return m_variables.Evaluate(m_iCorProcess, frameId, expression, variable, output);
+    return m_sharedVariables->Evaluate(m_iCorProcess, frameId, expression, variable, output);
 }
 
 HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output)
 {
-    return m_variables.SetVariable(m_iCorProcess, name, value, ref, output);
+    return m_sharedVariables->SetVariable(m_iCorProcess, name, value, ref, output);
 }
 
 HRESULT ManagedDebugger::SetVariableByExpression(
@@ -1696,21 +1701,21 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     HRESULT Status;
     ToRelease<ICorDebugValue> pResultValue;
 
-    IfFailRet(m_variables.GetValueByExpression(m_iCorProcess, frameId, variable, &pResultValue));
-    return m_variables.SetVariable(m_iCorProcess, pResultValue, value, frameId, output);
+    IfFailRet(m_sharedVariables->GetValueByExpression(m_iCorProcess, frameId, variable, &pResultValue));
+    return m_sharedVariables->SetVariable(m_iCorProcess, pResultValue, value, frameId, output);
 }
 
 
 void ManagedDebugger::FindFileNames(string_view pattern, unsigned limit, SearchCallback cb)
 {
     LogFuncEntry();
-    m_modules.FindFileNames(pattern, limit, cb);
+    m_sharedModules->FindFileNames(pattern, limit, cb);
 }
 
 void ManagedDebugger::FindFunctions(string_view pattern, unsigned limit, SearchCallback cb)
 {
     LogFuncEntry();
-    m_modules.FindFunctions(pattern, limit, cb);
+    m_sharedModules->FindFunctions(pattern, limit, cb);
 }
 
 void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, string_view pattern, unsigned limit, SearchCallback cb)
@@ -1758,7 +1763,7 @@ void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, stri
 
 void ManagedDebugger::InputCallback(IORedirectHelper::StreamType type, span<char> text)
 {
-    m_protocol->EmitOutputEvent(type == IOSystem::Stderr ? OutputStdErr : OutputStdOut, {text.begin(), text.size()});
+    m_sharedProtocol->EmitOutputEvent(type == IOSystem::Stderr ? OutputStdErr : OutputStdOut, {text.begin(), text.size()});
 }
 
 
@@ -1807,7 +1812,7 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
 
         // Update stepping request to new thread/frame_count that we are continuing on
         // so continuing with normal step-out works as expected.
-        SetupSimpleStep(pThread, Debugger::STEP_OUT);
+        SetupSimpleStep(pThread, IDebugger::StepType::STEP_OUT);
         pAppDomain->Continue(0);
         return true;
     }
@@ -1883,7 +1888,7 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
             const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
 
             ToRelease<ICorDebugValue> pValueRef;
-            if (FAILED(GetAsyncIdReference(pThread, pFrame, m_evaluator, &pValueRef)) ||
+            if (FAILED(GetAsyncIdReference(pThread, pFrame, m_sharedEvaluator, &pValueRef)) ||
                 FAILED(pValueRef->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &m_asyncStep->pValueAsyncIdRef)))
                 LOGE("Could not setup reference pValueAsyncIdRef for await block");
 
@@ -1927,7 +1932,7 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
             CORDB_ADDRESS currentAsyncId = 0;
             ToRelease<ICorDebugValue> pValue;
             BOOL isNull = FALSE;
-            if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_evaluator, &pValueRef)) &&
+            if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_sharedEvaluator, &pValueRef)) &&
                 SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
                 pValue->GetAddress(&currentAsyncId);
             else
@@ -1966,11 +1971,11 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
 void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback)
 {
     LogFuncEntry();
-    return m_breakpoints.EnumerateBreakpoints(std::move(callback));
+    return m_uniqueBreakpoints->EnumerateBreakpoints(std::move(callback));
 }
 
 
-Debugger::AsyncResult ManagedDebugger::ProcessStdin(InStream& stream)
+IDebugger::AsyncResult ManagedDebugger::ProcessStdin(InStream& stream)
 {
     LogFuncEntry();
     return m_ioredirect.async_input(stream);

@@ -4,9 +4,13 @@
 
 #include "debugger/managedcallback.h"
 
+#include "debugger/evaluator.h"
+#include "debugger/breakpoints.h"
 #include "debugger/valueprint.h"
 #include "debugger/waitpid.h"
+#include "metadata/modules.h"
 #include "metadata/typeprinter.h"
+#include "interfaces/iprotocol.h"
 #include "protocols/protocol.h"
 #include "utils/utf.h"
 
@@ -52,7 +56,7 @@ void ManagedCallback::HandleEvent(ICorDebugController *controller, const std::st
 
     // TODO why we mixing debugger's output with user application output???
     std::string text = "Event received: '" + eventName + "'\n"; 
-    m_debugger.m_protocol->EmitOutputEvent(OutputConsole, {&text[0], text.size()});
+    m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, {&text[0], text.size()});
     controller->Continue(0);
 }
 
@@ -128,7 +132,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
     LogFuncEntry();
     ThreadId threadId(getThreadId(pThread));
 
-    if (m_debugger.m_evaluator.IsEvalRunning())
+    if (m_debugger.m_sharedEvaluator->IsEvalRunning())
     {
         pAppDomain->Continue(0);
         return S_OK;
@@ -186,7 +190,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
         ThreadId threadId(getThreadId(pThread));
         bool atEntry = false;
         StoppedEvent event(StopBreakpoint, threadId);
-        if (FAILED(m_debugger.m_breakpoints.HitBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)))
+        if (FAILED(m_debugger.m_uniqueBreakpoints->HitBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)))
         {
             pAppDomain->Continue(0);
             return;
@@ -203,7 +207,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
             m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), event.frame);
 
         m_debugger.SetLastStoppedThread(pThread);
-        m_debugger.m_protocol->EmitStoppedEvent(event);
+        m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
         m_debugger.m_ioredirect.async_cancel();
     },
         std::move(callbackAppDomain),
@@ -246,7 +250,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
     if (m_debugger.IsJustMyCode() && no_source)
     {
         // FIXME will not work in proper way with async methods
-        m_debugger.SetupSimpleStep(pThread, Debugger::STEP_OVER);
+        m_debugger.SetupSimpleStep(pThread, IDebugger::StepType::STEP_OVER);
         pAppDomain->Continue(0);
         return S_OK;
     }
@@ -265,11 +269,11 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
         if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr &&
             SUCCEEDED(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)) &&
             SUCCEEDED(pILFrame->GetIP(&ipOffset, &mappingResult)) &&
-            SUCCEEDED(m_debugger.m_modules.GetFrameILAndSequencePoint(pFrame, ipOffset, sequencePoint)) &&
+            SUCCEEDED(m_debugger.m_sharedModules->GetFrameILAndSequencePoint(pFrame, ipOffset, sequencePoint)) &&
             // Current IL offset less than real offset of first user code line.
             ipOffset < (ULONG32)sequencePoint.offset)
         {
-            IfFailRet(m_debugger.SetupSimpleStep(pThread, Debugger::STEP_OVER));
+            IfFailRet(m_debugger.SetupSimpleStep(pThread, IDebugger::StepType::STEP_OVER));
             pAppDomain->Continue(0);
             return S_OK;
         }
@@ -279,7 +283,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
     event.frame = stackFrame;
 
     m_debugger.SetLastStoppedThread(pThread);
-    m_debugger.m_protocol->EmitStoppedEvent(event);
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
 
     return S_OK;
@@ -292,7 +296,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     LogFuncEntry();
     ThreadId threadId(getThreadId(pThread));
 
-    if (m_debugger.m_evaluator.IsEvalRunning())
+    if (m_debugger.m_sharedEvaluator->IsEvalRunning())
     {
         pAppDomain->Continue(0);
         return S_OK;
@@ -338,7 +342,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
             break;
 
         Modules::SequencePoint lastSP;
-        if (FAILED(m_debugger.m_modules.GetSequencePointByILOffset(
+        if (FAILED(m_debugger.m_sharedModules->GetSequencePointByILOffset(
                        m_debugger.m_lastStoppedIlOffset.modAddress,
                        m_debugger.m_lastStoppedIlOffset.methodToken,
                        m_debugger.m_lastStoppedIlOffset.ilOffset,
@@ -349,7 +353,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
         }
 
         Modules::SequencePoint curSP;
-        if (FAILED(m_debugger.m_modules.GetSequencePointByILOffset(
+        if (FAILED(m_debugger.m_sharedModules->GetSequencePointByILOffset(
                        fullyQualifiedIlOffset.modAddress,
                        fullyQualifiedIlOffset.methodToken,
                        fullyQualifiedIlOffset.ilOffset,
@@ -379,7 +383,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
 
     StoppedEvent event(StopPause, threadId);
     event.frame = stackFrame;
-    m_debugger.m_protocol->EmitStoppedEvent(event);
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }
@@ -404,27 +408,27 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::EvalComplete(
 
     HRESULT Status = S_OK;
 
-    m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
+    m_debugger.m_sharedEvaluator->NotifyEvalComplete(pThread, pEval);
 
-    if (m_debugger.m_evaluator.is_empty_eval_queue())
+    if (m_debugger.m_sharedEvaluator->is_empty_eval_queue())
     {
         pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
     }
     else
     {
-        ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+        ThreadId evalThreadId = m_debugger.m_sharedEvaluator->front_eval_queue();
         if (evalThreadId == currentThreadId)
         {
             LOGI("Complete eval threadid = '%d'", int(currentThreadId));
-            m_debugger.m_evaluator.pop_eval_queue();
+            m_debugger.m_sharedEvaluator->pop_eval_queue();
 
-            if (m_debugger.m_evaluator.is_empty_eval_queue())
+            if (m_debugger.m_sharedEvaluator->is_empty_eval_queue())
             {
                 pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
             }
             else
             {
-                evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                evalThreadId = m_debugger.m_sharedEvaluator->front_eval_queue();
                 ToRelease<ICorDebugThread> pThreadEval;
                 IfFailRet(m_debugger.m_iCorProcess->GetThread(int(evalThreadId), &pThreadEval));
                 IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
@@ -454,31 +458,31 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::EvalException(
     // This is callback EvalException invoked on evaluation interruption event.
     // And, evaluated results has inconsistent states. Notify is not enough for this point.
 
-    m_debugger.m_evaluator.NotifyEvalComplete(pThread, pEval);
+    m_debugger.m_sharedEvaluator->NotifyEvalComplete(pThread, pEval);
 
     // NOTE
     // In case of unhandled exception inside implicit function call (for example, getter),
     // ICorDebugManagedCallback::EvalException() is exit point for eval routine, make sure,
     // that proper threads states are setted up.
-    if (m_debugger.m_evaluator.is_empty_eval_queue())
+    if (m_debugger.m_sharedEvaluator->is_empty_eval_queue())
     {
         pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
     }
     else
     {
-        ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+        ThreadId evalThreadId = m_debugger.m_sharedEvaluator->front_eval_queue();
         if (evalThreadId == currentThreadId)
         {
-            m_debugger.m_evaluator.pop_eval_queue();
+            m_debugger.m_sharedEvaluator->pop_eval_queue();
             LOGI("Eval exception, threadid = '%d'", int(currentThreadId));
 
-            if (m_debugger.m_evaluator.is_empty_eval_queue())
+            if (m_debugger.m_sharedEvaluator->is_empty_eval_queue())
             {
                 pAppDomain->SetAllThreadsDebugState(THREAD_RUN, nullptr);
             }
             else
             {
-                evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+                evalThreadId = m_debugger.m_sharedEvaluator->front_eval_queue();
                 ToRelease<ICorDebugThread> pThreadEval;
                 IfFailRet(m_debugger.m_iCorProcess->GetThread(int(evalThreadId), &pThreadEval));
                 IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
@@ -508,15 +512,15 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(
 {
     LogFuncEntry();
 
-    if (m_debugger.m_evaluator.IsEvalRunning())
+    if (m_debugger.m_sharedEvaluator->IsEvalRunning())
     {
         LOGW("The target process exited while evaluating the function.");
     }
 
-    m_debugger.m_evaluator.NotifyEvalComplete(nullptr, nullptr);
+    m_debugger.m_sharedEvaluator->NotifyEvalComplete(nullptr, nullptr);
 
-    while (!m_debugger.m_evaluator.is_empty_eval_queue())
-        m_debugger.m_evaluator.pop_eval_queue();
+    while (!m_debugger.m_sharedEvaluator->is_empty_eval_queue())
+        m_debugger.m_sharedEvaluator->pop_eval_queue();
 
     // Linux: exit() and _exit() argument is int (signed int)
     // Windows: ExitProcess() and TerminateProcess() argument is UINT (unsigned int)
@@ -537,9 +541,9 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(
     }
 #endif // FEATURE_PAL
 
-    m_debugger.m_protocol->EmitExitedEvent(ExitedEvent(exitCode));
+    m_debugger.m_sharedProtocol->EmitExitedEvent(ExitedEvent(exitCode));
     m_debugger.NotifyProcessExited();
-    m_debugger.m_protocol->EmitTerminatedEvent();
+    m_debugger.m_sharedProtocol->EmitTerminatedEvent();
     m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }
@@ -550,7 +554,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CreateThread(
 {
     LogFuncEntry();
     ThreadId threadId(getThreadId(pThread));
-    m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
+    m_debugger.m_sharedProtocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
     pAppDomain->Continue(0);
     return S_OK;
 }
@@ -563,12 +567,12 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitThread(
     ThreadId threadId(getThreadId(pThread));
 
     // TODO: clean evaluations and exceptions queues for current thread
-    m_debugger.m_evaluator.NotifyEvalComplete(pThread, nullptr);
+    m_debugger.m_sharedEvaluator->NotifyEvalComplete(pThread, nullptr);
     if (m_debugger.GetLastStoppedThreadId() == threadId)
     {
         m_debugger.InvalidateLastStoppedThreadId();
     }
-    m_debugger.m_protocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
+    m_debugger.m_sharedProtocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
     pAppDomain->Continue(0);
     return S_OK;
 }
@@ -581,15 +585,15 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(
 
     Module module;
 
-    m_debugger.m_modules.TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode());
-    m_debugger.m_protocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
+    m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode());
+    m_debugger.m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
 
     if (module.symbolStatus == SymbolsLoaded)
     {
         std::vector<BreakpointEvent> events;
-        m_debugger.m_breakpoints.TryResolveBreakpointsForModule(pModule, events);
+        m_debugger.m_uniqueBreakpoints->TryResolveBreakpointsForModule(pModule, events);
         for (const BreakpointEvent &event : events)
-            m_debugger.m_protocol->EmitBreakpointEvent(event);
+            m_debugger.m_sharedProtocol->EmitBreakpointEvent(event);
     }
 
     // enable Debugger.NotifyOfCrossThreadDependency after System.Private.CoreLib.dll loaded (trigger for 1 time call only)
@@ -641,7 +645,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(
     /* [in] */ WCHAR *pMessage)
 {
     LogFuncEntry();
-    if (m_debugger.m_evaluator.IsEvalRunning())
+    if (m_debugger.m_sharedEvaluator->IsEvalRunning())
     {
         pAppDomain->Continue(0);
         return S_OK;
@@ -659,7 +663,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(
         src = "Debugger.Log";
     }
 
-    m_debugger.m_protocol->EmitOutputEvent(OutputConsole, to_utf8(pMessage), src);
+    m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, to_utf8(pMessage), src);
     pAppDomain->Continue(0);
     return S_OK;
 }
@@ -805,7 +809,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     // In case we inside evaluation (exception during implicit function execution), make sure we continue process execution.
     // This is internal CoreCLR routine, should not be interrupted by debugger. CoreCLR will care about exception in this case
     // and provide exception data as evaluation result in case of unhandled exception.
-    if (m_debugger.m_evaluator.IsEvalRunning() && m_debugger.m_evaluator.FindEvalForThread(pThread))
+    if (m_debugger.m_sharedEvaluator->IsEvalRunning() && m_debugger.m_sharedEvaluator->FindEvalForThread(pThread))
     {
         return pAppDomain->Continue(0);
     }
@@ -828,7 +832,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     IfFailRet(GetExceptionInfo(pThread, excType, excModule));
 
     ExceptionBreakMode mode;
-    m_debugger.m_breakpoints.GetExceptionBreakMode(mode, "*");
+    m_debugger.m_uniqueBreakpoints->GetExceptionBreakMode(mode, "*");
     bool unhandled = (dwEventType == DEBUG_EXCEPTION_UNHANDLED && mode.Unhandled());
     bool not_matched = !(unhandled || m_debugger.MatchExceptionBreakpoint(dwEventType, excType, ExceptionBreakCategory::CLR));
 
@@ -836,7 +840,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     {
         // TODO why we mixing debugger's output with user application output???
         std::string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
-        m_debugger.m_protocol->EmitOutputEvent(OutputConsole, {&text[0], text.size()}, "target-exception");
+        m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, {&text[0], text.size()}, "target-exception");
         IfFailRet(pAppDomain->Continue(0));
         return S_OK;
     }
@@ -870,9 +874,9 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     event.text = excType;
     event.description = message.empty() ? details : message;
 
-    if (m_debugger.m_evaluator.IsEvalRunning() && !m_debugger.m_evaluator.is_empty_eval_queue())
+    if (m_debugger.m_sharedEvaluator->IsEvalRunning() && !m_debugger.m_sharedEvaluator->is_empty_eval_queue())
     {
-        ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
+        ThreadId evalThreadId = m_debugger.m_sharedEvaluator->front_eval_queue();
         ToRelease<ICorDebugThread> pThreadEval;
         IfFailRet(m_debugger.m_iCorProcess->GetThread(int(evalThreadId), &pThreadEval));
         IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
@@ -890,14 +894,14 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     //      Exception breakpoint related code must be refactored.
     m_debugger.m_stopCounterMutex.lock();
     while (m_debugger.m_stopCounter > 0) {
-        m_debugger.m_protocol->EmitContinuedEvent(m_debugger.GetLastStoppedThreadId());
+        m_debugger.m_sharedProtocol->EmitContinuedEvent(m_debugger.GetLastStoppedThreadId());
         --m_debugger.m_stopCounter;
     }
     // INFO: Double EmitStopEvent() produce blocked coreclr command reader
     m_debugger.m_stopCounter = 1;
     m_debugger.m_stopCounterMutex.unlock();
 
-    m_debugger.m_protocol->EmitStoppedEvent(event);
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }
@@ -947,13 +951,13 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CustomNotification(
 
     HRESULT Status = S_OK;
 
-    if (m_debugger.m_evaluator.IsEvalRunning())
+    if (m_debugger.m_sharedEvaluator->IsEvalRunning())
     {
         // NOTE
         // All CoreCLR releases at least till version 3.1.3, don't have proper x86 implementation for ICorDebugEval::Abort().
         // This issue looks like CoreCLR terminate managed process execution instead of abort evaluation.
 
-        ICorDebugEval *threadEval = m_debugger.m_evaluator.FindEvalForThread(pThread);
+        ICorDebugEval *threadEval = m_debugger.m_sharedEvaluator->FindEvalForThread(pThread);
         if (threadEval != nullptr)
         {
             IfFailRet(threadEval->Abort());

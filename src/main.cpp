@@ -100,7 +100,7 @@ template <> const char ProtocolDetails<CLIProtocol>::name[] = "CLIProtocol";
 // argument needed for protocol creation
 using Streams = std::pair<std::istream&, std::ostream&>;
 
-using ProtocolHolder = std::unique_ptr<Protocol>;
+using ProtocolHolder = std::shared_ptr<IProtocol>;
 using ProtocolConstructor = ProtocolHolder (*)(Streams);
 
 // static functions which used to create protocol instance (like class fabric)
@@ -348,7 +348,7 @@ int main(int argc, char *argv[])
     std::set_terminate([]{ LOGF("Netcoredbg is terminated due to call to std::terminate: see stderr..."); });
 
     std::vector<std::unique_ptr<std::ios_base> > streams;
-    auto protocol = protocol_constructor(open_streams(streams, serverPort, protocol_constructor));
+    std::shared_ptr<IProtocol> protocol = protocol_constructor(open_streams(streams, serverPort, protocol_constructor));
 
     if (engineLogging)
     {
@@ -363,7 +363,7 @@ int main(int argc, char *argv[])
         p->EngineLogging(logFilePath);
     }
 
-    std::unique_ptr<ManagedDebugger> debugger;
+    std::shared_ptr<IDebugger> debugger;
     try
     {
         debugger.reset(new ManagedDebugger);
@@ -374,8 +374,8 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    protocol->SetDebugger(debugger.get());
-    debugger->SetProtocol(protocol.get());
+    protocol->SetDebugger(debugger);
+    debugger->SetProtocol(protocol);
 
     if (!execFile.empty())
         protocol->SetLaunchCommand(execFile, execArgs);

@@ -9,12 +9,9 @@
 
 #include <functional>
 #include <unordered_map>
-#include <map>
 #include <set>
 #include <mutex>
 #include <memory>
-
-#include "string_view.h"
 #include "protocols/protocol.h"
 #include "string_view.h"
 #include "torelease.h"
@@ -24,8 +21,6 @@ namespace netcoredbg
 using Utility::string_view;
 
 typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
-
-HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module);
 
 struct method_input_data_t
 {
@@ -244,11 +239,11 @@ public:
         ULONG32 *pIlStart,
         ULONG32 *pIlEnd);
 
-    HRESULT Modules::GetNextSequencePointInMethod(
+    HRESULT GetNextSequencePointInMethod(
         ICorDebugModule *pModule,
         mdMethodDef methodToken,
         ULONG32 ilOffset,
-        Modules::SequencePoint &sequencePoint);
+        SequencePoint &sequencePoint);
 
     HRESULT GetSequencePointByILOffset(
         PVOID pSymbolReaderHandle,

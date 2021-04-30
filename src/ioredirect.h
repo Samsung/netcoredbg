@@ -13,7 +13,7 @@
 #include <memory>
 #include <atomic>
 
-#include "debugger/debugger.h"  // AsyncResult
+#include "interfaces/idebugger.h"  // AsyncResult
 
 #include "iosystem.h"
 #include "streams.h"
@@ -60,7 +60,7 @@ public:
     /// This function allows to write some data to pipe, which represents stdin stream.
     /// Output IS NOT BLOCKING, function returns actual number of written bytes
     /// (this number might be less than requested if output buffer is full).
-    using AsyncResult = Debugger::AsyncResult;
+    using AsyncResult = IDebugger::AsyncResult;
     AsyncResult async_input(InStream &stream);
 
     /// This function interrupts thread which is currently executing `async_input`

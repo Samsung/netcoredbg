@@ -16,6 +16,7 @@
 #include "protocols/vscodeprotocol.h"
 #include "winerror.h"
 
+#include "interfaces/idebugger.h"
 #include "streams.h"
 #include "torelease.h"
 #include "utils/utf.h"
@@ -412,7 +413,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         EmitCapabilitiesEvent();
 
-        m_debugger->Initialize();
+        m_sharedDebugger->Initialize();
 
         AddCapabilitiesTo(body);
 
@@ -442,7 +443,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         const string globalExceptionBreakpoint = "*";
         uint32_t id;
-        m_debugger->InsertExceptionBreakpoint(mode, globalExceptionBreakpoint, id);
+        m_sharedDebugger->InsertExceptionBreakpoint(mode, globalExceptionBreakpoint, id);
 
         // TODO:
         // - implement options support. options not supported in
@@ -453,12 +454,12 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return S_OK;
     } },
     { "configurationDone", [this](const json &arguments, json &body){
-        return m_debugger->ConfigurationDone();
+        return m_sharedDebugger->ConfigurationDone();
     } },
     { "exceptionInfo", [this](const json &arguments, json &body) {
         ThreadId threadId{int(arguments.at("threadId"))};
         ExceptionInfoResponse exceptionResponse;
-        if (!m_debugger->GetExceptionInfoResponse(threadId, exceptionResponse))
+        if (!m_sharedDebugger->GetExceptionInfoResponse(threadId, exceptionResponse))
         {
             body["breakMode"] = exceptionResponse.getVSCodeBreakMode();
             body["exceptionId"] = exceptionResponse.exceptionId;
@@ -478,7 +479,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             srcBreakpoints.emplace_back(b.at("line"), b.value("condition", std::string()));
 
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_debugger->SetBreakpoints(arguments.at("source").at("path"), srcBreakpoints, breakpoints));
+        IfFailRet(m_sharedDebugger->SetBreakpoints(arguments.at("source").at("path"), srcBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;
 
@@ -497,16 +498,16 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             env.clear();
         }
         if (!m_fileExec.empty()) {
-            return m_debugger->Launch(m_fileExec, m_execArgs, env, cwd, arguments.value("stopAtEntry", false));
+            return m_sharedDebugger->Launch(m_fileExec, m_execArgs, env, cwd, arguments.value("stopAtEntry", false));
         }
         vector<string> args = arguments.value("args", vector<string>());
         args.insert(args.begin(), arguments.at("program").get<std::string>());
-        return m_debugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
+        return m_sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
     } },
     { "threads", [this](const json &arguments, json &body){
         HRESULT Status;
         std::vector<Thread> threads;
-        IfFailRet(m_debugger->GetThreads(threads));
+        IfFailRet(m_sharedDebugger->GetThreads(threads));
 
         body["threads"] = threads;
 
@@ -514,13 +515,13 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     } },
     { "disconnect", [this](const json &arguments, json &body){
         auto terminateArgIter = arguments.find("terminateDebuggee");
-        Debugger::DisconnectAction action;
+        IDebugger::DisconnectAction action;
         if (terminateArgIter == arguments.end())
-            action = Debugger::DisconnectDefault;
+            action = IDebugger::DisconnectAction::DisconnectDefault;
         else
-            action = terminateArgIter.value().get<bool>() ? Debugger::DisconnectTerminate : Debugger::DisconnectDetach;
+            action = terminateArgIter.value().get<bool>() ? IDebugger::DisconnectAction::DisconnectTerminate : IDebugger::DisconnectAction::DisconnectDetach;
 
-        m_debugger->Disconnect(action);
+        m_sharedDebugger->Disconnect(action);
 
         m_exit = true;
         return S_OK;
@@ -532,7 +533,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         ThreadId threadId{int(arguments.at("threadId"))};
 
         std::vector<StackFrame> stackFrames;
-        IfFailRet(m_debugger->GetStackTrace(
+        IfFailRet(m_sharedDebugger->GetStackTrace(
             threadId,
             FrameLevel{arguments.value("startFrame", 0)},
             unsigned(arguments.value("levels", 0)),
@@ -550,25 +551,25 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         ThreadId threadId{int(arguments.at("threadId"))};
         body["threadId"] = int(threadId);
-        return m_debugger->Continue(threadId);
+        return m_sharedDebugger->Continue(threadId);
     } },
     { "pause", [this](const json &arguments, json &body){
-        return m_debugger->Pause();
+        return m_sharedDebugger->Pause();
     } },
     { "next", [this](const json &arguments, json &body){
-        return m_debugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, Debugger::STEP_OVER);
+        return m_sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_OVER);
     } },
     { "stepIn", [this](const json &arguments, json &body){
-        return m_debugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, Debugger::STEP_IN);
+        return m_sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_IN);
     } },
     { "stepOut", [this](const json &arguments, json &body){
-        return m_debugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, Debugger::STEP_OUT);
+        return m_sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_OUT);
     } },
     { "scopes", [this](const json &arguments, json &body){
         HRESULT Status;
         std::vector<Scope> scopes;
         FrameId frameId{int(arguments.at("frameId"))};
-        IfFailRet(m_debugger->GetScopes(frameId, scopes));
+        IfFailRet(m_sharedDebugger->GetScopes(frameId, scopes));
 
         body["scopes"] = scopes;
 
@@ -585,7 +586,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             filter = VariablesIndexed;
 
         std::vector<Variable> variables;
-        IfFailRet(m_debugger->GetVariables(
+        IfFailRet(m_sharedDebugger->GetVariables(
             arguments.at("variablesReference"),
             filter,
             arguments.value("start", 0),
@@ -603,7 +604,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             auto frameIdIter = arguments.find("frameId");
             if (frameIdIter == arguments.end())
             {
-                ThreadId threadId = m_debugger->GetLastStoppedThreadId();
+                ThreadId threadId = m_sharedDebugger->GetLastStoppedThreadId();
                 return FrameId{StackFrame(threadId, FrameLevel{0}, "").id};
             }
             else {
@@ -616,7 +617,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         // https://github.com/OmniSharp/omnisharp-vscode/issues/3173
         Variable variable;
         std::string output;
-        Status = m_debugger->Evaluate(frameId, expression, variable, output);
+        Status = m_sharedDebugger->Evaluate(frameId, expression, variable, output);
         if (FAILED(Status))
         {
             body["message"] = output;
@@ -644,7 +645,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         else
             return E_INVALIDARG;
 
-        return m_debugger->Attach(processId);
+        return m_sharedDebugger->Attach(processId);
     } },
     { "setVariable", [this](const json &arguments, json &body) {
         HRESULT Status;
@@ -654,7 +655,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         int ref = arguments.at("variablesReference");
 
         std::string output;
-        Status = m_debugger->SetVariable(name, value, ref, output);
+        Status = m_sharedDebugger->SetVariable(name, value, ref, output);
         if (FAILED(Status))
         {
             body["message"] = output;
@@ -696,7 +697,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         }
 
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_debugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+        IfFailRet(m_sharedDebugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;
 
@@ -869,7 +870,7 @@ void VSCodeProtocol::CommandLoop()
     }
 
     if (!m_exit)
-        m_debugger->Disconnect();
+        m_sharedDebugger->Disconnect();
 
 }
 
