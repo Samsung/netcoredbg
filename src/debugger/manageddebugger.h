@@ -259,8 +259,8 @@ private:
     Variables m_variables;
     Protocol *m_protocol;
     std::unique_ptr<ManagedCallback> m_managedCallback;
-    ICorDebug *m_pDebug;
-    ICorDebugProcess *m_pProcess;
+    ToRelease<ICorDebug> m_iCorDebug;
+    ToRelease<ICorDebugProcess> m_iCorProcess;
 
     std::mutex m_stepMutex;
     int m_enabledSimpleStepId;

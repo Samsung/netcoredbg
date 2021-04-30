@@ -426,7 +426,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::EvalComplete(
             {
                 evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                 ToRelease<ICorDebugThread> pThreadEval;
-                IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
+                IfFailRet(m_debugger.m_iCorProcess->GetThread(int(evalThreadId), &pThreadEval));
                 IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
                 IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
             }
@@ -480,7 +480,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::EvalException(
             {
                 evalThreadId = m_debugger.m_evaluator.front_eval_queue();
                 ToRelease<ICorDebugThread> pThreadEval;
-                IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
+                IfFailRet(m_debugger.m_iCorProcess->GetThread(int(evalThreadId), &pThreadEval));
                 IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
                 IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
             }
@@ -874,7 +874,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     {
         ThreadId evalThreadId = m_debugger.m_evaluator.front_eval_queue();
         ToRelease<ICorDebugThread> pThreadEval;
-        IfFailRet(m_debugger.m_pProcess->GetThread(int(evalThreadId), &pThreadEval));
+        IfFailRet(m_debugger.m_iCorProcess->GetThread(int(evalThreadId), &pThreadEval));
         IfFailRet(pAppDomain->SetAllThreadsDebugState(THREAD_SUSPEND, nullptr));
         IfFailRet(pThreadEval->SetDebugState(THREAD_RUN));
         IfFailRet(pAppDomain->Continue(0));

@@ -114,7 +114,7 @@ HRESULT ManagedDebugger::DisableAllSimpleSteppers()
     HRESULT Status;
 
     ToRelease<ICorDebugAppDomainEnum> domains;
-    IfFailRet(m_pProcess->EnumerateAppDomains(&domains));
+    IfFailRet(m_iCorProcess->EnumerateAppDomains(&domains));
 
     ICorDebugAppDomain *curDomain;
     ULONG domainsFetched;
@@ -148,7 +148,7 @@ HRESULT ManagedDebugger::DisableAllBreakpointsAndSteppers()
     IfFailRet(DisableAllSteppers());
 
     ToRelease<ICorDebugAppDomainEnum> domains;
-    IfFailRet(m_pProcess->EnumerateAppDomains(&domains));
+    IfFailRet(m_iCorProcess->EnumerateAppDomains(&domains));
 
     ICorDebugAppDomain *curDomain;
     ULONG domainsFetched;
@@ -480,7 +480,7 @@ HRESULT ManagedDebugger::GetFullyQualifiedIlOffset(const ThreadId &threadId, Ful
     HRESULT Status;
 
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
+    IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
 
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
@@ -551,8 +551,6 @@ ManagedDebugger::ManagedDebugger() :
     m_variables(m_evaluator),
     m_protocol(nullptr),
     m_managedCallback(nullptr),
-    m_pDebug(nullptr),
-    m_pProcess(nullptr),
     m_enabledSimpleStepId(0),
     m_justMyCode(true),
     m_startupReady(false),
@@ -813,12 +811,12 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
 {
     LogFuncEntry();
 
-    if (!m_pProcess)
+    if (!m_iCorProcess)
         return E_FAIL;
 
     HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
+    IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
     IfFailRet(SetupStep(pThread, stepType));
 
     return Continue(threadId);
@@ -828,16 +826,16 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
 {
     LogFuncEntry();
 
-    if (!m_pProcess)
+    if (!m_iCorProcess)
         return E_FAIL;
 
     HRESULT res;
     // FIXME if not all threads switched back to THREAD_RUN state after eval finished - something wrong with logic at eval complete/exception point
     if (!m_evaluator.IsEvalRunning() && m_evaluator.is_empty_eval_queue())
-        if (FAILED(res = m_pProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr)))
+        if (FAILED(res = m_iCorProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr)))
             LOGE("Continue failed: %s", errormessage(res));
 
-    if (FAILED(res = m_pProcess->Continue(0)))
+    if (FAILED(res = m_iCorProcess->Continue(0)))
         LOGE("Continue failed: %s", errormessage(res));
 
     if (SUCCEEDED(res))
@@ -857,7 +855,7 @@ HRESULT ManagedDebugger::Pause()
 {
     LogFuncEntry();
 
-    if (!m_pProcess)
+    if (!m_iCorProcess)
         return E_FAIL;
 
     // The debugger maintains a stop counter. When the counter goes to zero, the controller is resumed.
@@ -865,11 +863,11 @@ HRESULT ManagedDebugger::Pause()
     // Each call to ICorDebugController::Continue decrements the counter.
     BOOL running = FALSE;
     HRESULT Status;
-    IfFailRet(m_pProcess->IsRunning(&running));
+    IfFailRet(m_iCorProcess->IsRunning(&running));
     if (!running)
         return S_OK;
 
-    IfFailRet(m_pProcess->Stop(0));
+    IfFailRet(m_iCorProcess->Stop(0));
 
     // Same logic as provide vsdbg in case of pause during stepping.
     DisableAllSteppers();
@@ -923,9 +921,9 @@ HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
 {
     LogFuncEntry();
 
-    if (!m_pProcess)
+    if (!m_iCorProcess)
         return E_FAIL;
-    return GetThreadsState(m_pProcess, threads);
+    return GetThreadsState(m_iCorProcess, threads);
 }
 
 HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
@@ -933,10 +931,10 @@ HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame
     LogFuncEntry();
 
     HRESULT Status;
-    if (!m_pProcess)
+    if (!m_iCorProcess)
         return E_FAIL;
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_pProcess->GetThread(int(threadId), &pThread));
+    IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
     return GetStackTrace(pThread, startFrame, maxFrames, stackFrames, totalFrames);
 }
 
@@ -1051,10 +1049,10 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
 {
     HRESULT Status;
 
-    ToRelease<ICorDebug> pCorDebug;
-    IfFailRet(punk->QueryInterface(IID_ICorDebug, (void **)&pCorDebug));
+    ToRelease<ICorDebug> iCorDebug;
+    IfFailRet(punk->QueryInterface(IID_ICorDebug, (void **)&iCorDebug));
 
-    IfFailRet(pCorDebug->Initialize());
+    IfFailRet(iCorDebug->Initialize());
 
     if (m_clrPath.empty())
         m_clrPath = GetCLRPath(m_dbgshim, pid);
@@ -1065,25 +1063,25 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     Interop::Init(m_clrPath);
 
     m_managedCallback.reset(new ManagedCallback(*this));
-    Status = pCorDebug->SetManagedHandler(m_managedCallback.get());
+    Status = iCorDebug->SetManagedHandler(m_managedCallback.get());
     if (FAILED(Status))
     {
-        pCorDebug->Terminate();
+        iCorDebug->Terminate();
         m_managedCallback.reset(nullptr);
         return Status;
     }
 
-    ToRelease<ICorDebugProcess> pProcess;
-    Status = pCorDebug->DebugActiveProcess(pid, FALSE, &pProcess);
+    ToRelease<ICorDebugProcess> iCorProcess;
+    Status = iCorDebug->DebugActiveProcess(pid, FALSE, &iCorProcess);
     if (FAILED(Status))
     {
-        pCorDebug->Terminate();
+        iCorDebug->Terminate();
         m_managedCallback.reset(nullptr);
         return Status;
     }
 
-    m_pProcess = pProcess.Detach();
-    m_pDebug = pCorDebug.Detach();
+    m_iCorProcess = iCorProcess.Detach();
+    m_iCorDebug = iCorDebug.Detach();
 
     m_processId = pid;
 
@@ -1224,7 +1222,7 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
 
 HRESULT ManagedDebugger::CheckNoProcess()
 {
-    if (m_pProcess || m_pDebug)
+    if (m_iCorProcess || m_iCorDebug)
     {
         std::unique_lock<std::mutex> lock(m_processAttachedMutex);
         if (m_processAttachedState == ProcessAttached)
@@ -1238,23 +1236,22 @@ HRESULT ManagedDebugger::CheckNoProcess()
 
 HRESULT ManagedDebugger::DetachFromProcess()
 {
-    if (!m_pProcess || !m_pDebug)
+    if (!m_iCorProcess || !m_iCorDebug)
         return E_FAIL;
 
-    if (SUCCEEDED(m_pProcess->Stop(0)))
+    if (SUCCEEDED(m_iCorProcess->Stop(0)))
     {
         m_breakpoints.DeleteAllBreakpoints();
         DisableAllBreakpointsAndSteppers();
-        m_pProcess->Detach();
+        m_iCorProcess->Detach();
     }
 
     Cleanup();
 
-    m_pProcess->Release();
-    m_pProcess = nullptr;
+    m_iCorProcess.Free();
 
-    m_pDebug->Terminate();
-    m_pDebug = nullptr;
+    m_iCorDebug->Terminate();
+    m_iCorDebug.Free();
 
     if (m_managedCallback->GetRefCount() > 0)
     {
@@ -1267,10 +1264,10 @@ HRESULT ManagedDebugger::DetachFromProcess()
 
 HRESULT ManagedDebugger::TerminateProcess()
 {
-    if (!m_pProcess || !m_pDebug)
+    if (!m_iCorProcess || !m_iCorDebug)
         return E_FAIL;
 
-    if (SUCCEEDED(m_pProcess->Stop(0)))
+    if (SUCCEEDED(m_iCorProcess->Stop(0)))
     {
         DisableAllBreakpointsAndSteppers();
         //pProcess->Detach();
@@ -1278,14 +1275,13 @@ HRESULT ManagedDebugger::TerminateProcess()
 
     Cleanup();
 
-    m_pProcess->Terminate(0);
+    m_iCorProcess->Terminate(0);
     WaitProcessExited();
 
-    m_pProcess->Release();
-    m_pProcess = nullptr;
+    m_iCorProcess.Free();
 
-    m_pDebug->Terminate();
-    m_pDebug = nullptr;
+    m_iCorDebug->Terminate();
+    m_iCorDebug.Free();
 
     if (m_managedCallback->GetRefCount() > 0)
     {
@@ -1367,7 +1363,7 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
         exceptionInfoResponse.breakMode = mode;
     }
 
-    if ((res = m_pProcess->GetThread(int(threadId), &pThread)) && FAILED(res))
+    if ((res = m_iCorProcess->GetThread(int(threadId), &pThread)) && FAILED(res))
         goto failed;
 
     if ((res = pThread->GetCurrentException(&pExceptionValue)) && FAILED(res)) {
@@ -1508,7 +1504,7 @@ HRESULT ManagedDebugger::SetBreakpoints(
 {
     LogFuncEntry();
 
-    return m_breakpoints.SetBreakpoints(m_pProcess, filename, srcBreakpoints, breakpoints);
+    return m_breakpoints.SetBreakpoints(m_iCorProcess, filename, srcBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::SetFunctionBreakpoints(
@@ -1517,7 +1513,7 @@ HRESULT ManagedDebugger::SetFunctionBreakpoints(
 {
     LogFuncEntry();
 
-    return m_breakpoints.SetFunctionBreakpoints(m_pProcess, funcBreakpoints, breakpoints);
+    return m_breakpoints.SetFunctionBreakpoints(m_iCorProcess, funcBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::BreakpointActivate(int id, bool act)
@@ -1667,26 +1663,26 @@ HRESULT ManagedDebugger::GetVariables(
 {
     LogFuncEntry();
 
-    return m_variables.GetVariables(m_pProcess, variablesReference, filter, start, count, variables);
+    return m_variables.GetVariables(m_iCorProcess, variablesReference, filter, start, count, variables);
 }
 
 HRESULT ManagedDebugger::GetScopes(FrameId frameId, std::vector<Scope> &scopes)
 {
     LogFuncEntry();
 
-    return m_variables.GetScopes(m_pProcess, frameId, scopes);
+    return m_variables.GetScopes(m_iCorProcess, frameId, scopes);
 }
 
 HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output)
 {
     LogFuncEntry();
 
-    return m_variables.Evaluate(m_pProcess, frameId, expression, variable, output);
+    return m_variables.Evaluate(m_iCorProcess, frameId, expression, variable, output);
 }
 
 HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output)
 {
-    return m_variables.SetVariable(m_pProcess, name, value, ref, output);
+    return m_variables.SetVariable(m_iCorProcess, name, value, ref, output);
 }
 
 HRESULT ManagedDebugger::SetVariableByExpression(
@@ -1700,8 +1696,8 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     HRESULT Status;
     ToRelease<ICorDebugValue> pResultValue;
 
-    IfFailRet(m_variables.GetValueByExpression(m_pProcess, frameId, variable, &pResultValue));
-    return m_variables.SetVariable(m_pProcess, pResultValue, value, frameId, output);
+    IfFailRet(m_variables.GetValueByExpression(m_iCorProcess, frameId, variable, &pResultValue));
+    return m_variables.SetVariable(m_iCorProcess, pResultValue, value, frameId, output);
 }
 
 
