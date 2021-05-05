@@ -14,7 +14,7 @@
 #include <arrayholder.h>
 
 #include "metadata/typeprinter.h"
-#include "torelease.h"
+#include "utils/torelease.h"
 #include "utils/utf.h"
 #include "managed/interop.h"
 #include "metadata/modules.h" // HasAttribute()

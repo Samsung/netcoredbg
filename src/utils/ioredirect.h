@@ -15,9 +15,9 @@
 
 #include "interfaces/idebugger.h"  // AsyncResult
 
-#include "iosystem.h"
-#include "streams.h"
-#include "platform.h"
+#include "utils/iosystem.h"
+#include "utils/streams.h"
+#include "utils/platform.h"
 #include "span.h"
 #include "utils/rwlock.h"
 

@@ -14,8 +14,8 @@
 #include "palclr.h"
 #endif
 
-#include "filesystem.h"
-#include "dynlibs.h"
+#include "utils/filesystem.h"
+#include "utils/dynlibs.h"
 #include <string>
 
 

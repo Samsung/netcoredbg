@@ -16,7 +16,7 @@
 #include <set>
 
 #include "managed/interop.h"
-#include "filesystem.h"
+#include "utils/filesystem.h"
 
 namespace netcoredbg
 {

@@ -5,7 +5,7 @@
 /// with dynamically loading libraries.
 
 #pragma once
-#include "string_view.h"
+#include "utils/string_view.h"
 
 namespace netcoredbg
 {

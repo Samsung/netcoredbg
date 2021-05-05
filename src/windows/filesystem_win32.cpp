@@ -7,7 +7,9 @@
 #ifdef WIN32
 #include <windows.h>
 #include <string>
-#include "filesystem.h"
+#include "utils/filesystem.h"
+#include "utils/limits.h"
+
 
 namespace netcoredbg
 {

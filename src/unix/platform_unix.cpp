@@ -9,7 +9,7 @@
 #include <crt_externs.h>
 #endif
 #include <unistd.h>
-#include "platform.h"
+#include "utils/platform.h"
 
 extern char** environ;
 

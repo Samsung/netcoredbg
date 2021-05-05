@@ -10,7 +10,7 @@
 #include <streambuf>
 #include <iostream>
 #include <vector>
-#include "iosystem.h"
+#include "utils/iosystem.h"
 
 namespace netcoredbg
 {

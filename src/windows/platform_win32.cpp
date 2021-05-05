@@ -7,7 +7,8 @@
 #ifdef WIN32
 #include <windows.h>
 #include <stdlib.h>  // char **environ
-#include "platform.h"
+#include "utils/platform.h"
+#include "utils/limits.h"
 
 namespace netcoredbg
 {

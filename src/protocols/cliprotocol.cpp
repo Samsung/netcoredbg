@@ -15,15 +15,15 @@
 
 #include "interfaces/idebugger.h"
 #include "debugger/frames.h"
-#include "platform.h"
-#include "torelease.h"
+#include "utils/platform.h"
+#include "utils/torelease.h"
 #include "protocols/cliprotocol.h"
 #include "protocols/protocol_utils.h"
 #include "linenoise.h"
 #include "utils/utf.h"
-#include "filesystem.h"
+#include "utils/filesystem.h"
 
-#include "limits.h"
+#include "utils/limits.h"
 #include <cstddef>
 #include <sstream>
 #include <forward_list>
@@ -35,10 +35,9 @@
 #include <fstream>
 #include <iomanip>
 #include <csignal>
-#include "limits.h"
 
-#include "string_view.h"
-#include "span.h"
+#include "utils/string_view.h"
+#include "utils/span.h"
 #include "utils/logger.h"
 #include "tokenizer.h"
 

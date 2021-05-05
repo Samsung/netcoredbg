@@ -11,9 +11,9 @@
 #include <string>
 
 #include "palclr.h"
-#include "platform.h"
+#include "utils/platform.h"
 #include "metadata/modules.h"
-#include "dynlibs.h"
+#include "utils/dynlibs.h"
 #include "utils/utf.h"
 #include "utils/rwlock.h"
 

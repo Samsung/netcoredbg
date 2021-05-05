@@ -9,8 +9,8 @@
 #include <functional>
 #include <map>
 #include <memory>
-#include "string_view.h"
-#include "streams.h"
+#include "utils/string_view.h"
+#include "utils/streams.h"
 
 // For `HRESULT` definition
 #ifdef FEATURE_PAL

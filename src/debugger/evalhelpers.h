@@ -11,7 +11,7 @@
 #include <list>
 #include <mutex>
 #include <memory>
-#include "torelease.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {

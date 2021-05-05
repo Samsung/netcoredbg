@@ -10,7 +10,7 @@
 #include <algorithm>
 
 #include "metadata/typeprinter.h"
-#include "platform.h"
+#include "utils/platform.h"
 #include "managed/interop.h"
 
 namespace netcoredbg

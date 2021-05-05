@@ -4,7 +4,7 @@
 #pragma once
 #include <utility>
 #include <string>
-#include "string_view.h"
+#include "utils/string_view.h"
 
 namespace netcoredbg
 {

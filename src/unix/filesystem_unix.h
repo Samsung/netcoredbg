@@ -7,7 +7,7 @@
 #pragma once
 #include <cstddef>
 #include <climits>
-#include "platform.h"
+#include "utils/platform.h"
 
 namespace netcoredbg
 {

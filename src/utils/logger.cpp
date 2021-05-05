@@ -17,7 +17,7 @@
 #include <time.h>
 #include <assert.h>
 #include <mutex>
-#include "limits.h"
+#include "utils/limits.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -29,7 +29,7 @@
 #include <sys/syscall.h>
 #endif
 
-#include "logger.h"
+#include "utils/logger.h"
 
 namespace
 {

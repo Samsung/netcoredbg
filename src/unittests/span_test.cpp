@@ -2,7 +2,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include <catch2/catch.hpp>
-#include "span.h"
+#include "utils/span.h"
 
 using ::netcoredbg::Utility::span;
 

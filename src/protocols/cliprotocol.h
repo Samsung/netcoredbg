@@ -14,10 +14,9 @@
 #include <atomic>
 
 #include "interfaces/iprotocol.h"
-#include "string_view.h"
-#include "streams.h"
-#include "string_view.h"
-#include "span.h"
+#include "utils/string_view.h"
+#include "utils/streams.h"
+#include "utils/span.h"
 
 namespace netcoredbg
 {

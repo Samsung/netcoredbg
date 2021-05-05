@@ -15,8 +15,8 @@
 #include <atomic>
 #include <string.h>
 #include <assert.h>
-#include "iosystem.h"
-#include "limits.h"
+#include "utils/iosystem.h"
+#include "utils/limits.h"
 
 // short alias for full class name
 namespace { typedef netcoredbg::IOSystemTraits<netcoredbg::Win32PlatformTag> Class; }

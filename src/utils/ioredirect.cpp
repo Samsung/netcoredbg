@@ -5,9 +5,9 @@
 /// This file contains definitions of`IORedirectHelper` class members.
 
 #include <string.h>
-#include "limits.h"
-#include "streams.h"
-#include "ioredirect.h"
+#include "utils/limits.h"
+#include "utils/streams.h"
+#include "utils/ioredirect.h"
 #include "interfaces/idebugger.h"
 #include "utils/logger.h"
 #include "utils/rwlock.h"

@@ -15,7 +15,7 @@
 #include <memory>
 #include "interfaces/idebugger.h"
 #include "debugger/exceptionbreakpointstorage.h"
-#include "torelease.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {

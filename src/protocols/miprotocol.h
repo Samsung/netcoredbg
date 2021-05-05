@@ -10,7 +10,7 @@
 #include <vector>
 #include <iostream>
 #include <memory>
-#include "string_view.h"
+#include "utils/string_view.h"
 #include "utils/escaped_string.h"
 #include "interfaces/idebugger.h"
 #include "interfaces/iprotocol.h"

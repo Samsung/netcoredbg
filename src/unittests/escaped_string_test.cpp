@@ -3,7 +3,7 @@
 
 #include <catch2/catch.hpp>
 #include <string>
-#include "string_view.h"
+#include "utils/string_view.h"
 #include "utils/escaped_string.h"
 #include "compile_test.h"
 

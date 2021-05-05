@@ -5,8 +5,8 @@
 #include <catch2/catch.hpp>
 #include <string.h>
 
-#include "iosystem.h"
-#include "streams.h"
+#include "utils/iosystem.h"
+#include "utils/streams.h"
 
 using namespace netcoredbg;
 

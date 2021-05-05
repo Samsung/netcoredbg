@@ -6,12 +6,12 @@
 
 #include <cstring>
 #include <cassert>
-#include "limits.h"
+#include "utils/limits.h"
 
 #include <algorithm>
 #include <thread>
 
-#include "streams.h"
+#include "utils/streams.h"
 
 namespace netcoredbg
 {

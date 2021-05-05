@@ -17,8 +17,8 @@
 #include "winerror.h"
 
 #include "interfaces/idebugger.h"
-#include "streams.h"
-#include "torelease.h"
+#include "utils/streams.h"
+#include "utils/torelease.h"
 #include "utils/utf.h"
 #include "utils/logger.h"
 #include "utils/escaped_string.h"

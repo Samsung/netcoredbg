@@ -9,7 +9,7 @@
 #include <mutex>
 #include "protocols/protocol.h"
 #include "interfaces/idebugger.h"
-#include "torelease.h"
+#include "utils/torelease.h"
 
 
 namespace netcoredbg

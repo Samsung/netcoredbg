@@ -3,8 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 #include "debugger/frames.h"
-#include "platform.h"
-#include "torelease.h"
+#include "utils/platform.h"
+#include "utils/torelease.h"
 #include "protocols/miprotocol.h"
 #include "protocols/protocol_utils.h"
 #include "tokenizer.h"

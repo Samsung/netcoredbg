@@ -12,10 +12,10 @@
 #include <unistd.h>
 #include <array>
 #include <string>
-#include "filesystem.h"
-#include "string_view.h"
-#include "span.h"
-#include "limits.h"
+#include "utils/filesystem.h"
+#include "utils/string_view.h"
+#include "utils/span.h"
+#include "utils/limits.h"
 
 namespace netcoredbg
 {

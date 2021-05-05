@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <chrono>
 
-#include "platform.h"
+#include "utils/platform.h"
 
 namespace netcoredbg
 {

@@ -7,8 +7,8 @@
 
 #pragma once
 #include <cstddef>
-#include "string_view.h"
-#include "platform.h"
+#include "utils/string_view.h"
+#include "utils/platform.h"
 
 namespace netcoredbg
 {

@@ -7,10 +7,10 @@
 #include <string.h>
 #include <string>
 
-#include "span.h"
-#include "iosystem.h"
-#include "streams.h"
-#include "ioredirect.h"
+#include "utils/span.h"
+#include "utils/iosystem.h"
+#include "utils/streams.h"
+#include "utils/ioredirect.h"
 
 #ifdef _WIN32
 void usleep(unsigned long usec) { Sleep((usec+999)/1000); }

@@ -6,9 +6,9 @@
 #include <algorithm>
 #include "debugger/frames.h"
 #include "metadata/typeprinter.h"
-#include "platform.h"
+#include "utils/platform.h"
 #include "utils/logger.h"
-#include "torelease.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {

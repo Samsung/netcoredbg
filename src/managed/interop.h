@@ -4,7 +4,7 @@
 
 // Copyright (c) 2017 Samsung Electronics Co., LTD
 #pragma once
-#include "platform.h"
+#include "utils/platform.h"
 
 #include "cor.h"
 #include "cordebug.h"

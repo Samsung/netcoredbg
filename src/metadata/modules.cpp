@@ -11,7 +11,7 @@
 #include <algorithm>
 
 #include "managed/interop.h"
-#include "platform.h"
+#include "utils/platform.h"
 #include "utils/utf.h"
 #include "metadata/typeprinter.h"
 

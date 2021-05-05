@@ -28,12 +28,12 @@
 #include "valueprint.h"
 #include "managed/interop.h"
 #include "utils/utf.h"
-#include "dynlibs.h"
+#include "utils/dynlibs.h"
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "utils/logger.h"
 #include "debugger/waitpid.h"
-#include "iosystem.h"
+#include "utils/iosystem.h"
 
 #include "palclr.h"
 

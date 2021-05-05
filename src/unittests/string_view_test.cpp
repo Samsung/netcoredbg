@@ -6,7 +6,7 @@
 #include <limits.h>
 
 #ifndef TEST_NATIVE_STRING_VIEW
-#include "string_view.h"
+#include "utils/string_view.h"
 using ::netcoredbg::Utility::string_view;
 
 #else

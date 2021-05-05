@@ -13,8 +13,8 @@
 #include <mutex>
 #include <memory>
 #include "protocols/protocol.h"
-#include "string_view.h"
-#include "torelease.h"
+#include "utils/string_view.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {

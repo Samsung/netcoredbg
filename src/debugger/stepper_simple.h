@@ -8,7 +8,7 @@
 
 #include <mutex>
 #include "interfaces/idebugger.h"
-#include "torelease.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {

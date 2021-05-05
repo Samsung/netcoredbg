@@ -11,8 +11,8 @@
 #include <tuple>
 #include <new>
 
-#include "platform.h"
-#include "iosystem.h"
+#include "utils/platform.h"
+#include "utils/iosystem.h"
 
 template <> struct netcoredbg::IOSystemTraits<netcoredbg::UnixPlatformTag>
 {

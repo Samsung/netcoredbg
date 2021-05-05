@@ -4,7 +4,7 @@
 /// \file filesystem.cpp
 /// This file contains definitions of cross-platform functions related to file system.
 
-#include "filesystem.h"
+#include "utils/filesystem.h"
 
 namespace netcoredbg
 {

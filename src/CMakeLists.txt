@@ -112,9 +112,9 @@ set(netcoredbg_SRC
     main.cpp
     buildinfo.cpp
     utils/escaped_string.cpp
-    filesystem.cpp
-    ioredirect.cpp
-    streams.cpp
+    utils/filesystem.cpp
+    utils/ioredirect.cpp
+    utils/streams.cpp
     unix/interop_unix.cpp
     unix/dynlibs_unix.cpp
     unix/filesystem_unix.cpp

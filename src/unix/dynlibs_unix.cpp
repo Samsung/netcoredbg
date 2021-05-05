@@ -12,8 +12,8 @@
 #endif
 
 #include <dlfcn.h>
-#include "limits.h"
-#include "dynlibs.h"
+#include "utils/limits.h"
+#include "utils/dynlibs.h"
 
 namespace netcoredbg
 {

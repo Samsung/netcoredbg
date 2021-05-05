@@ -6,7 +6,8 @@
 
 #ifdef WIN32
 #include <windows.h>
-#include "dynlibs.h"
+#include "utils/dynlibs.h"
+#include "utils/limits.h"
 
 namespace netcoredbg
 {

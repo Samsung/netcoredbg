@@ -3,7 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include "debugger/threads.h"
-#include "torelease.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {

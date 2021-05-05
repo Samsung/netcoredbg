@@ -11,10 +11,10 @@
 #include <set>
 #include "interfaces/idebugger.h"
 #include "debugger/dbgshim.h"
-#include "string_view.h"
-#include "span.h"
-#include "ioredirect.h"
-#include "torelease.h"
+#include "utils/string_view.h"
+#include "utils/span.h"
+#include "utils/ioredirect.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {
