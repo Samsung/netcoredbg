@@ -458,6 +458,40 @@ static std::string IndiciesToStr(const std::vector<ULONG32> &ind, const std::vec
     }
     return ss.str();
 }
+typedef std::function<HRESULT(mdFieldDef)> WalkFieldsCallback;
+typedef std::function<HRESULT(mdProperty)> WalkPropertiesCallback;
+
+static HRESULT ForEachFields(IMetaDataImport *pMD, mdTypeDef currentTypeDef, WalkFieldsCallback cb)
+{
+    HRESULT Status = S_OK;
+    ULONG numFields = 0;
+    HCORENUM hEnum = NULL;
+    mdFieldDef fieldDef;
+    while(SUCCEEDED(pMD->EnumFields(&hEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
+    {
+        Status = cb(fieldDef);
+        if (FAILED(Status))
+            break;
+    }
+    pMD->CloseEnum(hEnum);
+    return Status;
+}
+
+static HRESULT ForEachProperties(IMetaDataImport *pMD, mdTypeDef currentTypeDef, WalkPropertiesCallback cb)
+{
+    HRESULT Status = S_OK;
+    mdProperty propertyDef;
+    ULONG numProperties = 0;
+    HCORENUM propEnum = NULL;
+    while(SUCCEEDED(pMD->EnumProperties(&propEnum, currentTypeDef, &propertyDef, 1, &numProperties)) && numProperties != 0)
+    {
+        Status = cb(propertyDef);
+        if (FAILED(Status))
+            break;
+    }
+    pMD->CloseEnum(propEnum);
+    return Status;
+}
 
 HRESULT Evaluator::WalkMembers(
     ICorDebugValue *pInputValue,
@@ -578,11 +612,7 @@ HRESULT Evaluator::WalkMembers(
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-
-    ULONG numFields = 0;
-    HCORENUM hEnum = NULL;
-    mdFieldDef fieldDef;
-    while(SUCCEEDED(pMD->EnumFields(&hEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
+    IfFailRet(ForEachFields(pMD, currentTypeDef, [&](mdFieldDef fieldDef) -> HRESULT
     {
         ULONG nameLen = 0;
         DWORD fieldAttr = 0;
@@ -600,11 +630,11 @@ HRESULT Evaluator::WalkMembers(
             // https://github.com/dotnet/roslyn/blob/315c2e149ba7889b0937d872274c33fcbfe9af5f/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNames.cs
             // Note, uncontrolled access to internal compiler added field or its properties may break debugger work.
             if (nameLen > 2 && starts_with(mdName, W("<")))
-                continue;
+                return S_OK;
 
             bool is_static = (fieldAttr & fdStatic);
             if (isNull && !is_static)
-                continue;
+                return S_OK;
 
             std::string name = to_utf8(mdName);
 
@@ -650,21 +680,11 @@ HRESULT Evaluator::WalkMembers(
                 return SetValue(iCorValue, value, pThread, output);
             };
 
-            Status = cb(pType, is_static, name, getValue, setValue);
-
-            if (FAILED(Status))
-            {
-                pMD->CloseEnum(hEnum);
-                return Status;
-            }
+            IfFailRet(cb(pType, is_static, name, getValue, setValue));
         }
-    }
-    pMD->CloseEnum(hEnum);
-
-    mdProperty propertyDef;
-    ULONG numProperties = 0;
-    HCORENUM propEnum = NULL;
-    while(SUCCEEDED(pMD->EnumProperties(&propEnum, currentTypeDef, &propertyDef, 1, &numProperties)) && numProperties != 0)
+        return S_OK;
+    }));
+    IfFailRet(ForEachProperties(pMD, currentTypeDef, [&](mdProperty propertyDef) -> HRESULT
     {
         mdTypeDef  propertyClass;
 
@@ -680,11 +700,11 @@ HRESULT Evaluator::WalkMembers(
         {
             DWORD getterAttr = 0;
             if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
-                continue;
+                return S_OK;
 
             bool is_static = (getterAttr & mdStatic);
             if (isNull && !is_static)
-                continue;
+                return S_OK;
 
             // https://github.sec.samsung.net/dotnet/coreclr/blob/9df87a133b0f29f4932f38b7307c87d09ab80d5d/src/System.Private.CoreLib/shared/System/Diagnostics/DebuggerBrowsableAttribute.cs#L17
             // Since we check only first byte, no reason store it as int (default enum type in c#)
@@ -700,7 +720,7 @@ HRESULT Evaluator::WalkMembers(
             bool debuggerBrowsableState_Never = false;
 
             ULONG numAttributes = 0;
-            hEnum = NULL;
+            HCORENUM hEnum = NULL;
             mdCustomAttribute attr;
             while(SUCCEEDED(pMD->EnumCustomAttributes(&hEnum, propertyDef, 0, &attr, 1, &numAttributes)) && numAttributes != 0)
             {
@@ -731,7 +751,7 @@ HRESULT Evaluator::WalkMembers(
             pMD->CloseEnum(hEnum);
 
             if (debuggerBrowsableState_Never)
-              continue;
+                return S_OK;
 
             std::string name = to_utf8(propertyName);
 
@@ -802,17 +822,10 @@ HRESULT Evaluator::WalkMembers(
                     return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, evalFlags);
                 }
             };
-
-            Status = cb(pType, is_static, name, getValue, setValue);
-
-            if (FAILED(Status))
-            {
-                pMD->CloseEnum(propEnum);
-                return Status;
-            }
+            IfFailRet(cb(pType, is_static, name, getValue, setValue));
         }
-    }
-    pMD->CloseEnum(propEnum);
+        return S_OK;
+    }));
 
     std::string baseTypeName;
     ToRelease<ICorDebugType> pBaseType;
