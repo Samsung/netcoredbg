@@ -455,8 +455,10 @@ namespace NetCoreDbg
                             currentData.SetRange(p.StartLine, p.EndLine, p.StartColumn, p.EndColumn);
                             currentDocHandle = p.Document;
                         }
-                        // same segment only in case same/next line and same file
-                        else if (p.StartLine - currentData.endLine <= 1 && currentDocHandle == p.Document )
+                        // same segment only in case same file and on next line or on same line but on the right
+                        else if ((p.StartLine == currentData.endLine + 1 ||
+                                  (p.StartLine == currentData.endLine && p.StartColumn > currentData.endColumn)) &&
+                                 currentDocHandle == p.Document )
                         {
                             currentData.SetRangeEnd(p.EndLine, p.EndColumn);
                         }
