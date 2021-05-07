@@ -2,16 +2,13 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "debugger/manageddebugger.h"
-
 #include <sstream>
-#include <mutex>
 #include <memory>
 #include <unordered_set>
 #include <vector>
-#include <list>
-
 #include "debugger/evaluator.h"
+#include "debugger/evalwaiter.h"
+#include "debugger/frames.h"
 #include "utils/utf.h"
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
@@ -60,7 +57,7 @@ static HRESULT ParseIndices(const std::string &s, std::vector<ULONG32> &indices)
 }
 
 HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
-                                              ICorDebugILFrame *pILFrame,
+                                              FrameLevel frameLevel,
                                               ICorDebugValue *pInputValue,
                                               ValueKind valueKind,
                                               const std::string &name,
@@ -103,7 +100,7 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
         return pArrayVal->GetElement(static_cast<uint32_t>(indices.size()), indices.data(), ppResultValue);
     }
 
-    IfFailRet(WalkMembers(pInputValue, pThread, pILFrame, [&](
+    IfFailRet(WalkMembers(pInputValue, pThread, frameLevel, [&](
         mdMethodDef mdGetter,
         ICorDebugModule *pModule,
         ICorDebugType *pType,
@@ -136,6 +133,7 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
         {
             if (pValue)
                 pValue->AddRef();
+
             pResult = pValue;
         }
 
@@ -198,7 +196,7 @@ void Evaluator::Cleanup()
 }
 
 HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
-                                ICorDebugILFrame *pILFrame,
+                                FrameLevel frameLevel,
                                 ICorDebugValue *pValue,
                                 ValueKind valueKind,
                                 const std::vector<std::string> &parts,
@@ -218,7 +216,7 @@ HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
     {
         ToRelease<ICorDebugValue> pClassValue(std::move(pResultValue));
         IfFailRet(GetFieldOrPropertyWithName(
-            pThread, pILFrame, pClassValue, valueKind, parts[i], &pResultValue, evalFlags));  // NOLINT(clang-analyzer-cplusplus.Move)
+            pThread, frameLevel, pClassValue, valueKind, parts[i], &pResultValue, evalFlags));  // NOLINT(clang-analyzer-cplusplus.Move)
         valueKind = ValueIsVariable; // we can only follow through instance fields
     }
 
@@ -524,8 +522,8 @@ HRESULT Evaluator::FindType(
         IfFailRet(pClass->QueryInterface(IID_ICorDebugClass2, (LPVOID*) &pClass2));
 
         ToRelease<IUnknown> pMDUnknown;
-        ToRelease<IMetaDataImport> pMD;
         IfFailRet(pTypeModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+        ToRelease<IMetaDataImport> pMD;
         IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
         DWORD flags;
@@ -551,7 +549,7 @@ HRESULT Evaluator::FindType(
 }
 
 HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
-                                ICorDebugILFrame *pILFrame,
+                                FrameLevel frameLevel,
                                 const std::string &methodClass,
                                 const std::vector<std::string> &parts,
                                 ICorDebugValue **ppResult,
@@ -596,7 +594,7 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
             ToRelease<ICorDebugValue> pTypeObject;
             if (S_OK == CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject))
             {
-                if (SUCCEEDED(FollowFields(pThread, pILFrame, pTypeObject, ValueIsClass, staticName, 0, ppResult, evalFlags)))
+                if (SUCCEEDED(FollowFields(pThread, frameLevel, pTypeObject, ValueIsClass, staticName, 0, ppResult, evalFlags)))
                     return S_OK;
             }
             trim = true;
@@ -606,7 +604,7 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
         ToRelease<ICorDebugValue> pTypeObject;
         IfFailRet(CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject));
         if (Status == S_OK && // type have static members (S_FALSE if type don't have static members)
-            SUCCEEDED(FollowFields(pThread, pILFrame, pTypeObject, ValueIsClass, fieldName, 0, ppResult, evalFlags)))
+            SUCCEEDED(FollowFields(pThread, frameLevel, pTypeObject, ValueIsClass, fieldName, 0, ppResult, evalFlags)))
             return S_OK;
 
         trim = true;
@@ -616,7 +614,7 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
 }
 
 HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
-                            ICorDebugFrame *pFrame,
+                            FrameLevel frameLevel,
                             const std::string &expression,
                             ICorDebugValue **ppResult,
                             int evalFlags)
@@ -631,9 +629,6 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
 
     int nextPart = 0;
 
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
     ToRelease<ICorDebugValue> pResultValue;
     ToRelease<ICorDebugValue> pThisValue;
 
@@ -644,9 +639,8 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
     else
     {
         // Note, we use E_ABORT error code as fast way to exit from stack vars walk routine here.
-        if (FAILED(Status = WalkStackVars(pFrame, [&](ICorDebugILFrame *pILFrame,
-                                                      ICorDebugValue *pValue,
-                                                      const std::string &name) -> HRESULT
+        if (FAILED(Status = WalkStackVars(pThread, frameLevel, [&](ICorDebugValue *pValue,
+                                                                   const std::string &name) -> HRESULT
         {
             if (name == "this" && pValue)
             {
@@ -669,17 +663,12 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
         }
     }
 
-    // After FollowFields pFrame may be neutered (for example, in case eval from override method), so get the class name of the method here.
-    std::string methodClass;
-    std::string methodName;
-    TypePrinter::GetTypeAndMethod(pFrame, methodClass, methodName);
-
     if (!pResultValue && pThisValue) // check this/this.*
     {
         if (parts[nextPart] == "this")
             nextPart++; // skip first part with "this" (we have it in pThisValue), check rest
 
-        if (SUCCEEDED(FollowFields(pThread, pILFrame, pThisValue, ValueIsVariable, parts, nextPart, &pResultValue, evalFlags)))
+        if (SUCCEEDED(FollowFields(pThread, frameLevel, pThisValue, ValueIsVariable, parts, nextPart, &pResultValue, evalFlags)))
         {
             *ppResult = pResultValue.Detach();
             return S_OK;
@@ -688,7 +677,16 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
 
     if (!pResultValue) // check statics in nested classes
     {
-        if (SUCCEEDED(FollowNested(pThread, pILFrame, methodClass, parts, &pResultValue, evalFlags)))
+        ToRelease<ICorDebugFrame> pFrame;
+        IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
+        if (pFrame == nullptr)
+            return E_FAIL;
+
+        std::string methodClass;
+        std::string methodName;
+        TypePrinter::GetTypeAndMethod(pFrame, methodClass, methodName);
+
+        if (SUCCEEDED(FollowNested(pThread, frameLevel, methodClass, parts, &pResultValue, evalFlags)))
         {
             *ppResult = pResultValue.Detach();
             return S_OK;
@@ -717,7 +715,7 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
     }
 
     ToRelease<ICorDebugValue> pValue(std::move(pResultValue));
-    IfFailRet(FollowFields(pThread, pILFrame, pValue, valueKind, parts, nextPart, &pResultValue, evalFlags));
+    IfFailRet(FollowFields(pThread, frameLevel, pValue, valueKind, parts, nextPart, &pResultValue, evalFlags));
 
     *ppResult = pResultValue.Detach();
 
@@ -726,158 +724,15 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
 
 HRESULT Evaluator::CreateString(ICorDebugThread *pThread, const std::string &value, ICorDebugValue **ppNewString)
 {
-    HRESULT Status;
     auto value16t = to_utf16(value);
-
-    ToRelease<ICorDebugEval> pEval;
-    IfFailRet(pThread->CreateEval(&pEval));
-
-    IfFailRet(pEval->NewString(value16t.c_str()));
-
-    return WaitEvalResult(pThread, pEval, ppNewString);
-}
-
-void Evaluator::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval)
-{
-    std::lock_guard<std::mutex> lock(m_evalMutex);
-    if (!pThread)
-    {
-        m_evalResults.clear();
-        return;
-    }
-
-    DWORD threadId = 0;
-    pThread->GetID(&threadId);
-
-    std::unique_ptr< ToRelease<ICorDebugValue> > ppEvalResult(new ToRelease<ICorDebugValue>());
-    if (pEval)
-    {
-        pEval->GetResult(&(*ppEvalResult));
-    }
-
-    auto it = m_evalResults.find(threadId);
-
-    if (it == m_evalResults.end())
-        return;
-
-    it->second.pEval = pEval;
-    it->second.promiseValue.set_value(std::move(ppEvalResult));
-
-    m_evalResults.erase(it);
-}
-
-bool Evaluator::IsEvalRunning()
-{
-    std::lock_guard<std::mutex> lock(m_evalMutex);
-    return !m_evalResults.empty();
-}
-
-std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > Evaluator::RunEval(
-    ICorDebugThread *pThread,
-    ICorDebugEval *pEval)
-{
-    std::promise<std::unique_ptr<ToRelease<ICorDebugValue> > > p;
-    auto f = p.get_future();
-    if (!f.valid()) {
-        LOGE("get_future() returns not valid promise object");
-    }
-
-    HRESULT res;
-    DWORD threadId = 0;
-    pThread->GetID(&threadId);
-
-    ToRelease<ICorDebugProcess> pProcess;
-    res = pThread->GetProcess(&pProcess);
-    if (FAILED(res)) {
-        LOGE("GetProcess() failed, %0x", res);
-        return f;
-    }
-
-    std::lock_guard<std::mutex> lock(m_evalMutex);
-    if (!m_evalResults.insert(std::make_pair(threadId, evalResult_t{pEval, std::move(p)})).second)
-        return f; // Already running eval? The future will throw broken promise
-
-    ToRelease<ICorDebugAppDomain> pAppDomainLocal;
-    pThread->GetAppDomain(&pAppDomainLocal);
-    pAppDomainLocal->SetAllThreadsDebugState(THREAD_SUSPEND, pThread);
-    pThread->SetDebugState(THREAD_RUN);
-
-    res = pProcess->Continue(0);
-    if (FAILED(res)) {
-        LOGE("Continue() failed, %0x", res);
-        m_evalResults.erase(threadId);
-    }
-
-    return f;
-}
-
-ICorDebugEval *Evaluator::FindEvalForThread(ICorDebugThread *pThread)
-{
-    DWORD threadId = 0;
-    if (FAILED(pThread->GetID(&threadId)))
-        return nullptr;
-
-    auto it = m_evalResults.find(threadId);
-    if (it == m_evalResults.end())
-        return nullptr;
-
-    return it->second.pEval;
-}
-
-HRESULT Evaluator::WaitEvalResult(ICorDebugThread *pThread,
-                                  ICorDebugEval *pEval,
-                                  ICorDebugValue **ppEvalResult)
-{
-    try
-    {
-        auto f = RunEval(pThread, pEval);
-
-        if (!f.valid())
-            return E_FAIL;
-
-        // NOTE
-        // MSVS 2017 debugger and newer use config file
-        // C:\Program Files (x86)\Microsoft Visual Studio\YYYY\VERSION\Common7\IDE\Profiles\CSharp.vssettings
-        // by default NormalEvalTimeout is 5000 milliseconds
-        //
-        // TODO add timeout configuration feature (care about VSCode, MSVS with Tizen plugin, standalone usage)
-
-        std::future_status timeoutStatus = f.wait_for(std::chrono::milliseconds(5000));
-        if (timeoutStatus == std::future_status::timeout)
+    return m_sharedEvalWaiter->WaitEvalResult(pThread, ppNewString,
+        [&](ICorDebugEval *pEval) -> HRESULT
         {
-            LOGW("Evaluation timed out.");
-
-            // NOTE
-            // Call ICorDebugEval::Abort() and ICorDebugEval2::RudeAbort() during process execution is allowed, we are safe here.
-            // 
-            // All CoreCLR releases at least till version 3.1.3, don't have proper x86 implementation for ICorDebugEval::Abort().
-            // This issue looks like CoreCLR terminate managed process execution instead of abort evaluation.
-
-            if (FAILED(pEval->Abort()))
-            {
-                HRESULT Status = S_OK;
-                ToRelease<ICorDebugEval2> pEval2;
-                IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-                IfFailRet(pEval2->RudeAbort());
-            }
-        }
-
-        auto evalResult = f.get();
-
-        if (!ppEvalResult)
+            // Note, this code execution protected by EvalWaiter mutex.
+            HRESULT Status;
+            IfFailRet(pEval->NewString(value16t.c_str()));
             return S_OK;
-
-        if (!evalResult->GetPtr())
-            return E_FAIL;
-
-        *ppEvalResult = evalResult->Detach();
-    }
-    catch (const std::future_error&)
-    {
-       return E_FAIL;
-    }
-
-    return S_OK;
+        });
 }
 
 // Call managed function in debuggee process.
@@ -905,11 +760,6 @@ HRESULT Evaluator::EvalFunction(
     if (evalFlags & EVAL_NOFUNCEVAL)
         return S_OK;
 
-    HRESULT Status = S_OK;
-    ToRelease<ICorDebugEval> pEval;
-
-    IfFailRet(pThread->CreateEval(&pEval));
-
     std::vector< ToRelease<ICorDebugType> > typeParams;
     // Reserve memory from the beginning, since typeParams will have ArgsTypeCount or more count of elements for sure.
     typeParams.reserve(ArgsTypeCount);
@@ -928,73 +778,21 @@ HRESULT Evaluator::EvalFunction(
         }
     }
 
-    ToRelease<ICorDebugEval2> pEval2;
-    IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-
-    HRESULT res = pEval2->CallParameterizedFunction(
-        pFunc,
-        static_cast<uint32_t>(typeParams.size()),
-        (ICorDebugType **)typeParams.data(),
-        ArgsValueCount,
-        ppArgsValue
-    );
-
-    switch (res) {
-        case CORDBG_E_ILLEGAL_IN_OPTIMIZED_CODE: {
-            LOGE("ERROR: Can not evaluate in optimized code");
-            return res;
-        }
-        break;
-
-        case CORDBG_E_APPDOMAIN_MISMATCH: {
-            LOGE("ERROR: Object is in wrong AppDomain");
-            return res;
-        }
-        break;
-
-        case CORDBG_E_FUNCTION_NOT_IL: {
-            LOGE("ERROR: Function does not have IL code");
-            return res;
-        }
-        break;
-
-        case CORDBG_E_ILLEGAL_IN_STACK_OVERFLOW: {
-            LOGE("ERROR: Can not evaluate after stack overflow");
-            return res;
-        }
-        break;
-
-        case CORDBG_E_FUNC_EVAL_BAD_START_POINT: {
-            LOGE("ERROR: Func eval cannot work. Bad starting point");
-            return res;
-        }
-        break;
-
-        case CORDBG_E_ILLEGAL_AT_GC_UNSAFE_POINT: {
-            LOGE("ERROR: Thread is in GC unsafe point");
-            // INFO: Skip this evaluations as unsafe state.
-            //  we can continue this thread for change state from unsafe to safe,
-            //  but after running thread we can get a new unhanded exception and
-            //  as a result in 50/50 terminated process.
-            return res;
-        }
-        break;
-
-        default:
-            IfFailRet(res);
-        break;
-    }
-
-
-    DWORD tid;
-    pThread->GetID(&tid);
-    push_eval_queue(ThreadId{tid});
-
-
-    // TODO: maybe in this point we can _restore_ thread state?
-    // fprintf(stderr, "After WaitEvalResult [EvalFunction]\n");
-    // And for "continue" we can save mask for threads?
-    return WaitEvalResult(pThread, pEval, ppEvalResult);
+    return m_sharedEvalWaiter->WaitEvalResult(pThread, ppEvalResult,
+        [&](ICorDebugEval *pEval) -> HRESULT
+        {
+            // Note, this code execution protected by EvalWaiter mutex.
+            HRESULT Status;
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+            IfFailRet(Status = pEval2->CallParameterizedFunction(
+                pFunc,
+                static_cast<uint32_t>(typeParams.size()),
+                (ICorDebugType **)typeParams.data(),
+                ArgsValueCount,
+                ppArgsValue));
+            return S_OK;
+        });
 }
 
 static bool TypeHaveStaticMembers(ICorDebugType *pType)
@@ -1092,21 +890,23 @@ HRESULT Evaluator::CreatTypeObjectStaticConstructor(
         }
     }
 
-    ToRelease<ICorDebugEval> pEval;
-    IfFailRet(pThread->CreateEval(&pEval));
-    ToRelease<ICorDebugEval2> pEval2;
-    IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
     ToRelease<ICorDebugClass> pClass;
     IfFailRet(pType->GetClass(&pClass));
 
-    IfFailRet(pEval2->NewParameterizedObjectNoConstructor(
-        pClass,
-        static_cast<uint32_t>(typeParams.size()),
-        (ICorDebugType **)typeParams.data()
-    ));
-
     ToRelease<ICorDebugValue> pTypeObject;
-    IfFailRet(WaitEvalResult(pThread, pEval, &pTypeObject));
+    IfFailRet(m_sharedEvalWaiter->WaitEvalResult(pThread, &pTypeObject,
+        [&](ICorDebugEval *pEval) -> HRESULT
+        {
+            // Note, this code execution protected by EvalWaiter mutex.
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+            IfFailRet(pEval2->NewParameterizedObjectNoConstructor(
+                pClass,
+                static_cast<uint32_t>(typeParams.size()),
+                (ICorDebugType **)typeParams.data()
+            ));
+            return S_OK;
+        }));
 
     if (et == ELEMENT_TYPE_CLASS)
     {
@@ -1147,8 +947,8 @@ static HRESULT FindMethod(ICorDebugType *pType, const WCHAR *methodName, ICorDeb
     IfFailRet(pClass->GetToken(&currentTypeDef));
 
     ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMD;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
     ULONG numMethods = 0;
@@ -1168,7 +968,7 @@ static HRESULT FindMethod(ICorDebugType *pType, const WCHAR *methodName, ICorDeb
     {
         if(baseTypeName == "System.Enum")
             return E_FAIL;
-        else if (baseTypeName != "System.Object" && baseTypeName != "System.ValueType")
+        else if (baseTypeName != "object" && baseTypeName != "System.Object" && baseTypeName != "System.ValueType")
         {
             return FindMethod(pBaseType, methodName, ppFunc);
         }
@@ -1187,13 +987,12 @@ HRESULT Evaluator::getObjectByFunction(
     HRESULT Status = S_OK;
 
     ToRelease<ICorDebugValue2> pValue2;
-    ToRelease<ICorDebugType> pType;
-
     IfFailRet(pInValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *)&pValue2));
+    ToRelease<ICorDebugType> pType;
     IfFailRet(pValue2->GetExactType(&pType));
-    ToRelease<ICorDebugFunction> pFunc;
 
     auto methodName = to_utf16(func);
+    ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(FindMethod(pType, methodName.c_str(), &pFunc));
 
     return EvalFunction(pThread, pFunc, pType.GetRef(), 1, &pInValue, 1, ppOutValue, evalFlags);
@@ -1242,26 +1041,27 @@ HRESULT Evaluator::GetLiteralValue(
 {
     HRESULT Status = S_OK;
 
+    if (!pRawValue || !pThread)
+        return S_FALSE;
+
     CorSigUncompressCallingConv(pSignatureBlob);
     CorElementType underlyingType;
     CorSigUncompressElementType(pSignatureBlob, &underlyingType);
 
-    if (!pRawValue || !pThread)
-        return S_FALSE;
-
     ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMD;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-
-    ToRelease<ICorDebugEval> pEval;
-    IfFailRet(pThread->CreateEval(&pEval));
 
     switch(underlyingType)
     {
         case ELEMENT_TYPE_OBJECT:
+        {
+            ToRelease<ICorDebugEval> pEval;
+            IfFailRet(pThread->CreateEval(&pEval));
             IfFailRet(pEval->CreateValue(ELEMENT_TYPE_CLASS, nullptr, ppLiteralValue));
             break;
+        }
         case ELEMENT_TYPE_CLASS:
         {
             // Get token and create null reference
@@ -1272,6 +1072,8 @@ HRESULT Evaluator::GetLiteralValue(
             ToRelease<ICorDebugClass> pValueClass;
             IfFailRet(pModule->GetClassFromToken(tk, &pValueClass));
 
+            ToRelease<ICorDebugEval> pEval;
+            IfFailRet(pThread->CreateEval(&pEval));
             IfFailRet(pEval->CreateValue(ELEMENT_TYPE_CLASS, pValueClass, ppLiteralValue));
             break;
         }
@@ -1284,23 +1086,27 @@ HRESULT Evaluator::GetLiteralValue(
             ToRelease<ICorDebugType> pElementType;
             IfFailRet(GetType(typeName, pThread, &pElementType));
 
-            ToRelease<ICorDebugAppDomain2> pAppDomain2;
             ToRelease<ICorDebugAppDomain> pAppDomain;
             IfFailRet(pThread->GetAppDomain(&pAppDomain));
+            ToRelease<ICorDebugAppDomain2> pAppDomain2;
             IfFailRet(pAppDomain->QueryInterface(IID_ICorDebugAppDomain2, (LPVOID*) &pAppDomain2));
 
             // We can not directly create null value of specific array type.
             // Instead, we create one element array with element type set to our specific array type.
             // Since array elements are initialized to null, we get our null value from the first array item.
 
-            ToRelease<ICorDebugEval2> pEval2;
-            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-
             ULONG32 dims = 1;
             ULONG32 bounds = 0;
-            IfFailRet(pEval2->NewParameterizedArray(pElementType, 1, &dims, &bounds));
             ToRelease<ICorDebugValue> pTmpArrayValue;
-            IfFailRet(WaitEvalResult(pThread, pEval, &pTmpArrayValue));
+            IfFailRet(m_sharedEvalWaiter->WaitEvalResult(pThread, &pTmpArrayValue,
+                [&](ICorDebugEval *pEval) -> HRESULT
+                {
+                    // Note, this code execution protected by EvalWaiter mutex.
+                    ToRelease<ICorDebugEval2> pEval2;
+                    IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+                    IfFailRet(pEval2->NewParameterizedArray(pElementType, 1, &dims, &bounds));
+                    return S_OK;
+                }));
 
             BOOL isNull = FALSE;
             ToRelease<ICorDebugValue> pUnboxedResult;
@@ -1320,6 +1126,8 @@ HRESULT Evaluator::GetLiteralValue(
             IfFailRet(GetType(typeName, pThread, &pValueType));
 
             // Create value from ICorDebugType
+            ToRelease<ICorDebugEval> pEval;
+            IfFailRet(pThread->CreateEval(&pEval));
             ToRelease<ICorDebugEval2> pEval2;
             IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
             IfFailRet(pEval2->CreateValueForType(pValueType, ppLiteralValue));
@@ -1336,12 +1144,16 @@ HRESULT Evaluator::GetLiteralValue(
             IfFailRet(pModule->GetClassFromToken(tk, &pValueClass));
 
             // Create value (without calling a constructor)
-            ToRelease<ICorDebugEval2> pEval2;
-            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-            IfFailRet(pEval2->NewParameterizedObjectNoConstructor(pValueClass, 0, nullptr));
-
             ToRelease<ICorDebugValue> pValue;
-            IfFailRet(WaitEvalResult(pThread, pEval, &pValue));
+            IfFailRet(m_sharedEvalWaiter->WaitEvalResult(pThread, &pValue,
+                [&](ICorDebugEval *pEval) -> HRESULT
+                {
+                    // Note, this code execution protected by EvalWaiter mutex.
+                    ToRelease<ICorDebugEval2> pEval2;
+                    IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+                    IfFailRet(pEval2->NewParameterizedObjectNoConstructor(pValueClass, 0, nullptr));
+                    return S_OK;
+                }));
 
             // Set value
             BOOL isNull = FALSE;
@@ -1356,11 +1168,16 @@ HRESULT Evaluator::GetLiteralValue(
         }
         case ELEMENT_TYPE_STRING:
         {
-            ToRelease<ICorDebugEval2> pEval2;
-            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-            IfFailRet(pEval2->NewStringWithLength((LPCWSTR)pRawValue, rawValueLength));
+            IfFailRet(m_sharedEvalWaiter->WaitEvalResult(pThread, ppLiteralValue,
+                [&](ICorDebugEval *pEval) -> HRESULT
+                {
+                    // Note, this code execution protected by EvalWaiter mutex.
+                    ToRelease<ICorDebugEval2> pEval2;
+                    IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+                    IfFailRet(pEval2->NewStringWithLength((LPCWSTR)pRawValue, rawValueLength));
+                    return S_OK;
+                }));
 
-            IfFailRet(WaitEvalResult(pThread, pEval, ppLiteralValue));
             break;
         }
         case ELEMENT_TYPE_BOOLEAN:
@@ -1376,6 +1193,8 @@ HRESULT Evaluator::GetLiteralValue(
         case ELEMENT_TYPE_R4:
         case ELEMENT_TYPE_R8:
         {
+            ToRelease<ICorDebugEval> pEval;
+            IfFailRet(pThread->CreateEval(&pEval));
             ToRelease<ICorDebugValue> pValue;
             IfFailRet(pEval->CreateValue(underlyingType, nullptr, &pValue));
             ToRelease<ICorDebugGenericValue> pGenericValue;
@@ -1393,7 +1212,7 @@ HRESULT Evaluator::GetLiteralValue(
 HRESULT Evaluator::WalkMembers(
     ICorDebugValue *pInputValue,
     ICorDebugThread *pThread,
-    ICorDebugILFrame *pILFrame,
+    FrameLevel frameLevel,
     ICorDebugType *pTypeCast,
     WalkMembersCallback cb)
 {
@@ -1472,14 +1291,12 @@ HRESULT Evaluator::WalkMembers(
     IfFailRet(pType->GetClass(&pClass));
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pClass->GetModule(&pModule));
-
+    mdTypeDef currentTypeDef;
+    IfFailRet(pClass->GetToken(&currentTypeDef));
     ToRelease<IUnknown> pMDUnknown;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-
-    mdTypeDef currentTypeDef;
-    IfFailRet(pClass->GetToken(&currentTypeDef));
 
     std::unordered_set<std::string> backedProperties;
 
@@ -1521,11 +1338,19 @@ HRESULT Evaluator::WalkMembers(
             }
             else if (fieldAttr & fdStatic)
             {
-                if (pILFrame)
-                    pType->GetStaticFieldValue(fieldDef, pILFrame, &pFieldVal);
+                if (pThread)
+                {
+                    ToRelease<ICorDebugFrame> pFrame;
+                    if (SUCCEEDED(GetFrameAt(pThread, frameLevel, &pFrame)) && pFrame != nullptr)
+                        pType->GetStaticFieldValue(fieldDef, pFrame, &pFieldVal);
+                }
             }
             else
             {
+                // Get pValue again, since it could be neutered at eval call in `cb` on previous cycle.
+                pValue.Free();
+                IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+
                 ToRelease<ICorDebugObjectValue> pObjValue;
                 if (SUCCEEDED(pValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue)))
                     pObjValue->GetFieldValue(pClass, fieldDef, &pFieldVal);
@@ -1655,7 +1480,7 @@ HRESULT Evaluator::WalkMembers(
                 IfFailRet(CreatTypeObjectStaticConstructor(pThread, pBaseType));
             }
             // Add fields of base class
-            IfFailRet(WalkMembers(pInputValue, pThread, pILFrame, pBaseType, cb));
+            IfFailRet(WalkMembers(pInputValue, pThread, frameLevel, pBaseType, cb));
         }
     }
 
@@ -1665,10 +1490,10 @@ HRESULT Evaluator::WalkMembers(
 HRESULT Evaluator::WalkMembers(
     ICorDebugValue *pValue,
     ICorDebugThread *pThread,
-    ICorDebugILFrame *pILFrame,
+    FrameLevel frameLevel,
     WalkMembersCallback cb)
 {
-    return WalkMembers(pValue, pThread, pILFrame, nullptr, cb);
+    return WalkMembers(pValue, pThread, frameLevel, nullptr, cb);
 }
 
 static bool has_prefix(const std::string &s, const std::string &prefix)
@@ -1679,7 +1504,6 @@ static bool has_prefix(const std::string &s, const std::string &prefix)
 HRESULT Evaluator::HandleSpecialLocalVar(
     const std::string &localName,
     ICorDebugValue *pLocalValue,
-    ICorDebugILFrame *pILFrame,
     std::unordered_set<std::string> &locals,
     WalkStackVarsCallback cb)
 {
@@ -1691,7 +1515,7 @@ HRESULT Evaluator::HandleSpecialLocalVar(
         return S_FALSE;
 
     // Substitute local value with its fields
-    IfFailRet(WalkMembers(pLocalValue, nullptr, pILFrame, [&](
+    IfFailRet(WalkMembers(pLocalValue, nullptr, FrameLevel{0}, [&](
         mdMethodDef,
         ICorDebugModule *,
         ICorDebugType *,
@@ -1705,7 +1529,7 @@ HRESULT Evaluator::HandleSpecialLocalVar(
             return S_OK;
         if (!locals.insert(name).second)
             return S_OK; // already in the list
-        return cb(pILFrame, pValue, name.empty() ? "this" : name);
+        return cb(pValue, name.empty() ? "this" : name);
     }));
 
     return S_OK;
@@ -1713,7 +1537,6 @@ HRESULT Evaluator::HandleSpecialLocalVar(
 
 HRESULT Evaluator::HandleSpecialThisParam(
     ICorDebugValue *pThisValue,
-    ICorDebugILFrame *pILFrame,
     std::unordered_set<std::string> &locals,
     WalkStackVarsCallback cb)
 {
@@ -1734,7 +1557,7 @@ HRESULT Evaluator::HandleSpecialThisParam(
         return S_FALSE;
 
     // Substitute this with its fields
-    IfFailRet(WalkMembers(pThisValue, nullptr, pILFrame, [&](
+    IfFailRet(WalkMembers(pThisValue, nullptr, FrameLevel{0}, [&](
         mdMethodDef,
         ICorDebugModule *,
         ICorDebugType *,
@@ -1745,24 +1568,22 @@ HRESULT Evaluator::HandleSpecialThisParam(
         HRESULT Status;
         if (is_static)
             return S_OK;
-        IfFailRet(HandleSpecialLocalVar(name, pValue, pILFrame, locals, cb));
+        IfFailRet(HandleSpecialLocalVar(name, pValue, locals, cb));
         if (Status == S_OK)
             return S_OK;
         locals.insert(name);
-        return cb(pILFrame, pValue, name.empty() ? "this" : name);
+        return cb(pValue, name.empty() ? "this" : name);
     }));
     return S_OK;
 }
 
-HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb)
+HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel, WalkStackVarsCallback cb)
 {
     HRESULT Status;
-
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
     if (pFrame == nullptr)
-        return E_INVALIDARG;
-
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+        return E_FAIL;
 
     ToRelease<ICorDebugFunction> pFunction;
     IfFailRet(pFrame->GetFunction(&pFunction));
@@ -1771,16 +1592,28 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
     IfFailRet(pFunction->GetModule(&pModule));
 
     ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMD;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
     mdMethodDef methodDef;
     IfFailRet(pFunction->GetToken(&methodDef));
 
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    ULONG32 currentIlOffset;
+    CorDebugMappingResult mappingResult;
+    IfFailRet(pILFrame->GetIP(&currentIlOffset, &mappingResult));
+
+    ToRelease<ICorDebugValueEnum> pLocalsEnum;
+    IfFailRet(pILFrame->EnumerateLocalVariables(&pLocalsEnum));
+
+    ULONG cLocals = 0;
+    IfFailRet(pLocalsEnum->GetCount(&cLocals));
+
     ULONG cParams = 0;
     ToRelease<ICorDebugValueEnum> pParamEnum;
-
     IfFailRet(pILFrame->EnumerateArguments(&pParamEnum));
     IfFailRet(pParamEnum->GetCount(&cParams));
 
@@ -1824,46 +1657,59 @@ HRESULT Evaluator::WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback c
 
             if (thisParam)
             {
-                IfFailRet(HandleSpecialThisParam(pValue, pILFrame, locals, cb));
+                // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
+                pFrame.Free();
+                pILFrame.Free();
+
+                IfFailRet(HandleSpecialThisParam(pValue, locals, cb));
                 if (Status == S_OK)
                     continue;
             }
 
             locals.insert(paramName);
-            IfFailRet(cb(pILFrame, pValue, paramName));
+
+            // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
+            pFrame.Free();
+            pILFrame.Free();
+
+            IfFailRet(cb(pValue, paramName));
         }
     }
 
-    ULONG cLocals = 0;
-    ToRelease<ICorDebugValueEnum> pLocalsEnum;
-
-    ULONG32 currentIlOffset;
-    CorDebugMappingResult mappingResult;
-    IfFailRet(pILFrame->GetIP(&currentIlOffset, &mappingResult));
-
-    IfFailRet(pILFrame->EnumerateLocalVariables(&pLocalsEnum));
-    IfFailRet(pLocalsEnum->GetCount(&cLocals));
     if (cLocals > 0)
     {
         for (ULONG i = 0; i < cLocals; i++)
         {
             std::string paramName;
-
-            ToRelease<ICorDebugValue> pValue;
             ULONG32 ilStart;
             ULONG32 ilEnd;
-            if (FAILED(m_sharedModules->GetFrameNamedLocalVariable(pModule, pILFrame, methodDef, i, paramName, &pValue, &ilStart, &ilEnd)))
+            if (FAILED(m_sharedModules->GetFrameNamedLocalVariable(pModule, methodDef, i, paramName, &ilStart, &ilEnd)))
                 continue;
 
             if (currentIlOffset < ilStart || currentIlOffset >= ilEnd)
                 continue;
 
-            IfFailRet(HandleSpecialLocalVar(paramName, pValue, pILFrame, locals, cb));
+            if (!pFrame) // Forced to update pFrame/pILFrame.
+            {
+                IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
+                if (pFrame == nullptr)
+                    return E_FAIL;
+                IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+            }
+            ToRelease<ICorDebugValue> pValue;
+            if (FAILED(pILFrame->GetLocalVariable(i, &pValue)) || !pValue)
+                continue;
+
+            // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
+            pFrame.Free();
+            pILFrame.Free();
+
+            IfFailRet(HandleSpecialLocalVar(paramName, pValue, locals, cb));
             if (Status == S_OK)
                 continue;
 
             locals.insert(paramName);
-            IfFailRet(cb(pILFrame, pValue, paramName));
+            IfFailRet(cb(pValue, paramName));
         }
     }
 

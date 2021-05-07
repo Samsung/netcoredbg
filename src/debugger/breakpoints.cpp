@@ -9,6 +9,7 @@
 #include <fstream>
 #include <algorithm>
 #include <iterator>
+#include <sstream>
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "utils/logger.h"
@@ -110,14 +111,17 @@ HRESULT Breakpoints::HandleEnabled(BreakpointType &bp, IDebugger *debugger, ICor
 
 HRESULT Breakpoints::HitManagedBreakpoint(IDebugger *debugger,
                                           ICorDebugThread *pThread,
-                                          ICorDebugFrame *pFrame,
-                                          mdMethodDef methodToken,
                                           Breakpoint &breakpoint)
 {
-    ULONG32 ilOffset;
-    Modules::SequencePoint sp;
     HRESULT Status;
 
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
+
+    ULONG32 ilOffset;
+    Modules::SequencePoint sp;
     IfFailRet(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp));
 
     auto breakpoints = m_srcResolvedBreakpoints.find(sp.document);
@@ -130,6 +134,11 @@ HRESULT Breakpoints::HitManagedBreakpoint(IDebugger *debugger,
         return E_FAIL;
 
     std::list<ManagedBreakpoint> &bList = it->second;
+    if (bList.empty())
+        return E_FAIL; // Stopped at break, but no breakpoints.
+
+    mdMethodDef methodToken;
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
 
     // Same logic as provide vsdbg - only one breakpoint is active for one line, find first active in the list.
     for (auto &b : bList)
@@ -146,69 +155,73 @@ HRESULT Breakpoints::HitManagedBreakpoint(IDebugger *debugger,
         }
     }
 
-    return E_FAIL;
+    return E_FAIL; // Stopped at break, but breakpoint not found.
 }
 
 HRESULT Breakpoints::HitManagedFunctionBreakpoint(IDebugger *debugger,
                                                   ICorDebugThread *pThread,
-                                                  ICorDebugFrame *pFrame,
                                                   ICorDebugBreakpoint *pBreakpoint,
-                                                  mdMethodDef methodToken,
                                                   Breakpoint &breakpoint)
 {
+    if (m_funcBreakpoints.empty())
+        return E_FAIL; // Stopped at break, but no breakpoints.
+ 
     HRESULT Status;
-
     ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
     IfFailRet(pBreakpoint->QueryInterface(IID_ICorDebugFunctionBreakpoint, (LPVOID *) &pFunctionBreakpoint));
 
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID *) &pILFrame));
+
+    ToRelease<ICorDebugValueEnum> pParamEnum;
+    IfFailRet(pILFrame->EnumerateArguments(&pParamEnum));
+    ULONG cParams = 0;
+    IfFailRet(pParamEnum->GetCount(&cParams));
+
+    std::ostringstream ss;
+    ss << "(";
+    if (cParams > 0)
+    {
+        for (ULONG i = 0; i < cParams; ++i)
+        {
+            ToRelease<ICorDebugValue> pValue;
+            ULONG cArgsFetched;
+            if (FAILED(pParamEnum->Next(1, &pValue, &cArgsFetched)))
+                continue;
+
+            std::string param;
+            IfFailRet(TypePrinter::GetTypeOfValue(pValue, param));
+            if (i > 0)
+                ss << ",";
+
+            ss << param;
+        }
+    }
+    ss << ")";
+    std::string params = ss.str();
+
+    // Note, since HandleEnabled() during eval execution could neutered frame, all frame-related calculation
+    // must be done before enter into this cycles.
     for (auto &fb : m_funcBreakpoints)
     {
         ManagedFunctionBreakpoint &fbp = fb.second;
-        std::string params("");
 
-        if (fbp.params != "")
-        {
-            ToRelease<ICorDebugILFrame> pILFrame;
-            IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID *) &pILFrame));
-
-            ULONG cParams = 0;
-            ToRelease<ICorDebugValueEnum> pParamEnum;
-
-            IfFailRet(pILFrame->EnumerateArguments(&pParamEnum));
-            IfFailRet(pParamEnum->GetCount(&cParams));
-
-            params = "(";
-
-            if (cParams > 0)
-            {
-                for (ULONG i = 0; i < cParams; ++i)
-                {
-                    ToRelease<ICorDebugValue> pValue;
-                    ULONG cArgsFetched;
-                    if (FAILED(pParamEnum->Next(1, &pValue, &cArgsFetched)))
-                        continue;
-
-                    std::string param;
-                    IfFailRet(TypePrinter::GetTypeOfValue(pValue, param));
-                    if (i > 0)
-                        params += ",";
-
-                    params += param;
-                }
-
-            }
-            params += ")";
-        }
+        if (!fbp.enabled || (!fbp.params.empty() && params != fbp.params))
+            continue;
 
         for (auto &fbel : fbp.breakpoints)
         {
-            if (SUCCEEDED(IsSameFunctionBreakpoint(pFunctionBreakpoint, fbel.iCorFuncBreakpoint)) && fbp.enabled
-                && params == fbp.params)
+            if (SUCCEEDED(IsSameFunctionBreakpoint(pFunctionBreakpoint, fbel.iCorFuncBreakpoint)))
                 return HandleEnabled(fbp, debugger, pThread, breakpoint);
         }
     }
 
-    return E_FAIL;
+    return E_FAIL; // Stopped at break, but breakpoint not found.
 }
 
 HRESULT Breakpoints::HitBreakpoint(IDebugger *debugger,
@@ -219,24 +232,14 @@ HRESULT Breakpoints::HitBreakpoint(IDebugger *debugger,
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
-    HRESULT Status;
-
     atEntry = HitEntry(pThread, pBreakpoint);
     if (atEntry)
         return S_OK;
 
-    mdMethodDef methodToken;
-
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-    if (pFrame == nullptr)
-        return E_FAIL;
-    IfFailRet(pFrame->GetFunctionToken(&methodToken));
-
-    if (SUCCEEDED(HitManagedBreakpoint(debugger, pThread, pFrame, methodToken, breakpoint)))
+    if (SUCCEEDED(HitManagedBreakpoint(debugger, pThread, breakpoint)))
         return S_OK;
 
-    return HitManagedFunctionBreakpoint(debugger, pThread, pFrame, pBreakpoint, methodToken, breakpoint);
+    return HitManagedFunctionBreakpoint(debugger, pThread, pBreakpoint, breakpoint);
 }
 
 bool Breakpoints::HitEntry(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)

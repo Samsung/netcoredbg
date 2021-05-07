@@ -110,8 +110,8 @@ namespace Interop
     HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle);
     void DisposeSymbols(PVOID pSymbolReaderHandle);
     HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG64 IlOffset, SequencePoint *sequencePoint);
-    HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFrame *pILFrame, mdMethodDef methodToken, ULONG localIndex,
-                                          WCHAR *paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32 *pIlStart, ULONG32 *pIlEnd);
+    HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG localIndex,
+                                          WCHAR *paramName, ULONG paramNameLen, ULONG32 *pIlStart, ULONG32 *pIlEnd);
     HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
     bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodToken);
     HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset);

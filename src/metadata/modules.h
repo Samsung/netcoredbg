@@ -238,11 +238,9 @@ public:
 
     HRESULT GetFrameNamedLocalVariable(
         ICorDebugModule *pModule,
-        ICorDebugILFrame *pILFrame,
         mdMethodDef methodToken,
         ULONG localIndex,
         std::string &paramName,
-        ICorDebugValue** ppValue,
         ULONG32 *pIlStart,
         ULONG32 *pIlEnd);
 

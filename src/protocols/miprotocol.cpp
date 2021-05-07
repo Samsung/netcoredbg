@@ -81,7 +81,7 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
     ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
     HRESULT Status;
     IfFailRet(m_sharedDebugger->StepCommand(threadId, stepType));
-    m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
+    m_vars.clear(); // Important, must be sync with ManagedDebugger m_sharedVariables->Clear()
     output = "^running";
     return S_OK;
 }
@@ -246,8 +246,7 @@ HRESULT MIProtocol::CreateVar(ThreadId threadId, FrameLevel level, int evalFlags
 {
     HRESULT Status;
 
-    FrameId frameId = StackFrame(threadId, level, "").id;
-
+    FrameId frameId(threadId, level);
     Variable variable(evalFlags);
     IfFailRet(m_sharedDebugger->Evaluate(frameId, expression, variable, output));
 
@@ -283,7 +282,7 @@ HRESULT MIProtocol::FindVar(const std::string &varobjName, Variable &variable)
 
 void MIProtocol::Cleanup()
 {
-    m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
+    m_vars.clear(); // Important, must be sync with ManagedDebugger m_sharedVariables->Clear()
     m_breakpoints.clear();
 }
 
@@ -697,7 +696,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
     { "exec-continue", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
         IfFailRet(m_sharedDebugger->Continue(ThreadId::AllThreads));
-        m_vars.clear(); // Important, must be sync with ManagedDebugger m_variables.Clear()
+        m_vars.clear(); // Important, must be sync with ManagedDebugger m_sharedVariables->Clear()
         output = "^running";
         return S_OK;
     } },
@@ -1067,7 +1066,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
 
         ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
         FrameLevel level{ ProtocolUtils::GetIntArg(args, "--frame", 0) };
-        FrameId frameId = StackFrame(threadId, level, "").id;
+        FrameId frameId(threadId, level);
 
         Variable variable;
         IfFailRet(FindVar(varName, variable));

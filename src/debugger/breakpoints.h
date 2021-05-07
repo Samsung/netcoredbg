@@ -155,16 +155,12 @@ class Breakpoints
     HRESULT HitManagedBreakpoint(
         IDebugger *debugger,
         ICorDebugThread *pThread,
-        ICorDebugFrame *pFrame,
-        mdMethodDef methodToken,
         Breakpoint &breakpoint);
 
     HRESULT HitManagedFunctionBreakpoint(
         IDebugger *debugger,
         ICorDebugThread *pThread,
-        ICorDebugFrame *pFrame,
         ICorDebugBreakpoint *pBreakpoint,
-        mdMethodDef methodToken,
         Breakpoint &breakpoint);
 
 public:

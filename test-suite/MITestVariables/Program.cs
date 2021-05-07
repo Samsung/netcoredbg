@@ -210,7 +210,7 @@ namespace NetcoreDbgTest.Script
         }
 
         ControlInfo ControlInfo;
-        MIDebugger MIDebugger;
+        public MIDebugger MIDebugger;
     }
 }
 
@@ -408,6 +408,9 @@ namespace MITestVariables
                 Context Context = (Context)context;
                 Context.Prepare(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
+
+                // Test evaluation getter with exception (must not break with exception breakpoints).
+                Context.MIDebugger.Request("-break-exception-insert throw+user-unhandled *");
 
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK1");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK2");

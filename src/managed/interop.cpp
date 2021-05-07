@@ -377,11 +377,11 @@ HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef M
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
-HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFrame *pILFrame, mdMethodDef methodToken, ULONG localIndex,
-                                      WCHAR *paramName, ULONG paramNameLen, ICorDebugValue **ppValue, ULONG32 *pIlStart, ULONG32 *pIlEnd)
+HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG localIndex,
+                                      WCHAR *paramName, ULONG paramNameLen, ULONG32 *pIlStart, ULONG32 *pIlEnd)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getLocalVariableNameAndScopeDelegate || !pSymbolReaderHandle || !pILFrame || !paramName || !ppValue || !pIlStart || !pIlEnd)
+    if (!getLocalVariableNameAndScopeDelegate || !pSymbolReaderHandle || !paramName || !pIlStart || !pIlEnd)
         return E_FAIL;
 
     BSTR wszParamName = Interop::SysAllocStringLen(mdNameLen);
@@ -400,11 +400,6 @@ HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, ICorDebugILFram
     wcscpy_s(paramName, paramNameLen, wszParamName);
     Interop::SysFreeString(wszParamName);
 
-    if (FAILED(pILFrame->GetLocalVariable(localIndex, ppValue)) || (*ppValue == NULL))
-    {
-        *ppValue = NULL;
-        return E_FAIL;
-    }
     return S_OK;
 }
 

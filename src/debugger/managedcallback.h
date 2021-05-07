@@ -9,198 +9,207 @@
 namespace netcoredbg
 {
 
-class ManagedCallback : public ICorDebugManagedCallback, ICorDebugManagedCallback2, ICorDebugManagedCallback3
+// https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/icordebugcontroller-hasqueuedcallbacks-method
+//
+// Callbacks will be dispatched one at a time, each time ICorDebugController::Continue is called.
+// The debugger can check this flag if it wants to report multiple debugging events that occur simultaneously.
+// 
+// When debugging events are queued, they have already occurred, so the debugger must drain the entire queue
+// to be sure of the state of the debuggee. (Call ICorDebugController::Continue to drain the queue.) For example,
+// if the queue contains two debugging events on thread X, and the debugger suspends thread X after the first debugging
+// event and then calls ICorDebugController::Continue, the second debugging event for thread X will be dispatched although
+// the thread has been suspended.
+
+class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedCallback2, ICorDebugManagedCallback3
 {
     std::mutex m_refCountMutex;
     ULONG m_refCount;
     ManagedDebugger &m_debugger;
 public:
 
-    void HandleEvent(ICorDebugController *controller, const std::string &eventName);
     ULONG GetRefCount();
 
     ManagedCallback(ManagedDebugger &debugger) : m_refCount(0), m_debugger(debugger) {}
-    virtual ~ManagedCallback() {}
 
     // IUnknown
 
-    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, VOID** ppInterface);
-    virtual ULONG STDMETHODCALLTYPE AddRef();
-    virtual ULONG STDMETHODCALLTYPE Release();
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, VOID** ppInterface) override;
+    ULONG STDMETHODCALLTYPE AddRef() override;
+    ULONG STDMETHODCALLTYPE Release() override;
 
     // ICorDebugManagedCallback
 
-    virtual HRESULT STDMETHODCALLTYPE Breakpoint(
+    HRESULT STDMETHODCALLTYPE Breakpoint(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
-        /* [in] */ ICorDebugBreakpoint *pBreakpoint);
+        /* [in] */ ICorDebugBreakpoint *pBreakpoint) override;
 
-    virtual HRESULT STDMETHODCALLTYPE StepComplete(
+    HRESULT STDMETHODCALLTYPE StepComplete(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ ICorDebugStepper *pStepper,
-        /* [in] */ CorDebugStepReason reason);
+        /* [in] */ CorDebugStepReason reason) override;
 
-    virtual HRESULT STDMETHODCALLTYPE Break(
+    HRESULT STDMETHODCALLTYPE Break(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugThread *thread);
+        /* [in] */ ICorDebugThread *thread) override;
 
-    virtual HRESULT STDMETHODCALLTYPE Exception(
-        /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugThread *pThread,
-        /* [in] */ BOOL unhandled);
-
-    virtual HRESULT STDMETHODCALLTYPE EvalComplete(
+    HRESULT STDMETHODCALLTYPE Exception(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
-        /* [in] */ ICorDebugEval *pEval);
+        /* [in] */ BOOL unhandled) override;
 
-    virtual HRESULT STDMETHODCALLTYPE EvalException(
+    HRESULT STDMETHODCALLTYPE EvalComplete(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
-        /* [in] */ ICorDebugEval *pEval);
+        /* [in] */ ICorDebugEval *pEval) override;
 
-    virtual HRESULT STDMETHODCALLTYPE CreateProcess(
-        /* [in] */ ICorDebugProcess *pProcess);
-
-    virtual HRESULT STDMETHODCALLTYPE ExitProcess(
-        /* [in] */ ICorDebugProcess *pProcess);
-
-    virtual HRESULT STDMETHODCALLTYPE CreateThread(
+    HRESULT STDMETHODCALLTYPE EvalException(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugThread *pThread);
+        /* [in] */ ICorDebugThread *pThread,
+        /* [in] */ ICorDebugEval *pEval) override;
 
-    virtual HRESULT STDMETHODCALLTYPE ExitThread(
+    HRESULT STDMETHODCALLTYPE CreateProcess(
+        /* [in] */ ICorDebugProcess *pProcess) override;
+
+    HRESULT STDMETHODCALLTYPE ExitProcess(
+        /* [in] */ ICorDebugProcess *pProcess) override;
+
+    HRESULT STDMETHODCALLTYPE CreateThread(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugThread *pThread);
+        /* [in] */ ICorDebugThread *pThread) override;
 
-    virtual HRESULT STDMETHODCALLTYPE LoadModule(
+    HRESULT STDMETHODCALLTYPE ExitThread(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugModule *pModule);
+        /* [in] */ ICorDebugThread *pThread) override;
 
-    virtual HRESULT STDMETHODCALLTYPE UnloadModule(
+    HRESULT STDMETHODCALLTYPE LoadModule(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugModule *pModule);
+        /* [in] */ ICorDebugModule *pModule) override;
 
-    virtual HRESULT STDMETHODCALLTYPE LoadClass(
+    HRESULT STDMETHODCALLTYPE UnloadModule(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugClass *c);
+        /* [in] */ ICorDebugModule *pModule) override;
 
-    virtual HRESULT STDMETHODCALLTYPE UnloadClass(
+    HRESULT STDMETHODCALLTYPE LoadClass(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugClass *c);
+        /* [in] */ ICorDebugClass *c) override;
 
-    virtual HRESULT STDMETHODCALLTYPE DebuggerError(
+    HRESULT STDMETHODCALLTYPE UnloadClass(
+        /* [in] */ ICorDebugAppDomain *pAppDomain,
+        /* [in] */ ICorDebugClass *c) override;
+
+    HRESULT STDMETHODCALLTYPE DebuggerError(
         /* [in] */ ICorDebugProcess *pProcess,
         /* [in] */ HRESULT errorHR,
-        /* [in] */ DWORD errorCode);
+        /* [in] */ DWORD errorCode) override;
 
-    virtual HRESULT STDMETHODCALLTYPE LogMessage(
+    HRESULT STDMETHODCALLTYPE LogMessage(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ LONG lLevel,
         /* [in] */ WCHAR *pLogSwitchName,
-        /* [in] */ WCHAR *pMessage);
+        /* [in] */ WCHAR *pMessage) override;
 
-    virtual HRESULT STDMETHODCALLTYPE LogSwitch(
+    HRESULT STDMETHODCALLTYPE LogSwitch(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ LONG lLevel,
         /* [in] */ ULONG ulReason,
         /* [in] */ WCHAR *pLogSwitchName,
-        /* [in] */ WCHAR *pParentName);
+        /* [in] */ WCHAR *pParentName) override;
 
-    virtual HRESULT STDMETHODCALLTYPE CreateAppDomain(
+    HRESULT STDMETHODCALLTYPE CreateAppDomain(
         /* [in] */ ICorDebugProcess *pProcess,
-        /* [in] */ ICorDebugAppDomain *pAppDomain);
+        /* [in] */ ICorDebugAppDomain *pAppDomain) override;
 
-    virtual HRESULT STDMETHODCALLTYPE ExitAppDomain(
+    HRESULT STDMETHODCALLTYPE ExitAppDomain(
         /* [in] */ ICorDebugProcess *pProcess,
-        /* [in] */ ICorDebugAppDomain *pAppDomain);
+        /* [in] */ ICorDebugAppDomain *pAppDomain) override;
 
-    virtual HRESULT STDMETHODCALLTYPE LoadAssembly(
+    HRESULT STDMETHODCALLTYPE LoadAssembly(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugAssembly *pAssembly);
+        /* [in] */ ICorDebugAssembly *pAssembly) override;
 
-    virtual HRESULT STDMETHODCALLTYPE UnloadAssembly(
+    HRESULT STDMETHODCALLTYPE UnloadAssembly(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugAssembly *pAssembly);
+        /* [in] */ ICorDebugAssembly *pAssembly) override;
 
-    virtual HRESULT STDMETHODCALLTYPE ControlCTrap(
-        /* [in] */ ICorDebugProcess *pProcess);
+    HRESULT STDMETHODCALLTYPE ControlCTrap(
+        /* [in] */ ICorDebugProcess *pProcess) override;
 
-    virtual HRESULT STDMETHODCALLTYPE NameChange(
+    HRESULT STDMETHODCALLTYPE NameChange(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
-        /* [in] */ ICorDebugThread *pThread);
+        /* [in] */ ICorDebugThread *pThread) override;
 
-    virtual HRESULT STDMETHODCALLTYPE UpdateModuleSymbols(
+    HRESULT STDMETHODCALLTYPE UpdateModuleSymbols(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugModule *pModule,
-        /* [in] */ IStream *pSymbolStream);
+        /* [in] */ IStream *pSymbolStream) override;
 
-    virtual HRESULT STDMETHODCALLTYPE EditAndContinueRemap(
+    HRESULT STDMETHODCALLTYPE EditAndContinueRemap(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ ICorDebugFunction *pFunction,
-        /* [in] */ BOOL fAccurate);
+        /* [in] */ BOOL fAccurate) override;
 
-    virtual HRESULT STDMETHODCALLTYPE BreakpointSetError(
+    HRESULT STDMETHODCALLTYPE BreakpointSetError(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ ICorDebugBreakpoint *pBreakpoint,
-        /* [in] */ DWORD dwError);
+        /* [in] */ DWORD dwError) override;
 
     // ICorDebugManagedCallback2
 
-    virtual HRESULT STDMETHODCALLTYPE FunctionRemapOpportunity(
+    HRESULT STDMETHODCALLTYPE FunctionRemapOpportunity(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ ICorDebugFunction *pOldFunction,
         /* [in] */ ICorDebugFunction *pNewFunction,
-        /* [in] */ ULONG32 oldILOffset);
+        /* [in] */ ULONG32 oldILOffset) override;
 
-    virtual HRESULT STDMETHODCALLTYPE CreateConnection(
+    HRESULT STDMETHODCALLTYPE CreateConnection(
         /* [in] */ ICorDebugProcess *pProcess,
         /* [in] */ CONNID dwConnectionId,
-        /* [in] */ WCHAR *pConnName);
+        /* [in] */ WCHAR *pConnName) override;
 
-    virtual HRESULT STDMETHODCALLTYPE ChangeConnection(
+    HRESULT STDMETHODCALLTYPE ChangeConnection(
         /* [in] */ ICorDebugProcess *pProcess,
-        /* [in] */ CONNID dwConnectionId);
+        /* [in] */ CONNID dwConnectionId) override;
 
-    virtual HRESULT STDMETHODCALLTYPE DestroyConnection(
+    HRESULT STDMETHODCALLTYPE DestroyConnection(
         /* [in] */ ICorDebugProcess *pProcess,
-        /* [in] */ CONNID dwConnectionId);
+        /* [in] */ CONNID dwConnectionId) override;
 
-    virtual HRESULT STDMETHODCALLTYPE Exception(
+    HRESULT STDMETHODCALLTYPE Exception(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ ICorDebugFrame *pFrame,
         /* [in] */ ULONG32 nOffset,
         /* [in] */ CorDebugExceptionCallbackType dwEventType,
-        /* [in] */ DWORD dwFlags);
+        /* [in] */ DWORD dwFlags) override;
 
-    virtual HRESULT STDMETHODCALLTYPE ExceptionUnwind(
+    HRESULT STDMETHODCALLTYPE ExceptionUnwind(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
         /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
-        /* [in] */ DWORD dwFlags);
+        /* [in] */ DWORD dwFlags) override;
 
-    virtual HRESULT STDMETHODCALLTYPE FunctionRemapComplete(
+    HRESULT STDMETHODCALLTYPE FunctionRemapComplete(
         /* [in] */ ICorDebugAppDomain *pAppDomain,
         /* [in] */ ICorDebugThread *pThread,
-        /* [in] */ ICorDebugFunction *pFunction);
+        /* [in] */ ICorDebugFunction *pFunction) override;
 
-    virtual HRESULT STDMETHODCALLTYPE MDANotification(
+    HRESULT STDMETHODCALLTYPE MDANotification(
         /* [in] */ ICorDebugController *pController,
         /* [in] */ ICorDebugThread *pThread,
-        /* [in] */ ICorDebugMDA *pMDA);
+        /* [in] */ ICorDebugMDA *pMDA) override;
 
     // ICorDebugManagedCallback3
 
-    virtual HRESULT STDMETHODCALLTYPE CustomNotification(
+    HRESULT STDMETHODCALLTYPE CustomNotification(
         /* [in] */ ICorDebugThread *pThread,  
-        /* [in] */ ICorDebugAppDomain *pAppDomain);
+        /* [in] */ ICorDebugAppDomain *pAppDomain) override;
 };
 
 } // namespace netcoredbg

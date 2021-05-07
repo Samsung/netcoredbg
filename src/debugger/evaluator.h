@@ -7,8 +7,7 @@
 #include "cor.h"
 #include "cordebug.h"
 
-#include <list>
-#include <future>
+#include <functional>
 #include <unordered_set>
 #include "protocols/protocol.h"
 #include "torelease.h"
@@ -17,12 +16,13 @@ namespace netcoredbg
 {
 
 class Modules;
+class EvalWaiter;
 
 class Evaluator
 {
 public:
     typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
-    typedef std::function<HRESULT(ICorDebugILFrame*,ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
+    typedef std::function<HRESULT(ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
     enum ValueKind
     {
@@ -31,110 +31,111 @@ public:
         ValueIsVariable
     };
 
-    std::shared_ptr<Modules> m_sharedModules;
+    Evaluator(std::shared_ptr<Modules> &sharedModules,
+              std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
+        m_sharedModules(sharedModules),
+        m_sharedEvalWaiter(sharedEvalWaiter)
+    {}
 
-    std::mutex m_evalQueueMutex;
-    std::list<ThreadId> m_evalQueue;
+    HRESULT CreatTypeObjectStaticConstructor(
+        ICorDebugThread *pThread,
+        ICorDebugType *pType,
+        ICorDebugValue **ppTypeObjectResult = nullptr,
+        bool DetectStaticMembers = true);
 
-    bool is_empty_eval_queue() {
-        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
-        return m_evalQueue.empty();
-    }
+    HRESULT EvalFunction(
+        ICorDebugThread *pThread,
+        ICorDebugFunction *pFunc,
+        ICorDebugType **ppArgsType,
+        ULONG32 ArgsTypeCount,
+        ICorDebugValue **ppArgsValue,
+        ULONG32 ArgsValueCount,
+        ICorDebugValue **ppEvalResult,
+        int evalFlags);
 
-    void push_eval_queue(ThreadId tid) {
-        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
-        m_evalQueue.push_back(tid);
-    }
+    HRESULT EvalExpr(
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        const std::string &expression,
+        ICorDebugValue **ppResult,
+        int evalFlags);
 
-    ThreadId front_eval_queue() {
-        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
-        if (!m_evalQueue.empty())
-            return m_evalQueue.front();
-        return ThreadId{};
-    }
+    HRESULT getObjectByFunction(
+        const std::string &func,
+        ICorDebugThread *pThread,
+        ICorDebugValue *pInValue,
+        ICorDebugValue **ppOutValue,
+        int evalFlags);
 
-    void pop_eval_queue() {
-        std::lock_guard<std::mutex> lock(m_evalQueueMutex);
-        if (!m_evalQueue.empty())
-            m_evalQueue.pop_front();
-    }
+    HRESULT GetType(
+        const std::string &typeName,
+        ICorDebugThread *pThread,
+        ICorDebugType **ppType);
+
+    HRESULT WalkMembers(
+        ICorDebugValue *pValue,
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        WalkMembersCallback cb);
+
+    HRESULT WalkStackVars(
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        WalkStackVarsCallback cb);
+
+    HRESULT CreateString(
+        ICorDebugThread *pThread,
+        const std::string &value,
+        ICorDebugValue **ppNewString);
+
+    void Cleanup();
 
 private:
 
+    std::shared_ptr<Modules> m_sharedModules;
+    std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
     ToRelease<ICorDebugFunction> m_pSuppressFinalize;
 
-    struct evalResult_t {
-        evalResult_t() = delete;
-        evalResult_t(ICorDebugEval *pEval_, const std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > &promiseValue_) = delete;
-        evalResult_t(const evalResult_t &B) = delete;
-        evalResult_t& operator = (const evalResult_t &B) = delete;
-        evalResult_t& operator = (evalResult_t &&B) = delete;
-
-        evalResult_t(ICorDebugEval *pEval_, std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > &&promiseValue_) :
-            pEval(pEval_),
-            promiseValue(std::move(promiseValue_))
-        {}
-        evalResult_t(evalResult_t &&B) :
-            pEval(B.pEval),
-            promiseValue(std::move(B.promiseValue))
-        {}
-
-        ~evalResult_t() = default;
-
-        ICorDebugEval *pEval;
-        std::promise< std::unique_ptr<ToRelease<ICorDebugValue>> > promiseValue;
-    };
-
-    std::mutex m_evalMutex;
-    std::unordered_map< DWORD, evalResult_t > m_evalResults;
-
-    HRESULT FollowNested(ICorDebugThread *pThread,
-                         ICorDebugILFrame *pILFrame,
-                         const std::string &methodClass,
-                         const std::vector<std::string> &parts,
-                         ICorDebugValue **ppResult,
-                         int evalFlags);
-    HRESULT FollowFields(ICorDebugThread *pThread,
-                         ICorDebugILFrame *pILFrame,
-                         ICorDebugValue *pValue,
-                         ValueKind valueKind,
-                         const std::vector<std::string> &parts,
-                         int nextPart,
-                         ICorDebugValue **ppResult,
-                         int evalFlags);
-    HRESULT GetFieldOrPropertyWithName(ICorDebugThread *pThread,
-                                       ICorDebugILFrame *pILFrame,
-                                       ICorDebugValue *pInputValue,
-                                       ValueKind valueKind,
-                                       const std::string &name,
-                                       ICorDebugValue **ppResultValue,
-                                       int evalFlags);
-
-    HRESULT WaitEvalResult(ICorDebugThread *pThread,
-                           ICorDebugEval *pEval,
-                           ICorDebugValue **ppEvalResult);
-
-    std::future< std::unique_ptr<ToRelease<ICorDebugValue>> > RunEval(
+    HRESULT FollowNested(
         ICorDebugThread *pThread,
-        ICorDebugEval *pEval);
+        FrameLevel frameLevel,
+        const std::string &methodClass,
+        const std::vector<std::string> &parts,
+        ICorDebugValue **ppResult,
+        int evalFlags);
+    HRESULT FollowFields(
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        ICorDebugValue *pValue,
+        ValueKind valueKind,
+        const std::vector<std::string> &parts,
+        int nextPart,
+        ICorDebugValue **ppResult,
+        int evalFlags);
+    HRESULT GetFieldOrPropertyWithName(
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        ICorDebugValue *pInputValue,
+        ValueKind valueKind,
+        const std::string &name,
+        ICorDebugValue **ppResultValue,
+        int evalFlags);
 
     HRESULT WalkMembers(
         ICorDebugValue *pInputValue,
         ICorDebugThread *pThread,
-        ICorDebugILFrame *pILFrame,
+        FrameLevel frameLevel,
         ICorDebugType *pTypeCast,
         WalkMembersCallback cb);
 
     HRESULT HandleSpecialLocalVar(
         const std::string &localName,
         ICorDebugValue *pLocalValue,
-        ICorDebugILFrame *pILFrame,
         std::unordered_set<std::string> &locals,
         WalkStackVarsCallback cb);
 
     HRESULT HandleSpecialThisParam(
         ICorDebugValue *pThisValue,
-        ICorDebugILFrame *pILFrame,
         std::unordered_set<std::string> &locals,
         WalkStackVarsCallback cb);
 
@@ -167,64 +168,6 @@ private:
         const WCHAR *methodName,
         ICorDebugFunction **ppFunction);
 
-public:
-
-    Evaluator(std::shared_ptr<Modules> &sharedModules) : m_sharedModules(sharedModules) {}
-
-    HRESULT CreatTypeObjectStaticConstructor(
-        ICorDebugThread *pThread,
-        ICorDebugType *pType,
-        ICorDebugValue **ppTypeObjectResult = nullptr,
-        bool DetectStaticMembers = true);
-
-    HRESULT EvalFunction(
-        ICorDebugThread *pThread,
-        ICorDebugFunction *pFunc,
-        ICorDebugType **ppArgsType,
-        ULONG32 ArgsTypeCount,
-        ICorDebugValue **ppArgsValue,
-        ULONG32 ArgsValueCount,
-        ICorDebugValue **ppEvalResult,
-        int evalFlags);
-
-    HRESULT EvalExpr(ICorDebugThread *pThread,
-                     ICorDebugFrame *pFrame,
-                     const std::string &expression,
-                     ICorDebugValue **ppResult,
-                     int evalFlags);
-
-    bool IsEvalRunning();
-    ICorDebugEval *FindEvalForThread(ICorDebugThread *pThread);
-
-    // Should be called by ICorDebugManagedCallback
-    void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
-
-    HRESULT getObjectByFunction(
-        const std::string &func,
-        ICorDebugThread *pThread,
-        ICorDebugValue *pInValue,
-        ICorDebugValue **ppOutValue,
-        int evalFlags);
-
-    HRESULT GetType(
-        const std::string &typeName,
-        ICorDebugThread *pThread,
-        ICorDebugType **ppType);
-
-    HRESULT WalkMembers(
-        ICorDebugValue *pValue,
-        ICorDebugThread *pThread,
-        ICorDebugILFrame *pILFrame,
-        WalkMembersCallback cb);
-
-    HRESULT WalkStackVars(ICorDebugFrame *pFrame, WalkStackVarsCallback cb);
-
-    HRESULT CreateString(
-        ICorDebugThread *pThread,
-        const std::string &value,
-        ICorDebugValue **ppNewString);
-
-    void Cleanup();
 };
 
 } // namespace netcoredbg

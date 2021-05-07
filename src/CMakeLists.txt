@@ -83,10 +83,12 @@ add_custom_command(
 set(netcoredbg_SRC
     debugger/breakpoints.cpp
     debugger/evaluator.cpp
+    debugger/evalwaiter.cpp
     debugger/exceptionbreakpointstorage.cpp
     debugger/frames.cpp
     debugger/managedcallback.cpp
     debugger/manageddebugger.cpp
+    debugger/threads.cpp
     debugger/valueprint.cpp
     debugger/variables.cpp
     debugger/waitpid.cpp

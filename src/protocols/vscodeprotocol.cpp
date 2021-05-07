@@ -605,7 +605,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             if (frameIdIter == arguments.end())
             {
                 ThreadId threadId = m_sharedDebugger->GetLastStoppedThreadId();
-                return FrameId{StackFrame(threadId, FrameLevel{0}, "").id};
+                return FrameId{threadId, FrameLevel{0}};
             }
             else {
                 return FrameId{int(frameIdIter.value())};

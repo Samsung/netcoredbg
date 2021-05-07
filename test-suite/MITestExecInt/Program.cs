@@ -97,13 +97,16 @@ namespace MITestExecInt
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
 
                 Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("1-exec-continue").Class, @"__FILE__:__LINE__");
-                Assert.Equal(MIResultClass.Error, Context.MIDebugger.Request("2-exec-continue").Class, @"__FILE__:__LINE__");
+                // In case of CoreCLR Debug/Checked build must pass all asserts.
+                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("2-exec-continue").Class, @"__FILE__:__LINE__");
 
                 Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("3-exec-interrupt").Class, @"__FILE__:__LINE__");
+                // In case of CoreCLR Debug/Checked build must pass all asserts.
                 Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("4-exec-interrupt").Class, @"__FILE__:__LINE__");
 
                 Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("5-exec-continue").Class, @"__FILE__:__LINE__");
-                Assert.Equal(MIResultClass.Error, Context.MIDebugger.Request("6-exec-continue").Class, @"__FILE__:__LINE__");
+                // In case of CoreCLR Debug/Checked build must pass all asserts.
+                Assert.Equal(MIResultClass.Running, Context.MIDebugger.Request("6-exec-continue").Class, @"__FILE__:__LINE__");
 
                 Assert.Equal(MIResultClass.Done, Context.MIDebugger.Request("7-exec-abort").Class, @"__FILE__:__LINE__");
 

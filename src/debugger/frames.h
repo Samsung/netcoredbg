@@ -7,7 +7,6 @@
 #include "cordebug.h"
 
 #include <functional>
-#include <vector>
 #include "protocols/protocol.h"
 
 namespace netcoredbg
@@ -38,7 +37,6 @@ typedef std::function<HRESULT(FrameType,ICorDebugFrame*,NativeFrame*,ICorDebugFu
 struct Thread;
 
 HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **ppFrame);
-HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads);
 uint64_t GetFrameAddr(ICorDebugFrame *pFrame);
 const char *GetInternalTypeName(CorDebugInternalFrameType frameType);
 HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb);

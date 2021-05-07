@@ -1448,7 +1448,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string>
 
         // call of getter should not fire callback, so we can call it with locked mutex
         threadId = m_sharedDebugger->GetLastStoppedThreadId();
-        frameId = StackFrame(threadId, FrameLevel{0}, "").id;
+        frameId = FrameId(threadId, FrameLevel{0});
     }
 
     HRESULT Status;

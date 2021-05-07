@@ -6,6 +6,7 @@
 #include "cor.h"
 #include "cordebug.h"
 
+#include <mutex>
 #include "protocols/protocol.h"
 #include "torelease.h"
 
@@ -66,6 +67,7 @@ class Variables
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     struct Member;
 
+    std::recursive_mutex m_referencesMutex;
     std::unordered_map<uint32_t, VariableReference> m_references;
 
     HRESULT AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *pValue, ValueKind valueKind);
@@ -80,7 +82,6 @@ private:
     HRESULT GetStackVariables(
         FrameId frameId,
         ICorDebugThread *pThread,
-        ICorDebugFrame *pFrame,
         int start,
         int count,
         std::vector<Variable> &variables);
@@ -88,7 +89,6 @@ private:
     HRESULT GetChildren(
         VariableReference &ref,
         ICorDebugThread *pThread,
-        ICorDebugFrame *pFrame,
         int start,
         int count,
         std::vector<Variable> &variables);
@@ -98,7 +98,7 @@ private:
     HRESULT FetchFieldsAndProperties(
         ICorDebugValue *pInputValue,
         ICorDebugThread *pThread,
-        ICorDebugILFrame *pILFrame,
+        FrameLevel frameLevel,
         std::vector<Member> &members,
         bool fetchOnlyStatic,
         bool &hasStaticMembers,
@@ -114,7 +114,6 @@ private:
     HRESULT SetStackVariable(
         FrameId frameId,
         ICorDebugThread *pThread,
-        ICorDebugFrame *pFrame,
         const std::string &name,
         const std::string &value,
         std::string &output);
@@ -122,7 +121,6 @@ private:
     HRESULT SetChild(
         VariableReference &ref,
         ICorDebugThread *pThread,
-        ICorDebugFrame *pFrame,
         const std::string &name,
         const std::string &value,
         std::string &output);
@@ -177,7 +175,12 @@ public:
         const Variable &variable,
         ICorDebugValue **ppResult);
 
-    void Clear() { m_references.clear(); }
+    void Clear()
+    {
+        m_referencesMutex.lock();
+        m_references.clear();
+        m_referencesMutex.unlock();
+    }
 
 };
 

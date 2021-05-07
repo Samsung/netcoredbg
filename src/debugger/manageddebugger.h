@@ -22,9 +22,9 @@ namespace netcoredbg
 using Utility::string_view;
 template <typename T> using span = Utility::span<T>;
 
-ThreadId getThreadId(ICorDebugThread *pThread);
-
+class Threads;
 class Evaluator;
+class EvalWaiter;
 class Variables;
 class ManagedCallback;
 class Breakpoints;
@@ -90,7 +90,9 @@ private:
     bool m_stopAtEntry;
     bool m_isConfigurationDone;
 
+    std::shared_ptr<Threads> m_sharedThreads;
     std::shared_ptr<Modules> m_sharedModules;
+    std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     std::unique_ptr<Breakpoints> m_uniqueBreakpoints;
     std::shared_ptr<Variables> m_sharedVariables;
@@ -182,11 +184,6 @@ public:
     void FindVariables(ThreadId, FrameLevel, string_view pattern, unsigned limit, SearchCallback) override;
 
     void EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback) override;
-
-    // Functions which converts FrameId to ThreadId and FrameLevel and vice versa.
-    FrameId getFrameId(ThreadId, FrameLevel);
-    ThreadId threadByFrameId(FrameId) const;
-    FrameLevel frameByFrameId(FrameId) const;
 
     // pass some data to debugee stdin
     IDebugger::AsyncResult ProcessStdin(InStream &) override;

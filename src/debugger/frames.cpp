@@ -2,52 +2,16 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include "debugger/frames.h"
-
 #include <sstream>
 #include <algorithm>
-
+#include "debugger/frames.h"
 #include "metadata/typeprinter.h"
 #include "platform.h"
-#include "debugger/manageddebugger.h"
 #include "utils/logger.h"
+#include "torelease.h"
 
 namespace netcoredbg
 {
-
-HRESULT GetThreadsState(ICorDebugController *controller, std::vector<Thread> &threads)
-{
-    HRESULT Status = S_OK;
-
-    ToRelease<ICorDebugThreadEnum> pThreads;
-    IfFailRet(controller->EnumerateThreads(&pThreads));
-
-    const std::string threadName = "<No name>";
-    ICorDebugThread *handle = nullptr;
-    ULONG fetched = 0;
-
-    while (SUCCEEDED(Status = pThreads->Next(1, &handle, &fetched)) && fetched == 1)
-    {
-        ToRelease<ICorDebugThread> pThread(handle);
-
-        DWORD threadId = 0;
-        IfFailRet(pThread->GetID(&threadId));
-
-        ToRelease<ICorDebugProcess> pProcess;
-        IfFailRet(pThread->GetProcess(&pProcess));
-
-        BOOL running = FALSE;
-        IfFailRet(pProcess->IsRunning(&running));
-
-        // Baground threads also included. GetUserState() not available for running thread.
-        threads.emplace_back(ThreadId{threadId}, threadName, running);
-
-        fetched = 0;
-        handle = nullptr;
-    }
-
-    return S_OK;
-}
 
 uint64_t GetFrameAddr(ICorDebugFrame *pFrame)
 {
@@ -263,11 +227,15 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
 
 HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **ppFrame)
 {
-    ToRelease<ICorDebugFrame> result;
+    // Try get 0 (current active) frame in fast way, if possible.
+    if (int(level) == 0 &&
+        SUCCEEDED(pThread->GetActiveFrame(ppFrame)) &&
+        *ppFrame != nullptr)
+        return S_OK;
 
     int currentFrame = -1;
 
-    HRESULT Status = WalkFrames(pThread, [&](
+    WalkFrames(pThread, [&](
         FrameType frameType,
         ICorDebugFrame *pFrame,
         NativeFrame *pNative,
@@ -280,21 +248,15 @@ HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **
         else if (currentFrame > int(level))
             return E_FAIL;
 
-        if (currentFrame == level && frameType == FrameCLRManaged)
-        {
-            pFrame->AddRef();
-            result = pFrame;
-        }
-        return E_FAIL;
+        if (currentFrame != int(level) || frameType != FrameCLRManaged)
+            return S_OK;
+
+        pFrame->AddRef();
+        *ppFrame = pFrame;
+        return E_ABORT; // Fast exit from cycle.
     });
 
-    if (result)
-    {
-        *ppFrame = result.Detach();
-        return S_OK;
-    }
-
-    return Status;
+    return *ppFrame != nullptr ? S_OK : E_FAIL;
 }
 
 const char *GetInternalTypeName(CorDebugInternalFrameType frameType)

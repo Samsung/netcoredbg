@@ -13,7 +13,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "interfaces/iprotocol.h"
+#include "debugger/threads.h"
+#include "debugger/frames.h"
 #include "debugger/evaluator.h"
+#include "debugger/evalwaiter.h"
 #include "debugger/variables.h"
 #include "debugger/breakpoints.h"
 #include "debugger/manageddebugger.h"
@@ -24,7 +27,6 @@
 #include "dynlibs.h"
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
-#include "debugger/frames.h"
 #include "utils/logger.h"
 #include "debugger/waitpid.h"
 #include "iosystem.h"
@@ -69,13 +71,6 @@ namespace
 
         return 0;
     }
-}
-
-ThreadId getThreadId(ICorDebugThread *pThread)
-{
-    DWORD threadId = 0;  // invalid value for Win32
-    HRESULT res = pThread->GetID(&threadId);
-    return SUCCEEDED(res) && threadId != 0 ? ThreadId{threadId} : ThreadId{};
 }
 
 void ManagedDebugger::NotifyProcessCreated()
@@ -177,11 +172,15 @@ HRESULT ManagedDebugger::DisableAllBreakpointsAndSteppers()
 }
 
 // Get '<>t__builder' field value for builder from frame.
-// [in] pFrame - frame that used for get all info needed (function, module, etc);
+// [in] pThread - managed thread for evaluation;
 // [out] ppValue_builder - result value.
-static HRESULT GetAsyncTBuilder(ICorDebugFrame *pFrame, ICorDebugValue **ppValue_builder)
+static HRESULT GetAsyncTBuilder(ICorDebugThread *pThread, ICorDebugValue **ppValue_builder)
 {
     HRESULT Status;
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
 
     // Find 'this'.
     ToRelease<ICorDebugFunction> pFunction;
@@ -210,7 +209,6 @@ static HRESULT GetAsyncTBuilder(ICorDebugFrame *pFrame, ICorDebugValue **ppValue
     // At this point, first param will be always 'this'.
     ToRelease<ICorDebugValue> pRefValue_this;
     IfFailRet(pParamEnum->Next(1, &pRefValue_this, nullptr));
-
 
     // Find '<>t__builder' field.
     ToRelease<ICorDebugValue> pValue_this;
@@ -258,15 +256,14 @@ static HRESULT GetAsyncTBuilder(ICorDebugFrame *pFrame, ICorDebugValue **ppValue
 
 // Find Async ID, in our case - reference to created by builder object,
 // that could be use as unique ID for builder (state machine) on yield and resume offset breakpoints.
-// [in] pThread - managed thread for evaluation (related to pFrame);
-// [in] pFrame - frame that used for get all info needed (function, module, etc);
+// [in] pThread - managed thread for evaluation;
 // [in] evaluator - reference to managed debugger evaluator;
 // [out] ppValueAsyncIdRef - result value (reference to created by builder object).
-static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::shared_ptr<Evaluator> &sharedEvaluator, ICorDebugValue **ppValueAsyncIdRef)
+static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, std::shared_ptr<Evaluator> &sharedEvaluator, ICorDebugValue **ppValueAsyncIdRef)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pValue;
-    IfFailRet(GetAsyncTBuilder(pFrame, &pValue));
+    IfFailRet(GetAsyncTBuilder(pThread, &pValue));
 
     // Find 'ObjectIdForDebugger' property.
     ToRelease<ICorDebugValue2> pValue2;
@@ -321,13 +318,12 @@ static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFr
 
 // Set notification for wait completion - call SetNotificationForWaitCompletion() method for particular builder.
 // [in] pThread - managed thread for evaluation (related to pFrame);
-// [in] pFrame - frame that used for get all info needed (function, module, etc);
 // [in] evaluator - reference to managed debugger evaluator;
-static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::shared_ptr<Evaluator> &sharedEvaluator)
+static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, std::shared_ptr<Evaluator> &sharedEvaluator)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pValue;
-    IfFailRet(GetAsyncTBuilder(pFrame, &pValue));
+    IfFailRet(GetAsyncTBuilder(pThread, &pValue));
 
     // Find SetNotificationForWaitCompletion() method.
     ToRelease<ICorDebugValue2> pValue2;
@@ -551,8 +547,10 @@ ManagedDebugger::ManagedDebugger() :
     m_startMethod(StartNone),
     m_stopAtEntry(false),
     m_isConfigurationDone(false),
+    m_sharedThreads(new Threads),
     m_sharedModules(new Modules),
-    m_sharedEvaluator(new Evaluator(m_sharedModules)),
+    m_sharedEvalWaiter(new EvalWaiter(m_sharedThreads)),
+    m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalWaiter)),
     m_uniqueBreakpoints(new Breakpoints(m_sharedModules)),
     m_sharedVariables(new Variables(m_sharedEvaluator)),
     m_managedCallback(nullptr),
@@ -727,7 +725,7 @@ HRESULT ManagedDebugger::SetupStep(ICorDebugThread *pThread, StepType stepType)
     }
     if (stepType == IDebugger::StepType::STEP_OUT)
     {
-        IfFailRet(SetNotificationForWaitCompletion(pThread, pFrame, m_sharedEvaluator));
+        IfFailRet(SetNotificationForWaitCompletion(pThread, m_sharedEvaluator));
         IfFailRet(SetBreakpointIntoNotifyDebuggerOfWaitCompletion());
         // Note, we don't create stepper here, since all we need in case of breakpoint is call Continue() from StepCommand().
         return S_OK;
@@ -802,7 +800,9 @@ HRESULT ManagedDebugger::SetupSimpleStep(ICorDebugThread *pThread, StepType step
     if (SUCCEEDED(m_sharedModules->GetStepRangeFromCurrentIP(pThread, &range)))
     {
         IfFailRet(pStepper->StepRange(bStepIn, &range, 1));
-    } else {
+    }
+    else
+    {
         IfFailRet(pStepper->Step(bStepIn));
     }
 
@@ -819,12 +819,36 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
     if (!m_iCorProcess)
         return E_FAIL;
 
+    if (m_sharedEvalWaiter->IsEvalRunning())
+    {
+        // Important! Abort all evals before 'Step' in protocol, during eval we have inconsistent thread state.
+        LOGE("Can't 'Step' during running evaluation.");
+        return E_UNEXPECTED;
+    }
+
+    BOOL running = FALSE;
     HRESULT Status;
+    IfFailRet(m_iCorProcess->IsRunning(&running));
+    if (running)
+    {
+        LOGW("Can't 'Step', process already running.");
+        return E_FAIL;
+    }
+
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
     IfFailRet(SetupStep(pThread, stepType));
 
-    return Continue(threadId);
+    if (FAILED(Status = m_iCorProcess->Continue(0)))
+        LOGE("Continue failed: %s", errormessage(Status));
+    else
+    {
+        m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
+        FrameId::invalidate(); // Clear all created during break frames.
+        m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
+    }
+
+    return Status;
 }
 
 HRESULT ManagedDebugger::Continue(ThreadId threadId)
@@ -834,26 +858,32 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     if (!m_iCorProcess)
         return E_FAIL;
 
-    HRESULT res;
-    // FIXME if not all threads switched back to THREAD_RUN state after eval finished - something wrong with logic at eval complete/exception point
-    if (!m_sharedEvaluator->IsEvalRunning() && m_sharedEvaluator->is_empty_eval_queue())
-        if (FAILED(res = m_iCorProcess->SetAllThreadsDebugState(THREAD_RUN, nullptr)))
-            LOGE("Continue failed: %s", errormessage(res));
-
-    if (FAILED(res = m_iCorProcess->Continue(0)))
-        LOGE("Continue failed: %s", errormessage(res));
-
-    if (SUCCEEDED(res))
+    if (m_sharedEvalWaiter->IsEvalRunning())
     {
-        m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
-        FrameId::invalidate();
-        m_sharedProtocol->EmitContinuedEvent(threadId);
-        m_stopCounterMutex.lock();
-        --m_stopCounter;
-        m_stopCounterMutex.unlock();
+        // Important! Abort all evals before 'Continue' in protocol, during eval we have inconsistent thread state.
+        LOGE("Can't 'Continue' during running evaluation.");
+        return E_UNEXPECTED;
     }
 
-    return res;
+    BOOL running = FALSE;
+    HRESULT Status;
+    IfFailRet(m_iCorProcess->IsRunning(&running));
+    if (running)
+    {
+        LOGI("Can't 'Continue', process already running.");
+        return S_OK; // Send 'OK' response, but don't generate continue event.
+    }
+
+    if (FAILED(Status = m_iCorProcess->Continue(0)))
+        LOGE("Continue failed: %s", errormessage(Status));
+    else
+    {
+        m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
+        FrameId::invalidate(); // Clear all created during break frames.
+        m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
+    }
+
+    return Status;
 }
 
 HRESULT ManagedDebugger::Pause()
@@ -928,7 +958,8 @@ HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
 
     if (!m_iCorProcess)
         return E_FAIL;
-    return GetThreadsState(m_iCorProcess, threads);
+
+    return m_sharedThreads->GetThreadsWithState(m_iCorProcess, threads);
 }
 
 HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
@@ -1340,7 +1371,6 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
 
     // Are needed to move next line to Exception() callback?
     assert(int(threadId) != -1);
-    m_sharedEvaluator->push_eval_queue(threadId);
 
     HRESULT res = E_FAIL;
     HRESULT Status = S_OK;
@@ -1437,11 +1467,9 @@ HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
     if (hasInner)
         exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
 
-    m_sharedEvaluator->pop_eval_queue(); // CompleteException
     return S_OK;
 
 failed:
-    m_sharedEvaluator->pop_eval_queue(); // CompleteException
     IfFailRet(res);
     return res;
 }
@@ -1875,27 +1903,23 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
         pAppDomain->AddRef();
         ToRelease<ICorDebugThread> callbackThread(pThread);
         pThread->AddRef();
-        ToRelease<ICorDebugFrame> callbackFrame(pFrame.GetPtr());
-        pFrame->AddRef();
 
         // Switch to separate thread, since we must return runtime's callback call before evaluation start.
         std::thread([this](
             ICorDebugAppDomain *pAppDomain,
-            ICorDebugThread *pThread,
-            ICorDebugFrame *pFrame)
+            ICorDebugThread *pThread)
         {
             const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
 
             ToRelease<ICorDebugValue> pValueRef;
-            if (FAILED(GetAsyncIdReference(pThread, pFrame, m_sharedEvaluator, &pValueRef)) ||
+            if (FAILED(GetAsyncIdReference(pThread, m_sharedEvaluator, &pValueRef)) ||
                 FAILED(pValueRef->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &m_asyncStep->pValueAsyncIdRef)))
                 LOGE("Could not setup reference pValueAsyncIdRef for await block");
 
             pAppDomain->Continue(0);
         },
             std::move(callbackAppDomain),
-            std::move(callbackThread),
-            std::move(callbackFrame)
+            std::move(callbackThread)
         ).detach();
     }
     else
@@ -1916,14 +1940,11 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
         pAppDomain->AddRef();
         ToRelease<ICorDebugThread> callbackThread(pThread);
         pThread->AddRef();
-        ToRelease<ICorDebugFrame> callbackFrame(pFrame.GetPtr());
-        pFrame->AddRef();
 
         // Switch to separate thread, since we must return runtime's callback call before evaluation start.
         std::thread([this](
             ICorDebugAppDomain *pAppDomain,
-            ICorDebugThread *pThread,
-            ICorDebugFrame *pFrame)
+            ICorDebugThread *pThread)
         {
             const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
 
@@ -1931,7 +1952,7 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
             CORDB_ADDRESS currentAsyncId = 0;
             ToRelease<ICorDebugValue> pValue;
             BOOL isNull = FALSE;
-            if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_sharedEvaluator, &pValueRef)) &&
+            if (SUCCEEDED(GetAsyncIdReference(pThread, m_sharedEvaluator, &pValueRef)) &&
                 SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
                 pValue->GetAddress(&currentAsyncId);
             else
@@ -1958,8 +1979,7 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
             pAppDomain->Continue(0);
         },
             std::move(callbackAppDomain),
-            std::move(callbackThread),
-            std::move(callbackFrame)
+            std::move(callbackThread)
         ).detach();
     }
 

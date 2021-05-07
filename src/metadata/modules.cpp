@@ -504,17 +504,14 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));
 
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-
     ToRelease<ICorDebugILFrame> pILFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
 
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
@@ -763,11 +760,9 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
 
 HRESULT Modules::GetFrameNamedLocalVariable(
     ICorDebugModule *pModule,
-    ICorDebugILFrame *pILFrame,
     mdMethodDef methodToken,
     ULONG localIndex,
     std::string &paramName,
-    ICorDebugValue** ppValue,
     ULONG32 *pIlStart,
     ULONG32 *pIlEnd)
 {
@@ -787,7 +782,7 @@ HRESULT Modules::GetFrameNamedLocalVariable(
         }
 
         ModuleInfo &mdInfo = info_pair->second;
-        IfFailRet(Interop::GetNamedLocalVariableAndScope(mdInfo.m_symbolReaderHandle, pILFrame, methodToken, localIndex, wParamName, _countof(wParamName), ppValue, pIlStart, pIlEnd));
+        IfFailRet(Interop::GetNamedLocalVariableAndScope(mdInfo.m_symbolReaderHandle, methodToken, localIndex, wParamName, _countof(wParamName), pIlStart, pIlEnd));
     }
 
     paramName = to_utf8(wParamName);
