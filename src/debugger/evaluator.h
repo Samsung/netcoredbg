@@ -26,7 +26,7 @@ public:
     typedef std::function<HRESULT(ICorDebugValue**,int)> GetValueCallback;
     typedef std::function<HRESULT(const std::string&,std::string&,int)> SetValueCallback;
     typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetValueCallback)> WalkMembersCallback;
-    typedef std::function<HRESULT(ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
+    typedef std::function<HRESULT(const std::string&,GetValueCallback)> WalkStackVarsCallback;
 
     enum ValueKind
     {
@@ -70,11 +70,6 @@ public:
         ICorDebugValue *pInValue,
         ICorDebugValue **ppOutValue,
         int evalFlags);
-
-    HRESULT GetType(
-        const std::string &typeName,
-        ICorDebugThread *pThread,
-        ICorDebugType **ppType);
 
     HRESULT WalkMembers(
         ICorDebugValue *pValue,
@@ -182,25 +177,6 @@ private:
         UVCP_CONSTANT pRawValue,
         ULONG rawValueLength,
         ICorDebugValue **ppLiteralValue);
-
-    HRESULT FindType(
-        const std::vector<std::string> &parts,
-        int &nextPart,
-        ICorDebugThread *pThread,
-        ICorDebugModule *pModule,
-        ICorDebugType **ppType,
-        ICorDebugModule **ppModule = nullptr);
-
-    HRESULT ResolveParameters(
-        const std::vector<std::string> &params,
-        ICorDebugThread *pThread,
-        std::vector< ToRelease<ICorDebugType> > &types);
-
-    static HRESULT FindFunction(
-        ICorDebugModule *pModule,
-        const WCHAR *typeName,
-        const WCHAR *methodName,
-        ICorDebugFunction **ppFunction);
 
     HRESULT CreateString(
         ICorDebugThread *pThread,

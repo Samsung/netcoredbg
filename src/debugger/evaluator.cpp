@@ -19,6 +19,9 @@
 namespace netcoredbg
 {
 
+HRESULT FindType(const std::vector<std::string> &parts, int &nextPart, ICorDebugThread *pThread, Modules *pModules,
+                 ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule = nullptr);
+
 static HRESULT ParseIndices(const std::string &s, std::vector<ULONG32> &indices)
 {
     indices.clear();
@@ -141,7 +144,7 @@ static HRESULT GetMethodToken(IMetaDataImport *pMD, mdTypeDef cl, const WCHAR *m
     return methodDef;
 }
 
-HRESULT Evaluator::FindFunction(ICorDebugModule *pModule,
+static HRESULT FindFunction(ICorDebugModule *pModule,
                             const WCHAR *typeName,
                             const WCHAR *methodName,
                             ICorDebugFunction **ppFunction)
@@ -401,9 +404,10 @@ static HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std:
     return S_OK;
 }
 
-HRESULT Evaluator::GetType(
+static HRESULT GetType(
     const std::string &typeName,
     ICorDebugThread *pThread,
+    Modules *pModules,
     ICorDebugType **ppType)
 {
     HRESULT Status;
@@ -414,7 +418,7 @@ HRESULT Evaluator::GetType(
 
     ToRelease<ICorDebugType> pType;
     int nextClassPart = 0;
-    IfFailRet(FindType(classParts, nextClassPart, pThread, nullptr, &pType));
+    IfFailRet(FindType(classParts, nextClassPart, pThread, pModules, nullptr, &pType));
 
     if (!ranks.empty())
     {
@@ -438,25 +442,27 @@ HRESULT Evaluator::GetType(
     return S_OK;
 }
 
-HRESULT Evaluator::ResolveParameters(
+static HRESULT ResolveParameters(
     const std::vector<std::string> &params,
     ICorDebugThread *pThread,
+    Modules *pModules,
     std::vector< ToRelease<ICorDebugType> > &types)
 {
     HRESULT Status;
     for (auto &p : params)
     {
         ICorDebugType *tmpType;
-        IfFailRet(GetType(p, pThread, &tmpType));
+        IfFailRet(GetType(p, pThread, pModules, &tmpType));
         types.emplace_back(tmpType);
     }
     return S_OK;
 }
 
-HRESULT Evaluator::FindType(
+static HRESULT FindType(
     const std::vector<std::string> &parts,
     int &nextPart,
     ICorDebugThread *pThread,
+    Modules *pModules,
     ICorDebugModule *pModule,
     ICorDebugType **ppType,
     ICorDebugModule **ppModule)
@@ -471,7 +477,7 @@ HRESULT Evaluator::FindType(
 
     if (!pTypeModule)
     {
-        m_sharedModules->ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
+        pModules->ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
             if (typeToken != mdTypeDefNil) // already found
                 return S_OK;
 
@@ -495,7 +501,7 @@ HRESULT Evaluator::FindType(
     {
         std::vector<std::string> params = GatherParameters(parts, nextPart);
         std::vector< ToRelease<ICorDebugType> > types;
-        IfFailRet(ResolveParameters(params, pThread, types));
+        IfFailRet(ResolveParameters(params, pThread, pModules, types));
 
         ToRelease<ICorDebugClass> pClass;
         IfFailRet(pTypeModule->GetClassFromToken(typeToken, &pClass));
@@ -547,7 +553,7 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
     std::vector<std::string> fullpath;
 
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(FindType(classParts, nextClassPart, pThread, nullptr, nullptr, &pModule));
+    IfFailRet(FindType(classParts, nextClassPart, pThread, m_sharedModules.get(), nullptr, nullptr, &pModule));
 
     bool trim = false;
     while (!classParts.empty())
@@ -561,7 +567,7 @@ HRESULT Evaluator::FollowNested(ICorDebugThread *pThread,
         for (int i = 0; i < partsNum; i++)
             fullpath.push_back(parts[i]);
 
-        if (FAILED(FindType(fullpath, nextClassPart, pThread, pModule, &pType)))  // NOLINT(clang-analyzer-cplusplus.Move)
+        if (FAILED(FindType(fullpath, nextClassPart, pThread, m_sharedModules.get(), pModule, &pType)))  // NOLINT(clang-analyzer-cplusplus.Move)
             break;
 
         if(nextClassPart < (int)fullpath.size())
@@ -621,20 +627,22 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
     else
     {
         // Note, we use E_ABORT error code as fast way to exit from stack vars walk routine here.
-        if (FAILED(Status = WalkStackVars(pThread, frameLevel, [&](ICorDebugValue *pValue,
-                                                                   const std::string &name) -> HRESULT
+        if (FAILED(Status = WalkStackVars(pThread, frameLevel, [&](const std::string &name,
+                                                                   GetValueCallback getValue) -> HRESULT
         {
-            if (name == "this" && pValue)
+            if (name == "this")
             {
-                pValue->AddRef();
-                pThisValue = pValue;
+                if (FAILED(getValue(&pThisValue, evalFlags)) || !pThisValue)
+                    return S_OK;
+
                 if (name == parts.at(nextPart))
                     return E_ABORT; // Fast way to exit from stack vars walk routine.
             }
-            else if (name == parts.at(nextPart) && pValue)
+            else if (name == parts.at(nextPart))
             {
-                pValue->AddRef();
-                pResultValue = pValue;
+                if (FAILED(getValue(&pResultValue, evalFlags)) || !pResultValue)
+                    return S_OK;
+
                 return E_ABORT; // Fast way to exit from stack vars walk routine.
             }
 
@@ -689,7 +697,7 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
     else
     {
         ToRelease<ICorDebugType> pType;
-        IfFailRet(FindType(parts, nextPart, pThread, nullptr, &pType));
+        IfFailRet(FindType(parts, nextPart, pThread, m_sharedModules.get(), nullptr, &pType));
         IfFailRet(CreatTypeObjectStaticConstructor(pThread, pType, &pResultValue));
         if (Status == S_FALSE) // type don't have static members, nothing explore here
             return E_INVALIDARG;
@@ -1144,7 +1152,7 @@ HRESULT Evaluator::GetLiteralValue(
             std::string typeName;
             TypePrinter::NameForTypeSig(pSignatureBlob, pType, pMD, typeName);
             ToRelease<ICorDebugType> pElementType;
-            IfFailRet(GetType(typeName, pThread, &pElementType));
+            IfFailRet(GetType(typeName, pThread, m_sharedModules.get(), &pElementType));
 
             ToRelease<ICorDebugAppDomain> pAppDomain;
             IfFailRet(pThread->GetAppDomain(&pAppDomain));
@@ -1183,7 +1191,7 @@ HRESULT Evaluator::GetLiteralValue(
             std::string typeName;
             TypePrinter::NameForTypeSig(pSignatureBlob, pType, pMD, typeName);
             ToRelease<ICorDebugType> pValueType;
-            IfFailRet(GetType(typeName, pThread, &pValueType));
+            IfFailRet(GetType(typeName, pThread, m_sharedModules.get(), &pValueType));
 
             // Create value from ICorDebugType
             ToRelease<ICorDebugEval> pEval;
@@ -1613,7 +1621,13 @@ HRESULT Evaluator::WalkMembers(
                 }
             };
 
-            IfFailRet(cb(pType, is_static, name, getValue, setValue));
+            Status = cb(pType, is_static, name, getValue, setValue);
+
+            if (FAILED(Status))
+            {
+                pMD->CloseEnum(propEnum);
+                return Status;
+            }
         }
     }
     pMD->CloseEnum(propEnum);
@@ -1684,11 +1698,7 @@ HRESULT Evaluator::HandleSpecialLocalVar(
         if (!locals.insert(name).second)
             return S_OK; // already in the list
 
-        ToRelease<ICorDebugValue> iCorResultValue;
-        // We don't have properties here (even don't provide thread in WalkMembers), eval flag not in use.
-        IfFailRet(getValue(&iCorResultValue, defaultEvalFlags));
-
-        return cb(iCorResultValue, name.empty() ? "this" : name);
+        return cb(name.empty() ? "this" : name, getValue);
     }));
 
     return S_OK;
@@ -1736,7 +1746,7 @@ HRESULT Evaluator::HandleSpecialThisParam(
             return S_OK;
 
         locals.insert(name);
-        return cb(iCorResultValue, name.empty() ? "this" : name);
+        return cb(name.empty() ? "this" : name, getValue);
     }));
     return S_OK;
 }
@@ -1836,7 +1846,14 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
             pFrame.Free();
             pILFrame.Free();
 
-            IfFailRet(cb(pValue, paramName));
+            auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
+            {
+                pValue->AddRef();
+                *ppResultValue = pValue;
+                return S_OK;
+            };
+
+            IfFailRet(cb(paramName, getValue));
         }
     }
 
@@ -1872,8 +1889,15 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
             if (Status == S_OK)
                 continue;
 
+            auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
+            {
+                pValue->AddRef();
+                *ppResultValue = pValue;
+                return S_OK;
+            };
+
             locals.insert(paramName);
-            IfFailRet(cb(pValue, paramName));
+            IfFailRet(cb(paramName, getValue));
         }
     }
 

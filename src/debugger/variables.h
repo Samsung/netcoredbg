@@ -112,7 +112,7 @@ private:
         bool static_members = false);
 
     HRESULT SetStackVariable(
-        FrameId frameId,
+        VariableReference &ref,
         ICorDebugThread *pThread,
         const std::string &name,
         const std::string &value,

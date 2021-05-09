@@ -71,10 +71,10 @@ struct Variables::Member
     std::string name;
     std::string ownerType;
     ToRelease<ICorDebugValue> value;
-    Member(const std::string &name, const std::string& ownerType, ToRelease<ICorDebugValue> value) :
+    Member(const std::string &name, const std::string& ownerType, ICorDebugValue *pValue) :
         name(name),
         ownerType(ownerType),
-        value(std::move(value))
+        value(pValue)
     {}
     Member(Member &&that) = default;
     Member(const Member &that) = delete;
@@ -137,7 +137,7 @@ HRESULT Variables::FetchFieldsAndProperties(
         if (pType)
             TypePrinter::GetTypeOfValue(pType, className);
 
-        members.emplace_back(name, className, std::move(iCorResultValue));
+        members.emplace_back(name, className, iCorResultValue.Detach());
         return S_OK;
     }));
 
@@ -287,22 +287,31 @@ HRESULT Variables::GetStackVariables(
         ++currentIndex;
     }
 
-    IfFailRet(m_sharedEvaluator->WalkStackVars(pThread, frameId.getLevel(), [&](ICorDebugValue *pValue,
-                                                                                const std::string &name) -> HRESULT
+    if (FAILED(Status = m_sharedEvaluator->WalkStackVars(pThread, frameId.getLevel(),
+        [&](const std::string &name, Evaluator::GetValueCallback getValue) -> HRESULT
     {
         ++currentIndex;
-        if (currentIndex < start || (count != 0 && currentIndex >= start + count))
+
+        if (currentIndex < start)
             return S_OK;
+        if (count != 0 && currentIndex >= start + count)
+            return E_ABORT; // Fast exit from cycle.
+
         Variable var;
         var.name = name;
         var.evaluateName = var.name;
         bool escape = true;
-        PrintValue(pValue, var.value, escape);
-        TypePrinter::GetTypeOfValue(pValue, var.type);
-        IfFailRet(AddVariableReference(var, frameId, pValue, ValueIsVariable));
+        ToRelease<ICorDebugValue> iCorValue;
+        IfFailRet(getValue(&iCorValue, var.evalFlags));
+        PrintValue(iCorValue, var.value, escape);
+        TypePrinter::GetTypeOfValue(iCorValue, var.type);
+        IfFailRet(AddVariableReference(var, frameId, iCorValue, ValueIsVariable));
         variables.push_back(var);
         return S_OK;
-    }));
+    })) && Status != E_ABORT)
+    {
+        return Status;
+    }
 
     return S_OK;
 }
@@ -326,8 +335,8 @@ HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::v
     if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
         namedVariables++;
 
-    IfFailRet(m_sharedEvaluator->WalkStackVars(pThread, frameId.getLevel(), [&](ICorDebugValue *pValue,
-                                                                                const std::string &name) -> HRESULT
+    IfFailRet(m_sharedEvaluator->WalkStackVars(pThread, frameId.getLevel(),
+        [&](const std::string &name, Evaluator::GetValueCallback) -> HRESULT
     {
         namedVariables++;
         return S_OK;
@@ -473,22 +482,25 @@ HRESULT Variables::Evaluate(
         if (!corValue) // Scope
         {
             bool found = false;
-            if (FAILED(m_sharedEvaluator->WalkStackVars(pThread, frameLevel, [&](ICorDebugValue *pValue,
-                                                                                 const std::string &varName) -> HRESULT
+            if (FAILED(Status = m_sharedEvaluator->WalkStackVars(pThread, frameLevel,
+                [&](const std::string &varName, Evaluator::GetValueCallback getValue) -> HRESULT
             {
-                if (!found && varName == "this")
+                if (varName == "this")
                 {
-                    pValue->AddRef();
-                    pThisValue = pValue;
+                    if (!pThisValue)
+                        getValue(&pThisValue, variable.evalFlags);
                 }
                 if (!found && varName == name)
                 {
                     found = true;
-                    IfFailRet(MarshalValue(pValue, typeId, data));
+                    ToRelease<ICorDebugValue> iCorValue;
+                    IfFailRet(getValue(&iCorValue, variable.evalFlags));
+                    IfFailRet(MarshalValue(iCorValue, typeId, data));
+                    return E_ABORT; // Fast way to exit from stack vars walk routine.
                 }
 
                 return S_OK;
-            })))
+            })) && Status != E_ABORT)
             {
                 return false;
             }
@@ -570,7 +582,7 @@ HRESULT Variables::SetVariable(
 
     if (varRef.IsScope())
     {
-        IfFailRet(SetStackVariable(varRef.frameId, pThread, name, value, output));
+        IfFailRet(SetStackVariable(varRef, pThread, name, value, output));
     }
     else
     {
@@ -581,7 +593,7 @@ HRESULT Variables::SetVariable(
 }
 
 HRESULT Variables::SetStackVariable(
-    FrameId frameId,
+    VariableReference &ref,
     ICorDebugThread *pThread,
     const std::string &name,
     const std::string &value,
@@ -591,18 +603,22 @@ HRESULT Variables::SetStackVariable(
 
     // TODO Exception?
 
-    IfFailRet(m_sharedEvaluator->WalkStackVars(pThread, frameId.getLevel(), [&](ICorDebugValue *pValue,
-                                                                                const std::string &varName) -> HRESULT
+    if (FAILED(Status = m_sharedEvaluator->WalkStackVars(pThread, ref.frameId.getLevel(),
+        [&](const std::string &varName, Evaluator::GetValueCallback getValue) -> HRESULT
     {
-        if (varName == name)
-        {
-            IfFailRet(m_sharedEvaluator->SetValue(pValue, value, pThread, output));
-            bool escape = true;
-            PrintValue(pValue, output, escape);
-        }
+        if (varName != name)
+            return S_OK;
 
-        return S_OK;
-    }));
+        ToRelease<ICorDebugValue> iCorValue;
+        IfFailRet(getValue(&iCorValue, ref.evalFlags));
+        IfFailRet(m_sharedEvaluator->SetValue(iCorValue, value, pThread, output));
+        bool escape = true;
+        PrintValue(iCorValue, output, escape);
+        return E_ABORT; // Fast exit from cycle.
+    })) && Status != E_ABORT)
+    {
+        return Status;
+    }
 
     return S_OK;
 }
