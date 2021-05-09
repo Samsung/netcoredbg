@@ -89,6 +89,9 @@ set(netcoredbg_SRC
     debugger/managedcallback.cpp
     debugger/manageddebugger.cpp
     debugger/threads.cpp
+    debugger/stepper_async.cpp
+    debugger/stepper_simple.cpp
+    debugger/steppers.cpp
     debugger/valueprint.cpp
     debugger/variables.cpp
     debugger/waitpid.cpp

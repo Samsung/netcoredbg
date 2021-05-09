@@ -37,7 +37,7 @@ private:
     int m_pid;
 };
 
-// Data type deficated to carry thread id.
+// Data type dedicated to carry thread id.
 class ThreadId : public Utility::CustomScalarType<ThreadId>
 {
     enum SpecialValues

@@ -23,6 +23,7 @@ using Utility::string_view;
 template <typename T> using span = Utility::span<T>;
 
 class Threads;
+class Steppers;
 class Evaluator;
 class EvalWaiter;
 class Variables;
@@ -94,14 +95,12 @@ private:
     std::shared_ptr<Modules> m_sharedModules;
     std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
+    std::unique_ptr<Steppers> m_uniqueSteppers;
     std::unique_ptr<Breakpoints> m_uniqueBreakpoints;
     std::shared_ptr<Variables> m_sharedVariables;
     std::unique_ptr<ManagedCallback> m_managedCallback;
     ToRelease<ICorDebug> m_iCorDebug;
     ToRelease<ICorDebugProcess> m_iCorProcess;
-
-    std::mutex m_stepMutex;
-    int m_enabledSimpleStepId;
 
     bool m_justMyCode;
 
@@ -124,12 +123,8 @@ private:
 
     void Cleanup();
 
-    HRESULT DisableAllSteppers();
-    HRESULT DisableAllSimpleSteppers();
     HRESULT DisableAllBreakpointsAndSteppers();
-
     HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
-    HRESULT SetupSimpleStep(ICorDebugThread *pThread, StepType stepType);
 
     HRESULT GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame);
@@ -148,7 +143,7 @@ public:
     ~ManagedDebugger() override;
 
     bool IsJustMyCode() const override { return m_justMyCode; }
-    void SetJustMyCode(bool enable) override { m_justMyCode = enable; }
+    void SetJustMyCode(bool enable) override;
 
     HRESULT Initialize() override;
     HRESULT Attach(int pid) override;
@@ -190,61 +185,6 @@ public:
 
 private:
     bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
-
-    enum class asyncStepStatus
-    {
-        yield_offset_breakpoint,
-        resume_offset_breakpoint
-    };
-
-    struct asyncBreakpoint_t
-    {
-        ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
-        CORDB_ADDRESS modAddress;
-        mdMethodDef methodToken;
-        ULONG32 ilOffset;
-
-        asyncBreakpoint_t() :
-            iCorFuncBreakpoint(nullptr),
-            modAddress(0),
-            methodToken(0),
-            ilOffset(0)
-        {}
-
-        ~asyncBreakpoint_t()
-        {
-            if (iCorFuncBreakpoint)
-                iCorFuncBreakpoint->Activate(FALSE);
-        }
-    };
-
-    struct asyncStep_t
-    {
-        ThreadId m_threadId;
-        IDebugger::StepType m_initialStepType;
-        uint32_t m_resume_offset;
-        asyncStepStatus m_stepStatus;
-        std::unique_ptr<asyncBreakpoint_t> m_Breakpoint;
-        ToRelease<ICorDebugHandleValue> m_iCorHandleValueAsyncId;
-
-        asyncStep_t() :
-            m_threadId(ThreadId::Invalid),
-            m_initialStepType(IDebugger::StepType::STEP_OVER),
-            m_resume_offset(0),
-            m_stepStatus(asyncStepStatus::yield_offset_breakpoint),
-            m_Breakpoint(nullptr),
-            m_iCorHandleValueAsyncId(nullptr)
-        {}
-    };
-
-    std::mutex m_asyncStepMutex;
-    // Pointer to object, that provide all active async step related data. Object will be created only in case of active async method stepping.
-    std::unique_ptr<asyncStep_t> m_asyncStep;
-    // System.Threading.Tasks.Task.NotifyDebuggerOfWaitCompletion() method function breakpoint data, will be configured at async method step-out setup.
-    std::unique_ptr<asyncBreakpoint_t> m_asyncStepNotifyDebuggerOfWaitCompletion;
-
-    bool HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread);
-    HRESULT SetBreakpointIntoNotifyDebuggerOfWaitCompletion();
 };
 
 } // namespace netcoredbg

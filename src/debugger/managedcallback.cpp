@@ -9,6 +9,9 @@
 #include "debugger/breakpoints.h"
 #include "debugger/valueprint.h"
 #include "debugger/waitpid.h"
+#include "debugger/stepper_simple.h"
+#include "debugger/stepper_async.h"
+#include "debugger/steppers.h"
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "interfaces/iprotocol.h"
@@ -128,43 +131,10 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
         return S_OK;
     }
 
-    // Check async stepping related breakpoints first, since user can't setup breakpoints to await block yield or resume offsets manually,
-    // so, async stepping related breakpoints not a part of any user breakpoints related data (that will be checked in separate thread. see code below).
-    if (m_debugger.HitAsyncStepBreakpoint(pAppDomain, pThread))
+    HRESULT Status;
+    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackBreakpoint(pAppDomain, pThread)) &&
+        Status == S_OK) // S_FAIL - no error, but steppers not affect on callback
         return S_OK;
-
-    ThreadId threadId(getThreadId(pThread));
-    auto stepForcedIgnoreBP = [&] () {
-        {
-            std::lock_guard<std::mutex> lock(m_debugger.m_stepMutex);
-            if (m_debugger.m_enabledSimpleStepId != int(threadId))
-            {
-                return false;
-            }
-        }
-
-        ToRelease<ICorDebugStepperEnum> steppers;
-        if (FAILED(pAppDomain->EnumerateSteppers(&steppers)))
-            return false;
-
-        ICorDebugStepper *curStepper;
-        ULONG steppersFetched;
-        while (SUCCEEDED(steppers->Next(1, &curStepper, &steppersFetched)) && steppersFetched == 1)
-        {
-            BOOL pbActive;
-            ToRelease<ICorDebugStepper> pStepper(curStepper);
-            if (SUCCEEDED(pStepper->IsActive(&pbActive)) && pbActive)
-                return false;
-        }
-
-        return true;
-    };
-
-    if (stepForcedIgnoreBP())
-    {
-        pAppDomain->Continue(0);
-        return S_OK;  
-    }
 
     ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);
     pAppDomain->AddRef();
@@ -188,7 +158,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
         }
 
         // Disable all steppers if we stop at breakpoint during step.
-        m_debugger.DisableAllSteppers();
+        m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
 
         if (atEntry)
             event.reason = StopEntry;
@@ -218,56 +188,16 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
     LogFuncEntry();
     ThreadId threadId(getThreadId(pThread));
 
-    // Don't call DisableAllSteppers() or DisableAllSimpleSteppers() here!
-
-    // Reset simple step without real stepper release.
-    m_debugger.m_stepMutex.lock();
-    m_debugger.m_enabledSimpleStepId = 0;
-    m_debugger.m_stepMutex.unlock();
-    // In case we have async method and first await breakpoint (yield_offset) was enabled, but not reached.
-    m_debugger.m_asyncStepMutex.lock();
-    if (m_debugger.m_asyncStep)
-        m_debugger.m_asyncStep.reset(nullptr);
-    m_debugger.m_asyncStepMutex.unlock();
-
     StackFrame stackFrame;
     ToRelease<ICorDebugFrame> pFrame;
     if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
         m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
 
-    // No reason check GetFrameLocation() return code, since it could be failed by some API call after source detection.
-    const bool no_source = stackFrame.source.IsNull();
-
-    if (m_debugger.IsJustMyCode() && no_source)
-    {
-        // FIXME will not work in proper way with async methods
-        m_debugger.SetupSimpleStep(pThread, IDebugger::StepType::STEP_OVER);
-        pAppDomain->Continue(0);
+    // Don't call DisableAllSteppers() or DisableAllSimpleSteppers() here!
+    HRESULT Status;
+    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pAppDomain, pThread, reason, stackFrame)) &&
+        Status == S_OK) // S_FAIL - no error, but steppers not affect on callback
         return S_OK;
-    }
-
-    // Note, step-in stop at the beginning of a newly called function at 0 IL offset.
-    // But, for example, async function don't have user code at 0 IL offset, so,
-    // we need additional step-over to real user code.
-    if (reason == CorDebugStepReason::STEP_CALL)
-    {
-        ToRelease<ICorDebugFrame> pFrame;
-        ToRelease<ICorDebugILFrame> pILFrame;
-        ULONG32 ipOffset;
-        CorDebugMappingResult mappingResult;
-        Modules::SequencePoint sequencePoint;
-        if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr &&
-            SUCCEEDED(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)) &&
-            SUCCEEDED(pILFrame->GetIP(&ipOffset, &mappingResult)) &&
-            SUCCEEDED(m_debugger.m_sharedModules->GetFrameILAndSequencePoint(pFrame, ipOffset, sequencePoint)) &&
-            // Current IL offset less than real offset of first user code line.
-            ipOffset < (ULONG32)sequencePoint.offset)
-        {
-            m_debugger.SetupSimpleStep(pThread, IDebugger::StepType::STEP_OVER);
-            pAppDomain->Continue(0);
-            return S_OK;
-        }
-    }
 
     StoppedEvent event(StopStep, threadId);
     event.frame = stackFrame;
@@ -367,7 +297,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     while (0);
 
     // Disable all steppers if we stop at break during step.
-    m_debugger.DisableAllSteppers();
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
 
     m_debugger.SetLastStoppedThread(pThread);
 
