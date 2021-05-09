@@ -14,6 +14,7 @@
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "valueprint.h"
+#include "managed/interop.h"
 
 namespace netcoredbg
 {
@@ -67,8 +68,6 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
 {
     HRESULT Status;
 
-    ToRelease<ICorDebugValue> pResult;
-
     if (name.empty())
         return E_FAIL;
 
@@ -101,51 +100,27 @@ HRESULT Evaluator::GetFieldOrPropertyWithName(ICorDebugThread *pThread,
         return pArrayVal->GetElement(static_cast<uint32_t>(indices.size()), indices.data(), ppResultValue);
     }
 
-    IfFailRet(WalkMembers(pInputValue, pThread, frameLevel, [&](
-        mdMethodDef mdGetter,
-        ICorDebugModule *pModule,
+    WalkMembers(pInputValue, pThread, frameLevel, [&](
         ICorDebugType *pType,
-        ICorDebugValue *pValue,
         bool is_static,
-        const std::string &memberName)
+        const std::string &memberName,
+        GetValueCallback getValue,
+        SetValueCallback)
     {
         if (is_static && valueKind == ValueIsVariable)
             return S_OK;
         if (!is_static && valueKind == ValueIsClass)
             return S_OK;
 
-        if (pResult)
-            return S_OK;
         if (memberName != name)
             return S_OK;
 
-        if (mdGetter != mdMethodDefNil)
-        {
-            ToRelease<ICorDebugFunction> pFunc;
-            if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
-            {
-                if (is_static)
-                    EvalFunction(pThread, pFunc, &pType, 1, nullptr, 0, &pResult, evalFlags);
-                else
-                    EvalFunction(pThread, pFunc, &pType, 1, &pInputValue, 1, &pResult, evalFlags);
-            }
-        }
-        else
-        {
-            if (pValue)
-                pValue->AddRef();
+        IfFailRet(getValue(ppResultValue, evalFlags));
 
-            pResult = pValue;
-        }
+        return E_ABORT; // Fast exit from cycle with result.
+    });
 
-        return S_OK;
-    }));
-
-    if (!pResult)
-        return E_FAIL;
-
-    *ppResultValue = pResult.Detach();
-    return S_OK;
+    return *ppResultValue != nullptr ? S_OK : E_FAIL;
 }
 
 
@@ -1315,7 +1290,24 @@ HRESULT Evaluator::WalkMembers(
     IfFailRet(pInputValue->GetType(&inputCorType));
     if (inputCorType == ELEMENT_TYPE_PTR)
     {
-        return cb(mdMethodDefNil, nullptr, nullptr, pValue, false, "");
+        auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
+        {
+            pValue->AddRef();
+            *ppResultValue = pValue;
+            return S_OK;
+        };
+
+        auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
+        {
+            if (!pThread)
+                return E_FAIL;
+
+            ToRelease<ICorDebugValue> iCorValue;
+            IfFailRet(getValue(&iCorValue, evalFlags));
+            return SetValue(iCorValue, value, pThread, output);
+        };
+
+        return cb(nullptr, false, "", getValue, setValue);
     }
 
     ToRelease<ICorDebugArrayValue> pArrayValue;
@@ -1339,9 +1331,23 @@ HRESULT Evaluator::WalkMembers(
 
         for (ULONG32 i = 0; i < cElements; ++i)
         {
-            ToRelease<ICorDebugValue> pElementValue;
-            pArrayValue->GetElementAtPosition(i, &pElementValue);
-            IfFailRet(cb(mdMethodDefNil, nullptr, nullptr, pElementValue, false, "[" + IndiciesToStr(ind, base) + "]"));
+            auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
+            {
+                IfFailRet(pArrayValue->GetElementAtPosition(i, ppResultValue));
+                return S_OK;
+            };
+
+            auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
+            {
+                if (!pThread)
+                    return E_FAIL;
+
+                ToRelease<ICorDebugValue> iCorValue;
+                IfFailRet(getValue(&iCorValue, evalFlags));
+                return SetValue(iCorValue, value, pThread, output);
+            };
+
+            IfFailRet(cb(nullptr, false, "[" + IndiciesToStr(ind, base) + "]", getValue, setValue));
             IncIndicies(ind, dims);
         }
 
@@ -1383,8 +1389,6 @@ HRESULT Evaluator::WalkMembers(
     ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
-    std::unordered_set<std::string> backedProperties;
-
     ULONG numFields = 0;
     HCORENUM hEnum = NULL;
     mdFieldDef fieldDef;
@@ -1400,66 +1404,64 @@ HRESULT Evaluator::WalkMembers(
         if (SUCCEEDED(pMD->GetFieldProps(fieldDef, nullptr, mdName, _countof(mdName), &nameLen, &fieldAttr,
                                          &pSignatureBlob, &sigBlobLength, nullptr, &pRawValue, &rawValueLength)))
         {
-            std::string name = to_utf8(mdName /*, nameLen*/);
-
             // Prevent access to internal compiler added fields (without visible name).
             // Should be accessed by debugger routine only and hidden from user/ide.
+            // More about compiler generated names in Roslyn sources:
+            // https://github.com/dotnet/roslyn/blob/315c2e149ba7889b0937d872274c33fcbfe9af5f/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNames.cs
             // Note, uncontrolled access to internal compiler added field or its properties may break debugger work.
-            if (name.size() > 1 && name[0] == '<' && name[1] == '>')
+            if (nameLen > 2 && starts_with(mdName, W("<")))
                 continue;
 
             bool is_static = (fieldAttr & fdStatic);
-
-            ToRelease<ICorDebugValue> pFieldVal;
-
-            if(fieldAttr & fdLiteral)
-            {
-                Status = GetLiteralValue(pThread, pType, pModule, pSignatureBlob, sigBlobLength, pRawValue, rawValueLength, &pFieldVal);
-                if (FAILED(Status))
-                {
-                    pMD->CloseEnum(hEnum);
-                    return Status;
-                }
-            }
-            else if (fieldAttr & fdStatic)
-            {
-                if (pThread)
-                {
-                    ToRelease<ICorDebugFrame> pFrame;
-                    if (SUCCEEDED(GetFrameAt(pThread, frameLevel, &pFrame)) && pFrame != nullptr)
-                        pType->GetStaticFieldValue(fieldDef, pFrame, &pFieldVal);
-                }
-            }
-            else
-            {
-                // Get pValue again, since it could be neutered at eval call in `cb` on previous cycle.
-                pValue.Free();
-                IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
-
-                ToRelease<ICorDebugObjectValue> pObjValue;
-                if (SUCCEEDED(pValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue)))
-                    pObjValue->GetFieldValue(pClass, fieldDef, &pFieldVal);
-            }
-
-            if (pFieldVal != NULL)
-            {
-                if (name[0] == '<')
-                {
-                    size_t endOffset = name.rfind('>');
-                    name = name.substr(1, endOffset - 1);
-                    backedProperties.insert(name);
-                }
-            }
-            else
-            {
-                // no need for backing field when we can not get its value
-                if (name[0] == '<')
-                    continue;
-            }
-
             if (isNull && !is_static)
                 continue;
-            Status = cb(mdMethodDefNil, pModule, pType, pFieldVal, is_static, name);
+
+            std::string name = to_utf8(mdName);
+
+            auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
+            {
+                if (fieldAttr & fdLiteral)
+                {
+                    IfFailRet(GetLiteralValue(pThread, pType, pModule, pSignatureBlob, sigBlobLength, pRawValue, rawValueLength, ppResultValue));
+                }
+                else if (fieldAttr & fdStatic)
+                {
+                    if (!pThread)
+                        return E_FAIL;
+
+                    ToRelease<ICorDebugFrame> pFrame;
+                    IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
+
+                    if (pFrame == nullptr)
+                        return E_FAIL;
+
+                    IfFailRet(pType->GetStaticFieldValue(fieldDef, pFrame, ppResultValue));
+                }
+                else
+                {
+                    // Get pValue again, since it could be neutered at eval call in `cb` on previous cycle.
+                    pValue.Free();
+                    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+                    ToRelease<ICorDebugObjectValue> pObjValue;
+                    IfFailRet(pValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue));
+                    IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, ppResultValue));
+                }
+
+                return S_OK;
+            };
+
+            auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
+            {
+                if (!pThread)
+                    return E_FAIL;
+
+                ToRelease<ICorDebugValue> iCorValue;
+                IfFailRet(getValue(&iCorValue, evalFlags));
+                return SetValue(iCorValue, value, pThread, output);
+            };
+
+            Status = cb(pType, is_static, name, getValue, setValue);
+
             if (FAILED(Status))
             {
                 pMD->CloseEnum(hEnum);
@@ -1480,22 +1482,17 @@ HRESULT Evaluator::WalkMembers(
         UVCP_CONSTANT pDefaultValue;
         ULONG cchDefaultValue;
         mdMethodDef mdGetter;
+        mdMethodDef mdSetter;
         WCHAR propertyName[mdNameLen] = W("\0");
         if (SUCCEEDED(pMD->GetPropertyProps(propertyDef, &propertyClass, propertyName, _countof(propertyName),
                                             &propertyNameLen, nullptr, nullptr, nullptr, nullptr, &pDefaultValue,
-                                            &cchDefaultValue, nullptr, &mdGetter, nullptr, 0, nullptr)))
+                                            &cchDefaultValue, &mdSetter, &mdGetter, nullptr, 0, nullptr)))
         {
             DWORD getterAttr = 0;
             if (FAILED(pMD->GetMethodProps(mdGetter, NULL, NULL, 0, NULL, &getterAttr, NULL, NULL, NULL, NULL)))
                 continue;
 
-            std::string name = to_utf8(propertyName/*, propertyNameLen*/);
-
-            if (backedProperties.find(name) != backedProperties.end())
-                continue;
-
             bool is_static = (getterAttr & mdStatic);
-
             if (isNull && !is_static)
                 continue;
 
@@ -1546,7 +1543,77 @@ HRESULT Evaluator::WalkMembers(
             if (debuggerBrowsableState_Never)
               continue;
 
-            IfFailRet(cb(mdGetter, pModule, pType, nullptr, is_static, name));
+            std::string name = to_utf8(propertyName);
+
+            auto getValue = [&](ICorDebugValue **ppResultValue, int evalFlags) -> HRESULT
+            {
+                if (!pThread)
+                    return E_FAIL;
+
+                ToRelease<ICorDebugFunction> iCorFunc;
+                IfFailRet(pModule->GetFunctionFromToken(mdGetter, &iCorFunc));
+
+                return EvalFunction(pThread, iCorFunc, pType.GetRef(), 1, is_static ? nullptr : &pInputValue, is_static ? 0 : 1, ppResultValue, evalFlags);
+            };
+
+            auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
+            {
+                if (!pThread)
+                    return E_FAIL;
+
+                ToRelease<ICorDebugFunction> iCorFunc;
+                IfFailRet(pModule->GetFunctionFromToken(mdSetter, &iCorFunc));
+
+                // Find real type of property.
+                ToRelease<ICorDebugValue> iCorValue;
+                IfFailRet(getValue(&iCorValue, evalFlags));
+                ToRelease<ICorDebugValue2> iCorValue2;
+                IfFailRet(iCorValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+                ToRelease<ICorDebugType> iCorTmpType;
+                IfFailRet(iCorValue2->GetExactType(&iCorTmpType));
+
+                // Create temporary variable with value we need set via setter.
+                CorElementType corType;
+                IfFailRet(iCorValue->GetType(&corType));
+                ToRelease<ICorDebugValue> iCorTmpValue;
+                if (corType == ELEMENT_TYPE_STRING)
+                {
+                    std::string data;
+                    IfFailRet(Interop::ParseExpression(value, "System.String", data, output));
+                    IfFailRet(CreateString(pThread, data, &iCorTmpValue));
+                }
+                else if (corType == ELEMENT_TYPE_ARRAY || corType == ELEMENT_TYPE_SZARRAY)
+                {
+                    // ICorDebugEval2::NewParameterizedArray
+                    return E_NOTIMPL;
+                }
+                else // Allow SetValue() decide what types are supported.
+                {
+                    // https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/icordebugeval2-createvaluefortype-method
+                    // ICorDebugEval2::CreateValueForType
+                    // The type must be a class or a value type. You cannot use this method to create array values or string values.
+                    ToRelease<ICorDebugEval> iCorEval;
+                    IfFailRet(pThread->CreateEval(&iCorEval));
+                    ToRelease<ICorDebugEval2> iCorEval2;
+                    IfFailRet(iCorEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &iCorEval2));
+                    IfFailRet(iCorEval2->CreateValueForType(iCorTmpType, &iCorTmpValue));
+                    IfFailRet(SetValue(iCorTmpValue, value, pThread, output));
+                }
+
+                // Call setter.
+                if (is_static)
+                {
+                    return EvalFunction(pThread, iCorFunc, iCorTmpType.GetRef(), 1, iCorTmpValue.GetRef(), 1, nullptr, evalFlags);
+                }
+                else
+                {
+                    ICorDebugType *ppArgsType[] = {pType, iCorTmpType};
+                    ICorDebugValue *ppArgsValue[] = {pInputValue, iCorTmpValue};
+                    return EvalFunction(pThread, iCorFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, evalFlags);
+                }
+            };
+
+            IfFailRet(cb(pType, is_static, name, getValue, setValue));
         }
     }
     pMD->CloseEnum(propEnum);
@@ -1592,7 +1659,8 @@ HRESULT Evaluator::HandleSpecialLocalVar(
     std::unordered_set<std::string> &locals,
     WalkStackVarsCallback cb)
 {
-    static const std::string captureName = "CS$<>";
+    // https://github.com/dotnet/roslyn/blob/315c2e149ba7889b0937d872274c33fcbfe9af5f/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNames.cs#L415
+    static const std::string captureName = "CS$<>8__locals";
 
     HRESULT Status;
 
@@ -1601,20 +1669,26 @@ HRESULT Evaluator::HandleSpecialLocalVar(
 
     // Substitute local value with its fields
     IfFailRet(WalkMembers(pLocalValue, nullptr, FrameLevel{0}, [&](
-        mdMethodDef,
-        ICorDebugModule *,
         ICorDebugType *,
-        ICorDebugValue *pValue,
         bool is_static,
-        const std::string &name)
+        const std::string &name,
+        GetValueCallback getValue,
+        SetValueCallback)
     {
         if (is_static)
             return S_OK;
+
         if (has_prefix(name, captureName))
             return S_OK;
+
         if (!locals.insert(name).second)
             return S_OK; // already in the list
-        return cb(pValue, name.empty() ? "this" : name);
+
+        ToRelease<ICorDebugValue> iCorResultValue;
+        // We don't have properties here (even don't provide thread in WalkMembers), eval flag not in use.
+        IfFailRet(getValue(&iCorResultValue, defaultEvalFlags));
+
+        return cb(iCorResultValue, name.empty() ? "this" : name);
     }));
 
     return S_OK;
@@ -1643,21 +1717,26 @@ HRESULT Evaluator::HandleSpecialThisParam(
 
     // Substitute this with its fields
     IfFailRet(WalkMembers(pThisValue, nullptr, FrameLevel{0}, [&](
-        mdMethodDef,
-        ICorDebugModule *,
         ICorDebugType *,
-        ICorDebugValue *pValue,
         bool is_static,
-        const std::string &name)
+        const std::string &name,
+        GetValueCallback getValue,
+        SetValueCallback)
     {
         HRESULT Status;
         if (is_static)
             return S_OK;
-        IfFailRet(HandleSpecialLocalVar(name, pValue, locals, cb));
+
+        ToRelease<ICorDebugValue> iCorResultValue;
+        // We don't have properties here (even don't provide thread in WalkMembers), eval flag not in use.
+        IfFailRet(getValue(&iCorResultValue, defaultEvalFlags));
+
+        IfFailRet(HandleSpecialLocalVar(name, iCorResultValue, locals, cb));
         if (Status == S_OK)
             return S_OK;
+
         locals.insert(name);
-        return cb(pValue, name.empty() ? "this" : name);
+        return cb(iCorResultValue, name.empty() ? "this" : name);
     }));
     return S_OK;
 }
@@ -1797,6 +1876,92 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
             IfFailRet(cb(pValue, paramName));
         }
     }
+
+    return S_OK;
+}
+
+HRESULT Evaluator::SetValue(
+    ICorDebugValue *pValue,
+    const std::string &value,
+    ICorDebugThread *pThread,
+    std::string &errorText)
+{
+    HRESULT Status;
+
+    ULONG32 size;
+    IfFailRet(pValue->GetSize(&size));
+
+    std::string data;
+
+    CorElementType corType;
+    IfFailRet(pValue->GetType(&corType));
+
+    static const std::unordered_map<int, std::string> cor2name = {
+        {ELEMENT_TYPE_BOOLEAN, "System.Boolean"},
+        {ELEMENT_TYPE_U1,      "System.Byte"},
+        {ELEMENT_TYPE_I1,      "System.SByte"},
+        {ELEMENT_TYPE_CHAR,    "System.Char"},
+        {ELEMENT_TYPE_R8,      "System.Double"},
+        {ELEMENT_TYPE_R4,      "System.Single"},
+        {ELEMENT_TYPE_I4,      "System.Int32"},
+        {ELEMENT_TYPE_U4,      "System.UInt32"},
+        {ELEMENT_TYPE_I8,      "System.Int64"},
+        {ELEMENT_TYPE_U8,      "System.UInt64"},
+        {ELEMENT_TYPE_I2,      "System.Int16"},
+        {ELEMENT_TYPE_U2,      "System.UInt16"},
+        {ELEMENT_TYPE_I,       "System.IntPtr"},
+        {ELEMENT_TYPE_U,       "System.UIntPtr"}
+    };
+    auto renamed = cor2name.find(corType);
+    if (renamed != cor2name.end())
+    {
+        IfFailRet(Interop::ParseExpression(value, renamed->second, data, errorText));
+    }
+    else if (corType == ELEMENT_TYPE_STRING)
+    {
+        IfFailRet(Interop::ParseExpression(value, "System.String", data, errorText));
+
+        ToRelease<ICorDebugValue> pNewString;
+        IfFailRet(CreateString(pThread, data, &pNewString));
+
+        // Switch object addresses
+        ToRelease<ICorDebugReferenceValue> pRefNew;
+        IfFailRet(pNewString->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefNew));
+        ToRelease<ICorDebugReferenceValue> pRefOld;
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefOld));
+
+        CORDB_ADDRESS addr;
+        IfFailRet(pRefNew->GetValue(&addr));
+        IfFailRet(pRefOld->SetValue(addr));
+
+        return S_OK;
+    }
+    else if (corType == ELEMENT_TYPE_VALUETYPE || corType == ELEMENT_TYPE_CLASS)
+    {
+        std::string typeName;
+        TypePrinter::GetTypeOfValue(pValue, typeName);
+        if (typeName != "decimal")
+        {
+            errorText = "Unable to set value of type '" + typeName + "'";
+            return E_FAIL;
+        }
+        IfFailRet(Interop::ParseExpression(value, "System.Decimal", data, errorText));
+    }
+    else
+    {
+        errorText = "Unable to set value";
+        return E_FAIL;
+    }
+
+    if (size != data.size())
+    {
+        errorText = "Marshalling size mismatch: " + std::to_string(size) + " != " + std::to_string(data.size());
+        return E_FAIL;
+    }
+
+    ToRelease<ICorDebugGenericValue> pGenValue;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID *) &pGenValue));
+    IfFailRet(pGenValue->SetValue((LPVOID) &data[0]));
 
     return S_OK;
 }

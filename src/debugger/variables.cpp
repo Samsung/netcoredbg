@@ -25,93 +25,6 @@ using std::vector;
 namespace netcoredbg
 {
 
-static HRESULT WriteValue(
-    ICorDebugValue *pValue,
-    const std::string &value,
-    ICorDebugThread *pThread,
-    std::shared_ptr<Evaluator> &sharedEvaluator,
-    std::string &errorText)
-{
-    HRESULT Status;
-
-    ULONG32 size;
-    IfFailRet(pValue->GetSize(&size));
-
-    std::string data;
-
-    CorElementType corType;
-    IfFailRet(pValue->GetType(&corType));
-
-    static const std::unordered_map<int, std::string> cor2name = {
-        {ELEMENT_TYPE_BOOLEAN, "System.Boolean"},
-        {ELEMENT_TYPE_U1,      "System.Byte"},
-        {ELEMENT_TYPE_I1,      "System.SByte"},
-        {ELEMENT_TYPE_CHAR,    "System.Char"},
-        {ELEMENT_TYPE_R8,      "System.Double"},
-        {ELEMENT_TYPE_R4,      "System.Single"},
-        {ELEMENT_TYPE_I4,      "System.Int32"},
-        {ELEMENT_TYPE_U4,      "System.UInt32"},
-        {ELEMENT_TYPE_I8,      "System.Int64"},
-        {ELEMENT_TYPE_U8,      "System.UInt64"},
-        {ELEMENT_TYPE_I2,      "System.Int16"},
-        {ELEMENT_TYPE_U2,      "System.UInt16"},
-        {ELEMENT_TYPE_I,       "System.IntPtr"},
-        {ELEMENT_TYPE_U,       "System.UIntPtr"}
-    };
-    auto renamed = cor2name.find(corType);
-    if (renamed != cor2name.end())
-    {
-        IfFailRet(Interop::ParseExpression(value, renamed->second, data, errorText));
-    }
-    else if (corType == ELEMENT_TYPE_STRING)
-    {
-        IfFailRet(Interop::ParseExpression(value, "System.String", data, errorText));
-
-        ToRelease<ICorDebugValue> pNewString;
-        IfFailRet(sharedEvaluator->CreateString(pThread, data, &pNewString));
-
-        // Switch object addresses
-        ToRelease<ICorDebugReferenceValue> pRefNew;
-        IfFailRet(pNewString->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefNew));
-        ToRelease<ICorDebugReferenceValue> pRefOld;
-        IfFailRet(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefOld));
-
-        CORDB_ADDRESS addr;
-        IfFailRet(pRefNew->GetValue(&addr));
-        IfFailRet(pRefOld->SetValue(addr));
-
-        return S_OK;
-    }
-    else if (corType == ELEMENT_TYPE_VALUETYPE || corType == ELEMENT_TYPE_CLASS)
-    {
-        std::string typeName;
-        TypePrinter::GetTypeOfValue(pValue, typeName);
-        if (typeName != "decimal")
-        {
-            errorText = "Unable to set value of type '" + typeName + "'";
-            return E_FAIL;
-        }
-        IfFailRet(Interop::ParseExpression(value, "System.Decimal", data, errorText));
-    }
-    else
-    {
-        errorText = "Unable to set value";
-        return E_FAIL;
-    }
-
-    if (size != data.size())
-    {
-        errorText = "Marshalling size mismatch: " + std::to_string(size) + " != " + std::to_string(data.size());
-        return E_FAIL;
-    }
-
-    ToRelease<ICorDebugGenericValue> pGenValue;
-    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID *) &pGenValue));
-    IfFailRet(pGenValue->SetValue((LPVOID) &data[0]));
-
-    return S_OK;
-}
-
 void Variables::GetNumChild(
     ICorDebugValue *pValue,
     int &numChild,
@@ -126,12 +39,11 @@ void Variables::GetNumChild(
     int numInstance = 0;
     // No thread and FrameLevel{0} here, since we need only count childs.
     if (FAILED(m_sharedEvaluator->WalkMembers(pValue, nullptr, FrameLevel{0}, [&numStatic, &numInstance](
-        mdMethodDef,
-        ICorDebugModule *,
         ICorDebugType *,
-        ICorDebugValue *,
         bool is_static,
-        const std::string &)
+        const std::string &,
+        Evaluator::GetValueCallback,
+        Evaluator::SetValueCallback)
     {
         if (is_static)
             numStatic++;
@@ -199,12 +111,11 @@ HRESULT Variables::FetchFieldsAndProperties(
     int currentIndex = -1;
 
     IfFailRet(m_sharedEvaluator->WalkMembers(pInputValue, pThread, frameLevel, [&](
-        mdMethodDef mdGetter,
-        ICorDebugModule *pModule,
         ICorDebugType *pType,
-        ICorDebugValue *pValue,
         bool is_static,
-        const std::string &name)
+        const std::string &name,
+        Evaluator::GetValueCallback getValue,
+        Evaluator::SetValueCallback)
     {
         if (is_static)
             hasStaticMembers = true;
@@ -219,31 +130,14 @@ HRESULT Variables::FetchFieldsAndProperties(
         if (currentIndex >= childEnd)
             return S_OK;
 
+        ToRelease<ICorDebugValue> iCorResultValue;
+        getValue(&iCorResultValue, evalFlags); // no result check here, since error is result too
+
         string className;
         if (pType)
             TypePrinter::GetTypeOfValue(pType, className);
 
-        ToRelease<ICorDebugValue> pResultValue;
-
-        if (mdGetter != mdMethodDefNil)
-        {
-            ToRelease<ICorDebugFunction> pFunc;
-            if (SUCCEEDED(pModule->GetFunctionFromToken(mdGetter, &pFunc)))
-            {
-                if (is_static)
-                    m_sharedEvaluator->EvalFunction(pThread, pFunc, &pType, 1, nullptr, 0, &pResultValue, evalFlags);
-                else
-                    m_sharedEvaluator->EvalFunction(pThread, pFunc, &pType, 1, &pInputValue, 1, &pResultValue, evalFlags);
-            }
-        }
-        else
-        {
-            if (pValue)
-                pValue->AddRef();
-            pResultValue = pValue;
-        }
-
-        members.emplace_back(name, className, std::move(pResultValue));
+        members.emplace_back(name, className, std::move(iCorResultValue));
         return S_OK;
     }));
 
@@ -702,7 +596,7 @@ HRESULT Variables::SetStackVariable(
     {
         if (varName == name)
         {
-            IfFailRet(WriteValue(pValue, value, pThread, m_sharedEvaluator, output));
+            IfFailRet(m_sharedEvaluator->SetValue(pValue, value, pThread, output));
             bool escape = true;
             PrintValue(pValue, output, escape);
         }
@@ -729,18 +623,19 @@ HRESULT Variables::SetChild(
     HRESULT Status;
 
     IfFailRet(m_sharedEvaluator->WalkMembers(ref.iCorValue, pThread, ref.frameId.getLevel(), [&](
-        mdMethodDef mdGetter,
-        ICorDebugModule *pModule,
-        ICorDebugType *pType,
-        ICorDebugValue *pValue,
+        ICorDebugType*,
         bool is_static,
-        const std::string &varName) -> HRESULT
+        const std::string &varName,
+        Evaluator::GetValueCallback getValue,
+        Evaluator::SetValueCallback setValue) -> HRESULT
     {
         if (varName == name)
         {
-            IfFailRet(WriteValue(pValue, value, pThread, m_sharedEvaluator, output));
+            IfFailRet(setValue(value, output, ref.evalFlags));
+            ToRelease<ICorDebugValue> iCorValue;
+            IfFailRet(getValue(&iCorValue, ref.evalFlags));
             bool escape = true;
-            PrintValue(pValue, output, escape);
+            PrintValue(iCorValue, output, escape);
         }
         return S_OK;
     }));
@@ -785,7 +680,7 @@ HRESULT Variables::SetVariable(
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(pProcess->GetThread(int(threadId), &pThread));
 
-    IfFailRet(WriteValue(pVariable, value, pThread, m_sharedEvaluator, output));
+    IfFailRet(m_sharedEvaluator->SetValue(pVariable, value, pThread, output));
     bool escape = true;
     PrintValue(pVariable, output, escape);
     return S_OK;

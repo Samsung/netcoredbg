@@ -23,7 +23,9 @@ class EvalWaiter;
 class Evaluator
 {
 public:
-    typedef std::function<HRESULT(mdMethodDef,ICorDebugModule*,ICorDebugType*,ICorDebugValue*,bool,const std::string&)> WalkMembersCallback;
+    typedef std::function<HRESULT(ICorDebugValue**,int)> GetValueCallback;
+    typedef std::function<HRESULT(const std::string&,std::string&,int)> SetValueCallback;
+    typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetValueCallback)> WalkMembersCallback;
     typedef std::function<HRESULT(ICorDebugValue*,const std::string&)> WalkStackVarsCallback;
 
     enum ValueKind
@@ -85,10 +87,11 @@ public:
         FrameLevel frameLevel,
         WalkStackVarsCallback cb);
 
-    HRESULT CreateString(
-        ICorDebugThread *pThread,
+    HRESULT SetValue(
+        ICorDebugValue *pValue,
         const std::string &value,
-        ICorDebugValue **ppNewString);
+        ICorDebugThread *pThread,
+        std::string &errorText);
 
     void Cleanup();
 
@@ -198,6 +201,11 @@ private:
         const WCHAR *typeName,
         const WCHAR *methodName,
         ICorDebugFunction **ppFunction);
+
+    HRESULT CreateString(
+        ICorDebugThread *pThread,
+        const std::string &value,
+        ICorDebugValue **ppNewString);
 
 };
 
