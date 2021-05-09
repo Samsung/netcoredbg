@@ -6,6 +6,7 @@
 #include <memory>
 #include <unordered_set>
 #include <vector>
+#include <algorithm>
 #include "debugger/evaluator.h"
 #include "debugger/evalwaiter.h"
 #include "debugger/frames.h"
@@ -191,8 +192,14 @@ HRESULT Evaluator::FindFunction(ICorDebugModule *pModule,
 
 void Evaluator::Cleanup()
 {
+    m_pSuppressFinalizeMutex.lock();
     if (m_pSuppressFinalize)
         m_pSuppressFinalize.Free();
+    m_pSuppressFinalizeMutex.unlock();
+
+    m_typeObjectCacheMutex.lock();
+    m_typeObjectCache.clear();
+    m_typeObjectCacheMutex.unlock();
 }
 
 HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
@@ -859,6 +866,76 @@ static bool TypeHaveStaticMembers(ICorDebugType *pType)
     return false;
 }
 
+HRESULT Evaluator::TryReuseTypeObjectFromCache(ICorDebugType *pType, ICorDebugValue **ppTypeObjectResult)
+{
+    std::lock_guard<std::mutex> lock(m_typeObjectCacheMutex);
+
+    HRESULT Status;
+    ToRelease<ICorDebugType2> iCorType2;
+    IfFailRet(pType->QueryInterface(IID_ICorDebugType2, (LPVOID*) &iCorType2));
+
+    COR_TYPEID typeID;
+    IfFailRet(iCorType2->GetTypeID(&typeID));
+
+    auto is_same = [&typeID](type_object_t &typeObject){ return typeObject.id.token1 == typeID.token1 && typeObject.id.token2 == typeID.token2; };
+    auto it = std::find_if(m_typeObjectCache.begin(), m_typeObjectCache.end(), is_same);
+    if (it == m_typeObjectCache.end())
+        return E_FAIL;
+
+    // Move data to begin, so, last used will be on front.
+    if (it != m_typeObjectCache.begin())
+        m_typeObjectCache.splice(m_typeObjectCache.begin(), m_typeObjectCache, it);
+
+    if (ppTypeObjectResult)
+    {
+        // We don't check handle's status here, since we store only strong handles.
+        // https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/cordebughandletype-enumeration
+        // The handle is strong, which prevents an object from being reclaimed by garbage collection.
+        return m_typeObjectCache.front().typeObject->QueryInterface(IID_ICorDebugValue, (LPVOID *)ppTypeObjectResult);
+    }
+
+    return S_OK;
+}
+
+HRESULT Evaluator::AddTypeObjectToCache(ICorDebugType *pType, ICorDebugValue *pTypeObject)
+{
+    std::lock_guard<std::mutex> lock(m_typeObjectCacheMutex);
+
+    HRESULT Status;
+    ToRelease<ICorDebugType2> iCorType2;
+    IfFailRet(pType->QueryInterface(IID_ICorDebugType2, (LPVOID*) &iCorType2));
+
+    COR_TYPEID typeID;
+    IfFailRet(iCorType2->GetTypeID(&typeID));
+
+    auto is_same = [&typeID](type_object_t &typeObject){ return typeObject.id.token1 == typeID.token1 && typeObject.id.token2 == typeID.token2; };
+    auto it = std::find_if(m_typeObjectCache.begin(), m_typeObjectCache.end(), is_same);
+    if (it != m_typeObjectCache.end())
+        return S_OK;
+
+    ToRelease<ICorDebugHandleValue> iCorHandleValue;
+    IfFailRet(pTypeObject->QueryInterface(IID_ICorDebugHandleValue, (LPVOID *) &iCorHandleValue));
+
+    CorDebugHandleType handleType;
+    if (FAILED(iCorHandleValue->GetHandleType(&handleType)) ||
+        handleType != HANDLE_STRONG)
+        return E_FAIL;
+
+    if (m_typeObjectCache.size() == m_typeObjectCacheSize)
+    {
+        // Re-use last list entry.
+        m_typeObjectCache.back().id = typeID;
+        m_typeObjectCache.back().typeObject.Free();
+        m_typeObjectCache.back().typeObject = iCorHandleValue.Detach();
+        assert(m_typeObjectCacheSize >= 2);
+        m_typeObjectCache.splice(m_typeObjectCache.begin(), m_typeObjectCache, std::prev(m_typeObjectCache.end()));
+    }
+    else
+        m_typeObjectCache.emplace_front(type_object_t{typeID, iCorHandleValue.Detach()});
+
+    return S_OK;
+}
+
 HRESULT Evaluator::CreatTypeObjectStaticConstructor(
     ICorDebugThread *pThread,
     ICorDebugType *pType,
@@ -871,6 +948,10 @@ HRESULT Evaluator::CreatTypeObjectStaticConstructor(
     IfFailRet(pType->GetType(&et));
 
     if (et != ELEMENT_TYPE_CLASS && et != ELEMENT_TYPE_VALUETYPE)
+        return S_OK;
+
+    // Check cache first, before check type for static members.
+    if (SUCCEEDED(TryReuseTypeObjectFromCache(pType, ppTypeObjectResult)))
         return S_OK;
 
     // Create type object only in case type have static members.
@@ -910,6 +991,8 @@ HRESULT Evaluator::CreatTypeObjectStaticConstructor(
 
     if (et == ELEMENT_TYPE_CLASS)
     {
+        std::lock_guard<std::mutex> lock(m_pSuppressFinalizeMutex);
+
         if (!m_pSuppressFinalize)
         {
             ToRelease<ICorDebugModule> pModule;
@@ -926,6 +1009,8 @@ HRESULT Evaluator::CreatTypeObjectStaticConstructor(
         // Note, this call must ignore any eval flags.
         IfFailRet(EvalFunction(pThread, m_pSuppressFinalize, &pType, 1, pTypeObject.GetRef(), 1, nullptr, defaultEvalFlags));
     }
+
+    AddTypeObjectToCache(pType, pTypeObject);
 
     if (ppTypeObjectResult)
         *ppTypeObjectResult = pTypeObject.Detach();
