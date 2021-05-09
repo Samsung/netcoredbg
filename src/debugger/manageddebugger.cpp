@@ -1911,10 +1911,16 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
         {
             const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
 
-            ToRelease<ICorDebugValue> pValueRef;
-            if (FAILED(GetAsyncIdReference(pThread, m_sharedEvaluator, &pValueRef)) ||
-                FAILED(pValueRef->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &m_asyncStep->pValueAsyncIdRef)))
-                LOGE("Could not setup reference pValueAsyncIdRef for await block");
+            CorDebugHandleType handleType;
+            ToRelease<ICorDebugValue> iCorValue;
+            if (FAILED(GetAsyncIdReference(pThread, m_sharedEvaluator, &iCorValue)) ||
+                FAILED(iCorValue->QueryInterface(IID_ICorDebugHandleValue , (LPVOID*) &m_asyncStep->m_iCorHandleValueAsyncId)) ||
+                FAILED(m_asyncStep->m_iCorHandleValueAsyncId->GetHandleType(&handleType)) ||
+                handleType != HANDLE_STRONG) // Note, we need only strong handle here, that will not invalidated on continue-break.
+            {
+                m_asyncStep->m_iCorHandleValueAsyncId.Free();
+                LOGE("Could not setup handle with async ID for await block");
+            }
 
             pAppDomain->Continue(0);
         },
@@ -1961,8 +1967,8 @@ bool ManagedDebugger::HitAsyncStepBreakpoint(ICorDebugAppDomain *pAppDomain, ICo
             CORDB_ADDRESS prevAsyncId = 0;
             ToRelease<ICorDebugValue> pDereferencedValue;
             ToRelease<ICorDebugValue> pValueAsyncId;
-            if (m_asyncStep->pValueAsyncIdRef && // Note, we could fail with pValueAsyncIdRef on previous breakpoint by some reason.
-                SUCCEEDED(m_asyncStep->pValueAsyncIdRef->Dereference(&pDereferencedValue)) &&
+            if (m_asyncStep->m_iCorHandleValueAsyncId && // Note, we could fail with m_iCorHandleValueAsyncId on previous breakpoint by some reason.
+                SUCCEEDED(m_asyncStep->m_iCorHandleValueAsyncId->Dereference(&pDereferencedValue)) &&
                 SUCCEEDED(DereferenceAndUnboxValue(pDereferencedValue, &pValueAsyncId, &isNull)) && !isNull)
                 pValueAsyncId->GetAddress(&prevAsyncId);
             else

@@ -225,7 +225,7 @@ private:
         uint32_t m_resume_offset;
         asyncStepStatus m_stepStatus;
         std::unique_ptr<asyncBreakpoint_t> m_Breakpoint;
-        ToRelease<ICorDebugReferenceValue> pValueAsyncIdRef;
+        ToRelease<ICorDebugHandleValue> m_iCorHandleValueAsyncId;
 
         asyncStep_t() :
             m_threadId(ThreadId::Invalid),
@@ -233,7 +233,7 @@ private:
             m_resume_offset(0),
             m_stepStatus(asyncStepStatus::yield_offset_breakpoint),
             m_Breakpoint(nullptr),
-            pValueAsyncIdRef(nullptr)
+            m_iCorHandleValueAsyncId(nullptr)
         {}
     };
 
