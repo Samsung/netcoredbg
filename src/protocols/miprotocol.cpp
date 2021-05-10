@@ -32,7 +32,7 @@ typedef std::function<HRESULT(
     const std::vector<std::string> &args,
     std::string &output)> CommandCallback;
 
-HRESULT MIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
+static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
 {
     HRESULT Status;
 
@@ -86,7 +86,7 @@ HRESULT MIProtocol::StepCommand(const std::vector<std::string> &args,
     return S_OK;
 }
 
-HRESULT MIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
+static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 {
     std::ostringstream ss;
 
@@ -155,7 +155,7 @@ HRESULT MIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLev
     return S_OK;
 }
 
-HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::string &output)
+static HRESULT PrintVariables(const std::vector<Variable> &variables, std::string &output)
 {
     std::ostringstream ss;
     ss << "variables=[";
@@ -166,8 +166,8 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
         ss << sep;
         sep = ",";
 
-        ss << "{name=\"" << EscapeMIValue(var.name) << "\"";
-        ss << ",value=\"" << EscapeMIValue(var.value) << "\"";
+        ss << "{name=\"" << MIProtocol::EscapeMIValue(var.name) << "\"";
+        ss << ",value=\"" << MIProtocol::EscapeMIValue(var.value) << "\"";
         ss << "}";
     }
 
@@ -176,7 +176,7 @@ HRESULT MIProtocol::PrintVariables(const std::vector<Variable> &variables, std::
     return S_OK;
 }
 
-bool MIProtocol::IsEditable(const std::string &type)
+static bool IsEditable(const std::string &type)
 {
     if (type == "int"
         || type == "bool"
@@ -195,7 +195,7 @@ bool MIProtocol::IsEditable(const std::string &type)
     return false;
 }
 
-void MIProtocol::PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
+static void PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
 {
     std::ostringstream ss;
 
@@ -368,12 +368,8 @@ HRESULT MIProtocol::SetBreakpoint(
     return S_OK;
 }
 
-HRESULT MIProtocol::SetFunctionBreakpoint(
-    const std::string &module,
-    const std::string &funcname,
-    const std::string &params,
-    const std::string &condition,
-    Breakpoint &breakpoint)
+HRESULT MIProtocol::SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params,
+                                          const std::string &condition, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
@@ -488,8 +484,7 @@ void MIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &i
     m_sharedDebugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
-HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode,
-    const vector<string>& names, string &output)
+HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode, const vector<string>& names, string &output)
 {
     if (names.empty())
         return E_FAIL;
@@ -519,8 +514,7 @@ HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode,
     return S_OK;
 }
 
-HRESULT MIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids,
-    string &output)
+HRESULT MIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids, string &output)
 {
     HRESULT Status;
     for (const auto &id : ids) {
@@ -665,9 +659,7 @@ void MIProtocol::EmitOutputEvent(OutputCategory category, string_view output, st
     cout.flush();
 }
 
-HRESULT MIProtocol::HandleCommand(const std::string& command,
-                                  const std::vector<std::string> &args,
-                                  std::string &output)
+HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<std::string> &args, std::string &output)
 {
     static std::unordered_map<std::string, CommandCallback> commands {
     { "thread-info", [this](const std::vector<std::string> &, std::string &output){
@@ -1090,10 +1082,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command,
     return command_it->second(args, output);
 }
 
-bool MIProtocol::ParseLine(const std::string &str,
-                      std::string &token,
-                      std::string &cmd,
-                      std::vector<std::string> &args)
+static bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args)
 {
     token.clear();
     cmd.clear();

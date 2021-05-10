@@ -22,32 +22,10 @@ using Utility::string_view;
 
 class MIProtocol : public IProtocol
 {
-    std::mutex m_outMutex;
-
-    std::string m_fileExec;
-    std::vector<std::string> m_execArgs;
-
-    std::unordered_map<std::string, Variable> m_vars;
-    std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
-    std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
-
+public:
 
     struct MIProtocolChars;
     using EscapeMIValue = EscapedString<MIProtocolChars>;
-
-
-    static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
-    static void PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
-
-#ifdef _MSC_VER
-    void Printf(_Printf_format_string_ const char *fmt, ...);
-#else
-    void Printf(const char *fmt, ...) __attribute__((format (printf, 2, 3)));
-#endif
-
-    static bool IsEditable(const std::string &type);
-
-public:
 
     MIProtocol(std::istream& input, std::ostream& output) : IProtocol(input, output) {}
 
@@ -71,15 +49,25 @@ public:
     }
 
 private:
-    HRESULT HandleCommand(const std::string& command,
-                          const std::vector<std::string> &args,
-                          std::string &output);
 
-    HRESULT StepCommand(const std::vector<std::string> &args,
-                        std::string &output,
-                        IDebugger::StepType stepType);
+    std::mutex m_outMutex;
+
+    std::string m_fileExec;
+    std::vector<std::string> m_execArgs;
+
+    std::unordered_map<std::string, Variable> m_vars;
+    std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
+    std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
+
+#ifdef _MSC_VER
+    void Printf(_Printf_format_string_ const char *fmt, ...);
+#else
+    void Printf(const char *fmt, ...) __attribute__((format (printf, 2, 3)));
+#endif
+
+    HRESULT HandleCommand(const std::string& command, const std::vector<std::string> &args, std::string &output);
+    HRESULT StepCommand(const std::vector<std::string> &args, std::string &output, IDebugger::StepType stepType);
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
-    HRESULT PrintVariables(const std::vector<Variable> &variables, std::string &output);
     HRESULT CreateVar(ThreadId threadId, FrameLevel level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output);
     HRESULT DeleteVar(const std::string &varobjName);
     HRESULT FindVar(const std::string &varobjName, Variable &variable);
@@ -92,10 +80,8 @@ private:
     HRESULT SetFunctionBreakpointCondition(uint32_t id, const std::string &condition);
     void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
-    static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
     HRESULT InsertExceptionBreakpoints(const ExceptionBreakMode &mode, const std::vector<std::string>& names, std::string &output);
     HRESULT DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids, std::string &output);
-    bool MIProtocol::ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
 };
 
 } // namespace netcoredbg
