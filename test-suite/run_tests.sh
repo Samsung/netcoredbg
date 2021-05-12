@@ -10,7 +10,6 @@ ALL_TEST_NAMES=(
     "MITestStepping"
     "MITestEvaluate"
     "MITestException"
-    "MITestLambda"
     "MITestEnv"
     "MITestGDB"
     "MITestExecFinish"

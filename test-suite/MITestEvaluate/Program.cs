@@ -395,6 +395,8 @@ namespace MITestEvaluate
         public int i;
     }
 
+    delegate void Lambda(string argVar);
+
     class Program
     {
         int int_i = 505;
@@ -413,6 +415,8 @@ namespace MITestEvaluate
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK5");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK6");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK7");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK8");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK9");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -585,7 +589,7 @@ namespace MITestEvaluate
             test_static_parent base_child = new test_static_child();
             base_child.test();
 
-            Label.Checkpoint("override_test", "finish", (Object context) => {
+            Label.Checkpoint("override_test", "lambda_test1", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK7");
 
@@ -596,6 +600,48 @@ namespace MITestEvaluate
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
+
+            // Test lambda.
+
+            string mainVar = "mainVar";
+
+            Lambda lambda1 = (argVar) => {
+                string localVar = "localVar";
+
+                Label.Checkpoint("lambda_test1", "lambda_test2", (Object context) => {
+                    Context Context = (Context)context;
+                    Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK8");
+
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"mainVar\\\"", "string", "mainVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"localVar\\\"", "string", "localVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"argVar\\\"", "string", "argVar");
+
+                    Context.Continue(@"__FILE__:__LINE__");
+                });
+
+                Console.WriteLine(mainVar);                                                             Label.Breakpoint("BREAK8");
+            };
+
+            lambda1("argVar");
+
+            Lambda lambda2 = (argVar) => {
+                string localVar = "localVar";
+
+                Label.Checkpoint("lambda_test2", "finish", (Object context) => {
+                    Context Context = (Context)context;
+                    Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK9");
+
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "mainVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"localVar\\\"", "string", "localVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"argVar\\\"", "string", "argVar");
+
+                    Context.Continue(@"__FILE__:__LINE__");
+                });
+
+                int break_line6 = 1;                                                                     Label.Breakpoint("BREAK9");
+            };
+
+            lambda2("argVar");
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;

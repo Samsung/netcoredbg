@@ -20,7 +20,6 @@
     <ProjectReference Include="..\MITestStepping\MITestStepping.csproj" />
     <ProjectReference Include="..\MITestException\MITestException.csproj" />
     <ProjectReference Include="..\MITestExpression\MITestExpression.csproj" />
-    <ProjectReference Include="..\MITestLambda\MITestLambda.csproj" />
     <ProjectReference Include="..\MITestVariables\MITestVariables.csproj" />
     <ProjectReference Include="..\MITestEvaluate\MITestEvaluate.csproj" />
     <ProjectReference Include="..\MITestBreakpoint\MITestBreakpoint.csproj" />

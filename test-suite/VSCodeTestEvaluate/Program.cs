@@ -469,6 +469,8 @@ namespace VSCodeTestEvaluate
         public int i;
     }
 
+    delegate void Lambda(string argVar);
+
     class Program
     {
         int int_i = 505;
@@ -486,6 +488,8 @@ namespace VSCodeTestEvaluate
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK5");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK6");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK7");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK8");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK9");
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.PrepareEnd(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
@@ -652,7 +656,7 @@ namespace VSCodeTestEvaluate
             test_static_parent base_child = new test_static_child();
             base_child.test();
 
-            Label.Checkpoint("override_test", "finish", (Object context) => {
+            Label.Checkpoint("override_test", "lambda_test1", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK7");
                 Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK7");
@@ -664,6 +668,50 @@ namespace VSCodeTestEvaluate
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
+
+            // Test lambda.
+
+            string mainVar = "mainVar";
+
+            Lambda lambda1 = (argVar) => {
+                string localVar = "localVar";
+
+                Label.Checkpoint("lambda_test1", "lambda_test2", (Object context) => {
+                    Context Context = (Context)context;
+                    Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK8");
+                    Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK8");
+
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"mainVar\"", "string", "mainVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"localVar\"", "string", "localVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"argVar\"", "string", "argVar");
+
+                    Context.Continue(@"__FILE__:__LINE__");
+                });
+
+                Console.WriteLine(mainVar);                                                             Label.Breakpoint("BREAK8");
+            };
+
+            lambda1("argVar");
+
+            Lambda lambda2 = (argVar) => {
+                string localVar = "localVar";
+
+                Label.Checkpoint("lambda_test2", "finish", (Object context) => {
+                    Context Context = (Context)context;
+                    Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK9");
+                    Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK9");
+
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "mainVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"localVar\"", "string", "localVar");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"argVar\"", "string", "argVar");
+
+                    Context.Continue(@"__FILE__:__LINE__");
+                });
+
+                int break_line6 = 1;                                                                     Label.Breakpoint("BREAK9");
+            };
+
+            lambda2("argVar");
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;

@@ -25,7 +25,6 @@ namespace XUnitTests
         [InlineData("MITestStepping", "Program.cs")]
         [InlineData("MITestEvaluate", "Program.cs")]
         [InlineData("MITestException", "Program.cs")]
-        [InlineData("MITestLambda", "Program.cs")]
         [InlineData("MITestEnv", "Program.cs")]
         [InlineData("MITestGDB", "Program.cs")]
         [InlineData("MITestExecFinish", "Program.cs")]
