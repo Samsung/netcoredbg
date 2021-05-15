@@ -15,15 +15,15 @@ namespace netcoredbg
 class SimpleStepper;
 class AsyncStepper;
 class Modules;
-class Evaluator;
+class EvalHelpers;
 
 class Steppers
 {
 public:
 
-    Steppers(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator) :
+    Steppers(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<EvalHelpers> &sharedEvalHelpers) :
         m_simpleStepper(new SimpleStepper(sharedModules)),
-        m_asyncStepper(new AsyncStepper(m_simpleStepper, sharedModules, sharedEvaluator)),
+        m_asyncStepper(new AsyncStepper(m_simpleStepper, sharedModules, sharedEvalHelpers)),
         m_sharedModules(sharedModules),
         m_justMyCode(true)
     {}

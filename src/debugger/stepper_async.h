@@ -16,17 +16,17 @@ namespace netcoredbg
 {
 
 class Modules;
-class Evaluator;
+class EvalHelpers;
 class SimpleStepper;
 
 class AsyncStepper
 {
 public:
 
-    AsyncStepper(std::shared_ptr<SimpleStepper> simpleStepper, std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator) :
+    AsyncStepper(std::shared_ptr<SimpleStepper> simpleStepper, std::shared_ptr<Modules> &sharedModules, std::shared_ptr<EvalHelpers> &sharedEvalHelpers) :
         m_simpleStepper(simpleStepper),
         m_sharedModules(sharedModules),
-        m_sharedEvaluator(sharedEvaluator),
+        m_sharedEvalHelpers(sharedEvalHelpers),
         m_asyncStep(nullptr),
         m_asyncStepNotifyDebuggerOfWaitCompletion(nullptr)
     {}
@@ -49,7 +49,7 @@ private:
 
     std::shared_ptr<SimpleStepper> m_simpleStepper;
     std::shared_ptr<Modules> m_sharedModules;
-    std::shared_ptr<Evaluator> m_sharedEvaluator;
+    std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
 
     enum class asyncStepStatus
     {

@@ -15,6 +15,7 @@
 #include "interfaces/iprotocol.h"
 #include "debugger/threads.h"
 #include "debugger/frames.h"
+#include "debugger/evalhelpers.h"
 #include "debugger/evaluator.h"
 #include "debugger/evalwaiter.h"
 #include "debugger/variables.h"
@@ -207,10 +208,11 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedThreads(new Threads),
     m_sharedModules(new Modules),
     m_sharedEvalWaiter(new EvalWaiter(m_sharedThreads)),
-    m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalWaiter)),
-    m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvaluator)),
+    m_sharedEvalHelpers(new EvalHelpers(m_sharedModules, m_sharedEvalWaiter)),
+    m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers)),
+    m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
     m_uniqueBreakpoints(new Breakpoints(m_sharedModules)),
-    m_sharedVariables(new Variables(m_sharedEvaluator)),
+    m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_startupReady(false),
@@ -853,7 +855,7 @@ HRESULT ManagedDebugger::TerminateProcess()
 void ManagedDebugger::Cleanup()
 {
     m_sharedModules->CleanupAllModules();
-    m_sharedEvaluator->Cleanup();
+    m_sharedEvalHelpers->Cleanup();
     m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
     m_sharedProtocol->Cleanup();
 }

@@ -12,6 +12,7 @@
 #include "metadata/typeprinter.h"
 #include "valueprint.h"
 #include "debugger/variables.h"
+#include "debugger/evalhelpers.h"
 #include "debugger/evaluator.h"
 #include "debugger/frames.h"
 #include "managed/interop.h"
@@ -423,7 +424,7 @@ HRESULT Variables::GetChildren(
             ToRelease<ICorDebugType> pType;
             IfFailRet(pValue2->GetExactType(&pType));
             // Note, this call could return S_FALSE without ICorDebugValue creation in case type don't have static members.
-            IfFailRet(m_sharedEvaluator->CreatTypeObjectStaticConstructor(pThread, pType, nullptr, false));
+            IfFailRet(m_sharedEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pType, nullptr, false));
 
             Variable var(ref.evalFlags);
             var.name = "Static members";

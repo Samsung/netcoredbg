@@ -14,6 +14,7 @@ namespace netcoredbg
 {
 
 class Evaluator;
+class EvalHelpers;
 
 class Variables
 {
@@ -64,6 +65,7 @@ class Variables
         VariableReference(const VariableReference &that) = delete;
     };
 
+    std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     struct Member;
 
@@ -129,7 +131,8 @@ private:
 
 public:
 
-    Variables(std::shared_ptr<Evaluator> &sharedEvaluator) :
+    Variables(std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Evaluator> &sharedEvaluator) :
+        m_sharedEvalHelpers(sharedEvalHelpers),
         m_sharedEvaluator(sharedEvaluator)
     {}
 

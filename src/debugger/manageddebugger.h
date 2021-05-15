@@ -26,6 +26,7 @@ class Threads;
 class Steppers;
 class Evaluator;
 class EvalWaiter;
+class EvalHelpers;
 class Variables;
 class ManagedCallback;
 class Breakpoints;
@@ -94,6 +95,7 @@ private:
     std::shared_ptr<Threads> m_sharedThreads;
     std::shared_ptr<Modules> m_sharedModules;
     std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
+    std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     std::unique_ptr<Steppers> m_uniqueSteppers;
     std::unique_ptr<Breakpoints> m_uniqueBreakpoints;

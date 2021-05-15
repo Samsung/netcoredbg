@@ -7,7 +7,7 @@
 #include "debugger/stepper_async.h"
 #include "debugger/threads.h"
 #include "metadata/modules.h"
-#include "debugger/evaluator.h"
+#include "debugger/evalhelpers.h"
 #include "debugger/valueprint.h"
 #include "utils/utf.h"
 
@@ -98,9 +98,9 @@ static HRESULT GetAsyncTBuilder(ICorDebugFrame *pFrame, ICorDebugValue **ppValue
 // that could be use as unique ID for builder (state machine) on yield and resume offset breakpoints.
 // [in] pThread - managed thread for evaluation (related to pFrame);
 // [in] pFrame - frame that used for get all info needed (function, module, etc);
-// [in] evaluator - reference to managed debugger evaluator;
+// [in] pEvalHelpers - pointer to managed debugger EvalHelpers;
 // [out] ppValueAsyncIdRef - result value (reference to created by builder object).
-static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::shared_ptr<Evaluator> &sharedEvaluator, ICorDebugValue **ppValueAsyncIdRef)
+static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFrame, EvalHelpers *pEvalHelpers, ICorDebugValue **ppValueAsyncIdRef)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pValue;
@@ -152,7 +152,7 @@ static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFr
     // Call 'ObjectIdForDebugger' property getter.
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pModule->GetFunctionFromToken(mdObjectIdForDebuggerGetter, &pFunc));
-    IfFailRet(sharedEvaluator->EvalFunction(pThread, pFunc, pType.GetRef(), 1, pValue.GetRef(), 1, ppValueAsyncIdRef, defaultEvalFlags));
+    IfFailRet(pEvalHelpers->EvalFunction(pThread, pFunc, pType.GetRef(), 1, pValue.GetRef(), 1, ppValueAsyncIdRef, defaultEvalFlags));
 
     return S_OK;
 }
@@ -160,8 +160,8 @@ static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFr
 // Set notification for wait completion - call SetNotificationForWaitCompletion() method for particular builder.
 // [in] pThread - managed thread for evaluation (related to pFrame);
 // [in] pFrame - frame that used for get all info needed (function, module, etc);
-// [in] evaluator - reference to managed debugger evaluator;
-static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDebugFrame *pFrame, std::shared_ptr<Evaluator> &sharedEvaluator)
+// [in] pEvalHelpers - pointer to managed debugger EvalHelpers;
+static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDebugFrame *pFrame, EvalHelpers *pEvalHelpers)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue> pValue;
@@ -240,7 +240,7 @@ static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDe
 
     ICorDebugType *ppArgsType[] = {pType, pNewBooleanType};
     ICorDebugValue *ppArgsValue[] = {pValue, pNewBoolean};
-    IfFailRet(sharedEvaluator->EvalFunction(pThread, pFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, defaultEvalFlags));
+    IfFailRet(pEvalHelpers->EvalFunction(pThread, pFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, defaultEvalFlags));
 
     return S_OK;
 }
@@ -286,7 +286,7 @@ HRESULT AsyncStepper::SetupStep(ICorDebugThread *pThread, IDebugger::StepType st
     }
     if (stepType == IDebugger::StepType::STEP_OUT)
     {
-        IfFailRet(SetNotificationForWaitCompletion(pThread, pFrame, m_sharedEvaluator));
+        IfFailRet(SetNotificationForWaitCompletion(pThread, pFrame, m_sharedEvalHelpers.get()));
         IfFailRet(SetBreakpointIntoNotifyDebuggerOfWaitCompletion());
         // Note, we don't create stepper here, since all we need in case of breakpoint is call Continue() from StepCommand().
         return S_OK;
@@ -537,7 +537,7 @@ HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, 
 
             CorDebugHandleType handleType;
             ToRelease<ICorDebugValue> iCorValue;
-            if (FAILED(GetAsyncIdReference(pThread, pFrame, m_sharedEvaluator, &iCorValue)) ||
+            if (FAILED(GetAsyncIdReference(pThread, pFrame, m_sharedEvalHelpers.get(), &iCorValue)) ||
                 FAILED(iCorValue->QueryInterface(IID_ICorDebugHandleValue , (LPVOID*) &m_asyncStep->m_iCorHandleValueAsyncId)) ||
                 FAILED(m_asyncStep->m_iCorHandleValueAsyncId->GetHandleType(&handleType)) ||
                 handleType != HANDLE_STRONG) // Note, we need only strong handle here, that will not invalidated on continue-break.
@@ -586,7 +586,7 @@ HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, 
             CORDB_ADDRESS currentAsyncId = 0;
             ToRelease<ICorDebugValue> pValue;
             BOOL isNull = FALSE;
-            if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_sharedEvaluator, &pValueRef)) &&
+            if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_sharedEvalHelpers.get(), &pValueRef)) &&
                 SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
                 pValue->GetAddress(&currentAsyncId);
             else
