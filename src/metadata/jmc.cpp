@@ -6,74 +6,32 @@
 
 #include <string>
 #include <vector>
-#include <list>
-#include <unordered_set>
+#include <functional>
+#include <algorithm>
 
 #include "metadata/typeprinter.h"
 #include "platform.h"
 #include "managed/interop.h"
-#include "utils/utf.h"
 
 namespace netcoredbg
 {
 
-static const char *g_nonUserCode = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";
-static const char *g_stepThrough = "System.Diagnostics.DebuggerStepThroughAttribute..ctor";
-// TODO: DebuggerStepThroughAttribute also affects breakpoints when JMC is enabled
+// https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.debuggernonusercodeattribute
+// This attribute suppresses the display of these adjunct types and members in the debugger window and
+// automatically steps through, rather than into, designer provided code.
+const char DebuggerAttribute::NonUserCode[] = "System.Diagnostics.DebuggerNonUserCodeAttribute..ctor";
+// Check `DebuggerStepThroughAttribute` for method and class.
+// https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.debuggerstepthroughattribute
+// Instructs the debugger to step through the code instead of stepping into the code.
+const char DebuggerAttribute::StepThrough[] = "System.Diagnostics.DebuggerStepThroughAttribute..ctor";
+// https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.debuggerhiddenattribute
+// ... debugger does not stop in a method marked with this attribute and does not allow a breakpoint to be set in the method.
+// https://docs.microsoft.com/en-us/dotnet/visual-basic/misc/bc40051
+// System.Diagnostics.DebuggerHiddenAttribute does not affect 'Get' or 'Set' when applied to the Property definition.
+// Apply the attribute directly to the 'Get' and 'Set' procedures as appropriate.
+const char DebuggerAttribute::Hidden[] = "System.Diagnostics.DebuggerHiddenAttribute..ctor";
 
-// From ECMA-335
-static const std::unordered_set<WSTRING> g_operatorMethodNames
-{
-// Unary operators
-    W("op_Decrement"),                    // --
-    W("op_Increment"),                    // ++
-    W("op_UnaryNegation"),                // - (unary)
-    W("op_UnaryPlus"),                    // + (unary)
-    W("op_LogicalNot"),                   // !
-    W("op_True"),                         // Not defined
-    W("op_False"),                        // Not defined
-    W("op_AddressOf"),                    // & (unary)
-    W("op_OnesComplement"),               // ~
-    W("op_PointerDereference"),           // * (unary)
-// Binary operators
-    W("op_Addition"),                     // + (binary)
-    W("op_Subtraction"),                  // - (binary)
-    W("op_Multiply"),                     // * (binary)
-    W("op_Division"),                     // /
-    W("op_Modulus"),                      // %
-    W("op_ExclusiveOr"),                  // ^
-    W("op_BitwiseAnd"),                   // & (binary)
-    W("op_BitwiseOr"),                    // |
-    W("op_LogicalAnd"),                   // &&
-    W("op_LogicalOr"),                    // ||
-    W("op_Assign"),                       // Not defined (= is not the same)
-    W("op_LeftShift"),                    // <<
-    W("op_RightShift"),                   // >>
-    W("op_SignedRightShift"),             // Not defined
-    W("op_UnsignedRightShift"),           // Not defined
-    W("op_Equality"),                     // ==
-    W("op_GreaterThan"),                  // >
-    W("op_LessThan"),                     // <
-    W("op_Inequality"),                   // !=
-    W("op_GreaterThanOrEqual"),           // >=
-    W("op_LessThanOrEqual"),              // <=
-    W("op_UnsignedRightShiftAssignment"), // Not defined
-    W("op_MemberSelection"),              // ->
-    W("op_RightShiftAssignment"),         // >>=
-    W("op_MultiplicationAssignment"),     // *=
-    W("op_PointerToMemberSelection"),     // ->*
-    W("op_SubtractionAssignment"),        // -=
-    W("op_ExclusiveOrAssignment"),        // ^=
-    W("op_LeftShiftAssignment"),          // <<=
-    W("op_ModulusAssignment"),            // %=
-    W("op_AdditionAssignment"),           // +=
-    W("op_BitwiseAndAssignment"),         // &=
-    W("op_BitwiseOrAssignment"),          // |=
-    W("op_Comma"),                        // ,
-    W("op_DivisionAssignment")            // /=
-};
-
-static bool HasAttributes(IMetaDataImport *pMD, mdToken tok, bool checkNonUserCode = true, bool checkStepThrough = true)
+bool ForEachAttribute(IMetaDataImport *pMD, mdToken tok, std::function<HRESULT(const std::string &AttrName)> cb)
 {
     bool found = false;
     ULONG numAttributes = 0;
@@ -88,21 +46,28 @@ static bool HasAttributes(IMetaDataImport *pMD, mdToken tok, bool checkNonUserCo
             FAILED(TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr)))
             continue;
 
-        if ((checkNonUserCode && mdName == g_nonUserCode) || 
-            (checkStepThrough && mdName == g_stepThrough))
-        {
-            found = true;
+        found = cb(mdName);
+        if (found)
             break;
-        }
     }
     pMD->CloseEnum(fEnum);
-
     return found;
 }
 
-static bool HasNonUserCodeAttribute(IMetaDataImport *pMD, mdToken tok)
+bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const char *attrName)
 {
-    return HasAttributes(pMD, tok, true, false);
+    return ForEachAttribute(pMD, tok, [&attrName](const std::string &AttrName) -> bool
+    {
+        return AttrName == attrName;
+    });
+}
+
+bool HasAttribute(IMetaDataImport *pMD, mdToken tok, std::vector<std::string> &attrNames)
+{
+    return ForEachAttribute(pMD, tok, [&attrNames](const std::string &AttrName) -> bool
+    {
+        return std::find(attrNames.begin(), attrNames.end(), AttrName) != attrNames.end();
+    });
 }
 
 static HRESULT GetNonJMCMethodsForTypeDef(
@@ -111,6 +76,8 @@ static HRESULT GetNonJMCMethodsForTypeDef(
     mdTypeDef typeDef,
     std::vector<mdToken> &excludeMethods)
 {
+    static std::vector<std::string> attrNames{DebuggerAttribute::NonUserCode, DebuggerAttribute::StepThrough, DebuggerAttribute::Hidden};
+
     ULONG numMethods = 0;
     HCORENUM fEnum = NULL;
     mdMethodDef methodDef;
@@ -125,32 +92,10 @@ static HRESULT GetNonJMCMethodsForTypeDef(
                                        nullptr, nullptr, nullptr, nullptr, nullptr)))
             continue;
 
-        if (g_operatorMethodNames.find(szFunctionName) != g_operatorMethodNames.end()
-            || HasAttributes(pMD, methodDef)
-            || !Interop::HasSourceLocation(pSymbolReaderHandle, methodDef))
-        {
+        if (HasAttribute(pMD, methodDef, attrNames))
             excludeMethods.push_back(methodDef);
-        }
     }
     pMD->CloseEnum(fEnum);
-
-    mdProperty propertyDef;
-    ULONG numProperties = 0;
-    HCORENUM propEnum = NULL;
-    while(SUCCEEDED(pMD->EnumProperties(&propEnum, typeDef, &propertyDef, 1, &numProperties)) && numProperties != 0)
-    {
-        mdMethodDef mdSetter;
-        mdMethodDef mdGetter;
-        if (SUCCEEDED(pMD->GetPropertyProps(propertyDef, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr,
-                                            nullptr, nullptr, nullptr, &mdSetter, &mdGetter, nullptr, 0, nullptr)))
-        {
-            if (mdSetter != mdMethodDefNil)
-                excludeMethods.push_back(mdSetter);
-            if (mdGetter != mdMethodDefNil)
-                excludeMethods.push_back(mdGetter);
-        }
-    }
-    pMD->CloseEnum(propEnum);
 
     return S_OK;
 }
@@ -164,12 +109,14 @@ static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, PVOID pSymbo
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
+    static std::vector<std::string> attrNames{DebuggerAttribute::NonUserCode, DebuggerAttribute::StepThrough};
+
     ULONG numTypedefs = 0;
     HCORENUM fEnum = NULL;
     mdTypeDef typeDef;
     while(SUCCEEDED(pMD->EnumTypeDefs(&fEnum, &typeDef, 1, &numTypedefs)) && numTypedefs != 0)
     {
-        if (HasNonUserCodeAttribute(pMD, typeDef))
+        if (HasAttribute(pMD, typeDef, attrNames))
             excludeTokens.push_back(typeDef);
         else
             GetNonJMCMethodsForTypeDef(pMD, pSymbolReaderHandle, typeDef, excludeTokens);
@@ -179,8 +126,7 @@ static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, PVOID pSymbo
     return S_OK;
 }
 
-// Disable JMC by exception list: operators, getters/setters and by attributes (DebuggerNonUserCode and DebuggerStepThrough).
-HRESULT Modules::DisableJMCByExceptionList(ICorDebugModule *pModule, PVOID pSymbolReaderHandle)
+HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHandle)
 {
     std::vector<mdToken> excludeTokens;
 

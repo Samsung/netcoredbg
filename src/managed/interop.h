@@ -109,11 +109,11 @@ namespace Interop
 
     HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle);
     void DisposeSymbols(PVOID pSymbolReaderHandle);
-    HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG64 IlOffset, SequencePoint *sequencePoint);
+    HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG32 IlOffset, SequencePoint *sequencePoint);
+    HRESULT GetNextSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG32 IlOffset, ULONG32 &ilCloseOffset, bool *noUserCodeFound);
     HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG localIndex,
                                           WCHAR *paramName, ULONG paramNameLen, ULONG32 *pIlStart, ULONG32 *pIlEnd);
     HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef MethodToken, ULONG32 *ilStartOffset, ULONG32 *ilEndOffset);
-    bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodToken);
     HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset);
     HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, int32_t constrTokensNum, PVOID constrTokens, int32_t normalTokensNum, PVOID normalTokens, PVOID *data);
     HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandle, int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t nestedToken, int32_t &Count, PVOID *data);

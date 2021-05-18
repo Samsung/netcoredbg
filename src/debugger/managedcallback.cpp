@@ -188,16 +188,16 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
     LogFuncEntry();
     ThreadId threadId(getThreadId(pThread));
 
-    StackFrame stackFrame;
-    ToRelease<ICorDebugFrame> pFrame;
-    if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-        m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
-
     // Don't call DisableAllSteppers() or DisableAllSimpleSteppers() here!
     HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pAppDomain, pThread, reason, stackFrame)) &&
+    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pAppDomain, pThread, reason)) &&
         Status == S_OK) // S_FAIL - no error, but steppers not affect on callback
         return S_OK;
+
+    StackFrame stackFrame;
+    ToRelease<ICorDebugFrame> iCorFrame;
+    if (SUCCEEDED(pThread->GetActiveFrame(&iCorFrame)) && iCorFrame != nullptr)
+        m_debugger.GetFrameLocation(iCorFrame, threadId, FrameLevel(0), stackFrame);
 
     StoppedEvent event(StopStep, threadId);
     event.frame = stackFrame;
@@ -221,20 +221,26 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
         return S_OK;
     }
 
-    StackFrame stackFrame;
-    ToRelease<ICorDebugFrame> pFrame;
-    ThreadId threadId(getThreadId(pThread));
-    if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-        m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), stackFrame);
+    ToRelease<ICorDebugFrame> iCorFrame;
+    pThread->GetActiveFrame(&iCorFrame);
 
-    // No reason check GetFrameLocation() return code, since it could be failed by some API call after source detection.
-    const bool no_source = stackFrame.source.IsNull();
-
-    if (m_debugger.IsJustMyCode() && no_source)
+    // Ignore break on Break() outside of code with loaded PDB (see JMC setup during module load).
+    if (iCorFrame != nullptr)
     {
-        pAppDomain->Continue(0);
-        return S_OK;
+        BOOL JMCStatus;
+        ToRelease<ICorDebugFunction> iCorFunction;
+        ToRelease<ICorDebugFunction2> iCorFunction2;
+        if (SUCCEEDED(iCorFrame->GetFunction(&iCorFunction)) &&
+            SUCCEEDED(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2)) &&
+            SUCCEEDED(iCorFunction2->GetJMCStatus(&JMCStatus)) &&
+            JMCStatus == FALSE)
+        {
+            pAppDomain->Continue(0);
+            return S_OK;
+        }
     }
+
+    ThreadId threadId(getThreadId(pThread));
 
     // Prevent stop event duplicate, if previous stop event was for same thread and same code point.
     // The idea is - store "fully qualified IL offset" (data for module + method + IL) on any stop event
@@ -300,6 +306,10 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
     m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
 
     m_debugger.SetLastStoppedThread(pThread);
+
+    StackFrame stackFrame;
+    if (iCorFrame != nullptr)
+        m_debugger.GetFrameLocation(iCorFrame, threadId, FrameLevel(0), stackFrame);
 
     StoppedEvent event(StopPause, threadId);
     event.frame = stackFrame;

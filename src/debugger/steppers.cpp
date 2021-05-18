@@ -2,13 +2,67 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
+#include <unordered_set>
 #include "debugger/stepper_simple.h"
 #include "debugger/stepper_async.h"
 #include "debugger/steppers.h"
 #include "metadata/modules.h"
+#include "utils/utf.h"
 
 namespace netcoredbg
 {
+
+// From ECMA-335
+static const std::unordered_set<WSTRING> g_operatorMethodNames
+{
+// Unary operators
+    W("op_Decrement"),                    // --
+    W("op_Increment"),                    // ++
+    W("op_UnaryNegation"),                // - (unary)
+    W("op_UnaryPlus"),                    // + (unary)
+    W("op_LogicalNot"),                   // !
+    W("op_True"),                         // Not defined
+    W("op_False"),                        // Not defined
+    W("op_AddressOf"),                    // & (unary)
+    W("op_OnesComplement"),               // ~
+    W("op_PointerDereference"),           // * (unary)
+// Binary operators
+    W("op_Addition"),                     // + (binary)
+    W("op_Subtraction"),                  // - (binary)
+    W("op_Multiply"),                     // * (binary)
+    W("op_Division"),                     // /
+    W("op_Modulus"),                      // %
+    W("op_ExclusiveOr"),                  // ^
+    W("op_BitwiseAnd"),                   // & (binary)
+    W("op_BitwiseOr"),                    // |
+    W("op_LogicalAnd"),                   // &&
+    W("op_LogicalOr"),                    // ||
+    W("op_Assign"),                       // Not defined (= is not the same)
+    W("op_LeftShift"),                    // <<
+    W("op_RightShift"),                   // >>
+    W("op_SignedRightShift"),             // Not defined
+    W("op_UnsignedRightShift"),           // Not defined
+    W("op_Equality"),                     // ==
+    W("op_GreaterThan"),                  // >
+    W("op_LessThan"),                     // <
+    W("op_Inequality"),                   // !=
+    W("op_GreaterThanOrEqual"),           // >=
+    W("op_LessThanOrEqual"),              // <=
+    W("op_UnsignedRightShiftAssignment"), // Not defined
+    W("op_MemberSelection"),              // ->
+    W("op_RightShiftAssignment"),         // >>=
+    W("op_MultiplicationAssignment"),     // *=
+    W("op_PointerToMemberSelection"),     // ->*
+    W("op_SubtractionAssignment"),        // -=
+    W("op_ExclusiveOrAssignment"),        // ^=
+    W("op_LeftShiftAssignment"),          // <<=
+    W("op_ModulusAssignment"),            // %=
+    W("op_AdditionAssignment"),           // +=
+    W("op_BitwiseAndAssignment"),         // &=
+    W("op_BitwiseOrAssignment"),          // |=
+    W("op_Comma"),                        // ,
+    W("op_DivisionAssignment")            // /=
+};
 
 HRESULT Steppers::SetupStep(ICorDebugThread *pThread, IDebugger::StepType stepType)
 {
@@ -37,45 +91,108 @@ HRESULT Steppers::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, ICor
     return m_simpleStepper->ManagedCallbackBreakpoint(pAppDomain, pThread);
 }
 
-HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason, StackFrame &stackFrame)
+HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason)
 {
-    m_simpleStepper->ManagedCallbackStepComplete();
-    m_asyncStepper->ManagedCallbackStepComplete();
-
-    // No reason check GetFrameLocation() return code, since it could be failed by some API call after source detection.
-    const bool no_source = stackFrame.source.IsNull();
-
     HRESULT Status;
-    if (m_justMyCode && no_source)
+
+    ToRelease<ICorDebugFrame> iCorFrame;
+    IfFailRet(pThread->GetActiveFrame(&iCorFrame));
+    if (iCorFrame == nullptr)
+        return E_FAIL;
+
+    ToRelease<ICorDebugFunction> iCorFunction;
+    IfFailRet(iCorFrame->GetFunction(&iCorFunction));
+    mdMethodDef methodDef;
+    IfFailRet(iCorFunction->GetToken(&methodDef));
+    ToRelease<ICorDebugClass> iCorClass;
+    IfFailRet(iCorFunction->GetClass(&iCorClass));
+    mdTypeDef typeDef;
+    IfFailRet(iCorClass->GetToken(&typeDef));
+    ToRelease<ICorDebugModule> iCorModule;
+    IfFailRet(iCorFunction->GetModule(&iCorModule));
+    ToRelease<IUnknown> iUnknown;
+    IfFailRet(iCorModule->GetMetaDataInterface(IID_IMetaDataImport, &iUnknown));
+    ToRelease<IMetaDataImport> iMD;
+    IfFailRet(iUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &iMD));
+
+    // https://docs.microsoft.com/en-us/visualstudio/debugger/navigating-through-code-with-the-debugger?view=vs-2019#BKMK_Step_into_properties_and_operators_in_managed_code
+    // The debugger steps over properties and operators in managed code by default. In most cases, this provides a better debugging experience.
+    if (m_stepFiltering)
     {
-        // FIXME will not work in proper way with async methods
-        IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OVER));
-        pAppDomain->Continue(0);
-        return S_OK;
+        ULONG nameLen;
+        WCHAR szFunctionName[mdNameLen] = {0};
+        if (SUCCEEDED(iMD->GetMethodProps(methodDef, nullptr, szFunctionName, _countof(szFunctionName),
+                                          &nameLen, nullptr, nullptr, nullptr, nullptr, nullptr)))
+        {
+            if (g_operatorMethodNames.find(szFunctionName) != g_operatorMethodNames.end())
+            {
+                IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
+                pAppDomain->Continue(0);
+                return S_OK;
+            }
+        }
+
+        mdProperty propertyDef;
+        ULONG numProperties = 0;
+        HCORENUM propEnum = NULL;
+        while(SUCCEEDED(iMD->EnumProperties(&propEnum, typeDef, &propertyDef, 1, &numProperties)) && numProperties != 0)
+        {
+            mdMethodDef mdSetter;
+            mdMethodDef mdGetter;
+            if (SUCCEEDED(iMD->GetPropertyProps(propertyDef, nullptr, nullptr, 0, nullptr, nullptr, nullptr, nullptr,
+                                                nullptr, nullptr, nullptr, &mdSetter, &mdGetter, nullptr, 0, nullptr)))
+            {
+                if (mdSetter != methodDef && mdGetter != methodDef)
+                    continue;
+
+                iMD->CloseEnum(propEnum);
+                IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
+                pAppDomain->Continue(0);
+                return S_OK;
+            }
+        }
+        iMD->CloseEnum(propEnum);
     }
 
-    // Note, step-in stop at the beginning of a newly called function at 0 IL offset.
-    // But, for example, async function don't have user code at 0 IL offset, so,
-    // we need additional step-over to real user code.
-    if (reason == CorDebugStepReason::STEP_CALL)
+    // Same behaviour as MS vsdbg and MSVS C# debugger have - step only for code with PDB loaded (no matter JMC enabled or not by user).
+    ULONG32 ipOffset;
+    ULONG32 ilCloseUserCodeOffset;
+    bool noUserCodeFound = false; // Must be initialized with `false`, since GetFrameILAndNextUserCodeILOffset call could be failed before delegate call.
+    if (SUCCEEDED(Status = m_sharedModules->GetFrameILAndNextUserCodeILOffset(iCorFrame, ipOffset, ilCloseUserCodeOffset, &noUserCodeFound)))
     {
-        ToRelease<ICorDebugFrame> pFrame;
-        ToRelease<ICorDebugILFrame> pILFrame;
-        ULONG32 ipOffset;
-        CorDebugMappingResult mappingResult;
-        Modules::SequencePoint sequencePoint;
-        if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr &&
-            SUCCEEDED(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)) &&
-            SUCCEEDED(pILFrame->GetIP(&ipOffset, &mappingResult)) &&
-            SUCCEEDED(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ipOffset, sequencePoint)) &&
-            // Current IL offset less than real offset of first user code line.
-            ipOffset < (ULONG32)sequencePoint.offset)
+        // Current IL offset less than IL offset of next close user code line, or that was step-out.
+        if (ipOffset < ilCloseUserCodeOffset || reason == CorDebugStepReason::STEP_RETURN)
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OVER));
             pAppDomain->Continue(0);
             return S_OK;
         }
     }
+    else if (noUserCodeFound)
+    {
+        IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
+        pAppDomain->Continue(0);
+        return S_OK;
+    }
+    else // Note, in case JMC enabled ManagedCallbackStepComplete() called only for user code.
+        return Status;
+
+    // Care about attributes for "JMC disabled" case.
+    if (!m_justMyCode)
+    {
+        static std::vector<std::string> attrNames{DebuggerAttribute::Hidden, DebuggerAttribute::StepThrough};
+
+        if (HasAttribute(iMD, typeDef, DebuggerAttribute::StepThrough) || HasAttribute(iMD, methodDef, attrNames))
+        {
+            IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
+            pAppDomain->Continue(0);
+            return S_OK;
+        }
+    }
+
+    // Note, reset steppers right before return only.
+    m_simpleStepper->ManagedCallbackStepComplete();
+    m_asyncStepper->ManagedCallbackStepComplete();
 
     return S_FALSE; // S_FAIL - no error, but steppers not affect on callback
 }
@@ -96,6 +213,11 @@ void Steppers::SetJustMyCode(bool enable)
 {
     m_justMyCode = enable;
     m_simpleStepper->SetJustMyCode(enable);
+}
+
+void Steppers::SetStepFiltering(bool enable)
+{
+    m_stepFiltering = enable;
 }
 
 } // namespace netcoredbg

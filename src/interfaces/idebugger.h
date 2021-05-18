@@ -52,6 +52,8 @@ public:
     virtual ~IDebugger() {}
     virtual bool IsJustMyCode() const = 0;
     virtual void SetJustMyCode(bool enable) = 0;
+    virtual bool IsStepFiltering() const = 0;
+    virtual void SetStepFiltering(bool enable) = 0;
     virtual HRESULT Initialize() = 0;
     virtual HRESULT Attach(int pid) = 0;
     virtual HRESULT Launch(const std::string &fileExec, const std::vector<std::string> &execArgs, const std::map<std::string, std::string> &env,

@@ -17,6 +17,7 @@
 #include "torelease.h"
 #include "utils/utf.h"
 #include "managed/interop.h"
+#include "metadata/modules.h" // HasAttribute()
 
 using std::string;
 
@@ -166,26 +167,7 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
 
     // Care about Flags attribute (https://docs.microsoft.com/en-us/dotnet/api/system.flagsattribute),
     // that "Indicates that an enumeration can be treated as a bit field; that is, a set of flags".
-    bool foundFlagsAttr = false;
-    ULONG numAttributes = 0;
-    fEnum = NULL;
-    mdCustomAttribute attr;
-    while(SUCCEEDED(pMD->EnumCustomAttributes(&fEnum, currentTypeDef, 0, &attr, 1, &numAttributes)) && numAttributes != 0)
-    {
-        mdToken ptkObj = mdTokenNil;
-        mdToken ptkType = mdTokenNil;
-        pMD->GetCustomAttributeProps(attr, &ptkObj, &ptkType, nullptr, nullptr);
-
-        std::string mdName;
-        TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr);
-
-        if (mdName == "System.FlagsAttribute..ctor")
-        {
-            foundFlagsAttr = true;
-            break;
-        }
-    }
-    pMD->CloseEnum(fEnum);
+    bool foundFlagsAttr = HasAttribute(pMD, currentTypeDef, "System.FlagsAttribute..ctor");
 
     ULONG64 remainingValue = curValue;
     std::map<ULONG64, std::string> OrderedFlags;

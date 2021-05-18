@@ -215,6 +215,7 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
+    m_stepFiltering(true),
     m_startupReady(false),
     m_startupResult(S_OK),
     m_unregisterToken(nullptr),
@@ -1091,7 +1092,6 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
 
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
-
     if (SUCCEEDED(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
     {
         stackFrame.source = Source(sp.document);
@@ -1110,16 +1110,10 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pFunc->GetModule(&pModule));
 
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
     ULONG32 nOffset = 0;
     ToRelease<ICorDebugNativeFrame> pNativeFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugNativeFrame, (LPVOID*) &pNativeFrame));
     IfFailRet(pNativeFrame->GetIP(&nOffset));
-
-    CorDebugMappingResult mappingResult;
-    IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
 
     IfFailRet(Modules::GetModuleId(pModule, stackFrame.moduleId));
 
@@ -1337,6 +1331,13 @@ void ManagedDebugger::SetJustMyCode(bool enable)
 {
     m_justMyCode = enable;
     m_uniqueSteppers->SetJustMyCode(enable);
+    m_uniqueBreakpoints->SetJustMyCode(enable);
+}
+
+void ManagedDebugger::SetStepFiltering(bool enable)
+{
+    m_stepFiltering = enable;
+    m_uniqueSteppers->SetStepFiltering(enable);
 }
 
 } // namespace netcoredbg

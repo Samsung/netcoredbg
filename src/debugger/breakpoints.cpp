@@ -271,6 +271,37 @@ void Breakpoints::DeleteAllBreakpoints()
     m_entryPoint = mdMethodDefNil;
 }
 
+static HRESULT SkipBreakpoint(ICorDebugModule *pModule, mdMethodDef methodToken, bool justMyCode)
+{
+    HRESULT Status;
+
+    // Skip breakpoints outside of code with loaded PDB (see JMC setup during module load).
+    ToRelease<ICorDebugFunction> iCorFunction;
+    IfFailRet(pModule->GetFunctionFromToken(methodToken, &iCorFunction));
+    BOOL JMCStatus;
+    ToRelease<ICorDebugFunction2> iCorFunction2;
+    if (SUCCEEDED(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2)) &&
+        SUCCEEDED(iCorFunction2->GetJMCStatus(&JMCStatus)) &&
+        JMCStatus == FALSE)
+    {
+        return S_OK; // need skip breakpoint
+    }
+
+    // Care about attributes for "JMC disabled" case.
+    if (!justMyCode)
+    {
+        ToRelease<IUnknown> iUnknown;
+        IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &iUnknown));
+        ToRelease<IMetaDataImport> iMD;
+        IfFailRet(iUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &iMD));
+
+        if (HasAttribute(iMD, methodToken, DebuggerAttribute::Hidden))
+            return S_OK; // need skip breakpoint
+    }
+
+    return S_FALSE; // don't skip breakpoint
+}
+
 // [in] pModule - optional, provide filter by module during resolve
 // [in,out] bp - breakpoint data for resolve
 HRESULT Breakpoints::ResolveBreakpoint(ICorDebugModule *pModule, ManagedBreakpoint &bp)
@@ -329,6 +360,11 @@ HRESULT Breakpoints::ResolveBreakpoint(ICorDebugModule *pModule, ManagedBreakpoi
             LOGW("Ignored module: %s", Modules::GetModuleFileName(resolvedBP.iCorModule).c_str());
             continue;
         }
+
+        IfFailRet(SkipBreakpoint(resolvedBP.iCorModule, resolvedBP.methodToken, m_justMyCode));
+        if (Status == S_OK) // S_FALSE - don't skip breakpoint
+            continue;
+
         modAddress = modAddressTrack;
 
         ToRelease<ICorDebugFunction> pFunc;
@@ -342,6 +378,9 @@ HRESULT Breakpoints::ResolveBreakpoint(ICorDebugModule *pModule, ManagedBreakpoi
 
         bp.breakpoints.emplace_back(resolvedBP.methodToken, resolvedBP.ilOffset, iCorFuncBreakpoint.Detach());
     }
+
+    if (modAddress == 0)
+        return E_FAIL;
 
     // No reason leave extra space here, since breakpoint could be setup for 1 module only (no more breakpoints will be added).
     bp.breakpoints.shrink_to_fit();
@@ -534,11 +573,11 @@ static HRESULT TrySetupAsyncEntryBreakpoint(ICorDebugModule *pModule, IMetaDataI
         return E_FAIL;
 
     // Note, in case of async `MoveNext` method, user code don't start from 0 IL offset.
-    Modules::SequencePoint sequencePoint;
-    IfFailRet(sharedModules->GetNextSequencePointInMethod(pModule, resultToken, 0, sequencePoint));
+    ULONG32 ilCloseOffset;
+    IfFailRet(sharedModules->GetNextSequencePointInMethod(pModule, resultToken, 0, ilCloseOffset));
 
     entryPointToken = resultToken;
-    entryPointOffset = sequencePoint.offset;
+    entryPointOffset = ilCloseOffset;
     return S_OK;
 }
 
@@ -561,7 +600,6 @@ HRESULT Breakpoints::TrySetupEntryBreakpoint(ICorDebugModule *pModule)
     mdTypeDef mdMainClass;
     WCHAR funcName[mdNameLen];
     ULONG funcNameLen;
-    Modules::SequencePoint sequencePoint;
     // If we can't setup entry point correctly for async method, leave it "as is".
     if (SUCCEEDED(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown)) &&
         SUCCEEDED(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD)) &&
@@ -571,8 +609,7 @@ HRESULT Breakpoints::TrySetupEntryBreakpoint(ICorDebugModule *pModule)
         // https://docs.microsoft.com/en-us/dotnet/csharp/programming-guide/main-and-command-args/
         // In case of async method as entry method, GetEntryPointTokenFromFile() should return compiler's generated method `<Main>`, plus,
         // this should be method without user code.
-        str_equal(funcName, W("<Main>")) &&
-        FAILED(m_sharedModules->GetNextSequencePointInMethod(pModule, entryPointToken, 0, sequencePoint)))
+        str_equal(funcName, W("<Main>")))
     {
         TrySetupAsyncEntryBreakpoint(pModule, pMD, m_sharedModules, mdMainClass, entryPointToken, entryPointOffset);
     }
@@ -918,58 +955,68 @@ void Breakpoints::EnumerateBreakpoints(std::function<bool (const IDebugger::Brea
     }
 }
 
+HRESULT Breakpoints::AddFunctionBreakpoint(ManagedFunctionBreakpoint &fbp, ResolvedFBP &fbpResolved)
+{
+    HRESULT Status;
+
+    for (auto &entry : fbpResolved)
+    {
+        IfFailRet(SkipBreakpoint(entry.first, entry.second, m_justMyCode));
+        if (Status == S_OK) // S_FALSE - don't skip breakpoint
+            return S_OK;
+
+        ULONG32 ilCloseOffset;
+        if (FAILED(m_sharedModules->GetNextSequencePointInMethod(entry.first, entry.second, 0, ilCloseOffset)))
+            return S_OK;
+
+        ToRelease<ICorDebugFunction> pFunc;
+        IfFailRet(entry.first->GetFunctionFromToken(entry.second, &pFunc));
+        ToRelease<ICorDebugCode> pCode;
+        IfFailRet(pFunc->GetILCode(&pCode));
+
+        ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
+        IfFailRet(pCode->CreateBreakpoint(ilCloseOffset, &iCorFuncBreakpoint));
+        IfFailRet(iCorFuncBreakpoint->Activate(fbp.enabled ? TRUE : FALSE));
+
+        CORDB_ADDRESS modAddress;
+        IfFailRet(entry.first->GetBaseAddress(&modAddress));
+
+        fbp.breakpoints.emplace_back(modAddress, entry.second, iCorFuncBreakpoint.Detach());
+    }
+
+    return S_OK;
+}
 
 HRESULT Breakpoints::ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp)
 {
     HRESULT Status;
+    ResolvedFBP fbpResolved;
 
     IfFailRet(m_sharedModules->ResolveFunctionInAny(
         fbp.module, fbp.module_checked, fbp.name, 
         [&](ICorDebugModule *pModule, mdMethodDef &methodToken) -> HRESULT
     {
-        ToRelease<ICorDebugFunction> pFunc;
-        IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
-
-        ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
-        IfFailRet(pFunc->CreateBreakpoint(&iCorFuncBreakpoint));
-        IfFailRet(iCorFuncBreakpoint->Activate(fbp.enabled ? TRUE : FALSE));
-
-        CORDB_ADDRESS modAddress;
-        IfFailRet(pModule->GetBaseAddress(&modAddress));
-
-        fbp.breakpoints.emplace_back(modAddress, methodToken, iCorFuncBreakpoint.Detach());
-
+        fbpResolved.emplace_back(std::make_pair(pModule, methodToken));
         return S_OK;
     }));
 
-    return S_OK;
+    return AddFunctionBreakpoint(fbp, fbpResolved);
 }
 
 HRESULT Breakpoints::ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &fbp)
 {
     HRESULT Status;
+    ResolvedFBP fbpResolved;
 
     IfFailRet(m_sharedModules->ResolveFunctionInModule(
         pModule, fbp.module, fbp.module_checked, fbp.name,
         [&](ICorDebugModule *pModule, mdMethodDef &methodToken) -> HRESULT
     {
-
-        ToRelease<ICorDebugFunction> pFunc;
-        IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunc));
-
-        ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
-        IfFailRet(pFunc->CreateBreakpoint(&iCorFuncBreakpoint));
-        IfFailRet(iCorFuncBreakpoint->Activate(fbp.enabled ? TRUE : FALSE));
-
-        CORDB_ADDRESS modAddress;
-        IfFailRet(pModule->GetBaseAddress(&modAddress));
-
-        fbp.breakpoints.emplace_back(modAddress, methodToken, iCorFuncBreakpoint.Detach());
-
+        fbpResolved.emplace_back(std::make_pair(pModule, methodToken));
         return S_OK;
     }));
 
-    return S_OK;
+    return AddFunctionBreakpoint(fbp, fbpResolved);
 }
 
 HRESULT Breakpoints::SetFunctionBreakpoints(

@@ -105,6 +105,7 @@ private:
     ToRelease<ICorDebugProcess> m_iCorProcess;
 
     bool m_justMyCode;
+    bool m_stepFiltering;
 
     std::mutex m_startupMutex;
     std::condition_variable m_startupCV;
@@ -146,6 +147,8 @@ public:
 
     bool IsJustMyCode() const override { return m_justMyCode; }
     void SetJustMyCode(bool enable) override;
+    bool IsStepFiltering() const override { return m_stepFiltering; }
+    void SetStepFiltering(bool enable) override;
 
     HRESULT Initialize() override;
     HRESULT Attach(int pid) override;

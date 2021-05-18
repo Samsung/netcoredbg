@@ -502,6 +502,10 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         }
         vector<string> args = arguments.value("args", vector<string>());
         args.insert(args.begin(), arguments.at("program").get<std::string>());
+
+        m_sharedDebugger->SetJustMyCode(arguments.value("justMyCode", true)); // MS vsdbg have "justMyCode" enabled by default.
+        m_sharedDebugger->SetStepFiltering(arguments.value("enableStepFiltering", true)); // MS vsdbg have "enableStepFiltering" enabled by default.
+
         return m_sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
     } },
     { "threads", [this](const json &arguments, json &body){

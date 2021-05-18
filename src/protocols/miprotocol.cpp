@@ -933,22 +933,31 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
         return S_OK;
     }},
     { "gdb-set", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        if (args.size() == 2)
-        {
-            if (args.at(0) == "just-my-code")
-            {
-                m_sharedDebugger->SetJustMyCode(args.at(1) == "1");
-            }
-        }
+        if (args.size() != 2)
+            return E_FAIL;
+
+        if (args.at(0) == "just-my-code")
+            m_sharedDebugger->SetJustMyCode(args.at(1) == "1");
+        else if (args.at(0) == "enable-step-filtering")
+            m_sharedDebugger->SetStepFiltering(args.at(1) == "1");
+        else
+            return E_FAIL;
+
         return S_OK;
     }},
     { "gdb-show", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        if (args.size() != 1
-            || args.at(0) != "just-my-code")
+        if (args.size() != 1)
             return E_FAIL;
 
         std::ostringstream ss;
-        ss << "value=\"" << (m_sharedDebugger->IsJustMyCode() ? "1" : "0") << "\"";
+
+        if (args.at(0) == "just-my-code")
+            ss << "value=\"" << (m_sharedDebugger->IsJustMyCode() ? "1" : "0") << "\"";
+        else if (args.at(0) == "enable-step-filtering")
+            ss << "value=\"" << (m_sharedDebugger->IsStepFiltering() ? "1" : "0") << "\"";
+        else
+            return E_FAIL;
+
         output = ss.str();
         return S_OK;
     }},

@@ -22,6 +22,17 @@ using Utility::string_view;
 
 typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
 
+struct DebuggerAttribute
+{
+    static const char NonUserCode[];
+    static const char StepThrough[];
+    static const char Hidden[];
+};
+
+bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const char *attrName);
+bool HasAttribute(IMetaDataImport *pMD, mdToken tok, std::vector<std::string> &attrNames);
+HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
+
 struct method_input_data_t
 {
     mdMethodDef methodDef;
@@ -119,8 +130,6 @@ class Modules
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
 
-    static HRESULT DisableJMCByExceptionList(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
-
     static HRESULT ResolveMethodInModule(
         ICorDebugModule *pModule,
         const std::string &funcName,
@@ -207,7 +216,13 @@ public:
         ULONG32 &ilOffset,
         SequencePoint &sequencePoint);
 
-    static HRESULT Modules::IsModuleHaveSameName(
+    HRESULT GetFrameILAndNextUserCodeILOffset(
+        ICorDebugFrame *pFrame,
+        ULONG32 &ilOffset,
+        ULONG32 &ilCloseOffset,
+        bool *noUserCodeFound);
+
+    static HRESULT IsModuleHaveSameName(
         ICorDebugModule *pModule,
         const std::string &Name,
         bool isFullPath);
@@ -248,7 +263,8 @@ public:
         ICorDebugModule *pModule,
         mdMethodDef methodToken,
         ULONG32 ilOffset,
-        SequencePoint &sequencePoint);
+        ULONG32 &ilCloseOffset,
+        bool *noUserCodeFound = nullptr);
 
     HRESULT GetSequencePointByILOffset(
         PVOID pSymbolReaderHandle,

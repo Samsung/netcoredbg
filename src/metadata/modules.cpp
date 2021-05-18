@@ -486,9 +486,7 @@ HRESULT Modules::ResolveFunctionInModule(ICorDebugModule *pModule,
     if (info_pair == m_modulesInfo.end())
         return E_FAIL;
 
-    IfFailRet(ResolveMethodInModule(pModule, funcname, cb));
-
-    return S_OK;
+    return ResolveMethodInModule(pModule, funcname, cb);
 }
 
 HRESULT Modules::GetFrameILAndSequencePoint(
@@ -524,9 +522,33 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    IfFailRet(GetSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, &sequencePoint));
+    return GetSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, &sequencePoint);
+}
 
-    return S_OK;
+HRESULT Modules::GetFrameILAndNextUserCodeILOffset(
+    ICorDebugFrame *pFrame,
+    ULONG32 &ilOffset,
+    ULONG32 &ilCloseOffset,
+    bool *noUserCodeFound)
+{
+    HRESULT Status;
+
+    mdMethodDef methodToken;
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+    CorDebugMappingResult mappingResult;
+    IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    return GetNextSequencePointInMethod(pModule, methodToken, ilOffset, ilCloseOffset, noUserCodeFound);
 }
 
 HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)
@@ -716,27 +738,30 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
     Interop::LoadSymbols(pMDImport, pModule, &pSymbolReaderHandle);
     module.symbolStatus = pSymbolReaderHandle != nullptr ? SymbolsLoaded : SymbolsNotFound;
 
-    if (needJMC && module.symbolStatus == SymbolsLoaded)
+    if (module.symbolStatus == SymbolsLoaded)
     {
-        // https://docs.microsoft.com/en-us/visualstudio/debugger/just-my-code
-        // The .NET debugger considers optimized binaries and non-loaded .pdb files to be non-user code.
-        // Three compiler attributes also affect what the .NET debugger considers to be user code:
-        // * DebuggerNonUserCodeAttribute tells the debugger that the code it's applied to isn't user code.
-        // * DebuggerHiddenAttribute hides the code from the debugger, even if Just My Code is turned off.
-        // * DebuggerStepThroughAttribute tells the debugger to step through the code it's applied to, rather than step into the code.
-        // The .NET debugger considers all other code to be user code.
         ToRelease<ICorDebugModule2> pModule2;
         if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)) &&
             SUCCEEDED(pModule2->SetJMCStatus(TRUE, 0, nullptr))) // If we can't enable JMC for module, no reason disable JMC on module's types/methods.
         {
-            DisableJMCByExceptionList(pModule, pSymbolReaderHandle);
-        }
-    }
+            // Note, we use JMC in runtime all the time (same behaviour as MS vsdbg and MSVS debugger have),
+            // since this is the only way provide good speed for stepping in case "JMC disabled".
+            // But in case "JMC disabled", debugger must care about different logic for exceptions/stepping/breakpoints.
 
-    if (module.symbolStatus == SymbolsLoaded)
-    {
+            // https://docs.microsoft.com/en-us/visualstudio/debugger/just-my-code
+            // The .NET debugger considers optimized binaries and non-loaded .pdb files to be non-user code.
+            // Three compiler attributes also affect what the .NET debugger considers to be user code:
+            // * DebuggerNonUserCodeAttribute tells the debugger that the code it's applied to isn't user code.
+            // * DebuggerHiddenAttribute hides the code from the debugger, even if Just My Code is turned off.
+            // * DebuggerStepThroughAttribute tells the debugger to step through the code it's applied to, rather than step into the code.
+            // The .NET debugger considers all other code to be user code.
+            if (needJMC)
+                DisableJMCByAttributes(pModule, pSymbolReaderHandle);
+        }
+
         if (FAILED(FillSourcesCodeLinesForModule(pModule, pMDImport, pSymbolReaderHandle)))
             LOGE("Could not load source lines related info from PDB file. Could produce failures during breakpoint's source path resolve in future.");
+
         if (FAILED(FillAsyncMethodsSteppingInfo(pModule, pSymbolReaderHandle)))
             LOGE("Could not load async methods related info from PDB file. Could produce failures during stepping in async methods in future.");
     }
@@ -814,7 +839,8 @@ HRESULT Modules::GetNextSequencePointInMethod(
     ICorDebugModule *pModule,
     mdMethodDef methodToken,
     ULONG32 ilOffset,
-    Modules::SequencePoint &sequencePoint)
+    ULONG32 &ilCloseOffset,
+    bool *noUserCodeFound)
 {
     HRESULT Status;
     CORDB_ADDRESS modAddress;
@@ -828,9 +854,7 @@ HRESULT Modules::GetNextSequencePointInMethod(
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    IfFailRet(GetSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, &sequencePoint));
-
-    return S_OK;
+    return Interop::GetNextSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, ilCloseOffset, noUserCodeFound);
 }
 
 HRESULT Modules::GetSequencePointByILOffset(
@@ -861,8 +885,6 @@ HRESULT Modules::GetSequencePointByILOffset(
     ULONG32 ilOffset,
     Modules::SequencePoint &sequencePoint)
 {
-    HRESULT Status;
-
     std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
     auto info_pair = m_modulesInfo.find(modAddress);
     if (info_pair == m_modulesInfo.end())
@@ -871,9 +893,7 @@ HRESULT Modules::GetSequencePointByILOffset(
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    IfFailRet(GetSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, &sequencePoint));
-
-    return S_OK;
+    return GetSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, &sequencePoint);
 }
 
 HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb)

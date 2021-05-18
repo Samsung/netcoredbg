@@ -25,7 +25,8 @@ public:
         m_simpleStepper(new SimpleStepper(sharedModules)),
         m_asyncStepper(new AsyncStepper(m_simpleStepper, sharedModules, sharedEvalHelpers)),
         m_sharedModules(sharedModules),
-        m_justMyCode(true)
+        m_justMyCode(true),
+        m_stepFiltering(true)
     {}
 
     HRESULT SetupStep(ICorDebugThread *pThread, IDebugger::StepType stepType);
@@ -38,12 +39,13 @@ public:
     //     IfFailRet(pProcess->Continue(0));
     //     return S_OK;
     HRESULT ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread);
-    HRESULT ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason, StackFrame &stackFrame);
+    HRESULT ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason);
 
     HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
     HRESULT DisableAllSimpleSteppers(ICorDebugProcess *pProcess);
 
     void SetJustMyCode(bool enable);
+    void SetStepFiltering(bool enable);
 
 private:
 
@@ -51,6 +53,7 @@ private:
     std::unique_ptr<AsyncStepper> m_asyncStepper;
     std::shared_ptr<Modules> m_sharedModules;
     bool m_justMyCode;
+    bool m_stepFiltering;
 };
 
 } // namespace netcoredbg

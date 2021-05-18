@@ -58,11 +58,11 @@ typedef  int (*ReadMemoryDelegate)(uint64_t, char*, int32_t);
 typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, uint64_t, int32_t, uint64_t, int32_t, ReadMemoryDelegate);
 typedef  void (*DisposeDelegate)(PVOID);
 typedef  RetCode (*GetLocalVariableNameAndScope)(PVOID, int32_t, int32_t, BSTR*, uint32_t*, uint32_t*);
-typedef  RetCode (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint64_t, PVOID);
+typedef  RetCode (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, PVOID);
+typedef  RetCode (*GetNextSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, uint32_t*, int32_t*);
 typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
 typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, int32_t, PVOID, int32_t, PVOID, PVOID*);
 typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID, int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*);
-typedef  RetCode (*HasSourceLocationDelegate)(PVOID, mdMethodDef);
 typedef  RetCode (*GetMethodLastIlOffsetDelegate)(PVOID, mdMethodDef, uint32_t*);
 typedef  RetCode (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int32_t*);
 typedef  RetCode (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int32_t*, BSTR*);
@@ -80,10 +80,10 @@ LoadSymbolsForModuleDelegate loadSymbolsForModuleDelegate = nullptr;
 DisposeDelegate disposeDelegate = nullptr;
 GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate = nullptr;
 GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate = nullptr;
+GetNextSequencePointByILOffsetDelegate getNextSequencePointByILOffsetDelegate = nullptr;
 GetStepRangesFromIPDelegate getStepRangesFromIPDelegate = nullptr;
 GetModuleMethodsRangesDelegate getModuleMethodsRangesDelegate = nullptr;
 ResolveBreakPointsDelegate resolveBreakPointsDelegate = nullptr;
-HasSourceLocationDelegate hasSourceLocationDelegate = nullptr;
 GetMethodLastIlOffsetDelegate getMethodLastIlOffsetDelegate = nullptr;
 GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate = nullptr;
 ParseExpressionDelegate parseExpressionDelegate = nullptr;
@@ -261,10 +261,10 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetNextSequencePointByILOffset", (void **)&getNextSequencePointByILOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetModuleMethodsRanges", (void **)&getModuleMethodsRangesDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "ResolveBreakPoints", (void **)&resolveBreakPointsDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "HasSourceLocation", (void **)&hasSourceLocationDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetMethodLastIlOffset", (void **)&getMethodLastIlOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodsSteppingInfo", (void **)&getAsyncMethodsSteppingInfoDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate)) &&
@@ -284,10 +284,10 @@ void Init(const std::string &coreClrPath)
                               disposeDelegate &&
                               getLocalVariableNameAndScopeDelegate &&
                               getSequencePointByILOffsetDelegate &&
+                              getNextSequencePointByILOffsetDelegate &&
                               getStepRangesFromIPDelegate &&
                               getModuleMethodsRangesDelegate &&
                               resolveBreakPointsDelegate &&
-                              hasSourceLocationDelegate &&
                               getMethodLastIlOffsetDelegate &&
                               getAsyncMethodsSteppingInfoDelegate &&
                               parseExpressionDelegate &&
@@ -339,10 +339,10 @@ void Shutdown()
     disposeDelegate = nullptr;
     getLocalVariableNameAndScopeDelegate = nullptr;
     getSequencePointByILOffsetDelegate = nullptr;
+    getNextSequencePointByILOffsetDelegate = nullptr;
     getStepRangesFromIPDelegate = nullptr;
     getModuleMethodsRangesDelegate = nullptr;
     resolveBreakPointsDelegate = nullptr;
-    hasSourceLocationDelegate = nullptr;
     getMethodLastIlOffsetDelegate = nullptr;
     getAsyncMethodsSteppingInfoDelegate = nullptr;
     parseExpressionDelegate = nullptr;
@@ -356,7 +356,7 @@ void Shutdown()
     sysFreeStringDelegate = nullptr;
 }
 
-HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG64 ilOffset, SequencePoint *sequencePoint)
+HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 ilOffset, SequencePoint *sequencePoint)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
     if (!getSequencePointByILOffsetDelegate || !pSymbolReaderHandle || !sequencePoint)
@@ -364,6 +364,24 @@ HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef method
 
     // Sequence points with startLine equal to 0xFEEFEE marker are filtered out on the managed side.
     RetCode retCode = getSequencePointByILOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset, sequencePoint);
+
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
+}
+
+HRESULT GetNextSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 ilOffset, ULONG32 &ilCloseOffset, bool *noUserCodeFound)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!getNextSequencePointByILOffsetDelegate || !pSymbolReaderHandle)
+        return E_FAIL;
+
+    int32_t NoUserCodeFound = 0;
+
+    // Sequence points with startLine equal to 0xFEEFEE marker are filtered out on the managed side.
+    RetCode retCode = getNextSequencePointByILOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset, &ilCloseOffset, &NoUserCodeFound);
+
+    if (noUserCodeFound)
+        *noUserCodeFound = NoUserCodeFound == 1;
+
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
@@ -403,16 +421,6 @@ HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, mdMethodDef met
     return S_OK;
 }
 
-bool HasSourceLocation(PVOID pSymbolReaderHandle, mdMethodDef methodToken)
-{
-    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!hasSourceLocationDelegate || !pSymbolReaderHandle)
-        return false;
-
-    RetCode retCode = hasSourceLocationDelegate(pSymbolReaderHandle, methodToken);
-    return retCode == RetCode::OK;
-}
-
 HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
@@ -426,7 +434,7 @@ HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken
 HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, int32_t constrTokensNum, PVOID constrTokens, int32_t normalTokensNum, PVOID normalTokens, PVOID *data)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getModuleMethodsRangesDelegate || !pSymbolReaderHandle || !constrTokens || !normalTokens || !data)
+    if (!getModuleMethodsRangesDelegate || !pSymbolReaderHandle || (constrTokensNum && !constrTokens) || (normalTokensNum && !normalTokens) || !data)
         return E_FAIL;
 
     RetCode retCode = getModuleMethodsRangesDelegate(pSymbolReaderHandle, constrTokensNum, constrTokens, normalTokensNum, normalTokens, data);

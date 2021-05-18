@@ -240,14 +240,14 @@ namespace NetCoreDbg
         }
 
         /// <summary>
-        /// Returns source line number and source file name for given IL offset and method token.
+        /// Find current user code sequence point by IL offset.
         /// </summary>
         /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
         /// <param name="methodToken">method token</param>
         /// <param name="ilOffset">IL offset</param>
         /// <param name="sequencePoint">sequence point return</param>
         /// <returns>"Ok" if information is available</returns>
-        private static RetCode GetSequencePointByILOffset(IntPtr symbolReaderHandle, int methodToken, long ilOffset, out DbgSequencePoint sequencePoint)
+        private static RetCode GetSequencePointByILOffset(IntPtr symbolReaderHandle, int methodToken, uint ilOffset, out DbgSequencePoint sequencePoint)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
             sequencePoint.document = IntPtr.Zero;
@@ -272,14 +272,14 @@ namespace NetCoreDbg
                     if (found && point.Offset > ilOffset)
                         break;
 
-                    if (!point.IsHidden)
+                    if (point.StartLine != 0 && point.StartLine != SequencePoint.HiddenLine)
                     {
                         nearestPoint = point;
                         found = true;
                     }
                 }
 
-                if (!found || nearestPoint.StartLine == 0)
+                if (!found)
                     return RetCode.Fail;
 
                 var fileName = reader.GetString(reader.GetDocument(nearestPoint.Document).Name);
@@ -300,32 +300,46 @@ namespace NetCoreDbg
         }
 
         /// <summary>
-        /// Check, that method have user code in method's body.
+        /// Find IL offset for next close user code sequence point by IL offset.
         /// </summary>
-        /// <param name="assemblyPath">file path of the assembly or null if the module is in-memory or dynamic</param>
+        /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
         /// <param name="methodToken">method token</param>
-        /// <returns>"Ok" if method have at least one line of user code</returns>
-        internal static RetCode HasSourceLocation(IntPtr symbolReaderHandle, int methodToken)
+        /// <param name="ilOffset">IL offset</param>
+        /// <param name="sequencePoint">sequence point return</param>
+        /// <param name="noUserCodeFound">return 1 in case all sequence points checked and no user code was found, otherwise return 0</param>
+        /// <returns>"Ok" if information is available</returns>
+        private static RetCode GetNextSequencePointByILOffset(IntPtr symbolReaderHandle, int methodToken, uint ilOffset, out uint ilCloseOffset, out int noUserCodeFound)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            ilCloseOffset = 0;
+            noUserCodeFound = 0;
 
             try
             {
                 GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
                 MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
-                foreach (SequencePoint p in GetSequencePointCollection(methodToken, reader))
+                SequencePointCollection sequencePoints = GetSequencePointCollection(methodToken, reader);
+
+                foreach (SequencePoint point in sequencePoints)
                 {
-                    if (p.StartLine != 0 && p.StartLine != SequencePoint.HiddenLine)
+                    if (point.StartLine == 0 || point.StartLine == SequencePoint.HiddenLine)
+                        continue;
+
+                    if (point.Offset >= ilOffset)
+                    {
+                        ilCloseOffset = (uint)point.Offset;
                         return RetCode.OK;
+                    }
                 }
+
+                noUserCodeFound = 1;
+                return RetCode.Fail;
             }
             catch
             {
                 return RetCode.Exception;
             }
-
-            return RetCode.Fail;
         }
 
         /// <summary>

@@ -138,10 +138,13 @@ class Breakpoints
 
     HRESULT ResolveBreakpoint(ICorDebugModule *pModule, ManagedBreakpoint &bp);
 
-    HRESULT ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &bp);
+    typedef std::vector<std::pair<ICorDebugModule*,mdMethodDef> > ResolvedFBP;
+    HRESULT AddFunctionBreakpoint(ManagedFunctionBreakpoint &fbp, ResolvedFBP &fbpResolved);
+    HRESULT ResolveFunctionBreakpointInModule(ICorDebugModule *pModule, ManagedFunctionBreakpoint &fbp);
     HRESULT ResolveFunctionBreakpoint(ManagedFunctionBreakpoint &fbp);
 
     bool m_stopAtEntry;
+    bool m_justMyCode;
     mdMethodDef m_entryPoint;
     ToRelease<ICorDebugFunctionBreakpoint> m_entryBreakpoint;
 
@@ -165,7 +168,7 @@ class Breakpoints
 
 public:
     Breakpoints(std::shared_ptr<Modules> &sharedModules) :
-        m_sharedModules(sharedModules), m_nextBreakpointId(1), m_stopAtEntry(false), m_entryPoint(mdMethodDefNil) {}
+        m_sharedModules(sharedModules), m_nextBreakpointId(1), m_stopAtEntry(false), m_justMyCode(true), m_entryPoint(mdMethodDefNil) {}
 
     HRESULT HitBreakpoint(
         IDebugger *debugger,
@@ -202,6 +205,8 @@ public:
 
     HRESULT BreakpointActivate(uint32_t id, bool act);
     HRESULT AllBreakpointsActivate(bool act);
+
+    void SetJustMyCode(bool enable) { m_justMyCode = enable; };
 };
 
 } // namespace netcoredbg
