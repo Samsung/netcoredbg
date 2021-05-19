@@ -675,9 +675,14 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     // and all next events one by one will transport each exception.
     // For "GC unsafe mode" or "Optimized code" we cannot invoke CreateEval() function.
 
-    HRESULT Status = S_OK;
+    HRESULT Status;
     std::string excType, excModule;
-    IfFailRet(GetExceptionInfo(pThread, excType, excModule));
+    if (FAILED(Status = GetExceptionInfo(pThread, excType, excModule)))
+    {
+        excType = "unknown exception";
+        excModule = "unknown module";
+        LOGI("Can't get exception info: %s", errormessage(Status));
+    }
 
     ExceptionBreakMode mode;
     m_debugger.m_uniqueBreakpoints->GetExceptionBreakMode(mode, "*");
@@ -689,7 +694,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
         // TODO why we mixing debugger's output with user application output???
         std::string text = "Exception thrown: '" + excType + "' in " + excModule + "\n";
         m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, {&text[0], text.size()}, "target-exception");
-        IfFailRet(pAppDomain->Continue(0));
+        pAppDomain->Continue(0);
         return S_OK;
     }
 
@@ -711,8 +716,8 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
     std::string message;
     WCHAR fieldName[] = W("_message\0");
     ToRelease<ICorDebugValue> pExceptionValue;
-    IfFailRet(pThread->GetCurrentException(&pExceptionValue));
-    IfFailRet(PrintStringField(pExceptionValue, fieldName, message));
+    if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)))
+        PrintStringField(pExceptionValue, fieldName, message);
 
     ToRelease<ICorDebugFrame> pActiveFrame;
     if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
