@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Diagnostics;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
@@ -11,6 +12,11 @@ namespace NetcoreDbgTest.Script
     {
         public void Prepare(string caller_trace)
         {
+            // Explicitly enable JMC for this test.
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-gdb-set just-my-code 1").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+
             Assert.Equal(MIResultClass.Done,
                          MIDebugger.Request("-file-exec-and-symbols " + ControlInfo.CorerunPath).Class,
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
@@ -169,6 +175,19 @@ namespace NetcoreDbgTest.Script
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void EnableBreakpoint(string caller_trace, string bpName)
+        {
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
+
+            Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            var lbp = (LineBreakpoint)bp;
+
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-break-insert -f " + lbp.FileName + ":" + lbp.NumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
         {
             ControlInfo = controlInfo;
@@ -258,6 +277,12 @@ namespace MITestBreakpoint
                              Context.MIDebugger.Request("14-break-delete " + Context.id8).Class,
                              @"__FILE__:__LINE__");
 
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR2");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR3");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR4");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR5");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -276,6 +301,12 @@ namespace MITestBreakpoint
             TestFuncBreakpointCond2(100);
             TestFuncBreakpointDelete();
             Console.WriteLine("Hello World!");      Label.Breakpoint("BREAK2");
+
+            test_attr_func1();
+            test_attr_func2();
+            test_attr_func3();
+            ctest_attr1.test_func();
+            ctest_attr2.test_func();
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;
@@ -340,6 +371,37 @@ namespace MITestBreakpoint
 
         static void TestFuncBreakpointDelete()
         {
+        }
+
+        [DebuggerStepThroughAttribute()]
+        static void test_attr_func1()
+        {                                                           Label.Breakpoint("BREAK_ATTR1");
+        }
+
+        [DebuggerNonUserCodeAttribute()]
+        static void test_attr_func2()
+        {                                                           Label.Breakpoint("BREAK_ATTR2");
+        }
+
+        [DebuggerHiddenAttribute()]
+        static void test_attr_func3()
+        {                                                           Label.Breakpoint("BREAK_ATTR3");
+        }
+    }
+
+    [DebuggerStepThroughAttribute()]
+    class ctest_attr1
+    {
+        public static void test_func()
+        {                                                           Label.Breakpoint("BREAK_ATTR4");
+        }
+    }
+
+    [DebuggerNonUserCodeAttribute()]
+    class ctest_attr2
+    {
+        public static void test_func()
+        {                                                           Label.Breakpoint("BREAK_ATTR5");
         }
     }
 }

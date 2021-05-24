@@ -25,7 +25,6 @@
     <ProjectReference Include="..\MITestBreakpoint\MITestBreakpoint.csproj" />
     <ProjectReference Include="..\MITestEnv\MITestEnv.csproj" />
     <ProjectReference Include="..\MITestGDB\MITestGDB.csproj" />
-    <ProjectReference Include="..\MITestExecFinish\MITestExecFinish.csproj" />
     <ProjectReference Include="..\MITestExecAbort\MITestExecAbort.csproj" />
     <ProjectReference Include="..\MITestExecInt\MITestExecInt.csproj" />
     <ProjectReference Include="..\MITestHandshake\MITestHandshake.csproj" />
@@ -38,6 +37,10 @@
     <ProjectReference Include="..\MITestEnum\MITestEnum.csproj" />
     <ProjectReference Include="..\MITestAsyncStepping\MITestAsyncStepping.csproj" />
     <ProjectReference Include="..\MITestBreak\MITestBreak.csproj" />
+    <ProjectReference Include="..\MITestBreakpointToModule\MITestBreakpointToModule.csproj" />
+    <ProjectReference Include="..\MITestNoJMCNoFilterStepping\MITestNoJMCNoFilterStepping.csproj" />
+    <ProjectReference Include="..\MITestNoJMCBreakpoint\MITestNoJMCBreakpoint.csproj" />
+    <ProjectReference Include="..\MITestNoJMCAsyncStepping\MITestNoJMCAsyncStepping.csproj" />
     <ProjectReference Include="..\VSCodeExampleTest\VSCodeExampleTest.csproj" />
     <ProjectReference Include="..\VSCodeTestBreakpoint\VSCodeTestBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeTestFuncBreak\VSCodeTestFuncBreak.csproj" />
@@ -56,7 +59,9 @@
     <ProjectReference Include="..\VSCodeTestEnum\VSCodeTestEnum.csproj" />
     <ProjectReference Include="..\VSCodeTestAsyncStepping\VSCodeTestAsyncStepping.csproj" />
     <ProjectReference Include="..\VSCodeTestBreak\VSCodeTestBreak.csproj" />
-    <ProjectReference Include="..\MITestBreakpointToModule\MITestBreakpointToModule.csproj" />
+    <ProjectReference Include="..\VSCodeTestNoJMCNoFilterStepping\VSCodeTestNoJMCNoFilterStepping.csproj" />
+    <ProjectReference Include="..\VSCodeTestNoJMCBreakpoint\VSCodeTestNoJMCBreakpoint.csproj" />
+    <ProjectReference Include="..\VSCodeTestNoJMCAsyncStepping\VSCodeTestNoJMCAsyncStepping.csproj" />
   </ItemGroup>
 
 </Project>

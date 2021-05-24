@@ -27,7 +27,6 @@ namespace XUnitTests
         [InlineData("MITestException", "Program.cs")]
         [InlineData("MITestEnv", "Program.cs")]
         [InlineData("MITestGDB", "Program.cs")]
-        [InlineData("MITestExecFinish", "Program.cs")]
         [InlineData("MITestExecAbort", "Program.cs")]
         [InlineData("MITestExecInt", "Program.cs")]
         [InlineData("MITestHandshake", "Program.cs")]
@@ -41,6 +40,9 @@ namespace XUnitTests
         [InlineData("MITestBreak", "Program.cs")]
         [InlineData("MITestBreakpointToModule", "Program.cs")]
         [InlineData("MITestAsyncStepping", "Program.cs")]
+        [InlineData("MITestNoJMCNoFilterStepping", "Program.cs")]
+        [InlineData("MITestNoJMCBreakpoint", "Program.cs")]
+        [InlineData("MITestNoJMCAsyncStepping", "Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestFuncBreak", "Program.cs")]
@@ -59,6 +61,9 @@ namespace XUnitTests
         [InlineData("VSCodeTestEnum", "Program.cs")]
         [InlineData("VSCodeTestAsyncStepping", "Program.cs")]
         [InlineData("VSCodeTestBreak", "Program.cs")]
+        [InlineData("VSCodeTestNoJMCNoFilterStepping", "Program.cs")]
+        [InlineData("VSCodeTestNoJMCBreakpoint", "Program.cs")]
+        [InlineData("VSCodeTestNoJMCAsyncStepping", "Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             // Explicit encoding setup, since system console encoding could be not utf8 (Windows OS).

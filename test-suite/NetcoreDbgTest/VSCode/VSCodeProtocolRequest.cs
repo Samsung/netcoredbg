@@ -51,6 +51,8 @@ namespace NetcoreDbgTest.VSCode
         public Dictionary<string, string> env;
         public string console;
         public bool stopAtEntry;
+        public bool ?justMyCode;
+        public bool ?enableStepFiltering;
         public string internalConsoleOptions;
         public string __sessionId;
     }

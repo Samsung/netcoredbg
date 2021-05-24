@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
@@ -35,6 +36,7 @@ namespace NetcoreDbgTest.Script
             launchRequest.arguments.cwd = "";
             launchRequest.arguments.console = "internalConsole";
             launchRequest.arguments.stopAtEntry = true;
+            launchRequest.arguments.justMyCode = true; // Explicitly enable JMC for this test.
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";
             launchRequest.arguments.__sessionId = Guid.NewGuid().ToString();
             Assert.True(VSCodeDebugger.Request(launchRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
@@ -247,14 +249,59 @@ namespace VSCodeTestBreakpoint
             Label.Checkpoint("bp5_test", "finish", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp5");
+
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR1");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR2");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR3");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR4");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK_ATTR5");
+                Context.SetBreakpoints(@"__FILE__:__LINE__");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
+
+            test_attr_func1();
+            test_attr_func2();
+            test_attr_func3();
+            ctest_attr1.test_func();
+            ctest_attr2.test_func();
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasExit(@"__FILE__:__LINE__");
                 Context.DebuggerExit(@"__FILE__:__LINE__");
             });
+        }
+
+        [DebuggerStepThroughAttribute()]
+        static void test_attr_func1()
+        {                                                           Label.Breakpoint("BREAK_ATTR1");
+        }
+
+        [DebuggerNonUserCodeAttribute()]
+        static void test_attr_func2()
+        {                                                           Label.Breakpoint("BREAK_ATTR2");
+        }
+
+        [DebuggerHiddenAttribute()]
+        static void test_attr_func3()
+        {                                                           Label.Breakpoint("BREAK_ATTR3");
+        }
+    }
+
+    [DebuggerStepThroughAttribute()]
+    class ctest_attr1
+    {
+        public static void test_func()
+        {                                                           Label.Breakpoint("BREAK_ATTR4");
+        }
+    }
+
+    [DebuggerNonUserCodeAttribute()]
+    class ctest_attr2
+    {
+        public static void test_func()
+        {                                                           Label.Breakpoint("BREAK_ATTR5");
         }
     }
 }

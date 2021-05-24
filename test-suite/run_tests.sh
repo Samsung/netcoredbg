@@ -12,7 +12,6 @@ ALL_TEST_NAMES=(
     "MITestException"
     "MITestEnv"
     "MITestGDB"
-    "MITestExecFinish"
     "MITestExecAbort"
     "MITestExecInt"
     "MITestHandshake"
@@ -26,6 +25,9 @@ ALL_TEST_NAMES=(
     "MITestAsyncStepping"
     "MITestBreak"
     "MITestBreakpointToModule"
+    "MITestNoJMCNoFilterStepping"
+    "MITestNoJMCBreakpoint"
+    "MITestNoJMCAsyncStepping"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -44,6 +46,9 @@ ALL_TEST_NAMES=(
     "VSCodeTestEnum"
     "VSCodeTestAsyncStepping"
     "VSCodeTestBreak"
+    "VSCodeTestNoJMCNoFilterStepping"
+    "VSCodeTestNoJMCBreakpoint"
+    "VSCodeTestNoJMCAsyncStepping"
 )
 
 # Skipped tests:

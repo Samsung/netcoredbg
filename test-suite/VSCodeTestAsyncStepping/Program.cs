@@ -3,6 +3,7 @@ using System.IO;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.VSCode;
@@ -37,6 +38,7 @@ namespace NetcoreDbgTest.Script
             launchRequest.arguments.cwd = "";
             launchRequest.arguments.console = "internalConsole";
             launchRequest.arguments.stopAtEntry = true;
+            launchRequest.arguments.justMyCode = true; // Explicitly enable JMC for this test.
             launchRequest.arguments.internalConsoleOptions = "openOnSessionStart";
             launchRequest.arguments.__sessionId = Guid.NewGuid().ToString();
             Assert.True(VSCodeDebugger.Request(launchRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
@@ -246,8 +248,6 @@ namespace VSCodeTestAsyncStepping
 
             Label.Checkpoint("step_out_func1_check", "step_in_func2", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasStep(@"__FILE__:__LINE__", "step_func1");
-                Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "step_func2");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -257,8 +257,6 @@ namespace VSCodeTestAsyncStepping
 
             Label.Checkpoint("step_out_func2_check", "step_in_func3_cycle1", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasStep(@"__FILE__:__LINE__", "step_func2");
-                Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle1");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -269,15 +267,8 @@ namespace VSCodeTestAsyncStepping
 
             Label.Checkpoint("step_out_func3_check_cycle1", "step_in_func3_cycle2", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle1");
-                Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle2");
                 Context.StepIn(@"__FILE__:__LINE__");
-            });
-            Label.Checkpoint("step_out_func3_check_cycle2", "step_whenall", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle2");
-                Context.StepOver(@"__FILE__:__LINE__");
             });
 
             // WhenAll
@@ -286,7 +277,7 @@ namespace VSCodeTestAsyncStepping
             await Task.WhenAll(t1, t2);                          Label.Breakpoint("step_whenall_3");
             Console.WriteLine(t1.Result + t2.Result);            Label.Breakpoint("step_whenall_4");
 
-            Label.Checkpoint("step_whenall", "finish", (Object context) => {
+            Label.Checkpoint("step_whenall", "test_attr1", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "step_whenall_1");
                 Context.StepOver(@"__FILE__:__LINE__");
@@ -295,6 +286,38 @@ namespace VSCodeTestAsyncStepping
                 Context.WasStep(@"__FILE__:__LINE__", "step_whenall_3");
                 Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "step_whenall_4");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            // Test debugger attribute on methods with JMC enabled.
+
+            await test_attr_func1();                                        Label.Breakpoint("test_attr_func1");
+            await test_attr_func2();                                        Label.Breakpoint("test_attr_func2");
+            await test_attr_func3();                                        Label.Breakpoint("test_attr_func3");
+
+            Label.Checkpoint("test_attr1", "test_attr2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func3");
+                Context.StepIn(@"__FILE__:__LINE__");
+            });
+
+            // Test debugger attribute on class with JMC enabled.
+
+            await ctest_attr1.test_func();                                  Label.Breakpoint("test_attr_class1_func");
+            await ctest_attr2.test_func();                                  Label.Breakpoint("test_attr_class2_func");
+            Console.WriteLine("Test debugger attribute on methods end.");   Label.Breakpoint("test_attr_end");
+
+            Label.Checkpoint("test_attr2", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_class1_func");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_class2_func");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_end");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
 
@@ -356,6 +379,7 @@ namespace VSCodeTestAsyncStepping
                 Context.StepOver(@"__FILE__:__LINE__");
             });
         Label.Breakpoint("test_func2_step4");}
+
         static async Task test_func3()
         {                                                       Label.Breakpoint("test_func3_step1");
 
@@ -403,7 +427,7 @@ namespace VSCodeTestAsyncStepping
                 Context.WasStep(@"__FILE__:__LINE__", "test_func3_step4");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
-            Label.Checkpoint("func3_step3_cycle2", "step_out_func3_check_cycle2", (Object context) => {
+            Label.Checkpoint("func3_step3_cycle2", "step_whenall", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "test_func3_step4");
                 Context.StepOut(@"__FILE__:__LINE__");
@@ -422,6 +446,42 @@ namespace VSCodeTestAsyncStepping
             {
                 return AddWord(Word);
             });
+        }
+
+        [DebuggerStepThroughAttribute()]
+        static async Task test_attr_func1()
+        {
+            await Task.Delay(1500);
+        }
+
+        [DebuggerNonUserCodeAttribute()]
+        static async Task test_attr_func2()
+        {
+            await Task.Delay(1500);
+        }
+
+        [DebuggerHiddenAttribute()]
+        static async Task test_attr_func3()
+        {
+            await Task.Delay(1500);
+        }
+    }
+
+    [DebuggerStepThroughAttribute()]
+    class ctest_attr1
+    {
+        public static async Task test_func()
+        {
+            await Task.Delay(1500);
+        }
+    }
+
+    [DebuggerNonUserCodeAttribute()]
+    class ctest_attr2
+    {
+        public static async Task test_func()
+        {
+            await Task.Delay(1500);
         }
     }
 }
