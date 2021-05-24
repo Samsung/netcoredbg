@@ -12,7 +12,7 @@
 #include <set>
 #include <mutex>
 #include <memory>
-#include "protocols/protocol.h"
+#include "interfaces/types.h"
 #include "utils/string_view.h"
 #include "utils/torelease.h"
 
@@ -20,7 +20,7 @@ namespace netcoredbg
 {
 using Utility::string_view;
 
-typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFunctionBreakpointCallback;
+typedef std::function<HRESULT(ICorDebugModule *, mdMethodDef &)> ResolveFuncBreakpointCallback;
 
 struct DebuggerAttribute
 {
@@ -133,7 +133,7 @@ class Modules
     static HRESULT ResolveMethodInModule(
         ICorDebugModule *pModule,
         const std::string &funcName,
-        ResolveFunctionBreakpointCallback cb);
+        ResolveFuncBreakpointCallback cb);
 
     static HRESULT ForEachMethod(ICorDebugModule *pModule, std::function<bool(const std::string&, mdMethodDef&)>);
 
@@ -200,14 +200,15 @@ public:
     static HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
     static std::string GetModuleFileName(ICorDebugModule *pModule);
 
-    // This function strips directory path from file name.
-    static std::string GetFileName(const std::string &path);
-
     HRESULT ResolveBreakpoint(
         /*in*/ CORDB_ADDRESS modAddress,
-        /*in,out*/ std::string &filename,
+        /*in*/ std::string filename,
+        /*out*/ unsigned &fullname_index,
         /*in*/ int sourceLine,
         /*out*/ std::vector<resolved_bp_t> &resolvedPoints);
+
+    HRESULT GetSourceFullPathByIndex(unsigned index, std::string &fullPath);
+    HRESULT GetIndexBySourceFullPath(std::string fullPath, unsigned &index);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
 
@@ -227,18 +228,18 @@ public:
         const std::string &Name,
         bool isFullPath);
 
-    HRESULT ResolveFunctionInAny(
+    HRESULT ResolveFuncBreakpointInAny(
         const std::string &module,
         bool &module_checked,
         const std::string &funcname,
-        ResolveFunctionBreakpointCallback cb);
+        ResolveFuncBreakpointCallback cb);
 
-    HRESULT ResolveFunctionInModule(
+    HRESULT ResolveFuncBreakpointInModule(
         ICorDebugModule *pModule,
         const std::string &module,
         bool &module_checked,
         std::string &funcname,
-        ResolveFunctionBreakpointCallback cb);
+        ResolveFuncBreakpointCallback cb);
 
     HRESULT GetStepRangeFromCurrentIP(
         ICorDebugThread *pThread,

@@ -16,6 +16,7 @@
 #include "utils/dynlibs.h"
 #include "utils/utf.h"
 #include "utils/rwlock.h"
+#include "utils/filesystem.h"
 
 
 #ifdef FEATURE_PAL

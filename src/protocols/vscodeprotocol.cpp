@@ -474,12 +474,12 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "setBreakpoints", [this](const json &arguments, json &body){
         HRESULT Status;
 
-        std::vector<SourceBreakpoint> srcBreakpoints;
+        std::vector<LineBreakpoint> lineBreakpoints;
         for (auto &b : arguments.at("breakpoints"))
-            srcBreakpoints.emplace_back(std::string(), b.at("line"), b.value("condition", std::string()));
+            lineBreakpoints.emplace_back(std::string(), b.at("line"), b.value("condition", std::string()));
 
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_sharedDebugger->SetBreakpoints(arguments.at("source").at("path"), srcBreakpoints, breakpoints));
+        IfFailRet(m_sharedDebugger->SetLineBreakpoints(arguments.at("source").at("path"), lineBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;
 
@@ -673,7 +673,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     { "setFunctionBreakpoints", [this](const json &arguments, json &body) {
         HRESULT Status = S_OK;
 
-        std::vector<FunctionBreakpoint> funcBreakpoints;
+        std::vector<FuncBreakpoint> funcBreakpoints;
         for (auto &b : arguments.at("breakpoints"))
         {
             std::string module("");
@@ -701,7 +701,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         }
 
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_sharedDebugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+        IfFailRet(m_sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;
 

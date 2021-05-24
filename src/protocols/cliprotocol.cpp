@@ -723,42 +723,43 @@ void CLIProtocol::Cleanup()
 {
     lock_guard lock(m_mutex);
 
-    m_breakpoints.clear();
+    m_lineBreakpoints.clear();
+    m_funcBreakpoints.clear();
 }
 
-HRESULT CLIProtocol::SetBreakpoint(
+HRESULT CLIProtocol::SetLineBreakpoint(
     const std::string &module,
     const std::string &filename,
     int linenum,
     const std::string &condition,
     Breakpoint &breakpoint)
 {
-    std::vector<SourceBreakpoint> srcBreakpoints;
+    std::vector<LineBreakpoint> lineBreakpoints;
 
     {
       lock_guard lock(m_mutex);
 
-      auto &breakpointsInSource = m_breakpoints[filename];
+      auto &breakpointsInSource = m_lineBreakpoints[filename];
       for (auto it : breakpointsInSource)
-          srcBreakpoints.push_back(it.second);
+          lineBreakpoints.push_back(it.second);
     }
 
-    srcBreakpoints.emplace_back(module, linenum, condition);
+    lineBreakpoints.emplace_back(module, linenum, condition);
 
     HRESULT Status;
     std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_sharedDebugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
+    IfFailRet(m_sharedDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints));
 
-    // Note, SetBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "srcBreakpoints".
+    // Note, SetLineBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "lineBreakpoints".
     breakpoint = breakpoints.back();
 
-    // FIXME: m_breakpoints might be changed during call to m_sharedDebugger->SetBreakpoints
-    auto &breakpointsInSource = m_breakpoints[filename];
-    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(srcBreakpoints.back())));
+    // FIXME: m_lineBreakpoints might be changed during call to m_sharedDebugger->SetSoueceBreakpoints
+    auto &breakpointsInSource = m_lineBreakpoints[filename];
+    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(lineBreakpoints.back())));
     return S_OK;
 }
 
-HRESULT CLIProtocol::SetFunctionBreakpoint(
+HRESULT CLIProtocol::SetFuncBreakpoint(
     const std::string &module,
     const std::string &funcname,
     const std::string &params,
@@ -766,7 +767,7 @@ HRESULT CLIProtocol::SetFunctionBreakpoint(
     Breakpoint &breakpoint)
 {
     HRESULT Status;
-    std::vector<FunctionBreakpoint> funcBreakpoints;
+    std::vector<FuncBreakpoint> funcBreakpoints;
 
     {
       lock_guard lock(m_mutex);
@@ -777,9 +778,9 @@ HRESULT CLIProtocol::SetFunctionBreakpoint(
     funcBreakpoints.emplace_back(module, funcname, params, condition);
 
     std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_sharedDebugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+    IfFailRet(m_sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
 
-    // Note, SetFunctionBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
+    // Note, SetFuncBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
     breakpoint = breakpoints.back();
 
     lock_guard lock(m_mutex);
@@ -787,17 +788,17 @@ HRESULT CLIProtocol::SetFunctionBreakpoint(
     return S_OK;
 }
 
-void CLIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
+void CLIProtocol::DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
-    std::forward_list<std::pair<const std::string&, std::vector<SourceBreakpoint> > > defer_args;
+    std::forward_list<std::pair<const std::string&, std::vector<LineBreakpoint> > > defer_args;
 
     {
       unique_lock lock(m_mutex);
 
-      for (auto &breakpointsIter : m_breakpoints)
+      for (auto &breakpointsIter : m_lineBreakpoints)
       {
         std::size_t initialSize = breakpointsIter.second.size();
-        std::vector<SourceBreakpoint> remainingBreakpoints;
+        std::vector<LineBreakpoint> remainingBreakpoints;
 
         for (auto it = breakpointsIter.second.begin(); it != breakpointsIter.second.end();)
         {
@@ -821,13 +822,13 @@ void CLIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
     for (const auto& each : defer_args)
     {
         std::vector<Breakpoint> tmpBreakpoints;
-        m_sharedDebugger->SetBreakpoints(each.first, each.second, tmpBreakpoints);
+        m_sharedDebugger->SetLineBreakpoints(each.first, each.second, tmpBreakpoints);
     }
 }
 
-void CLIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids)
+void CLIProtocol::DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
-    std::vector<FunctionBreakpoint> remainingFuncBreakpoints;
+    std::vector<FuncBreakpoint> remainingFuncBreakpoints;
 
     {
       lock_guard lock(m_mutex);
@@ -849,7 +850,7 @@ void CLIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &
     }
 
     std::vector<Breakpoint> tmpBreakpoints;
-    m_sharedDebugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
+    m_sharedDebugger->SetFuncBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
 
@@ -1055,7 +1056,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
         struct LineBreak lb;
 
         if (ProtocolUtils::ParseBreakpoint(args, lb)
-            && SUCCEEDED(SetBreakpoint(lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
+            && SUCCEEDED(SetLineBreakpoint(lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
             Status = S_OK;
     }
     else if (bt == BreakType::FuncBreak)
@@ -1063,7 +1064,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
         struct FuncBreak fb;
 
         if (ProtocolUtils::ParseBreakpoint(args, fb)
-            && SUCCEEDED(SetFunctionBreakpoint(fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
+            && SUCCEEDED(SetFuncBreakpoint(fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
             Status = S_OK;
     }
 
@@ -1119,8 +1120,8 @@ HRESULT CLIProtocol::doCommand<CommandTag::Delete>(const std::vector<std::string
         if (ok)
             ids.insert(id);
     }
-    DeleteBreakpoints(ids);
-    DeleteFunctionBreakpoints(ids);
+    DeleteLineBreakpoints(ids);
+    DeleteFuncBreakpoints(ids);
     return S_OK;
 }
 

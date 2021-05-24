@@ -81,12 +81,17 @@ add_custom_command(
 )
 
 set(netcoredbg_SRC
+    debugger/breakpoint_break.cpp
+    debugger/breakpoint_entry.cpp
+    debugger/breakpoints_exception.cpp
+    debugger/breakpoints_func.cpp
+    debugger/breakpoints_line.cpp
     debugger/breakpoints.cpp
+    debugger/breakpointutils.cpp
     debugger/evalhelpers.cpp
     debugger/evaluator.cpp
     debugger/evalwaiter.cpp
     debugger/evalutils.cpp
-    debugger/exceptionbreakpointstorage.cpp
     debugger/frames.cpp
     debugger/managedcallback.cpp
     debugger/manageddebugger.cpp
@@ -97,6 +102,7 @@ set(netcoredbg_SRC
     debugger/valueprint.cpp
     debugger/variables.cpp
     debugger/waitpid.cpp
+    interfaces/types.cpp
     managed/interop.cpp
     metadata/jmc.cpp
     metadata/modules.cpp
@@ -104,7 +110,6 @@ set(netcoredbg_SRC
     protocols/cliprotocol.cpp
     protocols/protocol_utils.cpp
     protocols/miprotocol.cpp
-    protocols/protocol.cpp
     protocols/tokenizer.cpp
     protocols/vscodeprotocol.cpp
     utils/utf.cpp

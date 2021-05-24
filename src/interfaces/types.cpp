@@ -1,12 +1,15 @@
-// Copyright (C) 2020 Samsung Electronics Co., Ltd.
+// Copyright (c) 2020 Samsung Electronics Co., LTD
+// Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#pragma once
-#include <cstddef>
-#include <utility>
-#include <vector>
-#include <limits>
 #include <algorithm>
+#include <vector>
+#include <tuple>
+#include <mutex>
+#include <cstddef> // ptrdiff_t
+#include "interfaces/types.h"
+
+// Important! All "interfaces" code must not depends from other debugger's code.
 
 namespace netcoredbg
 {
@@ -138,4 +141,107 @@ private:
     }
 };
 
-} // ::netcoredbg
+// This is helper class which simplifies implementation of singleton classes.
+//
+// Usage example:
+//   1) define dictinct type of singleton: typedef Singleton<YourType> YourSingleton;
+//   2) to access your singleton use expression: YourSingleton::instance().operations...
+//
+template <typename T> struct Singleton
+{
+    static T& instance()
+    {
+        static T val;
+        return val;
+    }
+};
+
+// ThreadId == 0 is invalid for Win32 API and PAL library.
+/*static*/ const ThreadId ThreadId::Invalid {InvalidValue};
+
+/*static*/ const ThreadId ThreadId::AllThreads {AllThreadsValue};
+
+namespace
+{
+    struct FramesList
+    {
+        typedef IndexedStorage<unsigned, std::tuple<ThreadId, FrameLevel> > ListType;
+
+        struct ScopeGuard
+        {
+            ScopeGuard(FramesList& f) : frames_list(f) { frames_list.mutex.lock(); }
+
+            ~ScopeGuard()  { frames_list.mutex.unlock(); }
+
+            ListType* operator->() const { return &frames_list.list; }
+
+        private:
+            FramesList& frames_list;
+        };
+
+        ScopeGuard get()
+        {
+            return *this;
+        }
+
+    private:
+        std::mutex mutex;
+        ListType list;
+    };
+
+    // This singleton holds list of frames accessible by index value,
+    // this list expires every time when program continues execution.
+    typedef Singleton<FramesList> KnownFrames;
+}
+
+FrameId::FrameId(ThreadId thread, FrameLevel level)
+: m_id(KnownFrames::instance().get()->emplace(thread, level).first->first)
+{
+}
+
+FrameId::FrameId(int n) : m_id(n) {}
+
+ThreadId FrameId::getThread() const noexcept
+{
+    if (*this)
+    {
+        auto list = KnownFrames::instance().get();
+        auto it = list->find(m_id);
+        if (it != list->end())
+        {
+            return std::get<0>(it->second);
+        }
+    }
+    return {};
+}
+
+
+FrameLevel FrameId::getLevel() const noexcept
+{
+    if (*this)
+    {
+        auto list = KnownFrames::instance().get();
+        auto it = list->find(m_id);
+        if (it !=list->end())
+        {
+            return std::get<1>(it->second);
+        }
+    }
+    return {};
+}
+
+/*static*/ void FrameId::invalidate()
+{
+    KnownFrames::instance().get()->clear();
+}
+
+
+static std::string GetFileName(const std::string &path)
+{
+    std::size_t i = path.find_last_of("/\\");
+    return i == std::string::npos ? path : path.substr(i + 1);
+}
+
+Source::Source(const std::string &path) : name(GetFileName(path)), path(path) {}
+
+} // namespace netcoredbg

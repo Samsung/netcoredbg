@@ -56,8 +56,8 @@ private:
     std::vector<std::string> m_execArgs;
 
     std::unordered_map<std::string, Variable> m_vars;
-    std::unordered_map<std::string, std::unordered_map<uint32_t, SourceBreakpoint> > m_breakpoints;
-    std::unordered_map<uint32_t, FunctionBreakpoint> m_funcBreakpoints;
+    std::unordered_map<std::string, std::unordered_map<uint32_t, LineBreakpoint> > m_lineBreakpoints;
+    std::unordered_map<uint32_t, FuncBreakpoint> m_funcBreakpoints;
 
 #ifdef _MSC_VER
     void Printf(_Printf_format_string_ const char *fmt, ...);
@@ -74,12 +74,12 @@ private:
     HRESULT PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output);
     HRESULT PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
     HRESULT ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
-    HRESULT SetBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
-    HRESULT SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
-    HRESULT SetBreakpointCondition(uint32_t id, const std::string &condition);
-    HRESULT SetFunctionBreakpointCondition(uint32_t id, const std::string &condition);
-    void DeleteBreakpoints(const std::unordered_set<uint32_t> &ids);
-    void DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids);
+    HRESULT SetLineBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
+    HRESULT SetFuncBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
+    HRESULT SetLineBreakpointCondition(uint32_t id, const std::string &condition);
+    HRESULT SetFuncBreakpointCondition(uint32_t id, const std::string &condition);
+    void DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids);
+    void DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids);
     HRESULT InsertExceptionBreakpoints(const ExceptionBreakMode &mode, const std::vector<std::string>& names, std::string &output);
     HRESULT DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids, std::string &output);
 };

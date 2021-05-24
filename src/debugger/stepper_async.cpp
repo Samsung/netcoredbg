@@ -330,7 +330,7 @@ HRESULT AsyncStepper::ManagedCallbackStepComplete()
         m_asyncStep.reset(nullptr);
     m_asyncStepMutex.unlock();
 
-    return S_FALSE; // S_FAIL - no error, but steppers not affect on callback
+    return S_FALSE; // S_FALSE - no error, but steppers not affect on callback
 }
 
 HRESULT AsyncStepper::DisableAllSteppers()

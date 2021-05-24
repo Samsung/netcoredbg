@@ -6,11 +6,10 @@
 
 #include "cor.h"
 
-// For `HRESULT` definition
 #ifdef FEATURE_PAL
 #include <pal_mstypes.h>
 #else
-#include <windows.h>
+#include <wtypes.h>
 #include "palclr.h"
 #endif
 

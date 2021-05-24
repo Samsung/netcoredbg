@@ -50,30 +50,11 @@ private:
     void WaitProcessExited();
     HRESULT CheckNoProcess();
 
-    struct FullyQualifiedIlOffset_t
-    {
-        CORDB_ADDRESS modAddress = 0;
-        mdMethodDef methodToken = 0;
-        ULONG32 ilOffset = 0;
-
-        void Reset()
-        {
-            modAddress = 0;
-            methodToken = 0;
-            ilOffset = 0;
-        }
-    };
-
     std::mutex m_lastStoppedMutex;
     ThreadId m_lastStoppedThreadId;
-    FullyQualifiedIlOffset_t m_lastStoppedIlOffset;
-
-    std::mutex m_lastUnhandledExceptionThreadIdsMutex;
-    std::set<ThreadId> m_lastUnhandledExceptionThreadIds;
 
     void SetLastStoppedThread(ICorDebugThread *pThread);
     void SetLastStoppedThreadId(ThreadId threadId);
-    HRESULT GetFullyQualifiedIlOffset(const ThreadId &pThread, FullyQualifiedIlOffset_t &fullyQualifiedIlOffset);
 
     std::mutex m_stopCounterMutex;
     int m_stopCounter;
@@ -89,7 +70,6 @@ private:
     std::vector<std::string> m_execArgs;
     std::string m_cwd;
     std::map<std::string, std::string> m_env;
-    bool m_stopAtEntry;
     bool m_isConfigurationDone;
 
     std::shared_ptr<Threads> m_sharedThreads;
@@ -98,8 +78,8 @@ private:
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     std::unique_ptr<Steppers> m_uniqueSteppers;
-    std::unique_ptr<Breakpoints> m_uniqueBreakpoints;
     std::shared_ptr<Variables> m_sharedVariables;
+    std::unique_ptr<Breakpoints> m_uniqueBreakpoints;
     std::unique_ptr<ManagedCallback> m_managedCallback;
     ToRelease<ICorDebug> m_iCorDebug;
     ToRelease<ICorDebugProcess> m_iCorProcess;
@@ -126,7 +106,7 @@ private:
 
     void Cleanup();
 
-    HRESULT DisableAllBreakpointsAndSteppers();
+    void DisableAllBreakpointsAndSteppers();
     HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
 
     HRESULT GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames);
@@ -163,9 +143,10 @@ public:
     HRESULT Continue(ThreadId threadId) override;
     HRESULT Pause() override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
-    HRESULT SetBreakpoints(const std::string& filename, const std::vector<SourceBreakpoint> &srcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
-    HRESULT SetFunctionBreakpoints(const std::vector<FunctionBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
+    HRESULT SetLineBreakpoints(const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints) override;
+    HRESULT SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT BreakpointActivate(int id, bool act) override;
+    void EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback) override;
     HRESULT AllBreakpointsActivate(bool act) override;
     HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
     HRESULT StepCommand(ThreadId threadId, StepType stepType) override;
@@ -176,20 +157,15 @@ public:
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
     HRESULT SetVariableByExpression(FrameId frameId, const Variable &variable, const std::string &value, std::string &output) override;
     HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) override;
-    HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &output) override;
+    HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
 
     void FindFileNames(string_view pattern, unsigned limit, SearchCallback) override;
     void FindFunctions(string_view pattern, unsigned limit, SearchCallback) override;
     void FindVariables(ThreadId, FrameLevel, string_view pattern, unsigned limit, SearchCallback) override;
 
-    void EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback) override;
-
     // pass some data to debugee stdin
     IDebugger::AsyncResult ProcessStdin(InStream &) override;
-
-private:
-    bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
 };
 
 } // namespace netcoredbg

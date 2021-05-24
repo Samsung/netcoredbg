@@ -7,17 +7,9 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "interfaces/types.h"
 #include "utils/string_view.h"
 #include "utils/streams.h"
-
-// For `HRESULT` definition
-#ifdef FEATURE_PAL
-#include <pal_mstypes.h>
-#else
-#include <windows.h>
-#endif
-
-#include "protocols/protocol.h"
 
 namespace netcoredbg
 {

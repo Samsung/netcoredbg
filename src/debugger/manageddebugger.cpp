@@ -19,13 +19,17 @@
 #include "debugger/evaluator.h"
 #include "debugger/evalwaiter.h"
 #include "debugger/variables.h"
+#include "debugger/breakpoint_break.h"
+#include "debugger/breakpoint_entry.h"
+#include "debugger/breakpoints_exception.h"
+#include "debugger/breakpoints_func.h"
+#include "debugger/breakpoints_line.h"
 #include "debugger/breakpoints.h"
 #include "debugger/manageddebugger.h"
 #include "debugger/managedcallback.h"
 #include "debugger/stepper_simple.h"
 #include "debugger/stepper_async.h"
 #include "debugger/steppers.h"
-#include "valueprint.h"
 #include "managed/interop.h"
 #include "utils/utf.h"
 #include "utils/dynlibs.h"
@@ -47,7 +51,7 @@ namespace netcoredbg
 #ifdef FEATURE_PAL
 
 // as alternative, libuuid should be linked...
-// (the problem is, that in CoreClr > 3.x, in pal/inc/rt/rpc.h,
+// the problem is, that in CoreClr > 3.x, in pal/inc/rt/rpc.h,
 // MIDL_INTERFACE uses DECLSPEC_UUID, which has empty definition.
 extern "C" const IID IID_IUnknown = { 0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 }};
 
@@ -98,35 +102,11 @@ void ManagedDebugger::WaitProcessExited()
         m_processAttachedCV.wait(lock, [this]{return m_processAttachedState == ProcessUnattached;});
 }
 
-HRESULT ManagedDebugger::DisableAllBreakpointsAndSteppers()
+void ManagedDebugger::DisableAllBreakpointsAndSteppers()
 {
-    HRESULT Status;
-
-    // Async stepper could have breakpoints active, disable them first.
-    IfFailRet(m_uniqueSteppers->DisableAllSteppers(m_iCorProcess));
-
-    ToRelease<ICorDebugAppDomainEnum> domains;
-    IfFailRet(m_iCorProcess->EnumerateAppDomains(&domains));
-
-    ICorDebugAppDomain *curDomain;
-    ULONG domainsFetched;
-    while (SUCCEEDED(domains->Next(1, &curDomain, &domainsFetched)) && domainsFetched == 1)
-    {
-        ToRelease<ICorDebugAppDomain> pDomain(curDomain);
-        ToRelease<ICorDebugBreakpointEnum> breakpoints;
-        if (SUCCEEDED(pDomain->EnumerateBreakpoints(&breakpoints)))
-        {
-            ICorDebugBreakpoint *curBreakpoint;
-            ULONG breakpointsFetched;
-            while (SUCCEEDED(breakpoints->Next(1, &curBreakpoint, &breakpointsFetched)) && breakpointsFetched == 1)
-            {
-                ToRelease<ICorDebugBreakpoint> pBreakpoint(curBreakpoint);
-                pBreakpoint->Activate(FALSE);
-            }
-        }
-    }
-
-    return S_OK;
+    m_uniqueSteppers->DisableAllSteppers(m_iCorProcess); // Async stepper could have breakpoints active, disable them first.
+    m_uniqueBreakpoints->DeleteAll();
+    m_uniqueBreakpoints->DisableAll(m_iCorProcess); // Last one, disable all breakpoints on all domains, even if we don't hold them.
 }
 
 void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
@@ -134,55 +114,12 @@ void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
     SetLastStoppedThreadId(getThreadId(pThread));
 }
 
-HRESULT ManagedDebugger::GetFullyQualifiedIlOffset(const ThreadId &threadId, FullyQualifiedIlOffset_t &fullyQualifiedIlOffset)
-{
-    HRESULT Status;
-
-    ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
-
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-    if (pFrame == nullptr)
-        return E_FAIL;
-
-    mdMethodDef methodToken;
-    IfFailRet(pFrame->GetFunctionToken(&methodToken));
-
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    CORDB_ADDRESS modAddress;
-    IfFailRet(pModule->GetBaseAddress(&modAddress));
-
-    ToRelease<ICorDebugILFrame> pILFrame;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
-    ULONG32 ilOffset;
-    CorDebugMappingResult mappingResult;
-    IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
-
-    fullyQualifiedIlOffset.modAddress = modAddress;
-    fullyQualifiedIlOffset.methodToken = methodToken;
-    fullyQualifiedIlOffset.ilOffset = ilOffset;
-
-    return S_OK;
-}
-
 void ManagedDebugger::SetLastStoppedThreadId(ThreadId threadId)
 {
     std::lock_guard<std::mutex> lock(m_lastStoppedMutex);
     m_lastStoppedThreadId = threadId;
 
-    m_lastStoppedIlOffset.Reset();
-
-    if (m_lastStoppedThreadId == ThreadId::AllThreads)
-        return;
-
-    GetFullyQualifiedIlOffset(m_lastStoppedThreadId, m_lastStoppedIlOffset);
+    m_uniqueBreakpoints->SetLastStoppedIlOffset(m_iCorProcess, m_lastStoppedThreadId);
 }
 
 void ManagedDebugger::InvalidateLastStoppedThreadId()
@@ -203,7 +140,6 @@ ManagedDebugger::ManagedDebugger() :
     m_lastStoppedThreadId(ThreadId::AllThreads),
     m_stopCounter(0),
     m_startMethod(StartNone),
-    m_stopAtEntry(false),
     m_isConfigurationDone(false),
     m_sharedThreads(new Threads),
     m_sharedModules(new Modules),
@@ -211,8 +147,8 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedEvalHelpers(new EvalHelpers(m_sharedModules, m_sharedEvalWaiter)),
     m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers)),
     m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
-    m_uniqueBreakpoints(new Breakpoints(m_sharedModules)),
     m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator)),
+    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedVariables, m_sharedEvaluator)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_stepFiltering(true),
@@ -278,10 +214,9 @@ HRESULT ManagedDebugger::Launch(const string &fileExec, const vector<string> &ex
     m_startMethod = StartLaunch;
     m_execPath = fileExec;
     m_execArgs = execArgs;
-    m_stopAtEntry = stopAtEntry;
     m_cwd = cwd;
     m_env = env;
-    m_uniqueBreakpoints->SetStopAtEntry(m_stopAtEntry);
+    m_uniqueBreakpoints->SetStopAtEntry(stopAtEntry);
     return RunIfReady();
 }
 
@@ -802,7 +737,6 @@ HRESULT ManagedDebugger::DetachFromProcess()
 
     if (SUCCEEDED(m_iCorProcess->Stop(0)))
     {
-        m_uniqueBreakpoints->DeleteAllBreakpoints();
         DisableAllBreakpointsAndSteppers();
         m_iCorProcess->Detach();
     }
@@ -889,119 +823,14 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
 }
 
 // VSCode
-HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId,
-    ExceptionInfoResponse &exceptionInfoResponse)
+HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionInfoResponse)
 {
     LogFuncEntry();
-
-    // Are needed to move next line to Exception() callback?
-    assert(int(threadId) != -1);
-
-    HRESULT res = E_FAIL;
-    HRESULT Status = S_OK;
-    bool hasInner = false;
-    Variable varException;
-    ToRelease <ICorDebugValue> evalValue;
-    ToRelease<ICorDebugValue> pExceptionValue;
-    ToRelease<ICorDebugThread> pThread;
-
-    WCHAR message[] = W("_message\0");
-    FrameId frameId;
-
-    std::unique_lock<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
-    if (m_lastUnhandledExceptionThreadIds.find(threadId) != m_lastUnhandledExceptionThreadIds.end()) {
-        lock.unlock();
-        exceptionInfoResponse.breakMode.resetAll();
-    }
-    else {
-        lock.unlock();
-        ExceptionBreakMode mode;
-
-        if ((res = m_uniqueBreakpoints->GetExceptionBreakMode(mode, "*")) && FAILED(res))
-            goto failed;
-
-        exceptionInfoResponse.breakMode = mode;
-    }
-
-    if ((res = m_iCorProcess->GetThread(int(threadId), &pThread)) && FAILED(res))
-        goto failed;
-
-    if ((res = pThread->GetCurrentException(&pExceptionValue)) && FAILED(res)) {
-        LOGE("GetCurrentException() failed, %0x", res);
-        goto failed;
-    }
-
-    PrintStringField(pExceptionValue, message, exceptionInfoResponse.description);
-
-    if ((res = m_sharedVariables->GetExceptionVariable(frameId, pThread, varException)) && FAILED(res))
-        goto failed;
-
-    if (exceptionInfoResponse.breakMode.OnlyUnhandled() || exceptionInfoResponse.breakMode.UserUnhandled()) {
-        exceptionInfoResponse.description = "An unhandled exception of type '" + varException.type +
-            "' occurred in " + varException.module;
-    }
-    else {
-        exceptionInfoResponse.description = "Exception thrown: '" + varException.type +
-            "' in " + varException.module;
-    }
-
-    exceptionInfoResponse.exceptionId = varException.type;
-
-    exceptionInfoResponse.details.evaluateName = varException.name;
-    exceptionInfoResponse.details.typeName = varException.type;
-    exceptionInfoResponse.details.fullTypeName = varException.type;
-
-    if (FAILED(m_sharedEvaluator->getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue, defaultEvalFlags))) {
-        exceptionInfoResponse.details.stackTrace = "<undefined>"; // Evaluating problem entire object
-    }
-    else {
-        PrintValue(evalValue, exceptionInfoResponse.details.stackTrace);
-        ToRelease <ICorDebugValue> evalValueOut;
-        BOOL isNotNull = TRUE;
-
-        ICorDebugValue *evalValueInner = pExceptionValue;
-        while (isNotNull) {
-            if ((res = m_sharedEvaluator->getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut, defaultEvalFlags)) && FAILED(res))
-                goto failed;
-
-            string tmpstr;
-            PrintValue(evalValueOut, tmpstr);
-
-            if (tmpstr.compare("null") == 0)
-                break;
-
-            ToRelease<ICorDebugValue> pValueTmp;
-
-            if ((res = DereferenceAndUnboxValue(evalValueOut, &pValueTmp, &isNotNull)) && FAILED(res))
-                goto failed;
-
-            hasInner = true;
-            ExceptionDetails inner;
-            PrintStringField(evalValueOut, message, inner.message);
-
-            if ((res = m_sharedEvaluator->getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp, defaultEvalFlags)) && FAILED(res))
-                goto failed;
-
-            PrintValue(pValueTmp, inner.stackTrace);
-
-            exceptionInfoResponse.details.innerException.push_back(inner);
-            evalValueInner = evalValueOut;
-        }
-    }
-
-    if (hasInner)
-        exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
-
-    return S_OK;
-
-failed:
-    IfFailRet(res);
-    return res;
+    return m_uniqueBreakpoints->GetExceptionInfoResponse(m_iCorProcess, threadId, exceptionInfoResponse);
 }
 
 // MI
-HRESULT ManagedDebugger::InsertExceptionBreakpoint(const ExceptionBreakMode &mode,
-    const string &name, uint32_t &id)
+HRESULT ManagedDebugger::InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id)
 {
     LogFuncEntry();
     return m_uniqueBreakpoints->InsertExceptionBreakpoint(mode, name, id);
@@ -1012,13 +841,6 @@ HRESULT ManagedDebugger::DeleteExceptionBreakpoint(const uint32_t id)
 {
     LogFuncEntry();
     return m_uniqueBreakpoints->DeleteExceptionBreakpoint(id);
-}
-
-// MI and VSCode
-bool ManagedDebugger::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const string &exceptionName,
-    const ExceptionBreakCategory category)
-{
-    return m_uniqueBreakpoints->MatchExceptionBreakpoint(dwEventType, exceptionName, category);
 }
 
 HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
@@ -1055,23 +877,20 @@ HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
     return pProcess3->SetEnableCustomNotification(pClass, fEnable);
 }
 
-HRESULT ManagedDebugger::SetBreakpoints(
-    const std::string& filename,
-    const std::vector<SourceBreakpoint> &srcBreakpoints,
-    std::vector<Breakpoint> &breakpoints)
+HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
+                                            const std::vector<LineBreakpoint> &lineBreakpoints,
+                                            std::vector<Breakpoint> &breakpoints)
 {
     LogFuncEntry();
 
-    return m_uniqueBreakpoints->SetBreakpoints(m_iCorProcess, filename, srcBreakpoints, breakpoints);
+    return m_uniqueBreakpoints->SetLineBreakpoints(m_iCorProcess, filename, lineBreakpoints, breakpoints);
 }
 
-HRESULT ManagedDebugger::SetFunctionBreakpoints(
-    const std::vector<FunctionBreakpoint> &funcBreakpoints,
-    std::vector<Breakpoint> &breakpoints)
+HRESULT ManagedDebugger::SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints)
 {
     LogFuncEntry();
 
-    return m_uniqueBreakpoints->SetFunctionBreakpoints(m_iCorProcess, funcBreakpoints, breakpoints);
+    return m_uniqueBreakpoints->SetFuncBreakpoints(m_iCorProcess, funcBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::BreakpointActivate(int id, bool act)

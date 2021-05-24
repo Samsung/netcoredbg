@@ -63,7 +63,7 @@ HRESULT SimpleStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain,
 {
     ThreadId threadId(getThreadId(pThread));
 
-    auto stepForcedIgnoreBP = [&] ()
+    auto stepForcedIgnoreBP = [&]()
     {
         {
             std::lock_guard<std::mutex> lock(m_stepMutex);
@@ -96,7 +96,7 @@ HRESULT SimpleStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain,
         return S_OK;  
     }
 
-    return S_FALSE; // S_FAIL - no error, but steppers not affect on callback
+    return S_FALSE; // S_FALSE - no error, but steppers not affect on callback
 }
 
 HRESULT SimpleStepper::ManagedCallbackStepComplete()
@@ -106,7 +106,7 @@ HRESULT SimpleStepper::ManagedCallbackStepComplete()
     m_enabledSimpleStepId = 0;
     m_stepMutex.unlock();
 
-    return S_FALSE; // S_FAIL - no error, but steppers not affect on callback
+    return S_FALSE; // S_FALSE - no error, but steppers not affect on callback
 }
 
 HRESULT SimpleStepper::DisableAllSteppers(ICorDebugProcess *pProcess)

@@ -7,7 +7,7 @@
 #include "cordebug.h"
 
 #include <functional>
-#include "protocols/protocol.h"
+#include "interfaces/types.h"
 
 namespace netcoredbg
 {

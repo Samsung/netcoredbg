@@ -2,6 +2,7 @@
 // See the LICENSE file in the project root for more information.
 
 #pragma once
+#include "utility.h"
 #include "utils/string_view.h"
 
 namespace netcoredbg

@@ -8,6 +8,7 @@
 #include "protocols/miprotocol.h"
 #include "protocols/protocol_utils.h"
 #include "tokenizer.h"
+#include "utils/filesystem.h"
 
 #include <sstream>
 #include <functional>
@@ -283,7 +284,8 @@ HRESULT MIProtocol::FindVar(const std::string &varobjName, Variable &variable)
 void MIProtocol::Cleanup()
 {
     m_vars.clear(); // Important, must be sync with ManagedDebugger m_sharedVariables->Clear()
-    m_breakpoints.clear();
+    m_lineBreakpoints.clear();
+    m_funcBreakpoints.clear();
 }
 
 HRESULT MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output)
@@ -343,7 +345,7 @@ HRESULT MIProtocol::ListChildren(ThreadId threadId, FrameLevel level, int childS
     return PrintChildren(variables, threadId, print_values, has_more, output);
 }
 
-HRESULT MIProtocol::SetBreakpoint(
+HRESULT MIProtocol::SetLineBreakpoint(
     const std::string &module,
     const std::string &filename,
     int linenum,
@@ -352,48 +354,48 @@ HRESULT MIProtocol::SetBreakpoint(
 {
     HRESULT Status;
 
-    auto &breakpointsInSource = m_breakpoints[filename];
-    std::vector<SourceBreakpoint> srcBreakpoints;
+    auto &breakpointsInSource = m_lineBreakpoints[filename];
+    std::vector<LineBreakpoint> lineBreakpoints;
     for (auto it : breakpointsInSource)
-        srcBreakpoints.push_back(it.second);
+        lineBreakpoints.push_back(it.second);
 
-    srcBreakpoints.emplace_back(module, linenum, condition);
+    lineBreakpoints.emplace_back(module, linenum, condition);
 
     std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_sharedDebugger->SetBreakpoints(filename, srcBreakpoints, breakpoints));
+    IfFailRet(m_sharedDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints));
 
-    // Note, SetBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "srcBreakpoints".
+    // Note, SetLineBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "lineBreakpoints".
     breakpoint = breakpoints.back();
-    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(srcBreakpoints.back())));
+    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(lineBreakpoints.back())));
     return S_OK;
 }
 
-HRESULT MIProtocol::SetFunctionBreakpoint(const std::string &module, const std::string &funcname, const std::string &params,
+HRESULT MIProtocol::SetFuncBreakpoint(const std::string &module, const std::string &funcname, const std::string &params,
                                           const std::string &condition, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
-    std::vector<FunctionBreakpoint> funcBreakpoints;
+    std::vector<FuncBreakpoint> funcBreakpoints;
     for (const auto &it : m_funcBreakpoints)
         funcBreakpoints.push_back(it.second);
 
     funcBreakpoints.emplace_back(module, funcname, params, condition);
 
     std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_sharedDebugger->SetFunctionBreakpoints(funcBreakpoints, breakpoints));
+    IfFailRet(m_sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
 
-    // Note, SetFunctionBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
+    // Note, SetFuncBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
     breakpoint = breakpoints.back();
     m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
     return S_OK;
 }
 
-HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condition)
+HRESULT MIProtocol::SetLineBreakpointCondition(uint32_t id, const std::string &condition)
 {
     // For each file
-    for (auto &breakpointsIter : m_breakpoints)
+    for (auto &breakpointsIter : m_lineBreakpoints)
     {
-        std::unordered_map<uint32_t, SourceBreakpoint> &fileBreakpoints = breakpointsIter.second;
+        std::unordered_map<uint32_t, LineBreakpoint> &fileBreakpoints = breakpointsIter.second;
 
         // Find breakpoint with specified id in this file
         const auto &sbIter = fileBreakpoints.find(id);
@@ -404,7 +406,7 @@ HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condi
         sbIter->second.condition = condition;
 
         // Gather all breakpoints in this file
-        std::vector<SourceBreakpoint> existingBreakpoints;
+        std::vector<LineBreakpoint> existingBreakpoints;
         existingBreakpoints.reserve(fileBreakpoints.size());
         for (const auto &it : fileBreakpoints)
             existingBreakpoints.emplace_back(it.second);
@@ -412,13 +414,13 @@ HRESULT MIProtocol::SetBreakpointCondition(uint32_t id, const std::string &condi
         // Update breakpoints data for this file
         const std::string &filename = breakpointsIter.first;
         std::vector<Breakpoint> tmpBreakpoints;
-        return m_sharedDebugger->SetBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
+        return m_sharedDebugger->SetLineBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
     }
 
     return E_FAIL;
 }
 
-HRESULT MIProtocol::SetFunctionBreakpointCondition(uint32_t id, const std::string &condition)
+HRESULT MIProtocol::SetFuncBreakpointCondition(uint32_t id, const std::string &condition)
 {
     const auto &fbIter = m_funcBreakpoints.find(id);
     if (fbIter == m_funcBreakpoints.end())
@@ -426,21 +428,21 @@ HRESULT MIProtocol::SetFunctionBreakpointCondition(uint32_t id, const std::strin
 
     fbIter->second.condition = condition;
 
-    std::vector<FunctionBreakpoint> existingFuncBreakpoints;
+    std::vector<FuncBreakpoint> existingFuncBreakpoints;
     existingFuncBreakpoints.reserve(m_funcBreakpoints.size());
     for (const auto &fb : m_funcBreakpoints)
         existingFuncBreakpoints.emplace_back(fb.second);
 
     std::vector<Breakpoint> tmpBreakpoints;
-    return m_sharedDebugger->SetFunctionBreakpoints(existingFuncBreakpoints, tmpBreakpoints);
+    return m_sharedDebugger->SetFuncBreakpoints(existingFuncBreakpoints, tmpBreakpoints);
 }
 
-void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
+void MIProtocol::DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
-    for (auto &breakpointsIter : m_breakpoints)
+    for (auto &breakpointsIter : m_lineBreakpoints)
     {
         std::size_t initialSize = breakpointsIter.second.size();
-        std::vector<SourceBreakpoint> remainingBreakpoints;
+        std::vector<LineBreakpoint> remainingBreakpoints;
         for (auto it = breakpointsIter.second.begin(); it != breakpointsIter.second.end();)
         {
             if (ids.find(it->first) == ids.end())
@@ -458,14 +460,14 @@ void MIProtocol::DeleteBreakpoints(const std::unordered_set<uint32_t> &ids)
         std::string filename = breakpointsIter.first;
 
         std::vector<Breakpoint> tmpBreakpoints;
-        m_sharedDebugger->SetBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
+        m_sharedDebugger->SetLineBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
     }
 }
 
-void MIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &ids)
+void MIProtocol::DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
     std::size_t initialSize = m_funcBreakpoints.size();
-    std::vector<FunctionBreakpoint> remainingFuncBreakpoints;
+    std::vector<FuncBreakpoint> remainingFuncBreakpoints;
     for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
     {
         if (ids.find(it->first) == ids.end())
@@ -481,7 +483,7 @@ void MIProtocol::DeleteFunctionBreakpoints(const std::unordered_set<uint32_t> &i
         return;
 
     std::vector<Breakpoint> tmpBreakpoints;
-    m_sharedDebugger->SetFunctionBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
+    m_sharedDebugger->SetFuncBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
 HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode, const vector<string>& names, string &output)
@@ -718,7 +720,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
             struct LineBreak lb;
 
             if (ProtocolUtils::ParseBreakpoint(args, lb)
-                && SUCCEEDED(SetBreakpoint(lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
+                && SUCCEEDED(SetLineBreakpoint(lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
                 Status = S_OK;
         }
         else if (bt == BreakType::FuncBreak)
@@ -726,7 +728,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
             struct FuncBreak fb;
 
             if (ProtocolUtils::ParseBreakpoint(args, fb)
-                && SUCCEEDED(SetFunctionBreakpoint(fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
+                && SUCCEEDED(SetFuncBreakpoint(fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
                 Status = S_OK;
         }
 
@@ -746,8 +748,8 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
             if (ok)
                 ids.insert(id);
         }
-        DeleteBreakpoints(ids);
-        DeleteFunctionBreakpoints(ids);
+        DeleteLineBreakpoints(ids);
+        DeleteFuncBreakpoints(ids);
         return S_OK;
     } },
     { "break-condition", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -765,11 +767,11 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
             return E_FAIL;
         }
 
-        HRESULT Status = SetBreakpointCondition(id, args.at(1));
+        HRESULT Status = SetLineBreakpointCondition(id, args.at(1));
         if (SUCCEEDED(Status))
             return Status;
 
-        return SetFunctionBreakpointCondition(id, args.at(1));
+        return SetFuncBreakpointCondition(id, args.at(1));
     } },
     { "exec-step", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return StepCommand(args, output, IDebugger::StepType::STEP_IN);

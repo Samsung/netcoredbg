@@ -18,7 +18,7 @@
 #include "managed/interop.h"
 #include "utils/logger.h"
 #include "utils/utf.h"
-#include "protocols/protocol.h"
+#include "interfaces/types.h"
 
 using std::string;
 using std::vector;

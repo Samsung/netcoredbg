@@ -9,7 +9,7 @@
 #include <mutex>
 #include <set>
 #include <vector>
-#include "protocols/protocol.h"
+#include "interfaces/types.h"
 
 namespace netcoredbg
 {

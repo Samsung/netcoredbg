@@ -130,7 +130,7 @@ static HRESULT PrintEnumValue(ICorDebugValue* pInputValue, BYTE* enumValue, stri
     }
     pMD->CloseEnum(fEnum);
 
-    auto getValue = [&enumUnderlyingType] (const void *data)
+    auto getValue = [&enumUnderlyingType](const void *data)
     {
         switch (enumUnderlyingType)
         {

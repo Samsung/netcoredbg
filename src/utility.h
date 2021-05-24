@@ -78,26 +78,5 @@ template <typename T> struct Singleton
     }
 };
 
-
-// This is helper class, which simplifies creation of custom scalar types
-// (ones, which provide stron typing and disallow mixing with any other scalar types).
-// Basically these types support equality compare operators and operator<
-// (to allow using such types with STL containers).
-//
-template <typename T> struct CustomScalarType
-{
-    friend bool operator==(T a, T b) { return static_cast<typename T::ScalarType>(a) == static_cast<typename T::ScalarType>(b); }
-    template <typename U> friend bool operator==(T a, U b) { return static_cast<typename T::ScalarType>(a) == b; }
-    template <typename U> friend bool operator==(U a, T b) { return a  == static_cast<typename T::ScalarType>(b); }
-    friend bool operator!=(T a, T b) { return !(a == b); }
-    template <typename U> friend bool operator!=(T a, U b) { return !(a == b); }
-    template <typename U> friend bool operator!=(U a, T b) { return !(a == b); }
-
-    bool operator<(const T& other) const
-    {
-        return static_cast<typename T::ScalarType>(static_cast<const T&>(*this)) < static_cast<typename T::ScalarType>(static_cast<const T&>(other));
-    }
-};
-
 } // Utility namespace
 } // namespace netcoredbg

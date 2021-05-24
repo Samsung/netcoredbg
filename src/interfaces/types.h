@@ -4,28 +4,45 @@
 
 #pragma once
 
+#ifdef FEATURE_PAL
+#include <pal_mstypes.h>
+#else
+#include <wtypes.h>
+#include "palclr.h"
+#endif
+
 #include <string>
 #include <tuple>
 #include <vector>
 #include <bitset>
-#include <unordered_map>
 #include <cassert>
 #include <climits>
-#include <new>
-#include "utils/filesystem.h"
-#include "utility.h"
-
-#ifdef FEATURE_PAL
-#include "pal_mstypes.h"
-#endif
 
 namespace netcoredbg
 {
 
-// Types commonly used in the debugger:
+// This is helper class, which simplifies creation of custom scalar types
+// (ones, which provide stron typing and disallow mixing with any other scalar types).
+// Basically these types support equality compare operators and operator<
+// (to allow using such types with STL containers).
+//
+template <typename T> struct CustomScalarType
+{
+    friend bool operator==(T a, T b) { return static_cast<typename T::ScalarType>(a) == static_cast<typename T::ScalarType>(b); }
+    template <typename U> friend bool operator==(T a, U b) { return static_cast<typename T::ScalarType>(a) == b; }
+    template <typename U> friend bool operator==(U a, T b) { return a  == static_cast<typename T::ScalarType>(b); }
+    friend bool operator!=(T a, T b) { return !(a == b); }
+    template <typename U> friend bool operator!=(T a, U b) { return !(a == b); }
+    template <typename U> friend bool operator!=(U a, T b) { return !(a == b); }
+
+    bool operator<(const T& other) const
+    {
+        return static_cast<typename T::ScalarType>(static_cast<const T&>(*this)) < static_cast<typename T::ScalarType>(static_cast<const T&>(other));
+    }
+};
 
 // Process identifier.
-class PID : public Utility::CustomScalarType<PID>
+class PID : public CustomScalarType<PID>
 {	
 public:
     typedef DWORD ScalarType;
@@ -38,7 +55,7 @@ private:
 };
 
 // Data type dedicated to carry thread id.
-class ThreadId : public Utility::CustomScalarType<ThreadId>
+class ThreadId : public CustomScalarType<ThreadId>
 {
     enum SpecialValues
     {
@@ -74,7 +91,7 @@ public:
 };
 
 // Data type dedicated to carry stack frame depth (level).
-class FrameLevel : public Utility::CustomScalarType<FrameLevel>
+class FrameLevel : public CustomScalarType<FrameLevel>
 {
 public:
     typedef int ScalarType;
@@ -94,7 +111,7 @@ private:
 };
 
 // Unique stack frame identifier, which persist until program isn't continued.
-class FrameId : public Utility::CustomScalarType<FrameId>
+class FrameId : public CustomScalarType<FrameId>
 {
 public:
     typedef int ScalarType;
@@ -147,10 +164,6 @@ struct ClrAddr
     ClrAddr() : ilOffset(0), nativeOffset(0), methodToken(0) {}
     bool IsNull() const { return methodToken == 0; }
 };
-
-
-
-
 
 struct StackFrame
 {
@@ -338,7 +351,6 @@ struct Scope
     {}
 };
 
-
 // TODO: Replace strings with enums
 struct VariablePresentationHint
 {
@@ -383,32 +395,32 @@ enum VariablesFilter
     VariablesBoth
 };
 
-struct SourceBreakpoint
+struct LineBreakpoint
 {
     std::string module;
     int line;
     std::string condition;
 
-    SourceBreakpoint(const std::string &module,
-                     int linenum,
-                     const std::string &cond = std::string()) :
+    LineBreakpoint(const std::string &module,
+                   int linenum,
+                   const std::string &cond = std::string()) :
         module(module),
         line(linenum),
         condition(cond)
     {}
 };
 
-struct FunctionBreakpoint
+struct FuncBreakpoint
 {
     std::string module;
     std::string func;
     std::string params;
     std::string condition;
 
-    FunctionBreakpoint(const std::string &module,
-                       const std::string &func,
-                       const std::string &params,
-                       const std::string &cond = std::string()) :
+    FuncBreakpoint(const std::string &module,
+                   const std::string &func,
+                   const std::string &params,
+                   const std::string &cond = std::string()) :
         module(module),
         func(func),
         params(params),
@@ -516,71 +528,6 @@ public:
     ExceptionBreakMode() : category(ExceptionBreakCategory::CLR) {
         flags.set(Flag::F_Unhandled);
     }
-};
-
-// An ExceptionPathSegment represents a segment in a path that is used to match
-// leafs or nodes in a tree of exceptions. If a segment consists of more than
-// one name, it matches the names provided if 'negate' is false or missing
-// or it matches anything except the names provided if 'negate' is true.
-struct ExceptionPathSegment
-{
-    // If false or missing this segment matches the names provided, otherwise
-    // it matches anything except the names provided.
-    bool negate;
-    // Depending on the value of 'negate' the names
-    // that should match or not match.
-    std::vector<std::string> names;
-};
-
-// An ExceptionOptions assigns configuration options to a set of exceptions.
-struct ExceptionOptions
-{
-    // A path that selects a single or multiple exceptions in a tree.
-    // If 'path' is missing, the whole tree is selected.
-    // By convention the first segment of the path is a category that is used to
-    // group exceptions in the UI.
-    std::vector<ExceptionPathSegment> path;
-    // Condition when a thrown exception should result in a break.
-    ExceptionBreakMode breakMode;
-};
-
-// The request configures the debuggers response to thrown exceptions.
-// If an exception is configured to break, a 'stopped' event is fired
-// (with reason 'exception').
-struct SetExceptionBreakpointsRequest
-{
-    // IDs of checked exception options. The set of IDs is returned via the
-    // 'exceptionBreakpointFilters' capability.
-    std::vector<std::string> filters;
-    // Configuration options for selected exceptions.
-    std::vector<ExceptionOptions> exceptionOptions;
-};
-
-struct ExceptionBreakpointsFilter
-{
-    // The internal ID of the filter. This value is passed to the
-    // setExceptionBreakpoints request.
-    std::string filter;
-    // The name of the filter. This will be shown in the UI.
-    std::string label;
-    // Initial value of the filter. If not specified a value 'false' is assumed.
-    bool default_value;
-
-    ExceptionBreakpointsFilter(const std::string &fr, const std::string &ll,
-        bool df = false) : filter(fr), label(ll), default_value(df) {}
-};
-
-struct Capabilities
-{
-    // Available filters or options for the setExceptionBreakpoints request.
-    std::vector<ExceptionBreakpointsFilter> exceptionBreakpointFilters;
-    // The debug adapter supports 'exceptionOptions' on the
-    // setExceptionBreakpoints request.
-    bool supportsExceptionOptions;
-    // The debug adapter supports the 'exceptionInfo' request.
-    bool supportsExceptionInfoRequest;
-    //
-    // ... many other features
 };
 
 struct ExceptionDetails

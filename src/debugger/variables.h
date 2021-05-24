@@ -7,7 +7,8 @@
 #include "cordebug.h"
 
 #include <mutex>
-#include "protocols/protocol.h"
+#include <unordered_map>
+#include "interfaces/types.h"
 #include "utils/torelease.h"
 
 namespace netcoredbg

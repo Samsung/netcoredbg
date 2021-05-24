@@ -9,7 +9,10 @@
 
 #include <functional>
 #include <unordered_set>
-#include "protocols/protocol.h"
+#include <list>
+#include <mutex>
+#include "interfaces/types.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {

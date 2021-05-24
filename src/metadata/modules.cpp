@@ -14,6 +14,7 @@
 #include "utils/platform.h"
 #include "utils/utf.h"
 #include "metadata/typeprinter.h"
+#include "utils/filesystem.h"
 
 namespace netcoredbg
 {
@@ -263,7 +264,7 @@ bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const s
 
 
 HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName,
-                                       ResolveFunctionBreakpointCallback cb)
+                                       ResolveFuncBreakpointCallback cb)
 {
     std::vector<std::string> splittedName = split_on_tokens(funcName, '.');
 
@@ -404,7 +405,7 @@ std::string Modules::GetModuleFileName(ICorDebugModule *pModule)
     return ss.str();
 }
 
-std::string Modules::GetFileName(const std::string &path)
+static std::string GetFileName(const std::string &path)
 {
     std::size_t i = path.find_last_of("/\\");
     return i == std::string::npos ? path : path.substr(i + 1);
@@ -427,10 +428,10 @@ HRESULT Modules::IsModuleHaveSameName(ICorDebugModule *pModule, const std::strin
     return modName == Name ? S_OK : S_FALSE;
 }
 
-HRESULT Modules::ResolveFunctionInAny(const std::string &module,
-                                      bool &module_checked,
-                                      const std::string &funcname,
-                                      ResolveFunctionBreakpointCallback cb)
+HRESULT Modules::ResolveFuncBreakpointInAny(const std::string &module,
+                                            bool &module_checked,
+                                            const std::string &funcname,
+                                            ResolveFuncBreakpointCallback cb)
 {
     bool isFullPath = IsFullPath(module);
     HRESULT Status;
@@ -461,11 +462,8 @@ HRESULT Modules::ResolveFunctionInAny(const std::string &module,
 }
 
 
-HRESULT Modules::ResolveFunctionInModule(ICorDebugModule *pModule,
-                                         const std::string &module,
-                                         bool &module_checked,
-                                         std::string &funcname,
-                                         ResolveFunctionBreakpointCallback cb)
+HRESULT Modules::ResolveFuncBreakpointInModule(ICorDebugModule *pModule, const std::string &module, bool &module_checked,
+                                               std::string &funcname, ResolveFuncBreakpointCallback cb)
 {
     HRESULT Status;
 
@@ -1119,7 +1117,7 @@ HRESULT Modules::ResolveRelativeSourceFileName(std::string &filename)
     return E_FAIL;
 }
 
-HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in,out*/ std::string &filename,
+HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::string filename, /*out*/ unsigned &fullname_index,
                                    /*in*/ int sourceLine, /*out*/ std::vector<resolved_bp_t> &resolvedPoints)
 {
     HRESULT Status;
@@ -1150,10 +1148,7 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in,out*/ s
             return E_FAIL;
     }
 
-#ifdef WIN32
-    // get proper case sensitive full path from module
-    filename = m_sourceIndexToInitialFullPath[findIndex->second];
-#endif
+    fullname_index = findIndex->second;
 
     struct resolved_input_bp_t
     {
@@ -1214,10 +1209,42 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in,out*/ s
     return S_OK;
 }
 
+HRESULT Modules::GetSourceFullPathByIndex(unsigned index, std::string &fullPath)
+{
+    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
+
+    if (m_sourceIndexToPath.size() >= index)
+        return E_FAIL;
+
+#ifndef _WIN32
+    fullPath = m_sourceIndexToPath[index];
+#else
+    fullPath = m_sourceIndexToInitialFullPath[index];
+#endif
+
+    return S_OK;
+}
+
+HRESULT Modules::GetIndexBySourceFullPath(std::string fullPath, unsigned &index)
+{
+#ifdef WIN32
+    HRESULT Status;
+    IfFailRet(Interop::StringToUpper(fullPath));
+#endif
+
+    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
+
+    auto findIndex = m_sourcePathToIndex.find(fullPath);
+    if (findIndex == m_sourcePathToIndex.end())
+        return E_FAIL;
+
+    index = findIndex->second;
+    return S_OK;
+}
+
 void Modules::FindFileNames(string_view pattern, unsigned limit, std::function<void(const char *)> cb)
 {
 #ifdef WIN32
-    HRESULT Status = S_OK;
     std::string uppercase {pattern};
     if (FAILED(Interop::StringToUpper(uppercase)))
         return;
