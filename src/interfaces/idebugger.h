@@ -99,6 +99,8 @@ public:
     virtual HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) = 0;
     virtual HRESULT DeleteExceptionBreakpoint(const uint32_t id) = 0;
     virtual HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string& names, uint32_t &id) = 0;
+    virtual HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) = 0;
+    virtual void FreeUnmanaged(PVOID mem) = 0;
     typedef std::function<void(const char *)> SearchCallback;
     virtual void FindFileNames(string_view pattern, unsigned limit, SearchCallback) = 0;
     virtual void FindFunctions(string_view pattern, unsigned limit, SearchCallback) = 0;

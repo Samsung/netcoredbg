@@ -1313,4 +1313,21 @@ void Modules::FindFunctions(string_view pattern, unsigned limit, std::function<v
     }
 }
 
+HRESULT Modules::GetSource(ICorDebugModule *pModule, const std::string &sourcePath, char** fileBuf, int* fileLen)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+    {
+        return E_FAIL;
+    }
+
+    ModuleInfo &mdInfo = info_pair->second;
+    return Interop::GetSource(mdInfo.m_symbolReaderHandle, sourcePath, (PVOID*)fileBuf, fileLen);
+}
+
 } // namespace netcoredbg

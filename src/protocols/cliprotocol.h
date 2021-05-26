@@ -58,6 +58,11 @@ class CLIProtocol : public IProtocol
     std::unordered_map<std::string, std::unordered_map<uint32_t, LineBreakpoint> > m_lineBreakpoints;
     std::unordered_map<uint32_t, FuncBreakpoint> m_funcBreakpoints;
 
+    FrameId m_frameId;
+    std::string m_sourcePath;
+    std::string m_sourceFile;
+    int m_sourceLine;
+
     // Functor which is called when UI repaint required.
     std::function<void()> m_repaint_fn;
 

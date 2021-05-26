@@ -97,6 +97,7 @@ enum class CLIProtocol::CommandTag
     File,
     Finish,
     Interrupt,
+    List,
     Next,
     Print,
     Quit,
@@ -241,6 +242,9 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
 
     {CommandTag::Interrupt, {}, {}, {{"interrupt"}},
         {{}, "Interrupt program execution, stop all threads."}},
+
+    {CommandTag::List, {}, {}, {{"list", "l"}},
+        {{}, "List source code lines, 5 by default."}},
 
     {CommandTag::Next, {}, {}, {{"next", "n"}},
         {{}, "Step program, through function calls."}},
@@ -873,6 +877,10 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
 
     std::string frameLocation;
     PrintFrameLocation(event.frame, frameLocation);
+    m_sourceFile = event.frame.source.name; 
+    m_sourcePath = event.frame.source.path;
+    m_sourceLine = event.frame.line;
+    m_frameId = event.frame.id;
 
     switch(event.reason)
     {
@@ -1389,6 +1397,18 @@ HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::str
     HRESULT Status;
     IfFailRet(m_sharedDebugger->Pause());
     output = "^done";
+    return S_OK;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> &args, std::string &output)
+{
+    char* fileBuff = NULL;
+    int fileLen = 0;
+
+    m_sharedDebugger->GetSourceFile(m_sourcePath, &fileBuff, &fileLen);
+    printf("%d bytes received at address: [%p]\n%s\n", fileLen, fileBuff, fileBuff);
+    m_sharedDebugger->FreeUnmanaged((PVOID)fileBuff);
     return S_OK;
 }
 

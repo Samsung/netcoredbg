@@ -1076,6 +1076,35 @@ void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointI
 }
 
 
+HRESULT ManagedDebugger::GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen)
+{
+    HRESULT Status;
+
+    if (!m_iCorProcess)
+        return E_FAIL;
+
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_iCorProcess->GetThread(int(GetLastStoppedThreadId()), &pThread));
+
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
+
+    mdMethodDef methodToken;
+    IfFailRet(pFrame->GetFunctionToken(&methodToken));
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+    return m_sharedModules->GetSource(pModule, sourcePath, fileBuf, fileLen);
+}
+
+void ManagedDebugger::FreeUnmanaged(PVOID mem)
+{
+    Interop::CoTaskMemFree(mem);
+}
+
 IDebugger::AsyncResult ManagedDebugger::ProcessStdin(InStream& stream)
 {
     LogFuncEntry();

@@ -66,6 +66,7 @@ typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, int32_t, PVOID, int32_
 typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID, int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*);
 typedef  RetCode (*GetMethodLastIlOffsetDelegate)(PVOID, mdMethodDef, uint32_t*);
 typedef  RetCode (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int32_t*);
+typedef  RetCode (*GetSourceDelegate)(PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  RetCode (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int32_t*, BSTR*);
 typedef  RetCode (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int32_t*, int32_t*, PVOID*);
 typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int32_t*, PVOID*);
@@ -87,6 +88,7 @@ GetModuleMethodsRangesDelegate getModuleMethodsRangesDelegate = nullptr;
 ResolveBreakPointsDelegate resolveBreakPointsDelegate = nullptr;
 GetMethodLastIlOffsetDelegate getMethodLastIlOffsetDelegate = nullptr;
 GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate = nullptr;
+GetSourceDelegate getSourceDelegate = nullptr;
 ParseExpressionDelegate parseExpressionDelegate = nullptr;
 EvalExpressionDelegate evalExpressionDelegate = nullptr;
 RegisterGetChildDelegate registerGetChildDelegate = nullptr;
@@ -268,6 +270,7 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "ResolveBreakPoints", (void **)&resolveBreakPointsDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetMethodLastIlOffset", (void **)&getMethodLastIlOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodsSteppingInfo", (void **)&getAsyncMethodsSteppingInfoDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSource", (void **)&getSourceDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "RegisterGetChild", (void **)&registerGetChildDelegate)) &&
@@ -291,6 +294,7 @@ void Init(const std::string &coreClrPath)
                               resolveBreakPointsDelegate &&
                               getMethodLastIlOffsetDelegate &&
                               getAsyncMethodsSteppingInfoDelegate &&
+                              getSourceDelegate &&
                               parseExpressionDelegate &&
                               evalExpressionDelegate &&
                               registerGetChildDelegate &&
@@ -346,6 +350,7 @@ void Shutdown()
     resolveBreakPointsDelegate = nullptr;
     getMethodLastIlOffsetDelegate = nullptr;
     getAsyncMethodsSteppingInfoDelegate = nullptr;
+    getSourceDelegate = nullptr;
     parseExpressionDelegate = nullptr;
     evalExpressionDelegate = nullptr;
     registerGetChildDelegate = nullptr;
@@ -637,6 +642,13 @@ void CoTaskMemFree(PVOID ptr)
         return;
 
     coTaskMemFreeDelegate(ptr);
+}
+
+HRESULT GetSource(PVOID symbolReaderHandle, std::string fileName, PVOID *data, int32_t *length)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    RetCode retCode = getSourceDelegate(symbolReaderHandle, to_utf16(fileName).c_str(), length, data);
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
 } // namespace Interop

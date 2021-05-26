@@ -156,6 +156,8 @@ public:
     HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) override;
     HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id) override;
     HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
+    HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) override;
+    void FreeUnmanaged(PVOID mem) override;
 
     void FindFileNames(string_view pattern, unsigned limit, SearchCallback) override;
     void FindFunctions(string_view pattern, unsigned limit, SearchCallback) override;

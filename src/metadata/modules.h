@@ -283,6 +283,7 @@ public:
 
     void FindFileNames(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
     void FindFunctions(string_view pattern, unsigned limit, std::function<void(const char *)> cb);
+    HRESULT GetSource(ICorDebugModule *pModule, const std::string &sourcePath, char** fileBuf, int* fileLen);
 
     struct AwaitInfo
     {

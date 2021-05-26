@@ -6,10 +6,13 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
+using System.Linq;
+using System.Text;
 
 namespace NetCoreDbg
 {
@@ -1267,6 +1270,87 @@ namespace NetCoreDbg
             }
 
             return RetCode.OK;
+        }
+
+        /// <summary>
+        /// Get Source Code.
+        /// </summary>
+        /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
+        /// <param name="fileName">source file name</param>
+        /// <param name="length">length of data</param>
+        /// <param name="data">pointer to memory with source code</param>
+        /// <returns>"Ok" if information is available</returns>
+        internal static RetCode GetSource(IntPtr symbolReaderHandle, [MarshalAs(UnmanagedType.LPWStr)] string fileName, out int length, out IntPtr data)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            length = 0;
+            data = IntPtr.Zero;
+            try
+            {
+                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+                MetadataReader mdReader = ((OpenedReader)gch.Target).Reader;
+                foreach (var handle in mdReader.Documents)
+                {
+                    var doc = mdReader.GetDocument(handle);
+                    var docPath = mdReader.GetString(doc.Name);
+                    int docSize = 0;
+                    if (docPath == fileName)
+                    {
+                        MemoryStream ms = GetEmbeddedSource(mdReader, handle, out docSize);
+                        data = Marshal.AllocCoTaskMem(docSize);
+                        Marshal.Copy(ms.ToArray(), 0, data, docSize);
+                        length = docSize;
+                        return RetCode.OK;
+                    }
+                }
+            }
+            catch
+            {
+                if (data != IntPtr.Zero)
+                    Marshal.FreeCoTaskMem(data);
+
+                data = IntPtr.Zero;
+                return RetCode.Exception;
+
+            }
+            return RetCode.Fail;
+        }
+
+        private static readonly Guid guid = new Guid("0E8A571B-6926-466E-B4AD-8AB04611F5FE");
+
+        private static MemoryStream GetEmbeddedSource(MetadataReader reader, DocumentHandle document, out int docSize)
+        {
+            byte[] bytes = (from handle in reader.GetCustomDebugInformation(document)
+                            let cdi = reader.GetCustomDebugInformation(handle)
+                            where reader.GetGuid(cdi.Kind) == guid
+                            select reader.GetBlobBytes(cdi.Value)).SingleOrDefault();
+
+             if (bytes == null)
+            {
+                docSize = 0;
+                return null;
+            }
+
+            docSize = BitConverter.ToInt32(bytes, 0);
+            var stream = new MemoryStream(bytes, sizeof(int), bytes.Length - sizeof(int));
+
+            if (docSize != 0)
+            {
+                var decompressed = new MemoryStream(docSize);
+
+                using (var deflater = new DeflateStream(stream, CompressionMode.Decompress))
+                {
+                    deflater.CopyTo(decompressed);
+                }
+
+                if (decompressed.Length != docSize)
+                {
+                    throw new InvalidDataException();
+                }
+
+                stream = decompressed;
+            }
+            return stream;
         }
     }
 }
