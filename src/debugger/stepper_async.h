@@ -35,11 +35,11 @@ public:
     // Important! Callbacks related methods must control return for succeeded return code.
     // Do not allow debugger API return succeeded (uncontrolled) return code.
     // Bad :
-    //     return pProcess->Continue(0);
+    //     return pThread->GetID(&threadId);
     // Good:
-    //     IfFailRet(pProcess->Continue(0));
+    //     IfFailRet(pThread->GetID(&threadId));
     //     return S_OK;
-    HRESULT ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread);
+    HRESULT ManagedCallbackBreakpoint(ICorDebugThread *pThread);
     HRESULT ManagedCallbackStepComplete();
 
     HRESULT DisableAllSteppers();

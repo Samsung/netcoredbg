@@ -46,9 +46,9 @@ void Breakpoints::SetStopAtEntry(bool enable)
     m_uniqueEntryBreakpoint->SetStopAtEntry(enable);
 }
 
-HRESULT Breakpoints::ManagedCallbackBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, const ThreadId &lastStoppedThreadId)
+HRESULT Breakpoints::ManagedCallbackBreak(ICorDebugThread *pThread, const ThreadId &lastStoppedThreadId)
 {
-    return m_uniqueBreakBreakpoint->ManagedCallbackBreak(pAppDomain, pThread, lastStoppedThreadId);
+    return m_uniqueBreakBreakpoint->ManagedCallbackBreak(pThread, lastStoppedThreadId);
 }
 
 HRESULT Breakpoints::InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id)
@@ -125,22 +125,35 @@ HRESULT Breakpoints::SetLineBreakpoints(ICorDebugProcess *pProcess, const std::s
 
 HRESULT Breakpoints::ManagedCallbackBreakpoint(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, bool &atEntry)
 {
+    // CheckBreakpointHit return:
+    //     S_OK - breakpoint hit
+    //     S_FALSE - no breakpoint hit.
+    // ManagedCallbackBreakpoint return:
+    //     S_OK - callback should be interrupted without event emit
+    //     S_FALSE - callback should not be interrupted and emit stop event
+
     HRESULT Status;
     atEntry = false;
-    if (SUCCEEDED(Status = m_uniqueEntryBreakpoint->ManagedCallbackBreakpoint(pThread, pBreakpoint)) &&
-        Status == S_OK) // S_FALSE - no error, but not affect on callback
+    if (SUCCEEDED(Status = m_uniqueEntryBreakpoint->CheckBreakpointHit(pThread, pBreakpoint)) &&
+        Status == S_OK) // S_FALSE - no breakpoint hit
     {
         atEntry = true;
-        return S_OK;
+        return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)
     }
 
-    if (SUCCEEDED(Status = m_uniqueLineBreakpoints->ManagedCallbackBreakpoint(debugger, pThread, pBreakpoint, breakpoint)) &&
-        Status == S_OK) // S_FALSE - no error, but not affect on callback
+    if (SUCCEEDED(Status = m_uniqueLineBreakpoints->CheckBreakpointHit(debugger, pThread, pBreakpoint, breakpoint)) &&
+        Status == S_OK) // S_FALSE - no breakpoint hit
     {
-        return S_OK;
+        return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)
     }
 
-    return m_uniqueFuncBreakpoints->ManagedCallbackBreakpoint(debugger, pThread, pBreakpoint, breakpoint);
+    if (SUCCEEDED(Status = m_uniqueFuncBreakpoints->CheckBreakpointHit(debugger, pThread, pBreakpoint, breakpoint)) &&
+        Status == S_OK) // S_FALSE - no breakpoint hit
+    {
+        return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)
+    }
+
+    return S_OK; // no breakpoints hit, forced to interrupt this callback
 }
 
 HRESULT Breakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events)

@@ -312,7 +312,7 @@ HRESULT ExceptionBreakpoints::ManagedCallbackException(ICorDebugThread *pThread,
     if (not_matched)
     {
         textOutput = "Exception thrown: '" + excType + "' in " + excModule + "\n";
-        return S_FALSE;
+        return S_OK; // no breakpoints hit, forced to interrupt this callback
     }
 
     std::string details;
@@ -337,8 +337,7 @@ HRESULT ExceptionBreakpoints::ManagedCallbackException(ICorDebugThread *pThread,
     event.text = excType;
     event.description = message.empty() ? details : message;
 
-
-    return S_OK;
+    return S_FALSE; // S_FALSE - breakpoint hit, not affect on callback (callback will emit stop event)
 }
 
 } // namespace netcoredbg

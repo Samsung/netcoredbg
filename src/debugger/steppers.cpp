@@ -84,14 +84,14 @@ HRESULT Steppers::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, ICor
     HRESULT Status;
     // Check async stepping related breakpoints first, since user can't setup breakpoints to await block yield or resume offsets manually,
     // so, async stepping related breakpoints not a part of any user breakpoints related data (that will be checked in separate thread. see code below).
-    IfFailRet(m_asyncStepper->ManagedCallbackBreakpoint(pAppDomain, pThread));
+    IfFailRet(m_asyncStepper->ManagedCallbackBreakpoint(pThread));
     if (Status == S_OK) // S_FALSE - no error, but steppers not affect on callback
         return S_OK;
 
     return m_simpleStepper->ManagedCallbackBreakpoint(pAppDomain, pThread);
 }
 
-HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason)
+HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebugStepReason reason)
 {
     HRESULT Status;
 
@@ -127,7 +127,6 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, IC
             if (g_operatorMethodNames.find(szFunctionName) != g_operatorMethodNames.end())
             {
                 IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
-                pAppDomain->Continue(0);
                 return S_OK;
             }
         }
@@ -147,7 +146,6 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, IC
 
                 iMD->CloseEnum(propEnum);
                 IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
-                pAppDomain->Continue(0);
                 return S_OK;
             }
         }
@@ -164,14 +162,12 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, IC
         if (ipOffset < ilCloseUserCodeOffset || reason == CorDebugStepReason::STEP_RETURN)
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OVER));
-            pAppDomain->Continue(0);
             return S_OK;
         }
     }
     else if (noUserCodeFound)
     {
         IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
-        pAppDomain->Continue(0);
         return S_OK;
     }
     else // Note, in case JMC enabled ManagedCallbackStepComplete() called only for user code.
@@ -185,7 +181,6 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugAppDomain *pAppDomain, IC
         if (HasAttribute(iMD, typeDef, DebuggerAttribute::StepThrough) || HasAttribute(iMD, methodDef, attrNames))
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
-            pAppDomain->Continue(0);
             return S_OK;
         }
     }

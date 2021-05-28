@@ -91,10 +91,7 @@ HRESULT SimpleStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain,
     };
 
     if (stepForcedIgnoreBP())
-    {
-        pAppDomain->Continue(0);
         return S_OK;  
-    }
 
     return S_FALSE; // S_FALSE - no error, but steppers not affect on callback
 }

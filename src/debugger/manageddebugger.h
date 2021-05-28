@@ -56,9 +56,6 @@ private:
     void SetLastStoppedThread(ICorDebugThread *pThread);
     void SetLastStoppedThreadId(ThreadId threadId);
 
-    std::mutex m_stopCounterMutex;
-    int m_stopCounter;
-
     enum StartMethod
     {
         StartNone,

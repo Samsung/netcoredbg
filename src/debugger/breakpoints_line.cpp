@@ -31,7 +31,7 @@ void LineBreakpoints::DeleteAll()
     m_breakpointsMutex.unlock();
 }
 
-HRESULT LineBreakpoints::ManagedCallbackBreakpoint(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
+HRESULT LineBreakpoints::CheckBreakpointHit(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
 {
     HRESULT Status;
     ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;

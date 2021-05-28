@@ -58,7 +58,7 @@ void BreakBreakpoint::SetLastStoppedIlOffset(ICorDebugProcess *pProcess, const T
         GetFullyQualifiedIlOffset(pThread, m_lastStoppedIlOffset);
 }
 
-HRESULT BreakBreakpoint::ManagedCallbackBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, const ThreadId &lastStoppedThreadId)
+HRESULT BreakBreakpoint::ManagedCallbackBreak(ICorDebugThread *pThread, const ThreadId &lastStoppedThreadId)
 {
     HRESULT Status;
     ToRelease<ICorDebugFrame> iCorFrame;
@@ -75,10 +75,7 @@ HRESULT BreakBreakpoint::ManagedCallbackBreak(ICorDebugAppDomain *pAppDomain, IC
         IfFailRet(iCorFunction2->GetJMCStatus(&JMCStatus));
 
         if (JMCStatus == FALSE)
-        {
-            IfFailRet(pAppDomain->Continue(0));
             return S_OK;
-        }
     }
 
     ThreadId threadId(getThreadId(pThread));
@@ -122,7 +119,6 @@ HRESULT BreakBreakpoint::ManagedCallbackBreak(ICorDebugAppDomain *pAppDomain, IC
         lastSP.document != curSP.document)
         return S_FALSE;
 
-    IfFailRet(pAppDomain->Continue(0));
     return S_OK;
 }
 

@@ -28,14 +28,18 @@ public:
     void SetStopAtEntry(bool enable) { m_stopAtEntry = enable; }
     void Delete();
 
+    // Important! Must provide succeeded return code:
+    // S_OK - breakpoint hit
+    // S_FALSE - no breakpoint hit
+    HRESULT CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
+
     // Important! Callbacks related methods must control return for succeeded return code.
     // Do not allow debugger API return succeeded (uncontrolled) return code.
     // Bad :
-    //     return pProcess->Continue(0);
+    //     return pThread->GetID(&threadId);
     // Good:
-    //     IfFailRet(pProcess->Continue(0));
+    //     IfFailRet(pThread->GetID(&threadId));
     //     return S_OK;
-    HRESULT ManagedCallbackBreakpoint(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
     HRESULT ManagedCallbackLoadModule(ICorDebugModule *pModule);
 
 private:

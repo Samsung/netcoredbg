@@ -2,7 +2,6 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
-#include <thread>
 #include "debugger/stepper_simple.h"
 #include "debugger/stepper_async.h"
 #include "debugger/threads.h"
@@ -414,9 +413,8 @@ HRESULT AsyncStepper::SetBreakpointIntoNotifyDebuggerOfWaitCompletion()
 }
 
 // Check if breakpoint is part of async stepping routine and do next action for async stepping if need.
-// [in] pAppDomain - object that represents the application domain that contains the breakpoint.
 // [in] pThread - object that represents the thread that contains the breakpoint.
-HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
+HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugThread *pThread)
 {
     ToRelease<ICorDebugFrame> pFrame;
     mdMethodDef methodToken;
@@ -458,7 +456,6 @@ HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, 
         // Update stepping request to new thread/frame_count that we are continuing on
         // so continuing with normal step-out works as expected.
         m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT);
-        pAppDomain->Continue(0);
         return S_OK;
     }
 
@@ -495,7 +492,6 @@ HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, 
         if (m_asyncStep->m_threadId != getThreadId(pThread))
         {
             // Parallel thread execution, skip it and continue async step routine.
-            pAppDomain->Continue(0);
             return S_OK;
         }
 
@@ -520,38 +516,16 @@ HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, 
         m_asyncStep->m_Breakpoint->iCorFuncBreakpoint = iCorFuncBreakpoint.Detach();
         m_asyncStep->m_Breakpoint->ilOffset = m_asyncStep->m_resume_offset;
 
-        ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);
-        pAppDomain->AddRef();
-        ToRelease<ICorDebugThread> callbackThread(pThread);
-        pThread->AddRef();
-        ToRelease<ICorDebugFrame> callbackFrame(pFrame.GetPtr());
-        pFrame->AddRef();
-
-        // Switch to separate thread, since we must return runtime's callback call before evaluation start.
-        std::thread([this](
-            ICorDebugAppDomain *pAppDomain,
-            ICorDebugThread *pThread,
-            ICorDebugFrame *pFrame)
+        CorDebugHandleType handleType;
+        ToRelease<ICorDebugValue> iCorValue;
+        if (FAILED(GetAsyncIdReference(pThread, pFrame, m_sharedEvalHelpers.get(), &iCorValue)) ||
+            FAILED(iCorValue->QueryInterface(IID_ICorDebugHandleValue , (LPVOID*) &m_asyncStep->m_iCorHandleValueAsyncId)) ||
+            FAILED(m_asyncStep->m_iCorHandleValueAsyncId->GetHandleType(&handleType)) ||
+            handleType != HANDLE_STRONG) // Note, we need only strong handle here, that will not invalidated on continue-break.
         {
-            const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
-
-            CorDebugHandleType handleType;
-            ToRelease<ICorDebugValue> iCorValue;
-            if (FAILED(GetAsyncIdReference(pThread, pFrame, m_sharedEvalHelpers.get(), &iCorValue)) ||
-                FAILED(iCorValue->QueryInterface(IID_ICorDebugHandleValue , (LPVOID*) &m_asyncStep->m_iCorHandleValueAsyncId)) ||
-                FAILED(m_asyncStep->m_iCorHandleValueAsyncId->GetHandleType(&handleType)) ||
-                handleType != HANDLE_STRONG) // Note, we need only strong handle here, that will not invalidated on continue-break.
-            {
-                m_asyncStep->m_iCorHandleValueAsyncId.Free();
-                LOGE("Could not setup handle with async ID for await block");
-            }
-
-            pAppDomain->Continue(0);
-        },
-            std::move(callbackAppDomain),
-            std::move(callbackThread),
-            std::move(callbackFrame)
-        ).detach();
+            m_asyncStep->m_iCorHandleValueAsyncId.Free();
+            LOGE("Could not setup handle with async ID for await block");
+        }
     }
     else
     {
@@ -563,59 +537,36 @@ HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugAppDomain *pAppDomain, 
         {
             m_simpleStepper->SetupStep(pThread, m_asyncStep->m_initialStepType);
             m_asyncStep.reset(nullptr);
-            pAppDomain->Continue(0);
             return S_OK;
         }
 
-        ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);
-        pAppDomain->AddRef();
-        ToRelease<ICorDebugThread> callbackThread(pThread);
-        pThread->AddRef();
-        ToRelease<ICorDebugFrame> callbackFrame(pFrame.GetPtr());
-        pFrame->AddRef();
+        ToRelease<ICorDebugValue> pValueRef;
+        CORDB_ADDRESS currentAsyncId = 0;
+        ToRelease<ICorDebugValue> pValue;
+        BOOL isNull = FALSE;
+        if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_sharedEvalHelpers.get(), &pValueRef)) &&
+            SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
+            pValue->GetAddress(&currentAsyncId);
+        else
+            LOGE("Could not calculate current async ID for await block");
 
-        // Switch to separate thread, since we must return runtime's callback call before evaluation start.
-        std::thread([this](
-            ICorDebugAppDomain *pAppDomain,
-            ICorDebugThread *pThread,
-            ICorDebugFrame *pFrame)
+        CORDB_ADDRESS prevAsyncId = 0;
+        ToRelease<ICorDebugValue> pDereferencedValue;
+        ToRelease<ICorDebugValue> pValueAsyncId;
+        if (m_asyncStep->m_iCorHandleValueAsyncId && // Note, we could fail with m_iCorHandleValueAsyncId on previous breakpoint by some reason.
+            SUCCEEDED(m_asyncStep->m_iCorHandleValueAsyncId->Dereference(&pDereferencedValue)) &&
+            SUCCEEDED(DereferenceAndUnboxValue(pDereferencedValue, &pValueAsyncId, &isNull)) && !isNull)
+            pValueAsyncId->GetAddress(&prevAsyncId);
+        else
+            LOGE("Could not calculate previous async ID for await block");
+
+        // Note, 'currentAsyncId' and 'prevAsyncId' is 64 bit addresses, in our case can't be 0.
+        // If we can't detect proper thread - continue stepping for this thread.
+        if (currentAsyncId == prevAsyncId || currentAsyncId == 0 || prevAsyncId == 0)
         {
-            const std::lock_guard<std::mutex> lock_async(m_asyncStepMutex);
-
-            ToRelease<ICorDebugValue> pValueRef;
-            CORDB_ADDRESS currentAsyncId = 0;
-            ToRelease<ICorDebugValue> pValue;
-            BOOL isNull = FALSE;
-            if (SUCCEEDED(GetAsyncIdReference(pThread, pFrame, m_sharedEvalHelpers.get(), &pValueRef)) &&
-                SUCCEEDED(DereferenceAndUnboxValue(pValueRef, &pValue, &isNull)) && !isNull)
-                pValue->GetAddress(&currentAsyncId);
-            else
-                LOGE("Could not calculate current async ID for await block");
-
-            CORDB_ADDRESS prevAsyncId = 0;
-            ToRelease<ICorDebugValue> pDereferencedValue;
-            ToRelease<ICorDebugValue> pValueAsyncId;
-            if (m_asyncStep->m_iCorHandleValueAsyncId && // Note, we could fail with m_iCorHandleValueAsyncId on previous breakpoint by some reason.
-                SUCCEEDED(m_asyncStep->m_iCorHandleValueAsyncId->Dereference(&pDereferencedValue)) &&
-                SUCCEEDED(DereferenceAndUnboxValue(pDereferencedValue, &pValueAsyncId, &isNull)) && !isNull)
-                pValueAsyncId->GetAddress(&prevAsyncId);
-            else
-                LOGE("Could not calculate previous async ID for await block");
-
-            // Note, 'currentAsyncId' and 'prevAsyncId' is 64 bit addresses, in our case can't be 0.
-            // If we can't detect proper thread - continue stepping for this thread.
-            if (currentAsyncId == prevAsyncId || currentAsyncId == 0 || prevAsyncId == 0)
-            {
-                m_simpleStepper->SetupStep(pThread, m_asyncStep->m_initialStepType);
-                m_asyncStep.reset(nullptr);
-            }
-
-            pAppDomain->Continue(0);
-        },
-            std::move(callbackAppDomain),
-            std::move(callbackThread),
-            std::move(callbackFrame)
-        ).detach();
+            m_simpleStepper->SetupStep(pThread, m_asyncStep->m_initialStepType);
+            m_asyncStep.reset(nullptr);
+        }
     }
 
     return S_OK;

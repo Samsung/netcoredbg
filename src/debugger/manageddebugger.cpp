@@ -138,7 +138,6 @@ ThreadId ManagedDebugger::GetLastStoppedThreadId()
 ManagedDebugger::ManagedDebugger() :
     m_processAttachedState(ProcessUnattached),
     m_lastStoppedThreadId(ThreadId::AllThreads),
-    m_stopCounter(0),
     m_startMethod(StartNone),
     m_isConfigurationDone(false),
     m_sharedThreads(new Threads),
@@ -286,27 +285,24 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
         return E_UNEXPECTED;
     }
 
-    BOOL running = FALSE;
-    HRESULT Status;
-    IfFailRet(m_iCorProcess->IsRunning(&running));
-    if (running)
+    if (m_managedCallback->IsRunning())
     {
         LOGW("Can't 'Step', process already running.");
         return E_FAIL;
     }
 
+    HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
     IfFailRet(m_uniqueSteppers->SetupStep(pThread, stepType));
 
-    if (FAILED(Status = m_iCorProcess->Continue(0)))
+    m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
+    FrameId::invalidate(); // Clear all created during break frames.
+    m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
+
+    // Note, process continue must be after event emitted, since we could get new stop event from queue here.
+    if (FAILED(Status = m_managedCallback->Continue(m_iCorProcess)))
         LOGE("Continue failed: %s", errormessage(Status));
-    else
-    {
-        m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
-        FrameId::invalidate(); // Clear all created during break frames.
-        m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
-    }
 
     return Status;
 }
@@ -325,23 +321,20 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
         return E_UNEXPECTED;
     }
 
-    BOOL running = FALSE;
-    HRESULT Status;
-    IfFailRet(m_iCorProcess->IsRunning(&running));
-    if (running)
+    if (m_managedCallback->IsRunning())
     {
         LOGI("Can't 'Continue', process already running.");
         return S_OK; // Send 'OK' response, but don't generate continue event.
     }
 
-    if (FAILED(Status = m_iCorProcess->Continue(0)))
+    m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
+    FrameId::invalidate(); // Clear all created during break frames.
+    m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
+
+    HRESULT Status;
+    // Note, process continue must be after event emitted, since we could get new stop event from queue here.
+    if (FAILED(Status = m_managedCallback->Continue(m_iCorProcess)))
         LOGE("Continue failed: %s", errormessage(Status));
-    else
-    {
-        m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
-        FrameId::invalidate(); // Clear all created during break frames.
-        m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
-    }
 
     return Status;
 }
@@ -353,63 +346,7 @@ HRESULT ManagedDebugger::Pause()
     if (!m_iCorProcess)
         return E_FAIL;
 
-    // The debugger maintains a stop counter. When the counter goes to zero, the controller is resumed.
-    // Each call to Stop or each dispatched callback increments the counter.
-    // Each call to ICorDebugController::Continue decrements the counter.
-    BOOL running = FALSE;
-    HRESULT Status;
-    IfFailRet(m_iCorProcess->IsRunning(&running));
-    if (!running)
-        return S_OK;
-
-    IfFailRet(m_iCorProcess->Stop(0));
-
-    // Same logic as provide vsdbg in case of pause during stepping.
-    m_uniqueSteppers->DisableAllSteppers(m_iCorProcess);
-
-    // For Visual Studio, we have to report a thread ID in async stop event.
-    // We have to find a thread which has a stack frame with valid location in its stack trace.
-    std::vector<Thread> threads;
-    GetThreads(threads);
-
-    ThreadId lastStoppedId = GetLastStoppedThreadId();
-
-    // Reorder threads so that last stopped thread is checked first
-    for (size_t i = 0; i < threads.size(); ++i)
-    {
-        if (threads[i].id == lastStoppedId)
-        {
-            std::swap(threads[0], threads[i]);
-            break;
-        }
-    }
-
-    // Now get stack trace for each thread and find a frame with valid source location.
-    for (const Thread& thread : threads)
-    {
-        int totalFrames = 0;
-        std::vector<StackFrame> stackFrames;
-
-        if (FAILED(GetStackTrace(thread.id, FrameLevel(0), 0, stackFrames, totalFrames)))
-            continue;
-
-        for (const StackFrame& stackFrame : stackFrames)
-        {
-            if (stackFrame.source.IsNull())
-                continue;
-
-            StoppedEvent event(StopPause, thread.id);
-            event.frame = stackFrame;
-            SetLastStoppedThreadId(thread.id);
-            m_sharedProtocol->EmitStoppedEvent(event);
-            m_ioredirect.async_cancel();
-            return Status;
-        }
-    }
-
-    m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, ThreadId::Invalid));
-    m_ioredirect.async_cancel();
-    return Status;
+    return m_managedCallback->Pause(m_iCorProcess);
 }
 
 HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)

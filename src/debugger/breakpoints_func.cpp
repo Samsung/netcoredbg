@@ -29,7 +29,7 @@ void FuncBreakpoints::DeleteAll()
     m_breakpointsMutex.unlock();
 }
 
-HRESULT FuncBreakpoints::ManagedCallbackBreakpoint(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
+HRESULT FuncBreakpoints::CheckBreakpointHit(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
 {
     if (m_funcBreakpoints.empty())
         return S_FALSE; // Stopped at break, but no breakpoints.

@@ -28,6 +28,326 @@
 namespace netcoredbg
 {
 
+bool ManagedCallback::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
+{
+    HRESULT Status;
+    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackBreakpoint(pAppDomain, pThread)) &&
+        Status == S_OK) // S_FALSE - no error, but steppers not affect on callback
+    {
+        return false;
+    }
+
+    bool atEntry = false;
+    ThreadId threadId(getThreadId(pThread));
+    StoppedEvent event(StopBreakpoint, threadId);
+    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)) &&
+        Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
+    {
+        return false;
+    }
+
+    // Disable all steppers if we stop at breakpoint during step.
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+
+    if (atEntry)
+        event.reason = StopEntry;
+
+    ToRelease<ICorDebugFrame> pFrame;
+    if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
+        m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), event.frame);
+
+    m_debugger.SetLastStoppedThread(pThread);
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
+    return true;
+}
+
+bool ManagedCallback::CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason)
+{
+    HRESULT Status;
+    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pThread, reason)) &&
+        Status == S_OK) // S_FALSE - no error, but steppers not affect on callback
+    {
+        return false;
+    }
+
+    StackFrame stackFrame;
+    ToRelease<ICorDebugFrame> iCorFrame;
+    ThreadId threadId(getThreadId(pThread));
+    if (SUCCEEDED(pThread->GetActiveFrame(&iCorFrame)) && iCorFrame != nullptr)
+        m_debugger.GetFrameLocation(iCorFrame, threadId, FrameLevel(0), stackFrame);
+
+    StoppedEvent event(StopStep, threadId);
+    event.frame = stackFrame;
+
+    m_debugger.SetLastStoppedThread(pThread);
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
+    return true;
+}
+
+bool ManagedCallback::CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
+{
+    HRESULT Status;
+    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreak(pThread, m_debugger.GetLastStoppedThreadId())) &&
+        Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
+    {
+        return false;
+    }
+
+    // Disable all steppers if we stop at break during step.
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+
+    m_debugger.SetLastStoppedThread(pThread);
+    ThreadId threadId(getThreadId(pThread));
+    StackFrame stackFrame;
+
+    ToRelease<ICorDebugFrame> iCorFrame;
+    if (SUCCEEDED(pThread->GetActiveFrame(&iCorFrame)) && iCorFrame != nullptr)
+        m_debugger.GetFrameLocation(iCorFrame, threadId, FrameLevel(0), stackFrame);
+
+    StoppedEvent event(StopPause, threadId);
+    event.frame = stackFrame;
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
+    return true;
+}
+
+bool ManagedCallback::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugExceptionCallbackType dwEventType)
+{
+    ThreadId threadId(getThreadId(pThread));
+    StoppedEvent event(StopException, threadId);
+
+    HRESULT Status;
+    std::string textOutput;
+    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackException(pThread, dwEventType, event, textOutput)) &&
+        Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
+    {
+        // TODO why we mixing debugger's output with user application output???
+        m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, textOutput, "target-exception");
+        return false;
+    }
+
+    ToRelease<ICorDebugFrame> pActiveFrame;
+    if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
+        m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), event.frame);
+
+    m_debugger.SetLastStoppedThread(pThread);
+
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
+    return true;
+}
+
+void ManagedCallback::CallbacksWorker()
+{
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+
+    while (true)
+    {
+        if (m_callbacksQueue.empty() || m_stopEventInProcess)
+        {
+            // Note, during m_callbacksCV.wait() (waiting for notify_one call with entry added into queue),
+            // m_callbacksMutex will be unlocked (see std::condition_variable for more info).
+            m_callbacksCV.wait(lock, [&]() { return !m_callbacksQueue.empty() && !m_stopEventInProcess; });
+        }
+
+        auto &c = m_callbacksQueue.front();
+
+        switch (c.Call)
+        {
+        case CallbackQueueCall::Breakpoint:
+            m_stopEventInProcess = CallbacksWorkerBreakpoint(c.iCorAppDomain, c.iCorThread, c.iCorBreakpoint);
+            break;
+        case CallbackQueueCall::StepComplete:
+            m_stopEventInProcess = CallbacksWorkerStepComplete(c.iCorAppDomain, c.iCorThread, c.Reason);
+            break;
+        case CallbackQueueCall::Break:
+            m_stopEventInProcess = CallbacksWorkerBreak(c.iCorAppDomain, c.iCorThread);
+            break;
+        case CallbackQueueCall::Exception:
+            m_stopEventInProcess = CallbacksWorkerException(c.iCorAppDomain, c.iCorThread, c.DwEventType);
+            break;
+        default:
+            // finish loop
+            // called from destructor only, don't need call pop()
+            return;
+        }
+
+        ToRelease<ICorDebugAppDomain> iCorAppDomain(c.iCorAppDomain.Detach());
+        m_callbacksQueue.pop();
+
+        // Continue process execution only in case we don't have stop event emitted and queue is empty.
+        // We safe here against fast Continue()/AddCallbackToQueue() call from new callback call, since we don't unlock m_callbacksMutex.
+        // m_callbacksMutex will be unlocked only in m_callbacksCV.wait(), when CallbacksWorker will be ready for notify_one.
+        if (m_callbacksQueue.empty() && !m_stopEventInProcess)
+            iCorAppDomain->Continue(0);
+    }
+}
+
+bool ManagedCallback::HasQueuedCallbacks(ICorDebugProcess *pProcess)
+{
+    BOOL bQueued = FALSE;
+    pProcess->HasQueuedCallbacks(NULL, &bQueued);
+    return bQueued == TRUE;
+}
+
+HRESULT ManagedCallback::AddCallbackToQueue(ICorDebugAppDomain *pAppDomain, std::function<void()> callback)
+{
+    if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
+    {
+        pAppDomain->Continue(0);
+        return S_OK;
+    }
+
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+
+    callback();
+    assert(!m_callbacksQueue.empty());
+
+    // Note, we don't check m_callbacksQueue.empty() here, since callback() must add entry to queue.
+    ToRelease<ICorDebugProcess> iCorProcess;
+    if (SUCCEEDED(pAppDomain->GetProcess(&iCorProcess)) && HasQueuedCallbacks(iCorProcess))
+        pAppDomain->Continue(0);
+    else
+        m_callbacksCV.notify_one(); // notify_one with lock
+
+    return S_OK;
+}
+
+HRESULT ManagedCallback::ContinueAppDomainWithCallbacksQueue(ICorDebugAppDomain *pAppDomain)
+{
+    if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
+    {
+        pAppDomain->Continue(0);
+        return S_OK;
+    }
+
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+
+    ToRelease<ICorDebugProcess> iCorProcess;
+    if (m_callbacksQueue.empty() || (SUCCEEDED(pAppDomain->GetProcess(&iCorProcess)) && HasQueuedCallbacks(iCorProcess)))
+        pAppDomain->Continue(0);
+    else
+        m_callbacksCV.notify_one(); // notify_one with lock
+
+    return S_OK;
+}
+
+HRESULT ManagedCallback::ContinueProcessWithCallbacksQueue(ICorDebugProcess *pProcess)
+{
+    if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
+    {
+        pProcess->Continue(0);
+        return S_OK;
+    }
+
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+
+    if (m_callbacksQueue.empty() || HasQueuedCallbacks(pProcess))
+        pProcess->Continue(0);
+    else
+        m_callbacksCV.notify_one(); // notify_one with lock
+
+    return S_OK;
+}
+
+bool ManagedCallback::IsRunning()
+{
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+    return !m_stopEventInProcess;
+}
+
+HRESULT ManagedCallback::Continue(ICorDebugProcess *pProcess)
+{
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+
+    assert(m_stopEventInProcess);
+    m_stopEventInProcess = false;
+
+    if (m_callbacksQueue.empty())
+        return pProcess->Continue(0);
+
+    m_callbacksCV.notify_one(); // notify_one with lock
+    return S_OK;
+}
+
+HRESULT ManagedCallback::Pause(ICorDebugProcess *pProcess)
+{
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+
+    if (m_stopEventInProcess)
+        return S_OK;
+
+    // Note, in case Stop() failed, no stop event will be emitted, don't set m_stopEventInProcess to "true" in this case.
+    HRESULT Status;
+    if (FAILED(Status = pProcess->Stop(0)))
+        return Status;
+
+    m_stopEventInProcess = true;
+
+    // Same logic as provide vsdbg in case of pause during stepping.
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+
+    // For Visual Studio, we have to report a thread ID in async stop event.
+    // We have to find a thread which has a stack frame with valid location in its stack trace.
+    std::vector<Thread> threads;
+    m_debugger.GetThreads(threads);
+
+    ThreadId lastStoppedId = m_debugger.GetLastStoppedThreadId();
+
+    // Reorder threads so that last stopped thread is checked first
+    for (size_t i = 0; i < threads.size(); ++i)
+    {
+        if (threads[i].id == lastStoppedId)
+        {
+            std::swap(threads[0], threads[i]);
+            break;
+        }
+    }
+
+    // Now get stack trace for each thread and find a frame with valid source location.
+    for (const Thread& thread : threads)
+    {
+        int totalFrames = 0;
+        std::vector<StackFrame> stackFrames;
+
+        if (FAILED(m_debugger.GetStackTrace(thread.id, FrameLevel(0), 0, stackFrames, totalFrames)))
+            continue;
+
+        for (const StackFrame& stackFrame : stackFrames)
+        {
+            if (stackFrame.source.IsNull())
+                continue;
+
+            StoppedEvent event(StopPause, thread.id);
+            event.frame = stackFrame;
+            m_debugger.SetLastStoppedThreadId(thread.id);
+            m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+            m_debugger.m_ioredirect.async_cancel();
+            return S_OK;
+        }
+    }
+
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, ThreadId::Invalid));
+    m_debugger.m_ioredirect.async_cancel();
+    return S_OK;
+}
+
+ManagedCallback::~ManagedCallback()
+{
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
+
+    // Clear queue and do notify_one call with FinishWorker request.
+    std::queue<CallbackQueueEntry> empty;
+    std::swap(m_callbacksQueue, empty);
+    m_callbacksQueue.emplace(CallbackQueueCall::FinishWorker, nullptr, nullptr, nullptr, STEP_NORMAL, DEBUG_EXCEPTION_FIRST_CHANCE);
+    m_stopEventInProcess = false; // forced to proceed during brake too
+    m_callbacksCV.notify_one(); // notify_one with lock
+    lock.unlock();
+    m_callbacksWorker.join();
+}
+
 ULONG ManagedCallback::GetRefCount()
 {
     LogFuncEntry();
@@ -35,6 +355,7 @@ ULONG ManagedCallback::GetRefCount()
     std::lock_guard<std::mutex> lock(m_refCountMutex);
     return m_refCount;
 }
+
 
 // IUnknown
 
@@ -90,188 +411,78 @@ ULONG STDMETHODCALLTYPE ManagedCallback::Release()
     return --m_refCount;
 }
 
+
 // ICorDebugManagedCallback
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugBreakpoint *pBreakpoint)
+HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
 {
     LogFuncEntry();
-
-    if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
+    return AddCallbackToQueue(pAppDomain, [&]()
     {
-        pAppDomain->Continue(0);
-        return S_OK;
-    }
-
-    HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackBreakpoint(pAppDomain, pThread)) &&
-        Status == S_OK) // S_FALSE - no error, but steppers not affect on callback
-        return S_OK;
-
-    ToRelease<ICorDebugAppDomain> callbackAppDomain(pAppDomain);
-    pAppDomain->AddRef();
-    ToRelease<ICorDebugThread> callbackThread(pThread);
-    pThread->AddRef();
-    ToRelease<ICorDebugBreakpoint> callbackBreakpoint(pBreakpoint);
-    pBreakpoint->AddRef();
-
-    std::thread([this](
-        ICorDebugAppDomain *pAppDomain,
-        ICorDebugThread *pThread,
-        ICorDebugBreakpoint *pBreakpoint)
-    {
-        ThreadId threadId(getThreadId(pThread));
-        bool atEntry = false;
-        StoppedEvent event(StopBreakpoint, threadId);
-        HRESULT Status;
-        if (FAILED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)) ||
-            Status == S_FALSE)
-        {
-            pAppDomain->Continue(0);
-            return;
-        }
-
-        // Disable all steppers if we stop at breakpoint during step.
-        m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
-
-        if (atEntry)
-            event.reason = StopEntry;
-
-        ToRelease<ICorDebugFrame> pFrame;
-        if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
-            m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), event.frame);
-
-        m_debugger.SetLastStoppedThread(pThread);
-        m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
-        m_debugger.m_ioredirect.async_cancel();
-    },
-        std::move(callbackAppDomain),
-        std::move(callbackThread),
-        std::move(callbackBreakpoint)
-    ).detach();
-
-    return S_OK;
+        pAppDomain->AddRef();
+        pThread->AddRef();
+        pBreakpoint->AddRef();
+        m_callbacksQueue.emplace(CallbackQueueCall::Breakpoint, pAppDomain, pThread, pBreakpoint, STEP_NORMAL, DEBUG_EXCEPTION_FIRST_CHANCE);
+    });
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugStepper *pStepper,
-    /* [in] */ CorDebugStepReason reason)
+HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread,
+                                                        ICorDebugStepper *pStepper, CorDebugStepReason reason)
 {
     LogFuncEntry();
-    ThreadId threadId(getThreadId(pThread));
-
-    // Don't call DisableAllSteppers() or DisableAllSimpleSteppers() here!
-    HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pAppDomain, pThread, reason)) &&
-        Status == S_OK) // S_FALSE - no error, but steppers not affect on callback
-        return S_OK;
-
-    StackFrame stackFrame;
-    ToRelease<ICorDebugFrame> iCorFrame;
-    if (SUCCEEDED(pThread->GetActiveFrame(&iCorFrame)) && iCorFrame != nullptr)
-        m_debugger.GetFrameLocation(iCorFrame, threadId, FrameLevel(0), stackFrame);
-
-    StoppedEvent event(StopStep, threadId);
-    event.frame = stackFrame;
-
-    m_debugger.SetLastStoppedThread(pThread);
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
-    m_debugger.m_ioredirect.async_cancel();
-
-    return S_OK;
+    return AddCallbackToQueue(pAppDomain, [&]()
+    {
+        pAppDomain->AddRef();
+        pThread->AddRef();
+        m_callbacksQueue.emplace(CallbackQueueCall::StepComplete, pAppDomain, pThread, nullptr, reason, DEBUG_EXCEPTION_FIRST_CHANCE);
+    });
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::Break(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread)
+HRESULT STDMETHODCALLTYPE ManagedCallback::Break(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
 {
     LogFuncEntry();
-
-    if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
+    return AddCallbackToQueue(pAppDomain, [&]()
     {
-        pAppDomain->Continue(0);
-        return S_OK;
-    }
-
-    HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreak(pAppDomain, pThread, m_debugger.GetLastStoppedThreadId())) &&
-        Status == S_OK) // S_FALSE - no error, but not affect on callback
-        return S_OK;
-
-    // Disable all steppers if we stop at break during step.
-    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
-
-    m_debugger.SetLastStoppedThread(pThread);
-    ThreadId threadId(getThreadId(pThread));
-    StackFrame stackFrame;
-
-    ToRelease<ICorDebugFrame> iCorFrame;
-    if (SUCCEEDED(pThread->GetActiveFrame(&iCorFrame)) && iCorFrame != nullptr)
-        m_debugger.GetFrameLocation(iCorFrame, threadId, FrameLevel(0), stackFrame);
-
-    StoppedEvent event(StopPause, threadId);
-    event.frame = stackFrame;
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
-    m_debugger.m_ioredirect.async_cancel();
-    return S_OK;
+        pAppDomain->AddRef();
+        pThread->AddRef();
+        m_callbacksQueue.emplace(CallbackQueueCall::Break, pAppDomain, pThread, nullptr, STEP_NORMAL, DEBUG_EXCEPTION_FIRST_CHANCE);
+    });
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ BOOL unhandled)
+HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, BOOL unhandled)
 {
     // Obsolete callback
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::EvalComplete(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugEval *pEval)
+HRESULT STDMETHODCALLTYPE ManagedCallback::EvalComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugEval *pEval)
 {
     LogFuncEntry();
-
     m_debugger.m_sharedEvalWaiter->NotifyEvalComplete(pThread, pEval);
-
-    return S_OK;
+    return S_OK; // Eval-related routine - no callbacks queue related code here.
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::EvalException(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugEval *pEval)
+HRESULT STDMETHODCALLTYPE ManagedCallback::EvalException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugEval *pEval)
 {
     LogFuncEntry();
-
     m_debugger.m_sharedEvalWaiter->NotifyEvalComplete(pThread, pEval);
-
-    return S_OK;
+    return S_OK; // Eval-related routine - no callbacks queue related code here.
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::CreateProcess(
-    /* [in] */ ICorDebugProcess *pProcess)
+HRESULT STDMETHODCALLTYPE ManagedCallback::CreateProcess(ICorDebugProcess *pProcess)
 {
     LogFuncEntry();
     m_debugger.NotifyProcessCreated();
-    pProcess->Continue(0);
-    return S_OK;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(
-    /* [in] */ ICorDebugProcess *pProcess)
+HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(ICorDebugProcess *pProcess)
 {
     LogFuncEntry();
 
     if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
-    {
         LOGW("The target process exited while evaluating the function.");
-    }
 
     m_debugger.m_sharedEvalWaiter->NotifyEvalComplete(nullptr, nullptr);
 
@@ -300,9 +511,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(
     return S_OK;
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::CreateThread(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread)
+HRESULT STDMETHODCALLTYPE ManagedCallback::CreateThread(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
 {
     LogFuncEntry();
 
@@ -313,36 +522,29 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CreateThread(
     m_debugger.m_sharedThreads->Add(threadId);
 
     m_debugger.m_sharedProtocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
-    pAppDomain->Continue(0);
-    return S_OK;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::ExitThread(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread)
+HRESULT STDMETHODCALLTYPE ManagedCallback::ExitThread(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
 {
     LogFuncEntry();
+
     ThreadId threadId(getThreadId(pThread));
     m_debugger.m_sharedThreads->Remove(threadId);
 
     m_debugger.m_sharedEvalWaiter->NotifyEvalComplete(pThread, nullptr);
     if (m_debugger.GetLastStoppedThreadId() == threadId)
-    {
         m_debugger.InvalidateLastStoppedThreadId();
-    }
+
     m_debugger.m_sharedProtocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
-    pAppDomain->Continue(0);
-    return S_OK;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugModule *pModule)
+HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(ICorDebugAppDomain *pAppDomain, ICorDebugModule *pModule)
 {
     LogFuncEntry();
 
     Module module;
-
     m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode());
     m_debugger.m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
 
@@ -358,54 +560,41 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(
     if (module.name == "System.Private.CoreLib.dll")
         m_debugger.SetEnableCustomNotification(TRUE);
 
-    pAppDomain->Continue(0);
-    return S_OK;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::UnloadModule(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugModule *pModule)
+HRESULT STDMETHODCALLTYPE ManagedCallback::UnloadModule(ICorDebugAppDomain *pAppDomain, ICorDebugModule *pModule)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::LoadClass(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugClass *c)
+HRESULT STDMETHODCALLTYPE ManagedCallback::LoadClass(ICorDebugAppDomain *pAppDomain, ICorDebugClass *c)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::UnloadClass(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugClass *c)
+HRESULT STDMETHODCALLTYPE ManagedCallback::UnloadClass(ICorDebugAppDomain *pAppDomain, ICorDebugClass *c)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::DebuggerError(
-    /* [in] */ ICorDebugProcess *pProcess,
-    /* [in] */ HRESULT errorHR,
-    /* [in] */ DWORD errorCode)
+HRESULT STDMETHODCALLTYPE ManagedCallback::DebuggerError(ICorDebugProcess *pProcess, HRESULT errorHR, DWORD errorCode)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ LONG lLevel,
-    /* [in] */ WCHAR *pLogSwitchName,
-    /* [in] */ WCHAR *pMessage)
+HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread,
+                                                      LONG lLevel, WCHAR *pLogSwitchName, WCHAR *pMessage)
 {
     LogFuncEntry();
+
     if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
     {
-        pAppDomain->Continue(0);
+        pAppDomain->Continue(0); // Eval-related routine - ignore callbacks queue, continue process execution.
         return S_OK;
     }
 
@@ -422,240 +611,141 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(
     }
 
     m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, to_utf8(pMessage), src);
-    pAppDomain->Continue(0);
-    return S_OK;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::LogSwitch(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ LONG lLevel,
-    /* [in] */ ULONG ulReason,
-    /* [in] */ WCHAR *pLogSwitchName,
-    /* [in] */ WCHAR *pParentName)
+HRESULT STDMETHODCALLTYPE ManagedCallback::LogSwitch(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, LONG lLevel,
+                                                     ULONG ulReason, WCHAR *pLogSwitchName, WCHAR *pParentName)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::CreateAppDomain(
-    /* [in] */ ICorDebugProcess *pProcess,
-    /* [in] */ ICorDebugAppDomain *pAppDomain)
+HRESULT STDMETHODCALLTYPE ManagedCallback::CreateAppDomain(ICorDebugProcess *pProcess, ICorDebugAppDomain *pAppDomain)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::ExitAppDomain(
-    /* [in] */ ICorDebugProcess *pProcess,
-    /* [in] */ ICorDebugAppDomain *pAppDomain)
+HRESULT STDMETHODCALLTYPE ManagedCallback::ExitAppDomain(ICorDebugProcess *pProcess, ICorDebugAppDomain *pAppDomain)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::LoadAssembly(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugAssembly *pAssembly)
+HRESULT STDMETHODCALLTYPE ManagedCallback::LoadAssembly(ICorDebugAppDomain *pAppDomain, ICorDebugAssembly *pAssembly)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::UnloadAssembly(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugAssembly *pAssembly)
+HRESULT STDMETHODCALLTYPE ManagedCallback::UnloadAssembly(ICorDebugAppDomain *pAppDomain, ICorDebugAssembly *pAssembly)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::ControlCTrap(
-    /* [in] */ ICorDebugProcess *pProcess)
+HRESULT STDMETHODCALLTYPE ManagedCallback::ControlCTrap(ICorDebugProcess *pProcess)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::NameChange(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread)
+HRESULT STDMETHODCALLTYPE ManagedCallback::NameChange(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::UpdateModuleSymbols(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugModule *pModule,
-    /* [in] */ IStream *pSymbolStream)
+HRESULT STDMETHODCALLTYPE ManagedCallback::UpdateModuleSymbols(ICorDebugAppDomain *pAppDomain, ICorDebugModule *pModule, IStream *pSymbolStream)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::EditAndContinueRemap(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugFunction *pFunction,
-    /* [in] */ BOOL fAccurate)
+HRESULT STDMETHODCALLTYPE ManagedCallback::EditAndContinueRemap(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread,
+                                                                ICorDebugFunction *pFunction, BOOL fAccurate)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::BreakpointSetError(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugBreakpoint *pBreakpoint,
-    /* [in] */ DWORD dwError)
+HRESULT STDMETHODCALLTYPE ManagedCallback::BreakpointSetError(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread,
+                                                              ICorDebugBreakpoint *pBreakpoint, DWORD dwError)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
 
 // ICorDebugManagedCallback2
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::FunctionRemapOpportunity(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugFunction *pOldFunction,
-    /* [in] */ ICorDebugFunction *pNewFunction,
-    /* [in] */ ULONG32 oldILOffset)
+HRESULT STDMETHODCALLTYPE ManagedCallback::FunctionRemapOpportunity(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread,
+                                                                    ICorDebugFunction *pOldFunction, ICorDebugFunction *pNewFunction, ULONG32 oldILOffset)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::CreateConnection(
-    /* [in] */ ICorDebugProcess *pProcess,
-    /* [in] */ CONNID dwConnectionId,
-    /* [in] */ WCHAR *pConnName)
+HRESULT STDMETHODCALLTYPE ManagedCallback::CreateConnection(ICorDebugProcess *pProcess, CONNID dwConnectionId, WCHAR *pConnName)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::ChangeConnection(
-    /* [in] */ ICorDebugProcess *pProcess,
-    /* [in] */ CONNID dwConnectionId)
+HRESULT STDMETHODCALLTYPE ManagedCallback::ChangeConnection(ICorDebugProcess *pProcess, CONNID dwConnectionId)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::DestroyConnection(
-    /* [in] */ ICorDebugProcess *pProcess,
-    /* [in] */ CONNID dwConnectionId)
+HRESULT STDMETHODCALLTYPE ManagedCallback::DestroyConnection(ICorDebugProcess *pProcess, CONNID dwConnectionId)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugFrame *pFrame,
-    /* [in] */ ULONG32 nOffset,
-    /* [in] */ CorDebugExceptionCallbackType dwEventType,
-    /* [in] */ DWORD dwFlags)
+HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugFrame *pFrame,
+                                                     ULONG32 nOffset, CorDebugExceptionCallbackType dwEventType, DWORD dwFlags)
 {
     LogFuncEntry();
-
-    // In case we inside evaluation (exception during implicit function execution), make sure we continue process execution.
-    // This is internal CoreCLR routine, should not be interrupted by debugger. CoreCLR will care about exception in this case
-    // and provide exception data as evaluation result.
-    // Note, we may have issue here, if during eval new thread was created within unhandled exception.
-    // In this case we have same behaviour as MS vsdbg and MSVS C# debugger - debuggee process terminated by runtime, debug session ends.
-    if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
+    return AddCallbackToQueue(pAppDomain, [&]()
     {
-        pAppDomain->Continue(0);
-        return S_OK;
-    }
-
-    ThreadId threadId(getThreadId(pThread));
-    StoppedEvent event(StopException, threadId);
-
-    HRESULT Status;
-    std::string textOutput;
-    if (FAILED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackException(pThread, dwEventType, event, textOutput)) ||
-        Status == S_FALSE)
-    {
-        // TODO why we mixing debugger's output with user application output???
-        m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, textOutput, "target-exception");
-        pAppDomain->Continue(0);
-        return S_OK;
-    }
-
-    ToRelease<ICorDebugFrame> pActiveFrame;
-    if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
-        m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), event.frame);
-
-    m_debugger.SetLastStoppedThread(pThread);
-
-    // TODO this looks like wrong logic with m_stopCounter, we must not have situation when process stop logic emit continued event.
-    //      Exception breakpoint related code must be refactored.
-    m_debugger.m_stopCounterMutex.lock();
-    while (m_debugger.m_stopCounter > 0) {
-        m_debugger.m_sharedProtocol->EmitContinuedEvent(m_debugger.GetLastStoppedThreadId());
-        --m_debugger.m_stopCounter;
-    }
-    // INFO: Double EmitStopEvent() produce blocked coreclr command reader
-    m_debugger.m_stopCounter = 1;
-    m_debugger.m_stopCounterMutex.unlock();
-
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
-    m_debugger.m_ioredirect.async_cancel();
-    return S_OK;
+        pAppDomain->AddRef();
+        pThread->AddRef();
+        m_callbacksQueue.emplace(CallbackQueueCall::Exception, pAppDomain, pThread, nullptr, STEP_NORMAL, dwEventType);
+    });
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::ExceptionUnwind(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ CorDebugExceptionUnwindCallbackType dwEventType,
-    /* [in] */ DWORD dwFlags)
+HRESULT STDMETHODCALLTYPE ManagedCallback::ExceptionUnwind(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread,
+                                                           CorDebugExceptionUnwindCallbackType dwEventType, DWORD dwFlags)
 {
     LogFuncEntry();
-    ThreadId threadId(getThreadId(pThread));
-    // We produce DEBUG_EXCEPTION_INTERCEPTED from Exception() callback.
-    // TODO: we should waiting this unwinding on exit().
-    LOGI("ExceptionUnwind:threadId:%d,dwEventType:%d,dwFlags:%d", int(threadId), dwEventType, dwFlags);
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::FunctionRemapComplete(
-    /* [in] */ ICorDebugAppDomain *pAppDomain,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugFunction *pFunction)
+HRESULT STDMETHODCALLTYPE ManagedCallback::FunctionRemapComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugFunction *pFunction)
 {
     LogFuncEntry();
-    return E_NOTIMPL;
+    return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::MDANotification(
-    /* [in] */ ICorDebugController *pController,
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugMDA *pMDA)
+HRESULT STDMETHODCALLTYPE ManagedCallback::MDANotification(ICorDebugController *pController, ICorDebugThread *pThread, ICorDebugMDA *pMDA)
 {
-    // TODO: MDA notification should be supported with exception breakpoint feature (MDA enabled only under Microsoft Windows OS)
-    // https://docs.microsoft.com/ru-ru/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback2-mdanotification-method
-    // https://docs.microsoft.com/ru-ru/dotnet/framework/debug-trace-profile/diagnosing-errors-with-managed-debugging-assistants#enable-and-disable-mdas
-    //
-
     LogFuncEntry();
-    return E_NOTIMPL;
+    ToRelease<ICorDebugProcess> iCorProcess;
+    pThread->GetProcess(&iCorProcess);
+    return ContinueProcessWithCallbacksQueue(iCorProcess);
 }
 
-HRESULT STDMETHODCALLTYPE ManagedCallback::CustomNotification(
-    /* [in] */ ICorDebugThread *pThread,
-    /* [in] */ ICorDebugAppDomain *pAppDomain)
+
+// ICorDebugManagedCallback3
+
+HRESULT STDMETHODCALLTYPE ManagedCallback::CustomNotification(ICorDebugThread *pThread, ICorDebugAppDomain *pAppDomain)
 {
     LogFuncEntry();
-
     m_debugger.m_sharedEvalWaiter->ManagedCallbackCustomNotification(pThread);
-
-    pAppDomain->Continue(0);
+    pAppDomain->Continue(0); // Eval-related routine - ignore callbacks queue, continue process execution.
     return S_OK;
 }
 
