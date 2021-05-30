@@ -410,6 +410,28 @@ namespace NetCoreDbg
                 endLine = endLine_;
                 endColumn = endColumn_;
             }
+            public void ExtendRange(int startLine_, int endLine_, int startColumn_, int endColumn_)
+            {
+                if (startLine > startLine_)
+                {
+                    startLine = startLine_;
+                    startColumn = startColumn_;
+                }
+                else if (startLine == startLine_ && startColumn > startColumn_)
+                {
+                    startColumn = startColumn_;
+                }
+
+                if (endLine < endLine_)
+                {
+                    endLine = endLine_;
+                    endColumn = endColumn_;
+                }
+                else if (endLine == endLine_ && endColumn < endColumn_)
+                {
+                    endColumn = endColumn_;
+                }
+            }
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -507,13 +529,15 @@ namespace NetCoreDbg
                         if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine)
                             continue;
 
+                        // first access, init all fields and document with proper data from first user code sequence point
                         if (currentData.startLine == 0)
                         {
                             currentData.SetRange(p.StartLine, p.EndLine, p.StartColumn, p.EndColumn);
                             currentDocHandle = p.Document;
+                            continue;
                         }
-                        else
-                            currentData.SetRangeEnd(p.EndLine, p.EndColumn);
+
+                        currentData.ExtendRange(p.StartLine, p.EndLine, p.StartColumn, p.EndColumn);
                     }
 
                     if (currentData.startLine != 0)
@@ -630,14 +654,35 @@ namespace NetCoreDbg
 
                 SequencePoint FirstSequencePointForSourceLine(int methodToken)
                 {
+                    // Note, SequencePoints ordered by IL offsets, not by line numbers.
+                    // For example, infinite loop `while(true)` will have IL offset after cycle body's code.
+                    SequencePoint nearestSP = new SequencePoint();
+
                     foreach (SequencePoint p in GetSequencePointCollection(methodToken, reader))
                     {
                         if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine || p.EndLine < sourceLine)
                             continue;
 
-                        return p;
+                        // first access, assign to first user code sequence point
+                        if (nearestSP.StartLine == 0)
+                        {
+                            nearestSP = p;
+                            continue;
+                        }
+
+                        if (p.EndLine != nearestSP.EndLine)
+                        {
+                            if (p.EndLine < nearestSP.EndLine)
+                                nearestSP = p;
+                        }
+                        else
+                        {
+                            if (p.EndColumn < nearestSP.EndColumn)
+                                nearestSP = p;
+                        }
                     }
-                    return new SequencePoint();
+
+                    return nearestSP;
                 }
 
                 int elementSize = 4;

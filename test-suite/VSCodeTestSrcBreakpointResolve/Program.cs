@@ -445,6 +445,8 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp21");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp22");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp23");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp24");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp25");
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -533,7 +535,7 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
             test_constructors test_constr1 = new test_constructors();
             test_constructors test_constr2 = new test_constructors(5);
 
-            Label.Checkpoint("bp_test_constructor", "finish", (Object context) => {
+            Label.Checkpoint("bp_test_constructor", "bp_test_not_ordered_line_num", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp23");
 
@@ -543,6 +545,21 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291);
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291);
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // test code with sequence points that not ordered by line numbers
+
+            Label.Breakpoint("bp24"); while(true)
+            {
+                break;                                                              Label.Breakpoint("bp25");
+            }
+
+            Label.Checkpoint("bp_test_not_ordered_line_num", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp24");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp25");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
