@@ -11,7 +11,6 @@ using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
-using System.Linq;
 using System.Text;
 
 namespace NetCoreDbg
@@ -1320,12 +1319,19 @@ namespace NetCoreDbg
 
         private static MemoryStream GetEmbeddedSource(MetadataReader reader, DocumentHandle document, out int docSize)
         {
-            byte[] bytes = (from handle in reader.GetCustomDebugInformation(document)
-                            let cdi = reader.GetCustomDebugInformation(handle)
-                            where reader.GetGuid(cdi.Kind) == guid
-                            select reader.GetBlobBytes(cdi.Value)).SingleOrDefault();
+            byte[] bytes = null;
 
-             if (bytes == null)
+            foreach (var handle in reader.GetCustomDebugInformation(document))
+            {
+                var cdi = reader.GetCustomDebugInformation(handle);
+                if (reader.GetGuid(cdi.Kind) == guid)
+                {
+                    bytes = reader.GetBlobBytes(cdi.Value);
+                    break;
+                }
+            }
+
+            if (bytes == null)
             {
                 docSize = 0;
                 return null;

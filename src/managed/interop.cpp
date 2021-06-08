@@ -647,6 +647,9 @@ void CoTaskMemFree(PVOID ptr)
 HRESULT GetSource(PVOID symbolReaderHandle, std::string fileName, PVOID *data, int32_t *length)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!getSourceDelegate || !symbolReaderHandle)
+        return E_FAIL;
+
     RetCode retCode = getSourceDelegate(symbolReaderHandle, to_utf16(fileName).c_str(), length, data);
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }

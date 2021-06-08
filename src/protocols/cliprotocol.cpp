@@ -535,6 +535,9 @@ CLIProtocol::CLIProtocol(InStream& input, OutStream& output) :
   m_input(input),
   m_output(output),
   m_processStatus(NotStarted),
+  m_sourceLine(0),
+  m_listSize(10),
+  m_sources(nullptr),
   m_term_settings(*this), 
   line_reader(),
   m_commandMode(CommandMode::Unset)
@@ -544,7 +547,6 @@ CLIProtocol::CLIProtocol(InStream& input, OutStream& output) :
     // Handle Ctrl-Z.
     Utility::Singleton<StopSignalHandler>::instance();
 }
-
 
 int CLIProtocol::printf_checked(const char *fmt, ...)
 {
@@ -879,7 +881,7 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
     PrintFrameLocation(event.frame, frameLocation);
     m_sourceFile = event.frame.source.name; 
     m_sourcePath = event.frame.source.path;
-    m_sourceLine = event.frame.line;
+    m_sourceLine = event.frame.line - m_listSize / 2;
     m_frameId = event.frame.id;
 
     switch(event.reason)
@@ -1403,12 +1405,103 @@ HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::str
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> &args, std::string &output)
 {
-    char* fileBuff = NULL;
-    int fileLen = 0;
+    HRESULT status = S_OK;
+    int line = m_sourceLine;
+    int lines = m_listSize;
 
-    m_sharedDebugger->GetSourceFile(m_sourcePath, &fileBuff, &fileLen);
-    printf("%d bytes received at address: [%p]\n%s\n", fileLen, fileBuff, fileBuff);
-    m_sharedDebugger->FreeUnmanaged((PVOID)fileBuff);
+    std::string params;
+
+    if (!args.empty())
+    {
+        bool er;
+        std::string params;
+        for (size_t i = 0; i<args.size(); i++)
+            params += args[i];
+
+        size_t pos = params.find(",");
+        if (pos == 0) // ex: list ,100 -- m_listSize lines till the 100th line
+        {
+            int i = ProtocolUtils::ParseInt(params.erase(0,1), er);
+            if (er) {
+                line = i - lines + 1;
+            }
+            else
+            {
+                status = E_FAIL;
+            }
+        }
+        else if (pos == params.length()-1) // ex: list 10, -- m_listSize lines starting from 10th
+        {
+            int i = ProtocolUtils::ParseInt(params, er);
+            if (er) {
+                line = i;
+            }
+            else
+            {
+                status = E_FAIL;
+            }
+        }
+        else if (pos > 0 && pos < params.length()-1) // ex: list 10,100 -- lines from 10th till 100th
+        {
+            int i = ProtocolUtils::ParseInt(params, er);
+            if (er) {
+                line = i;
+                i = ProtocolUtils::ParseInt(params.erase(0, pos+1), er);
+                if (er) {
+                    lines = i - line + 1;
+                }
+                else
+                {
+                    status = E_FAIL;
+                }
+            }
+            else
+            {
+                status = E_FAIL;
+            }
+        }
+        else if (params.front() == '-') // ex: list -  -- m_listSize lines just before last printed
+        {
+            line -= 2 * m_listSize;
+        }
+        else if (params.front() == '+') // ex: list +  -- m_listSize lines just after last printed
+        {
+
+        } else // ex: list 100  -- m_listSize lines with 100th centered
+        {
+            int i = ProtocolUtils::ParseInt(args[0], er);
+            if (er)
+            {
+                line = i - m_listSize / 2;
+            }
+            else
+            {
+                printf("invalid parameter(s)\n");
+                return E_FAIL;
+            }
+        }
+    }
+
+    if (status != S_OK)
+    {
+        printf("Invalid parameter(s). \n");
+        return status;
+    }
+
+    if (line < 1) {
+        line = 1;
+    }
+
+    if (m_sources)
+    {
+        for (int i = 0; i < lines; i++, line++)
+        {
+            char* toPrint = m_sources->getLine(m_sourcePath, line);
+            if (toPrint)
+                printf("%d\t%s\n", line,  toPrint);
+        }
+        m_sourceLine = line;
+    }
     return S_OK;
 }
 
@@ -1484,6 +1577,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::vector<std::string> 
 {
     // no mutex locking needed here
     this->m_exit = true;
+    m_sources.reset(nullptr);
     m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
     return S_OK;
 }
@@ -1508,6 +1602,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Run>(const std::vector<std::string> &
 
     HRESULT Status;
     m_sharedDebugger->Initialize();
+    m_sources.reset(new SourceStorage(m_sharedDebugger.get()));
     IfFailRet(m_sharedDebugger->Launch(exec_file, exec_args, {}, "", false));
 
     lock.lock();
@@ -1554,6 +1649,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::vector<std::string
 
     HRESULT Status;
     m_sharedDebugger->Initialize();
+    m_sources.reset(new SourceStorage(m_sharedDebugger.get()));
     IfFailRet(m_sharedDebugger->Attach(pid));
 
     lock.lock();
