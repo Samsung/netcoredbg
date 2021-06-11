@@ -48,13 +48,6 @@ public:
         ICorDebugValue **ppResult,
         int evalFlags);
 
-    HRESULT getObjectByFunction(
-        const std::string &func,
-        ICorDebugThread *pThread,
-        ICorDebugValue *pInValue,
-        ICorDebugValue **ppOutValue,
-        int evalFlags);
-
     HRESULT WalkMembers(
         ICorDebugValue *pValue,
         ICorDebugThread *pThread,

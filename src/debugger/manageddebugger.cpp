@@ -41,10 +41,6 @@
 
 #include "palclr.h"
 
-using std::string;
-using std::vector;
-using std::map;
-
 namespace netcoredbg
 {
 
@@ -57,9 +53,9 @@ extern "C" const IID IID_IUnknown = { 0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0
 
 #endif // FEATURE_PAL
 
-namespace 
+namespace
 {
-    int GetSystemEnvironmentAsMap(map<string, string>& outMap)
+    int GetSystemEnvironmentAsMap(std::map<std::string, std::string>& outMap)
     {
         char*const*const pEnv = GetSystemEnvironment();
 
@@ -69,9 +65,9 @@ namespace
         int counter = 0;
         while (pEnv[counter] != nullptr)
         {
-            const string env = pEnv[counter];
+            const std::string env = pEnv[counter];
             size_t pos = env.find_first_of("=");
-            if (pos != string::npos && pos != 0)
+            if (pos != std::string::npos && pos != 0)
                 outMap.emplace(env.substr(0, pos), env.substr(pos+1));
 
             ++counter;
@@ -146,8 +142,8 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedEvalHelpers(new EvalHelpers(m_sharedModules, m_sharedEvalWaiter)),
     m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers)),
     m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
+    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator)),
     m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator)),
-    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedVariables, m_sharedEvaluator)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_stepFiltering(true),
@@ -206,7 +202,8 @@ HRESULT ManagedDebugger::Attach(int pid)
     return RunIfReady();
 }
 
-HRESULT ManagedDebugger::Launch(const string &fileExec, const vector<string> &execArgs, const map<string, string> &env, const string &cwd, bool stopAtEntry)
+HRESULT ManagedDebugger::Launch(const std::string &fileExec, const std::vector<std::string> &execArgs,
+                                const std::map<std::string, std::string> &env, const std::string &cwd, bool stopAtEntry)
 {
     LogFuncEntry();
 
@@ -462,16 +459,16 @@ static HRESULT InternalEnumerateCLRs(dbgshim_t &dbgshim, DWORD pid, HANDLE **ppH
     return hr;
 }
 
-static string GetCLRPath(dbgshim_t &dbgshim, DWORD pid, int timeoutSec = 3)
+static std::string GetCLRPath(dbgshim_t &dbgshim, DWORD pid, int timeoutSec = 3)
 {
     HANDLE* pHandleArray;
     LPWSTR* pStringArray;
     DWORD dwArrayLength;
     const int tryCount = timeoutSec * 10; // 100ms interval between attempts
     if (FAILED(InternalEnumerateCLRs(dbgshim, pid, &pHandleArray, &pStringArray, &dwArrayLength, tryCount)) || dwArrayLength == 0)
-        return string();
+        return std::string();
 
-    string result = to_utf8(pStringArray[0]);
+    std::string result = to_utf8(pStringArray[0]);
 
     dbgshim.CloseCLREnumeration(pHandleArray, pStringArray, dwArrayLength);
 
@@ -525,13 +522,13 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     return S_OK;
 }
 
-static string EscapeShellArg(const string &arg)
+static std::string EscapeShellArg(const std::string &arg)
 {
-    string s(arg);
+    std::string s(arg);
 
-    for (string::size_type i = 0; i < s.size(); ++i)
+    for (std::string::size_type i = 0; i < s.size(); ++i)
     {
-        string::size_type count = 0;
+        std::string::size_type count = 0;
         char c = s.at(i);
         switch (c)
         {
@@ -557,7 +554,7 @@ static bool IsDirExists(const char* const path)
     return true;
 }
 
-HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<string>& execArgs)
+HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
     HRESULT Status;
@@ -566,36 +563,45 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
 
     std::ostringstream ss;
     ss << "\"" << fileExec << "\"";
-    for (const string &arg : execArgs)
+    for (const std::string &arg : execArgs)
+    {
         ss << " \"" << EscapeShellArg(arg) << "\"";
+    }
 
     m_startupReady = false;
     m_clrPath.clear();
 
     HANDLE resumeHandle = 0; // Fake thread handle for the process resume
 
-    vector<char> outEnv;
-    if (!m_env.empty()) {
+    std::vector<char> outEnv;
+    if (!m_env.empty())
+    {
         // We need to append the environ values with keeping the current process environment block.
         // It works equal for any platrorms in coreclr CreateProcessW(), but not critical for Linux.
-        map<string, string> envMap;
-        if (GetSystemEnvironmentAsMap(envMap) != -1) {
+        std::map<std::string, std::string> envMap;
+        if (GetSystemEnvironmentAsMap(envMap) != -1)
+        {
             auto it = m_env.begin();
             auto end = m_env.end();
             // Override the system value (PATHs appending needs a complex implementation)
-            while (it != end) {
+            while (it != end)
+            {
                 envMap[it->first] = it->second;
                 ++it;
             }
-            for (const auto &pair : envMap) {
+            for (const auto &pair : envMap)
+            {
                 outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
                 outEnv.push_back('=');
                 outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
                 outEnv.push_back('\0');
             }
             outEnv.push_back('\0');
-        } else {
-            for (const auto &pair : m_env) {
+        }
+        else
+        {
+            for (const auto &pair : m_env)
+            {
                 outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
                 outEnv.push_back('=');
                 outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
@@ -606,8 +612,10 @@ HRESULT ManagedDebugger::RunProcess(const string& fileExec, const std::vector<st
 
     // cwd in launch.json set working directory for debugger https://code.visualstudio.com/docs/python/debugging#_cwd
     if (!m_cwd.empty())
+    {
         if (!IsDirExists(m_cwd.c_str()) || !SetWorkDir(m_cwd))
             m_cwd.clear();
+    }
 
     Status = m_ioredirect.exec([&]() -> HRESULT {
             IfFailRet(m_dbgshim.CreateProcessForLaunch(reinterpret_cast<LPWSTR>(const_cast<WCHAR*>(to_utf16(ss.str()).c_str())),
@@ -759,25 +767,22 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
     return Startup(pCordb, pid);
 }
 
-// VSCode
-HRESULT ManagedDebugger::GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionInfoResponse)
+HRESULT ManagedDebugger::GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo)
 {
     LogFuncEntry();
-    return m_uniqueBreakpoints->GetExceptionInfoResponse(m_iCorProcess, threadId, exceptionInfoResponse);
+
+    HRESULT Status;
+    if (!m_iCorProcess)
+        return E_FAIL;
+    ToRelease<ICorDebugThread> iCorThread;
+    IfFailRet(m_iCorProcess->GetThread(int(threadId), &iCorThread));
+    return m_uniqueBreakpoints->GetExceptionInfo(iCorThread, exceptionInfo);
 }
 
-// MI
-HRESULT ManagedDebugger::InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id)
+HRESULT ManagedDebugger::SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints)
 {
     LogFuncEntry();
-    return m_uniqueBreakpoints->InsertExceptionBreakpoint(mode, name, id);
-}
-
-// MI
-HRESULT ManagedDebugger::DeleteExceptionBreakpoint(const uint32_t id)
-{
-    LogFuncEntry();
-    return m_uniqueBreakpoints->DeleteExceptionBreakpoint(id);
+    return m_uniqueBreakpoints->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
@@ -844,6 +849,19 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
 {
     HRESULT Status;
 
+    ToRelease<ICorDebugFunction> iCorFunction;
+    IfFailRet(pFrame->GetFunction(&iCorFunction));
+    ToRelease<ICorDebugFunction2> iCorFunction2;
+    IfFailRet(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2));
+    BOOL JMCStatus;
+    IfFailRet(iCorFunction2->GetJMCStatus(&JMCStatus));
+
+    if (JMCStatus == FALSE)
+    {
+        stackFrame = StackFrame(threadId, level, "[External Code]");
+        return S_OK;
+    }
+
     stackFrame = StackFrame(threadId, level, "");
 
     ULONG32 ilOffset;
@@ -860,11 +878,8 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     mdMethodDef methodToken;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
 
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
+    IfFailRet(iCorFunction->GetModule(&pModule));
 
     ULONG32 nOffset = 0;
     ToRelease<ICorDebugNativeFrame> pNativeFrame;

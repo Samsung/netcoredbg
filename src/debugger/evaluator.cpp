@@ -273,7 +273,9 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
 
     if (parts.at(nextPart) == "$exception")
     {
-        pThread->GetCurrentException(&pResultValue);
+        IfFailRet(pThread->GetCurrentException(&pResultValue));
+        if (pResultValue == nullptr)
+            return E_FAIL;
     }
     else
     {
@@ -361,71 +363,6 @@ HRESULT Evaluator::EvalExpr(ICorDebugThread *pThread,
     *ppResult = pResultValue.Detach();
 
     return S_OK;
-}
-
-static HRESULT FindMethod(ICorDebugType *pType, const WCHAR *methodName, ICorDebugFunction **ppFunc)
-{
-    HRESULT Status;
-
-    ToRelease<ICorDebugClass> pClass;
-    IfFailRet(pType->GetClass(&pClass));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pClass->GetModule(&pModule));
-
-    mdTypeDef currentTypeDef;
-    IfFailRet(pClass->GetToken(&currentTypeDef));
-
-    ToRelease<IUnknown> pMDUnknown;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-    ToRelease<IMetaDataImport> pMD;
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-
-    ULONG numMethods = 0;
-    HCORENUM hEnum = NULL;
-    mdMethodDef methodDef = mdMethodDefNil;
-
-    pMD->EnumMethodsWithName(&hEnum, currentTypeDef, methodName, &methodDef, 1, &numMethods);
-    pMD->CloseEnum(hEnum);
-
-    if (numMethods == 1)
-        return pModule->GetFunctionFromToken(methodDef, ppFunc);
-
-    std::string baseTypeName;
-    ToRelease<ICorDebugType> pBaseType;
-
-    if(SUCCEEDED(pType->GetBase(&pBaseType)) && pBaseType != NULL && SUCCEEDED(TypePrinter::GetTypeOfValue(pBaseType, baseTypeName)))
-    {
-        if(baseTypeName == "System.Enum")
-            return E_FAIL;
-        else if (baseTypeName != "object" && baseTypeName != "System.Object" && baseTypeName != "System.ValueType")
-        {
-            return FindMethod(pBaseType, methodName, ppFunc);
-        }
-    }
-
-    return E_FAIL;
-}
-
-HRESULT Evaluator::getObjectByFunction(
-    const std::string &func,
-    ICorDebugThread *pThread,
-    ICorDebugValue *pInValue,
-    ICorDebugValue **ppOutValue,
-    int evalFlags)
-{
-    HRESULT Status = S_OK;
-
-    ToRelease<ICorDebugValue2> pValue2;
-    IfFailRet(pInValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *)&pValue2));
-    ToRelease<ICorDebugType> pType;
-    IfFailRet(pValue2->GetExactType(&pType));
-
-    auto methodName = to_utf16(func);
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(FindMethod(pType, methodName.c_str(), &pFunc));
-
-    return m_sharedEvalHelpers->EvalFunction(pThread, pFunc, pType.GetRef(), 1, &pInValue, 1, ppOutValue, evalFlags);
 }
 
 static void IncIndicies(std::vector<ULONG32> &ind, const std::vector<ULONG32> &dims)

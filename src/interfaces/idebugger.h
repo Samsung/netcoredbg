@@ -85,6 +85,7 @@ public:
     virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
     virtual HRESULT SetLineBreakpoints(const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
     virtual HRESULT SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
+    virtual HRESULT SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
     virtual HRESULT BreakpointActivate(int id, bool act) = 0;
     virtual void EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback) = 0;
     virtual HRESULT AllBreakpointsActivate(bool act) = 0;
@@ -96,9 +97,7 @@ public:
     virtual HRESULT Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output) = 0;
     virtual HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) = 0;
     virtual HRESULT SetVariableByExpression(FrameId frameId, const Variable &variable, const std::string &value, std::string &output) = 0;
-    virtual HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) = 0;
-    virtual HRESULT DeleteExceptionBreakpoint(const uint32_t id) = 0;
-    virtual HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string& names, uint32_t &id) = 0;
+    virtual HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) = 0;
     virtual HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) = 0;
     virtual void FreeUnmanaged(PVOID mem) = 0;
     typedef std::function<void(const char *)> SearchCallback;

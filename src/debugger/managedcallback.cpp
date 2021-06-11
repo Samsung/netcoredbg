@@ -113,24 +113,24 @@ bool ManagedCallback::CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorD
     return true;
 }
 
-bool ManagedCallback::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugExceptionCallbackType dwEventType)
+bool ManagedCallback::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule)
 {
     ThreadId threadId(getThreadId(pThread));
     StoppedEvent event(StopException, threadId);
 
     HRESULT Status;
-    std::string textOutput;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackException(pThread, dwEventType, event, textOutput)) &&
+    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackException(pThread, eventType, excModule, event)) &&
         Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
     {
-        // TODO why we mixing debugger's output with user application output???
-        m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, textOutput, "target-exception");
         return false;
     }
 
     ToRelease<ICorDebugFrame> pActiveFrame;
     if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
         m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), event.frame);
+
+    // Disable all steppers if we stop during step.
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
 
     m_debugger.SetLastStoppedThread(pThread);
 
@@ -166,7 +166,7 @@ void ManagedCallback::CallbacksWorker()
             m_stopEventInProcess = CallbacksWorkerBreak(c.iCorAppDomain, c.iCorThread);
             break;
         case CallbackQueueCall::Exception:
-            m_stopEventInProcess = CallbacksWorkerException(c.iCorAppDomain, c.iCorThread, c.DwEventType);
+            m_stopEventInProcess = CallbacksWorkerException(c.iCorAppDomain, c.iCorThread, c.EventType, c.ExcModule);
             break;
         default:
             // finish loop
@@ -341,7 +341,7 @@ ManagedCallback::~ManagedCallback()
     // Clear queue and do notify_one call with FinishWorker request.
     std::queue<CallbackQueueEntry> empty;
     std::swap(m_callbacksQueue, empty);
-    m_callbacksQueue.emplace(CallbackQueueCall::FinishWorker, nullptr, nullptr, nullptr, STEP_NORMAL, DEBUG_EXCEPTION_FIRST_CHANCE);
+    m_callbacksQueue.emplace(CallbackQueueCall::FinishWorker, nullptr, nullptr, nullptr, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
     m_stopEventInProcess = false; // forced to proceed during brake too
     m_callbacksCV.notify_one(); // notify_one with lock
     lock.unlock();
@@ -422,7 +422,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(ICorDebugAppDomain *pAppDo
         pAppDomain->AddRef();
         pThread->AddRef();
         pBreakpoint->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::Breakpoint, pAppDomain, pThread, pBreakpoint, STEP_NORMAL, DEBUG_EXCEPTION_FIRST_CHANCE);
+        m_callbacksQueue.emplace(CallbackQueueCall::Breakpoint, pAppDomain, pThread, pBreakpoint, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
     });
 }
 
@@ -434,7 +434,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(ICorDebugAppDomain *pApp
     {
         pAppDomain->AddRef();
         pThread->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::StepComplete, pAppDomain, pThread, nullptr, reason, DEBUG_EXCEPTION_FIRST_CHANCE);
+        m_callbacksQueue.emplace(CallbackQueueCall::StepComplete, pAppDomain, pThread, nullptr, reason, ExceptionCallbackType::FIRST_CHANCE);
     });
 }
 
@@ -445,7 +445,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(ICorDebugAppDomain *pAppDomain,
     {
         pAppDomain->AddRef();
         pThread->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::Break, pAppDomain, pThread, nullptr, STEP_NORMAL, DEBUG_EXCEPTION_FIRST_CHANCE);
+        m_callbacksQueue.emplace(CallbackQueueCall::Break, pAppDomain, pThread, nullptr, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
     });
 }
 
@@ -535,6 +535,8 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitThread(ICorDebugAppDomain *pAppDo
     m_debugger.m_sharedEvalWaiter->NotifyEvalComplete(pThread, nullptr);
     if (m_debugger.GetLastStoppedThreadId() == threadId)
         m_debugger.InvalidateLastStoppedThreadId();
+
+    m_debugger.m_uniqueBreakpoints->ManagedCallbackExitThread(pThread);
 
     m_debugger.m_sharedProtocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
     return ContinueAppDomainWithCallbacksQueue(pAppDomain);
@@ -705,15 +707,78 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::DestroyConnection(ICorDebugProcess *p
     return ContinueProcessWithCallbacksQueue(pProcess);
 }
 
+static HRESULT GetExceptionModuleName(ICorDebugFrame *pFrame, std::string &excModule)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMDImport;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
+
+    WCHAR mdName[mdNameLen];
+    ULONG nameLen;
+    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
+    excModule = to_utf8(mdName);
+
+    return S_OK;
+}
+
+static ExceptionCallbackType CorrectedByJMCCatchHandlerEventType(ICorDebugFrame *pFrame, bool justMyCode)
+{
+    if (!justMyCode)
+        return ExceptionCallbackType::CATCH_HANDLER_FOUND;
+
+    BOOL JMCStatus = FALSE;
+    ToRelease<ICorDebugFunction> iCorFunction;
+    ToRelease<ICorDebugFunction2> iCorFunction2;
+    if (pFrame != nullptr &&
+        SUCCEEDED(pFrame->GetFunction(&iCorFunction)) &&
+        SUCCEEDED(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2)) &&
+        SUCCEEDED(iCorFunction2->GetJMCStatus(&JMCStatus)) &&
+        JMCStatus == TRUE)
+    {
+        return ExceptionCallbackType::USER_CATCH_HANDLER_FOUND;
+    }
+
+    return ExceptionCallbackType::CATCH_HANDLER_FOUND;
+}
+
 HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugFrame *pFrame,
                                                      ULONG32 nOffset, CorDebugExceptionCallbackType dwEventType, DWORD dwFlags)
 {
     LogFuncEntry();
     return AddCallbackToQueue(pAppDomain, [&]()
     {
+        // pFrame could be neutered in case of evaluation during brake, do all stuff with pFrame in callback itself.
+        ExceptionCallbackType eventType;
+        std::string excModule;
+        switch(dwEventType)
+        {
+        case DEBUG_EXCEPTION_FIRST_CHANCE:
+            eventType = ExceptionCallbackType::FIRST_CHANCE;
+            GetExceptionModuleName(pFrame, excModule);
+            break;
+        case DEBUG_EXCEPTION_USER_FIRST_CHANCE:
+            eventType = ExceptionCallbackType::USER_FIRST_CHANCE;
+            GetExceptionModuleName(pFrame, excModule);
+            break;
+        case DEBUG_EXCEPTION_CATCH_HANDLER_FOUND:
+            eventType = CorrectedByJMCCatchHandlerEventType(pFrame, m_debugger.IsJustMyCode());
+            break;
+        default:
+            eventType = ExceptionCallbackType::UNHANDLED;
+            break;
+        }
+
         pAppDomain->AddRef();
         pThread->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::Exception, pAppDomain, pThread, nullptr, STEP_NORMAL, dwEventType);
+        m_callbacksQueue.emplace(CallbackQueueCall::Exception, pAppDomain, pThread, nullptr, STEP_NORMAL, eventType, excModule);
     });
 }
 

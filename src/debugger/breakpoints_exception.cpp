@@ -4,340 +4,541 @@
 
 #include "debugger/breakpoints_exception.h"
 #include "debugger/evaluator.h"
-#include "debugger/variables.h"
 #include "debugger/valueprint.h"
-#include "debugger/threads.h"
 #include "metadata/typeprinter.h"
-#include "utils/utf.h"
+#include <sstream>
 
 namespace netcoredbg
 {
 
-HRESULT ExceptionBreakpoints::ExceptionBreakpointStorage::Insert(uint32_t id, const ExceptionBreakMode &mode, const std::string &name)
+void ExceptionBreakpoints::ManagedExceptionBreakpoint::ToBreakpoint(Breakpoint &breakpoint) const
 {
-    HRESULT Status = S_OK;
-    // vsdbg each time creates a new exception breakpoint id.
-    // But, for "*" name, the last `id' silently are deleted by vsdbg.
-    if (name.compare("*") == 0)
-    {
-        if (bp.current_asterix_id != 0)
-        {
-            // Silent remove for global filter
-            Status = Delete(bp.current_asterix_id);
-        }
-        bp.current_asterix_id = id;
-    }
-
-    bp.exceptionBreakpoints.insert(std::make_pair(name, mode));
-    bp.table[id] = name;
-
-    return Status;
+    breakpoint.id = this->id;
+    breakpoint.verified = true;
 }
 
-HRESULT ExceptionBreakpoints::ExceptionBreakpointStorage::Delete(uint32_t id)
+void ExceptionBreakpoints::DeleteAll()
 {
-    const auto it = bp.table.find(id);
-    if (it == bp.table.end())
+    m_breakpointsMutex.lock();
+    for (auto &filterMap : m_exceptionBreakpoints)
     {
-        return E_FAIL;
+        filterMap.clear();
     }
-    const std::string name = it->second;
-    if (name.compare("*") == 0)
+    m_breakpointsMutex.unlock();
+}
+
+static std::string CalculateExceptionBreakpointHash(const ExceptionBreakpoint &expb)
+{
+    std::ostringstream ss;
+
+    ss << (int)expb.categoryHint;
+
+    if (expb.negativeCondition)
+        ss << "!";
+
+    for (auto &entry : expb.condition)
     {
-        bp.current_asterix_id = 0;
+        ss << ":" << entry << ":";
     }
-    bp.exceptionBreakpoints.erase(name);
-    bp.table.erase(id);
+
+    return ss.str();
+}
+
+HRESULT ExceptionBreakpoints::SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints,
+                                                      std::function<uint32_t()> getId)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+
+    // Remove old breakpoints
+    std::vector<std::unordered_set<std::string>> expBreakpoints((size_t)ExceptionBreakpointFilter::Size);
+    for (const auto &expb : exceptionBreakpoints)
+    {
+        expBreakpoints[(size_t)expb.filterId].insert(CalculateExceptionBreakpointHash(expb));
+    }
+    for (size_t filter = 0; filter < (size_t)ExceptionBreakpointFilter::Size; ++filter)
+    {
+        for (auto it = m_exceptionBreakpoints[filter].begin(); it != m_exceptionBreakpoints[filter].end();)
+        {
+            if (expBreakpoints[filter].find(it->first) == expBreakpoints[filter].end())
+                it = m_exceptionBreakpoints[filter].erase(it);
+            else
+                ++it;
+        }
+    }
+
+    if (exceptionBreakpoints.empty())
+        return S_OK;
+
+    // Export exception breakpoints
+    for (const auto &expb : exceptionBreakpoints)
+    {
+        std::string expHash(CalculateExceptionBreakpointHash(expb));
+
+        Breakpoint breakpoint;
+
+        auto b = m_exceptionBreakpoints[(size_t)expb.filterId].find(expHash);
+        if (b == m_exceptionBreakpoints[(size_t)expb.filterId].end())
+        {
+            // New breakpoint
+            ManagedExceptionBreakpoint bp;
+            bp.id = getId();
+            bp.categoryHint = expb.categoryHint;
+            bp.condition = expb.condition;
+            bp.negativeCondition = expb.negativeCondition;
+
+            bp.ToBreakpoint(breakpoint);
+            m_exceptionBreakpoints[(size_t)expb.filterId].insert(std::make_pair(expHash, std::move(bp)));
+        }
+        else
+        {
+            ManagedExceptionBreakpoint &bp = b->second;
+            bp.ToBreakpoint(breakpoint);
+        }
+
+        breakpoints.push_back(breakpoint);
+    }
 
     return S_OK;
 }
 
-bool ExceptionBreakpoints::ExceptionBreakpointStorage::Match(int dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category) const
+// Return:
+// true - covered by filter, need emit exception event
+// false - not covered by filter, ignore exception
+bool ExceptionBreakpoints::CoveredByFilter(ExceptionBreakpointFilter filterId, const std::string &excType, ExceptionCategory excCategory)
 {
-    // INFO: #pragma once - its a reason for this constants
-    const int FIRST_CHANCE = 1;
-    const int USER_FIRST_CHANCE = 2;
-    const int CATCH_HANDLER_FOUND = 3;
-    const int UNHANDLED = 4;
+    assert(excCategory != ExceptionCategory::ANY); // caller must know category: CLR = Exception() callback, MDA = MDANotification() callback
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
 
-    bool unsupported = (dwEventType == FIRST_CHANCE || dwEventType == USER_FIRST_CHANCE);
-    if (unsupported)
-        return false;
-
-    // Try to match exactly by name after check global name "*"
-    // ExceptionBreakMode can be specialized by explicit filter.
-    ExceptionBreakMode mode;
-    GetExceptionBreakMode(mode, "*");
-    GetExceptionBreakMode(mode, exceptionName);
-    if (category == ExceptionBreakCategory::ANY || category == mode.category)
+    for (auto &expb : m_exceptionBreakpoints[(size_t)filterId])
     {
-        if (dwEventType == CATCH_HANDLER_FOUND)
-        {
-            if (mode.UserUnhandled())
-            {
-                // Expected user-applications exceptions from throw(), but get
-                // explicit/implicit exception from `System.' clases.
-                const std::string SystemPrefix = "System.";
-                if (exceptionName.compare(0, SystemPrefix.size(), SystemPrefix) != 0)
-                    return true;
-            }
-            if (mode.Throw())
-                return true;
-        }
-        if (dwEventType == UNHANDLED)
-        {
-            if (mode.Unhandled())
-                return true;
-        }
+        if (expb.second.categoryHint != excCategory &&
+            expb.second.categoryHint != ExceptionCategory::ANY)
+            continue;
+
+        if (expb.second.condition.empty())
+            return true;
+
+        bool isCoveredByCondition = expb.second.condition.find(excType) == expb.second.condition.end() ?
+                                    expb.second.negativeCondition : !expb.second.negativeCondition;
+        if (isCoveredByCondition)
+            return true;
     }
 
     return false;
 }
 
-HRESULT ExceptionBreakpoints::ExceptionBreakpointStorage::GetExceptionBreakMode(ExceptionBreakMode &out, const std::string &name) const
+static void GetExceptionShorDescription(ExceptionBreakMode breakMode, const std::string &excType, const std::string &excModule, std::string &result)
 {
-    auto p = bp.exceptionBreakpoints.equal_range(name);
-    if (p.first == bp.exceptionBreakpoints.end())
+    switch(breakMode)
     {
-        return E_FAIL;
-    }
+        case ExceptionBreakMode::THROW:
+            result = "Exception thrown: '" + excType + "' in " + excModule;
+            break;
 
-    out.category = p.first->second.category;
-    out.flags |= p.first->second.flags;
-    ++p.first;
-    while (p.first != p.second)
+        case ExceptionBreakMode::USER_UNHANDLED:
+            result = "An exception of type '" + excType + "' occurred in " + excModule + " but was not handled in user code";
+            break;
+
+        case ExceptionBreakMode::UNHANDLED:
+            result = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
+            break;
+
+        default:
+            result = "";
+            break;
+    }
+}
+
+static void GetExceptionStageName(ExceptionBreakMode breakMode, std::string &result)
+{
+    switch(breakMode)
     {
-        if (out.category == ExceptionBreakCategory::ANY ||
-            out.category == p.first->second.category)
-        {
-            out.flags |= p.first->second.flags;
-        }
-        ++p.first;
-    }
+        case ExceptionBreakMode::THROW:
+            result = "throw";
+            break;
 
-    return S_OK;
+        case ExceptionBreakMode::USER_UNHANDLED:
+            result = "user-unhandled";
+            break;
+
+        case ExceptionBreakMode::UNHANDLED:
+            result = "unhandled";
+            break;
+
+        default:
+            result = "";
+            break;
+    }
 }
 
-HRESULT ExceptionBreakpoints::InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t id)
+static void GetExceptionBreakModeName(ExceptionBreakMode breakMode, std::string &result)
 {
-    std::lock_guard<std::mutex> lock(m_exceptionBreakpointsMutex);
-    return m_exceptionBreakpoints.Insert(id, mode, name);
-}
-
-HRESULT ExceptionBreakpoints::DeleteExceptionBreakpoint(uint32_t id)
-{
-    std::lock_guard<std::mutex> lock(m_exceptionBreakpointsMutex);
-    return m_exceptionBreakpoints.Delete(id);
-}
-
-HRESULT ExceptionBreakpoints::GetExceptionBreakMode(ExceptionBreakMode &mode, const std::string &name)
-{
-    std::lock_guard<std::mutex> lock(m_exceptionBreakpointsMutex);
-    return m_exceptionBreakpoints.GetExceptionBreakMode(mode, name);
-}
-
-bool ExceptionBreakpoints::MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &name, const ExceptionBreakCategory category)
-{
-    std::lock_guard<std::mutex> lock(m_exceptionBreakpointsMutex);
-    return m_exceptionBreakpoints.Match(dwEventType, name, category);
-}
-
-HRESULT ExceptionBreakpoints::GetExceptionInfoResponse(ICorDebugProcess *pProcess, ThreadId threadId, ExceptionInfoResponse &exceptionInfoResponse)
-{
-    // Are needed to move next line to Exception() callback?
-    assert(int(threadId) != -1);
-
-    HRESULT res = E_FAIL;
-    HRESULT Status = S_OK;
-    bool hasInner = false;
-    Variable varException;
-    ToRelease <ICorDebugValue> evalValue;
-    ToRelease<ICorDebugValue> pExceptionValue;
-    ToRelease<ICorDebugThread> pThread;
-
-    WCHAR message[] = W("_message\0");
-    FrameId frameId;
-
-    std::unique_lock<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
-    if (m_lastUnhandledExceptionThreadIds.find(threadId) != m_lastUnhandledExceptionThreadIds.end()) {
-        lock.unlock();
-        exceptionInfoResponse.breakMode.resetAll();
-    }
-    else {
-        lock.unlock();
-        ExceptionBreakMode mode;
-
-        if ((res = GetExceptionBreakMode(mode, "*")) && FAILED(res))
-            goto failed;
-
-        exceptionInfoResponse.breakMode = mode;
-    }
-
-    if ((res = pProcess->GetThread(int(threadId), &pThread)) && FAILED(res))
-        goto failed;
-
-    if ((res = pThread->GetCurrentException(&pExceptionValue)) && FAILED(res)) {
-        LOGE("GetCurrentException() failed, %0x", res);
-        goto failed;
-    }
-
-    PrintStringField(pExceptionValue, message, exceptionInfoResponse.description);
-
-    if ((res = m_sharedVariables->GetExceptionVariable(frameId, pThread, varException)) && FAILED(res))
-        goto failed;
-
-    if (exceptionInfoResponse.breakMode.OnlyUnhandled() || exceptionInfoResponse.breakMode.UserUnhandled()) {
-        exceptionInfoResponse.description = "An unhandled exception of type '" + varException.type +
-            "' occurred in " + varException.module;
-    }
-    else {
-        exceptionInfoResponse.description = "Exception thrown: '" + varException.type +
-            "' in " + varException.module;
-    }
-
-    exceptionInfoResponse.exceptionId = varException.type;
-
-    exceptionInfoResponse.details.evaluateName = varException.name;
-    exceptionInfoResponse.details.typeName = varException.type;
-    exceptionInfoResponse.details.fullTypeName = varException.type;
-
-    if (FAILED(m_sharedEvaluator->getObjectByFunction("get_StackTrace", pThread, pExceptionValue, &evalValue, defaultEvalFlags))) {
-        exceptionInfoResponse.details.stackTrace = "<undefined>"; // Evaluating problem entire object
-    }
-    else {
-        PrintValue(evalValue, exceptionInfoResponse.details.stackTrace);
-        ToRelease <ICorDebugValue> evalValueOut;
-        BOOL isNotNull = TRUE;
-
-        ICorDebugValue *evalValueInner = pExceptionValue;
-        while (isNotNull) {
-            if ((res = m_sharedEvaluator->getObjectByFunction("get_InnerException", pThread, evalValueInner, &evalValueOut, defaultEvalFlags)) && FAILED(res))
-                goto failed;
-
-            std::string tmpstr;
-            PrintValue(evalValueOut, tmpstr);
-
-            if (tmpstr.compare("null") == 0)
-                break;
-
-            ToRelease<ICorDebugValue> pValueTmp;
-
-            if ((res = DereferenceAndUnboxValue(evalValueOut, &pValueTmp, &isNotNull)) && FAILED(res))
-                goto failed;
-
-            hasInner = true;
-            ExceptionDetails inner;
-            PrintStringField(evalValueOut, message, inner.message);
-
-            if ((res = m_sharedEvaluator->getObjectByFunction("get_StackTrace", pThread, evalValueOut, &pValueTmp, defaultEvalFlags)) && FAILED(res))
-                goto failed;
-
-            PrintValue(pValueTmp, inner.stackTrace);
-
-            exceptionInfoResponse.details.innerException.push_back(inner);
-            evalValueInner = evalValueOut;
-        }
-    }
-
-    if (hasInner)
-        exceptionInfoResponse.description += "\n Inner exception found, see $exception in variables window for more details.";
-
-    return S_OK;
-
-failed:
-    IfFailRet(res);
-    return res;
-}
-
-static HRESULT GetExceptionInfo(ICorDebugThread *pThread, std::string &excType, std::string &excModule)
-{
-    HRESULT Status;
-
-    ToRelease<ICorDebugValue> pExceptionValue;
-    IfFailRet(pThread->GetCurrentException(&pExceptionValue));
-
-    TypePrinter::GetTypeOfValue(pExceptionValue, excType);
-
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-    if (pFrame == nullptr)
-        return E_FAIL;
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
-
-    WCHAR mdName[mdNameLen];
-    ULONG nameLen;
-    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
-    excModule = to_utf8(mdName);
-    return S_OK;
-}
-
-HRESULT ExceptionBreakpoints::ManagedCallbackException(ICorDebugThread *pThread, CorDebugExceptionCallbackType dwEventType, StoppedEvent &event, std::string &textOutput)
-{
-    // INFO: Exception event callbacks produce Stop process and managed threads in coreCLR
-    // After emit Stop event from debugger coreclr by command handler send a ExceptionInfo request.
-    // For answer on ExceptionInfo are needed long FuncEval() with asynchronous EvalComplete event.
-    // Of course evaluations is not atomic for coreCLR. Before EvalComplete we can get a new
-    // ExceptionEvent if we allow to running of current thread.
-    //
-    // Current implementation stops all threads while EvalComplete waiting. But, unfortunately,
-    // it's not helps in any cases. Exceptions can be throws in the same time from some threads.
-    // And in this case threads thread suspend is not guaranteed, becase thread can stay in
-    // "GC unsafe mode" or "Optimized code". And also, same time exceptions puts in priority queue event,
-    // and all next events one by one will transport each exception.
-    // For "GC unsafe mode" or "Optimized code" we cannot invoke CreateEval() function.
-
-    HRESULT Status;
-    std::string excType, excModule;
-    if (FAILED(Status = GetExceptionInfo(pThread, excType, excModule)))
+    switch(breakMode)
     {
-        excType = "unknown exception";
-        excModule = "unknown module";
-        LOGI("Can't get exception info: %s", errormessage(Status));
+        case ExceptionBreakMode::THROW:
+            result = "always";
+            break;
+
+        case ExceptionBreakMode::USER_UNHANDLED:
+            result = "userUnhandled";
+            break;
+
+        case ExceptionBreakMode::UNHANDLED:
+            result = "unhandled";
+            break;
+
+        default:
+            result = "";
+            break;
     }
+}
 
-    ExceptionBreakMode mode;
-    GetExceptionBreakMode(mode, "*");
-    bool unhandled = (dwEventType == DEBUG_EXCEPTION_UNHANDLED && mode.Unhandled());
-    bool not_matched = !(unhandled || MatchExceptionBreakpoint(dwEventType, excType, ExceptionBreakCategory::CLR));
-
-    if (not_matched)
+HRESULT ExceptionBreakpoints::GetExceptionDetails(ICorDebugThread *pThread, ICorDebugValue *pExceptionValue, ExceptionDetails &details)
+{
+    std::string excType;
+    if (FAILED(TypePrinter::GetTypeOfValue(pExceptionValue, details.fullTypeName)))
     {
-        textOutput = "Exception thrown: '" + excType + "' in " + excModule + "\n";
-        return S_OK; // no breakpoints hit, forced to interrupt this callback
+        excType = "<unknown exception>";
     }
 
-    std::string details;
-    if (unhandled)
-    {
-        details = "An unhandled exception of type '" + excType + "' occurred in " + excModule;
-        std::lock_guard<std::mutex> lock(m_lastUnhandledExceptionThreadIdsMutex);
-        ThreadId threadId(getThreadId(pThread));
-        m_lastUnhandledExceptionThreadIds.insert(threadId);
-    }
+    auto lastDotPosition = details.fullTypeName.find_last_of(".");
+    if (lastDotPosition < details.fullTypeName.size())
+        details.typeName = details.fullTypeName.substr(lastDotPosition + 1);
     else
+        details.typeName = details.fullTypeName;
+
+    details.evaluateName = "$exception";
+
+    HRESULT Status;
+    ToRelease<ICorDebugValue> iCorInnerExceptionValue;
+    const bool escape = false;
+    m_sharedEvaluator->WalkMembers(pExceptionValue, pThread, FrameLevel{0}, [&](
+        ICorDebugType*,
+        bool,
+        const std::string &memberName,
+        Evaluator::GetValueCallback getValue,
+        Evaluator::SetValueCallback)
     {
-        details = "Exception thrown: '" + excType + "' in " + excModule;
+        auto getMemberWithName = [&](const std::string &name, std::string &result) -> HRESULT
+        {
+            if (memberName != name)
+                return S_FALSE;
+
+            ToRelease<ICorDebugValue> iCorResultValue;
+            IfFailRet(getValue(&iCorResultValue, defaultEvalFlags));
+
+            BOOL isNull = TRUE;
+            ToRelease<ICorDebugReferenceValue> iCorReferenceValue;
+            if (SUCCEEDED(iCorResultValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &iCorReferenceValue)) &&
+                SUCCEEDED(iCorReferenceValue->IsNull(&isNull)) &&
+                isNull == FALSE)
+            {
+                PrintValue(iCorResultValue, result, escape);
+            }
+            return S_OK;
+        };
+
+        IfFailRet(Status = getMemberWithName("_message", details.message));
+        if (Status == S_OK)
+            return S_OK;
+
+        IfFailRet(Status = getMemberWithName("StackTrace", details.stackTrace));
+        if (Status == S_OK)
+            return S_OK;
+
+        IfFailRet(Status = getMemberWithName("Source", details.source));
+        if (Status == S_OK)
+            return S_OK;
+
+        if (memberName == "InnerException")
+        {
+            IfFailRet(getValue(&iCorInnerExceptionValue, defaultEvalFlags));
+            BOOL isNull = FALSE;
+            ToRelease<ICorDebugReferenceValue> iCorReferenceValue;
+            if (SUCCEEDED(iCorInnerExceptionValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &iCorReferenceValue)) &&
+                SUCCEEDED(iCorReferenceValue->IsNull(&isNull)) &&
+                isNull == TRUE)
+            {
+                iCorInnerExceptionValue.Free();
+            }
+        }
+
+        return S_OK;
+    });
+
+    details.formattedDescription = "**" + details.fullTypeName + "**";
+    if (!details.message.empty())
+        details.formattedDescription += " '" + details.message + "'";
+
+    if (iCorInnerExceptionValue != nullptr)
+    {
+        details.innerException.reset(new ExceptionDetails);
+        GetExceptionDetails(pThread, iCorInnerExceptionValue, *details.innerException.get());
     }
 
-    std::string message;
-    WCHAR fieldName[] = W("_message\0");
-    ToRelease<ICorDebugValue> pExceptionValue;
-    if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)))
-        PrintStringField(pExceptionValue, fieldName, message);
+    return S_OK;
+}
 
-    event.text = excType;
-    event.description = message.empty() ? details : message;
+HRESULT ExceptionBreakpoints::GetExceptionInfo(ICorDebugThread *pThread, ExceptionInfo &exceptionInfo)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue> iCorExceptionValue;
+    IfFailRet(pThread->GetCurrentException(&iCorExceptionValue));
+    if (iCorExceptionValue == nullptr)
+        return E_FAIL;
+
+    DWORD tid = 0;
+    IfFailRet(pThread->GetID(&tid));
+
+    std::lock_guard<std::mutex> lock(m_threadsExceptionMutex);
+
+    auto findBreakMode = m_threadsExceptionBreakMode.find(tid);
+    if (findBreakMode == m_threadsExceptionBreakMode.end() || findBreakMode->second == ExceptionBreakMode::NEVER)
+        return E_FAIL;
+
+    IfFailRet(GetExceptionDetails(pThread, iCorExceptionValue, exceptionInfo.details));
+
+    std::string excModule;
+    if (exceptionInfo.details.source.empty())
+        excModule = "<unknown module>";
+    else
+        excModule = exceptionInfo.details.source + ".dll";
+
+    GetExceptionShorDescription(findBreakMode->second, exceptionInfo.details.fullTypeName, excModule, exceptionInfo.description);
+
+    if (!exceptionInfo.details.message.empty())
+        exceptionInfo.description += ": '" + exceptionInfo.details.message + "'";
+
+    if (exceptionInfo.details.innerException != nullptr)
+    {
+        exceptionInfo.description += "\n Inner exceptions found, see $exception in variables window for more details.\n Innermost exception: " +
+                                     exceptionInfo.details.innerException->fullTypeName;
+    }
+
+    GetExceptionBreakModeName(findBreakMode->second, exceptionInfo.breakMode);
+    // CLR only for now, MDA not implemented
+    // TODO need store info about category too (not only BreakMode) during Exception() (CLR) and MDANotification() (MDA) callbacks.
+    exceptionInfo.exceptionId = "CLR/" + exceptionInfo.details.fullTypeName;
+
+    return S_OK;
+}
+
+/*
+    Implemented exception callback logic by dwEventType (CorDebugExceptionCallbackType):
+
+                  DEBUG_EXCEPTION_FIRST_CHANCE -> DEBUG_EXCEPTION_CATCH_HANDLER_FOUND
+    enabled  JMC: throw                           none (reset thread status)
+    disabled JMC: throw                           none (reset thread status)
+
+    * case with ICorDebugProcess8::EnableExceptionCallbacksOutsideOfMyCode(FALSE), not used in our debugger, but must be included
+                  DEBUG_EXCEPTION_USER_FIRST_CHANCE -> DEBUG_EXCEPTION_CATCH_HANDLER_FOUND
+    enabled  JMC: throw                                [outside JMC] user-unhandled (reset thread status)
+                                                       [inside  JMC] none (reset thread status)
+    disabled JMC: throw                                none (reset thread status)
+
+                  DEBUG_EXCEPTION_FIRST_CHANCE -> DEBUG_EXCEPTION_USER_FIRST_CHANCE -> DEBUG_EXCEPTION_CATCH_HANDLER_FOUND
+    enabled  JMC: throw                           none                                 [outside JMC] user-unhandled (reset thread status)
+                                                                                       [inside  JMC] none (reset thread status)
+    disabled JMC: throw                           none                                 none (reset thread status)
+
+    * fatal exception from runtime itself
+                  DEBUG_EXCEPTION_UNHANDLED
+    enabled  JMC: unhandled (reset thread status)
+    disabled JMC: unhandled (reset thread status)
+
+                  DEBUG_EXCEPTION_FIRST_CHANCE -> DEBUG_EXCEPTION_UNHANDLED
+    enabled  JMC: throw                           unhandled (reset thread status)
+    disabled JMC: throw                           unhandled (reset thread status)
+
+    * case with ICorDebugProcess8::EnableExceptionCallbacksOutsideOfMyCode(FALSE), not used in our debugger, but must be included
+                  DEBUG_EXCEPTION_USER_FIRST_CHANCE -> DEBUG_EXCEPTION_UNHANDLED
+    enabled  JMC: throw                                unhandled (reset thread status)
+    disabled JMC: throw                                unhandled (reset thread status)
+
+                  DEBUG_EXCEPTION_FIRST_CHANCE -> DEBUG_EXCEPTION_USER_FIRST_CHANCE -> DEBUG_EXCEPTION_UNHANDLED
+    enabled  JMC: throw                           none                                 unhandled (reset thread status)
+    disabled JMC: throw                           none                                 unhandled (reset thread status)
+
+    Reset exception thread status not only for `catch` but for `unhandled` too, since we may have not fatal unhandled exceptions,
+    for example, System.AppDomainUnloadedException (https://docs.microsoft.com/en-us/dotnet/api/system.appdomainunloadedexception).
+
+    More related info:
+    https://github.com/OmniSharp/omnisharp-vscode/blob/master/debugger.md#exception-settings
+    https://docs.microsoft.com/en-us/visualstudio/debugger/managing-exceptions-with-the-debugger
+*/
+HRESULT ExceptionBreakpoints::ManagedCallbackException(ICorDebugThread *pThread, ExceptionCallbackType eventType, std::string excModule, StoppedEvent &event)
+{
+    HRESULT Status;
+    DWORD tid = 0;
+    IfFailRet(pThread->GetID(&tid));
+
+    ToRelease<ICorDebugValue> iCorExceptionValue;
+    IfFailRet(pThread->GetCurrentException(&iCorExceptionValue));
+    if (iCorExceptionValue == nullptr)
+        return E_FAIL;
+
+    std::string excType;
+    if (FAILED(TypePrinter::GetTypeOfValue(iCorExceptionValue, excType)))
+    {
+        excType = "<unknown exception>";
+    }
+
+    std::lock_guard<std::mutex> lock(m_threadsExceptionMutex);
+
+    switch(eventType)
+    {
+        case ExceptionCallbackType::FIRST_CHANCE:
+        {
+            assert(m_threadsExceptionStatus.find(tid) == m_threadsExceptionStatus.end());
+
+            // Important, reset previous stage for this thread.
+            m_threadsExceptionBreakMode[tid] = ExceptionBreakMode::NEVER;
+
+            m_threadsExceptionStatus[tid].m_lastEvent = ExceptionCallbackType::FIRST_CHANCE;
+            m_threadsExceptionStatus[tid].m_excModule = excModule;
+
+            if (!CoveredByFilter(ExceptionBreakpointFilter::THROW, excType, ExceptionCategory::CLR) &&
+                !CoveredByFilter(ExceptionBreakpointFilter::THROW_USER_UNHANDLED, excType, ExceptionCategory::CLR))
+                return S_OK;
+
+            m_threadsExceptionBreakMode[tid] = ExceptionBreakMode::THROW;
+            break;
+        }
+
+        case ExceptionCallbackType::USER_FIRST_CHANCE:
+        {
+            // In case we already "THROW" at FIRST CHANCE, don't emit "THROW" event again.
+            auto find = m_threadsExceptionStatus.find(tid);
+            if (find != m_threadsExceptionStatus.end())
+            {
+                m_threadsExceptionStatus[tid].m_lastEvent = ExceptionCallbackType::USER_FIRST_CHANCE;
+                if (find->second.m_excModule.empty())
+                    find->second.m_excModule = excModule;
+
+                return S_OK;
+            }
+
+            m_threadsExceptionStatus[tid].m_lastEvent = ExceptionCallbackType::USER_FIRST_CHANCE;
+            m_threadsExceptionStatus[tid].m_excModule = excModule;
+
+            if (!CoveredByFilter(ExceptionBreakpointFilter::THROW, excType, ExceptionCategory::CLR) &&
+                !CoveredByFilter(ExceptionBreakpointFilter::THROW_USER_UNHANDLED, excType, ExceptionCategory::CLR))
+                return S_OK;
+
+            m_threadsExceptionBreakMode[tid] = ExceptionBreakMode::THROW;
+            break;
+        }
+
+        case ExceptionCallbackType::CATCH_HANDLER_FOUND:
+        {
+            assert(m_threadsExceptionStatus.find(tid) != m_threadsExceptionStatus.end());
+
+            if (!m_justMyCode || m_threadsExceptionStatus[tid].m_lastEvent == ExceptionCallbackType::FIRST_CHANCE)
+            {
+                m_threadsExceptionStatus.erase(tid);
+                return S_OK;
+            }
+
+            if (!CoveredByFilter(ExceptionBreakpointFilter::USER_UNHANDLED, excType, ExceptionCategory::CLR) &&
+                !CoveredByFilter(ExceptionBreakpointFilter::THROW_USER_UNHANDLED, excType, ExceptionCategory::CLR))
+            {
+                m_threadsExceptionStatus.erase(tid);
+                return S_OK;
+            }
+
+            excModule = m_threadsExceptionStatus[tid].m_excModule;
+            m_threadsExceptionStatus.erase(tid);
+
+            m_threadsExceptionBreakMode[tid] = ExceptionBreakMode::USER_UNHANDLED;
+            break;
+        }
+
+        case ExceptionCallbackType::USER_CATCH_HANDLER_FOUND:
+        {
+            assert(m_threadsExceptionStatus.find(tid) != m_threadsExceptionStatus.end());
+            assert(m_threadsExceptionStatus[tid].m_lastEvent == ExceptionCallbackType::USER_FIRST_CHANCE);
+
+            m_threadsExceptionStatus.erase(tid);
+            return S_OK;
+        }
+
+        case ExceptionCallbackType::UNHANDLED:
+        {
+            // By current logic, debugger must stop at all unhandled exception (that will crash application), no matter what user has configured.
+            // TODO some exception like System.AppDomainUnloadedException or System.Threading.ThreadAbortException, could be ignored at unhandled,
+            // since they don't crash application, in this case:
+            //     if (CoveredByFilter(ExceptionBreakpointFilter::UNHANDLED, excType, ExceptionCategory::CLR)) - forced to emit event
+
+            auto find = m_threadsExceptionStatus.find(tid);
+            if (find != m_threadsExceptionStatus.end())
+            {
+                excModule = find->second.m_excModule;
+                m_threadsExceptionStatus.erase(find);
+            }
+
+            m_threadsExceptionBreakMode[tid] = ExceptionBreakMode::UNHANDLED;
+            break;
+        }
+
+        default:
+            return E_INVALIDARG;
+    }
+
+    if (excModule.empty())
+        excModule = "<unknown module>";
+
+    // Custom message, provided by runtime (in case internal runtime exception) or directly by user as exception constructor argument on throw.
+    // Note, this is optional field in exception object that could have nulled reference.
+    std::string excMessage;
+    const bool escape = false;
+    m_sharedEvaluator->WalkMembers(iCorExceptionValue, pThread, FrameLevel{0}, [&](
+        ICorDebugType*,
+        bool,
+        const std::string &memberName,
+        Evaluator::GetValueCallback getValue,
+        Evaluator::SetValueCallback)
+    {
+        ToRelease<ICorDebugValue> pResultValue;
+
+        if (memberName != "_message")
+            return S_OK;
+
+        IfFailRet(getValue(&pResultValue, defaultEvalFlags));
+
+        BOOL isNull = TRUE;
+        ToRelease<ICorDebugReferenceValue> pReferenceValue;
+        if (SUCCEEDED(pResultValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue)) &&
+            SUCCEEDED(pReferenceValue->IsNull(&isNull)) &&
+            isNull == FALSE)
+        {
+            PrintValue(pResultValue, excMessage, escape);
+            return E_ABORT; // Fast exit from cycle.
+        }
+
+        return S_OK;
+    });
+
+    GetExceptionShorDescription(m_threadsExceptionBreakMode[tid], excType, excModule, event.text);
+    GetExceptionStageName(m_threadsExceptionBreakMode[tid], event.exception_stage);
+    event.exception_category = "clr"; // ManagedCallbackException() called for CLR exceptions only
+    event.exception_name = excType;
+    event.exception_message = excMessage;
 
     return S_FALSE; // S_FALSE - breakpoint hit, not affect on callback (callback will emit stop event)
+}
+
+HRESULT ExceptionBreakpoints::ManagedCallbackExitThread(ICorDebugThread *pThread)
+{
+    HRESULT Status;
+    DWORD tid = 0;
+    IfFailRet(pThread->GetID(&tid));
+
+    m_threadsExceptionMutex.lock();
+    m_threadsExceptionBreakMode.erase(tid);
+    m_threadsExceptionStatus.erase(tid);
+    m_threadsExceptionMutex.unlock();
+
+    return S_OK;
 }
 
 } // namespace netcoredbg

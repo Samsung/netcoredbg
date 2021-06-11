@@ -14,7 +14,8 @@
 #include <string>
 #include <tuple>
 #include <vector>
-#include <bitset>
+#include <unordered_set>
+#include <memory>
 #include <cassert>
 #include <climits>
 
@@ -269,13 +270,17 @@ enum StopReason
 struct StoppedEvent
 {
     StopReason reason;
-    std::string description;
     ThreadId threadId;
     std::string text;
     bool allThreadsStopped;
 
-    StackFrame frame; // exposed for MI protocol
-    Breakpoint breakpoint; // exposed for MI protocol
+    std::string exception_category; // exposed for MI and CLI protocols
+    std::string exception_stage; // exposed for MI and CLI protocols
+    std::string exception_name; // exposed for MI and CLI protocols
+    std::string exception_message; // exposed for MI and CLI protocols
+
+    StackFrame frame; // exposed for MI and CLI protocols
+    Breakpoint breakpoint; // exposed for MI and CLI protocols
 
     StoppedEvent(StopReason reason, ThreadId threadId = ThreadId::Invalid)
         :reason(reason), threadId(threadId), allThreadsStopped(true)
@@ -377,7 +382,6 @@ struct Variable
     std::string name;
     std::string value;
     std::string type;
-    std::string module; // used by exception routine only
     VariablePresentationHint presentationHint;
     std::string evaluateName;
     uint32_t variablesReference;
@@ -428,137 +432,82 @@ struct FuncBreakpoint
     {}
 };
 
-enum struct ExceptionBreakCategory : int
+// Based on CorDebugExceptionCallbackType, but include info about JMC status in catch handler.
+// https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/cordebugexceptioncallbacktype-enumeration
+enum class ExceptionCallbackType
 {
-    CLR = 0,
-    MDA = 1,
-
-    ANY, // CLR or MDA does not matter
+    FIRST_CHANCE,
+    USER_FIRST_CHANCE,
+    CATCH_HANDLER_FOUND,
+    USER_CATCH_HANDLER_FOUND,
+    UNHANDLED
 };
 
-class ExceptionBreakMode
+enum class ExceptionBreakMode
 {
-private:
-    enum Flag : int
-    {
-        F_Unhandled = 0,     // Always enabled for catch of System Exceptions.
-        F_Throw = 1,         // All events raised by 'throw new' operator.
-        F_UserUnhandled = 2, // Break on unhandled exception in user code.
-
-        COUNT = 3            // Flag enum element counter
-    };
-
-public:
-    std::bitset<Flag::COUNT> flags;
-    ExceptionBreakCategory category;
-
-private:
-    void resetUnhandled() {
-        flags.reset(Flag::F_Unhandled);
-    }
-    void setUnhandled() {
-        flags.set(Flag::F_Unhandled);
-    }
-
-public:
-
-    bool Unhandled() const {
-        return flags.test(Flag::F_Unhandled);
-    }
-
-    bool Throw() const {
-        return flags.test(Flag::F_Throw);
-    }
-
-    bool UserUnhandled() const {
-        return flags.test(Flag::F_UserUnhandled);
-    }
-
-    void setThrow() {
-        flags.set(Flag::F_Throw);
-    }
-
-    void setUserUnhandled() {
-        flags.set(Flag::F_UserUnhandled);
-    }
-
-    void resetThrow() {
-        flags.reset(Flag::F_Throw);
-    }
-
-    void resetUserUnhandled() {
-        flags.reset(Flag::F_UserUnhandled);
-    }
-
-    // 'All', 'Never' values for VScode
-    void setAll() {
-        // setUnhandled() not supported
-        // its looks as a problem with unconsistent state
-        //setUnhandled();
-        setThrow();
-        setUserUnhandled();
-    }
-
-    void resetAll() {
-        // resetUnhandled() not supported
-        // its looks as a problem with unconsistent state
-        //resetUnhandled();
-        resetThrow();
-        resetUserUnhandled();
-    }
-
-    bool All() const {
-        return Unhandled() && Throw() && UserUnhandled();
-    }
-
-    bool Never() const {
-        // Always false because Unhandled() always throw
-        return !Unhandled() && !Throw() && !UserUnhandled();
-    }
-
-    // Logical extentions for freindly using of class
-    bool AnyUser() const {
-        return Throw() || UserUnhandled();
-    }
-
-    bool OnlyUnhandled() const {
-        return Unhandled() && !Throw() && !UserUnhandled();
-    }
-
-    ExceptionBreakMode() : category(ExceptionBreakCategory::CLR) {
-        flags.set(Flag::F_Unhandled);
-    }
+    NEVER,          // never stopped on this exception
+    THROW,          // stopped on throw
+    USER_UNHANDLED, // stopped on user-unhandled
+    UNHANDLED       // stopped on unhandled
 };
 
+// https://microsoft.github.io/debug-adapter-protocol/specification#Requests_ExceptionInfo
 struct ExceptionDetails
 {
-    // Message contained in the exception.
     std::string message;
-    // Short type name of the exception object.
     std::string typeName;
-    // Fully-qualified type name of the exception object.
     std::string fullTypeName;
-    // Optional expression that can be evaluated in the current scope
-    // to obtain the exception object.
     std::string evaluateName;
-    // Stack trace at the time the exception was thrown.
     std::string stackTrace;
-    // Details of the exception contained by this exception, if any.
-    std::vector<ExceptionDetails> innerException;
+    // Note, VSCode protocol have "innerException" field as array, but in real we don't have array with inner exceptions here,
+    // since exception object have only one exeption object reference in InnerException field.
+    std::unique_ptr<ExceptionDetails> innerException;
+    std::string formattedDescription;
+    std::string source;
 };
 
-struct ExceptionInfoResponse
+// https://microsoft.github.io/debug-adapter-protocol/specification#Requests_ExceptionInfo
+struct ExceptionInfo
 {
-    // ID of the exception that was thrown.
     std::string exceptionId;
-    // Descriptive text for the exception provided by the debug adapter.
     std::string description;
-    // Mode that caused the exception notification to be raised.
-    ExceptionBreakMode breakMode;
-    // Detailed information about the exception.
+    std::string breakMode;
     ExceptionDetails details;
+};
 
-    std::string getVSCodeBreakMode() const;
+enum class ExceptionBreakpointFilter : size_t
+{
+    THROW                = 0,
+    USER_UNHANDLED       = 1,
+    THROW_USER_UNHANDLED = 2,
+    UNHANDLED            = 3,
+    Size                 = 4
+};
+
+enum class ExceptionCategory
+{
+    CLR,
+    MDA,
+    ANY
+};
+
+struct ExceptionBreakpoint
+{
+    ExceptionCategory categoryHint;
+    ExceptionBreakpointFilter filterId;
+    std::unordered_set<std::string> condition; // Note, only exception type related conditions allowed for now.
+    bool negativeCondition;
+
+    ExceptionBreakpoint(ExceptionCategory category, ExceptionBreakpointFilter filterId) :
+        categoryHint(category),
+        filterId(filterId),
+        negativeCondition(false)
+    {}
+
+    bool operator==(ExceptionBreakpointFilter id) const
+    {
+        return filterId == id;
+    }
 };
 
 } // namespace netcoredbg

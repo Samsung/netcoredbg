@@ -4,8 +4,6 @@
 
 #include "tokenizer.h"
 
-using std::string;
-
 namespace netcoredbg
 {
 

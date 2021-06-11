@@ -58,6 +58,7 @@ private:
     std::unordered_map<std::string, Variable> m_vars;
     std::unordered_map<std::string, std::unordered_map<uint32_t, LineBreakpoint> > m_lineBreakpoints;
     std::unordered_map<uint32_t, FuncBreakpoint> m_funcBreakpoints;
+    std::unordered_map<uint32_t, ExceptionBreakpoint> m_exceptionBreakpoints;
 
 #ifdef _MSC_VER
     void Printf(_Printf_format_string_ const char *fmt, ...);
@@ -76,12 +77,12 @@ private:
     HRESULT ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
     HRESULT SetLineBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFuncBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
+    HRESULT SetExceptionBreakpoints(std::vector<ExceptionBreakpoint> &excBreakpoints, std::vector<Breakpoint> &breakpoints);
     HRESULT SetLineBreakpointCondition(uint32_t id, const std::string &condition);
     HRESULT SetFuncBreakpointCondition(uint32_t id, const std::string &condition);
     void DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids);
-    HRESULT InsertExceptionBreakpoints(const ExceptionBreakMode &mode, const std::vector<std::string>& names, std::string &output);
-    HRESULT DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids, std::string &output);
+    void DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids);
 };
 
 } // namespace netcoredbg

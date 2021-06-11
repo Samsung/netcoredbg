@@ -44,20 +44,23 @@ class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedC
         ToRelease<ICorDebugThread> iCorThread;
         ToRelease<ICorDebugBreakpoint> iCorBreakpoint;
         CorDebugStepReason Reason;
-        CorDebugExceptionCallbackType DwEventType;
+        ExceptionCallbackType EventType;
+        std::string ExcModule;
 
         CallbackQueueEntry(CallbackQueueCall call,
                            ICorDebugAppDomain *pAppDomain,
                            ICorDebugThread *pThread,
                            ICorDebugBreakpoint *pBreakpoint,
                            CorDebugStepReason reason,
-                           CorDebugExceptionCallbackType dwEventType) :
+                           ExceptionCallbackType eventType,
+                           const std::string &excModule = "") :
             Call(call),
             iCorAppDomain(pAppDomain),
             iCorThread(pThread),
             iCorBreakpoint(pBreakpoint),
             Reason(reason),
-            DwEventType(dwEventType)
+            EventType(eventType),
+            ExcModule(excModule)
         {}
     };
 
@@ -71,7 +74,7 @@ class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedC
     bool CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
     bool CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason);
     bool CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread);
-    bool CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugExceptionCallbackType dwEventType);
+    bool CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule);
     HRESULT AddCallbackToQueue(ICorDebugAppDomain *pAppDomain, std::function<void()> callback);
     bool HasQueuedCallbacks(ICorDebugProcess *pProcess);
     HRESULT ContinueAppDomainWithCallbacksQueue(ICorDebugAppDomain *pAppDomain);

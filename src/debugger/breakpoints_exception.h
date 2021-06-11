@@ -12,28 +12,29 @@
 #include <string>
 #include <memory>
 #include <mutex>
-#include <set>
+#include <functional>
 
 namespace netcoredbg
 {
 
 class Evaluator;
-class Variables;
 
 class ExceptionBreakpoints
 {
 public:
 
-    ExceptionBreakpoints(std::shared_ptr<Variables> &sharedVariables, std::shared_ptr<Evaluator> &sharedEvaluator) :
-        m_sharedVariables(sharedVariables),
-        m_sharedEvaluator(sharedEvaluator)
+    ExceptionBreakpoints(std::shared_ptr<Evaluator> &sharedEvaluator) :
+        m_sharedEvaluator(sharedEvaluator),
+        m_justMyCode(true),
+        m_exceptionBreakpoints((size_t)ExceptionBreakpointFilter::Size)
     {}
 
-    // TODO DeleteAll()
-
-    HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t id);
-    HRESULT DeleteExceptionBreakpoint(uint32_t id);
-    HRESULT GetExceptionInfoResponse(ICorDebugProcess *pProcess, ThreadId threadId, ExceptionInfoResponse &exceptionInfoResponse);
+    void SetJustMyCode(bool enable) { m_justMyCode = enable; };
+    void DeleteAll();
+    HRESULT SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints,
+                                    std::function<uint32_t()> getId);
+    HRESULT GetExceptionInfo(ICorDebugThread *pThread, ExceptionInfo &exceptionInfo);
+    bool CoveredByFilter(ExceptionBreakpointFilter filterId, const std::string &excType, ExceptionCategory excCategory);
 
     // Important! Callbacks related methods must control return for succeeded return code.
     // Do not allow debugger API return succeeded (uncontrolled) return code.
@@ -42,50 +43,51 @@ public:
     // Good:
     //     IfFailRet(pThread->GetID(&threadId));
     //     return S_OK;
-    HRESULT ManagedCallbackException(ICorDebugThread *pThread, CorDebugExceptionCallbackType dwEventType, StoppedEvent &event, std::string &textOutput);
+    HRESULT ManagedCallbackException(ICorDebugThread *pThread, ExceptionCallbackType eventType, std::string excModule, StoppedEvent &event);
+    HRESULT ManagedCallbackExitThread(ICorDebugThread *pThread);
 
 private:
 
-    HRESULT GetExceptionBreakMode(ExceptionBreakMode &mode, const std::string &name);
-    bool MatchExceptionBreakpoint(CorDebugExceptionCallbackType dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category);
-
-    std::shared_ptr<Variables> m_sharedVariables;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
-    
-    std::mutex m_lastUnhandledExceptionThreadIdsMutex;
-    std::set<ThreadId> m_lastUnhandledExceptionThreadIds;
+    bool m_justMyCode;
 
-    struct ExceptionBreakpointStorage
+    struct ExceptionStatus
     {
-    private:
-        // vsdbg not supported list of exception breakpoint command
-        struct ExceptionBreakpoint {
-            ExceptionBreakpoint() : current_asterix_id(0) {}
-            std::unordered_map<uint32_t, std::string> table;
-            // For global filter (*) we need to know last id
-            uint32_t current_asterix_id;
-            // for customers its will to come some difficult for matching.
-            // For netcoredbg approach based on single unique name for each
-            // next of user exception.
-            //std::unordered_map<std::string, ExceptionBreakMode> exceptionBreakpoints;
-            std::unordered_multimap<std::string, ExceptionBreakMode> exceptionBreakpoints;
-        };
+        ExceptionCallbackType m_lastEvent;
+        std::string m_excModule;
 
-        ExceptionBreakpoint bp;
-
-    public:
-        HRESULT Insert(uint32_t id, const ExceptionBreakMode &mode, const std::string &name);
-        HRESULT Delete(uint32_t id);
-        bool Match(int dwEventType, const std::string &exceptionName, const ExceptionBreakCategory category) const;
-        HRESULT GetExceptionBreakMode(ExceptionBreakMode &out, const std::string &name) const;
-
-        ExceptionBreakpointStorage() = default;
-        ExceptionBreakpointStorage(ExceptionBreakpointStorage &&that) = default;
-        ExceptionBreakpointStorage(const ExceptionBreakpointStorage &that) = delete;
+        ExceptionStatus() :
+            m_lastEvent(ExceptionCallbackType::FIRST_CHANCE)
+        {}
     };
 
-    std::mutex m_exceptionBreakpointsMutex;
-    ExceptionBreakpointStorage m_exceptionBreakpoints;
+    std::mutex m_threadsExceptionMutex;
+    std::unordered_map<DWORD, ExceptionStatus> m_threadsExceptionStatus;
+    // Note, we have Exception callback called with different exception callback type, and we need know exception type that related to current stop event.
+    std::unordered_map<DWORD, ExceptionBreakMode> m_threadsExceptionBreakMode;
+
+    HRESULT GetExceptionDetails(ICorDebugThread *pThread, ICorDebugValue *pExceptionValue, ExceptionDetails &details);
+
+    struct ManagedExceptionBreakpoint
+    {
+        uint32_t id;
+        ExceptionCategory categoryHint;
+        std::unordered_set<std::string> condition; // Note, only exception type related conditions allowed for now.
+        bool negativeCondition;
+
+        ManagedExceptionBreakpoint() :
+            id(0), categoryHint(ExceptionCategory::ANY), negativeCondition(false)
+        {}
+
+        void ToBreakpoint(Breakpoint &breakpoint) const;
+
+        ManagedExceptionBreakpoint(ManagedExceptionBreakpoint &&that) = default;
+        ManagedExceptionBreakpoint(const ManagedExceptionBreakpoint &that) = delete;
+    };
+
+    std::mutex m_breakpointsMutex;
+    std::vector<std::unordered_multimap<std::string, ManagedExceptionBreakpoint>> m_exceptionBreakpoints;
+
 };
 
 } // namespace netcoredbg

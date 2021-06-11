@@ -9,8 +9,7 @@
 #include <map>
 #include <iomanip>
 #include <sstream>
-
-#include <exception>
+#include <algorithm>
 
 // note: order matters, vscodeprotocol.h should be included before winerror.h
 #include "protocols/vscodeprotocol.h"
@@ -23,16 +22,19 @@
 #include "utils/logger.h"
 #include "utils/escaped_string.h"
 
-using std::string;
-using std::vector;
-using std::map;
-using std::min;
-
 // for convenience
 using json = nlohmann::json;
 
 namespace netcoredbg
 {
+
+namespace
+{
+    std::unordered_map<std::string, ExceptionBreakpointFilter> g_VSCodeFilters{
+        {"all",            ExceptionBreakpointFilter::THROW},
+        {"user-unhandled", ExceptionBreakpointFilter::USER_UNHANDLED}};
+
+} // unnamed namespace
 
 void to_json(json &j, const Source &s) {
     j = json{{"name", s.name},
@@ -98,31 +100,28 @@ void to_json(json &j, const Variable &v) {
     }
 }
 
-static json getVSCode(const ExceptionDetails &self) {
-    json details = json({});
+static json FormJsonForExceptionDetails(const ExceptionDetails &details)
+{
+    json result{{"typeName",             details.typeName},
+                {"fullTypeName",         details.fullTypeName},
+                {"evaluateName",         details.evaluateName},
+                {"stackTrace",           details.stackTrace},
+                {"formattedDescription", details.formattedDescription},
+                {"source",               details.source}};
 
-    details["message"] = self.message;
-    details["typeName"] = self.typeName;
-    details["fullTypeName"] = self.fullTypeName;
-    details["evaluateName"] = self.evaluateName;
-    details["stackTrace"] = self.stackTrace;
-    // vsdbg extention: "formattedDescription", "hresult", "source"
-    // Example:
-    // "formattedDescription":"**System.DivideByZeroException:** '00000:3'",
-    // "hresult":-2147352558,
-    // "source" : "ClassLibrary1"
+    if (!details.message.empty())
+        result["message"] = details.message;
 
-    json arr = json::array();
-    if (!self.innerException.empty()) {
-        // INFO: Visual Studio Code does not display inner exception,
-        // but vsdbg fill all nested InnerExceptions in Response.
-        const auto it = self.innerException.begin();
-        json inner = getVSCode(*it);
-        arr.push_back(inner);
+    if (details.innerException)
+    {
+        // Note, VSCode protocol have "innerException" field as array, but in real we don't have array with inner exceptions here,
+        // since exception object have only one exeption object reference in InnerException field.
+        json arr = json::array();
+        arr.push_back(FormJsonForExceptionDetails(*details.innerException.get()));
+        result["innerException"] = arr;
     }
-    details["innerException"] = arr;
 
-    return details;
+    return result;
 }
 
 void VSCodeProtocol::EmitContinuedEvent(ThreadId threadId)
@@ -163,8 +162,11 @@ void VSCodeProtocol::EmitStoppedEvent(const StoppedEvent &event)
             break;
     }
 
-    body["description"] = event.description;
-    body["text"] = event.text;
+    // Note, `description` not in use at this moment, provide `reason` only.
+
+    if (!event.text.empty())
+        body["text"] = event.text;
+
     body["threadId"] = int(event.threadId);
     body["allThreadsStopped"] = event.allThreadsStopped;
 
@@ -372,8 +374,9 @@ void VSCodeProtocol::Cleanup()
 
 }
 
-static string VSCodeSeq(uint64_t id) {
-    return string("{\"seq\":" + std::to_string(id) + ",");
+static std::string VSCodeSeq(uint64_t id)
+{
+    return std::string("{\"seq\":" + std::to_string(id) + ",");
 }
 
 void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &body)
@@ -402,8 +405,20 @@ void VSCodeProtocol::AddCapabilitiesTo(json &capabilities)
     capabilities["supportsFunctionBreakpoints"] = true;
     capabilities["supportsConditionalBreakpoints"] = true;
     capabilities["supportTerminateDebuggee"] = true;
-    capabilities["supportsExceptionInfoRequest"] = true;
     capabilities["supportsSetVariable"] = true;
+    capabilities["supportsTerminateRequest"] = true;
+
+    capabilities["supportsExceptionInfoRequest"] = true;
+    capabilities["supportsExceptionFilterOptions"] = true;
+    json excFilters = json::array();
+    for (const auto &entry : g_VSCodeFilters)
+    {
+        json filter{{"filter", entry.first},
+                    {"label",  entry.first}};
+        excFilters.push_back(filter);
+    }
+    capabilities["exceptionBreakpointFilters"] = excFilters;
+    capabilities["supportsExceptionOptions"] = false; // TODO add implementation
 }
 
 HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &arguments, json &body)
@@ -420,36 +435,62 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return S_OK;
     } },
     { "setExceptionBreakpoints", [this](const json &arguments, json &body) {
-        vector<string> filters = arguments.value("filters", vector<string>());
-        ExceptionBreakMode mode;
+        std::vector<std::string> filters = arguments.value("filters", std::vector<std::string>());
+        std::vector<std::map<std::string, std::string>> filterOptions = arguments.value("filterOptions", std::vector<std::map<std::string, std::string>>());
 
-        namespace KW = VSCodeExceptionBreakModeKeyWord;
+        // https://microsoft.github.io/debug-adapter-protocol/specification#Requests_SetExceptionBreakpoints
+        // The 'filter' and 'filterOptions' sets are additive.
+        // Response to ‘setExceptionBreakpoints’ request:
+        // ... The Breakpoint objects are in the same order as the elements of the ‘filters’, ‘filterOptions’, ‘exceptionOptions’ arrays given as arguments.
+        std::vector<ExceptionBreakpoint> exceptionBreakpoints;
 
-        for (unsigned i = 0; i < filters.size(); i++)
+        for (auto &entry : filters)
         {
-            if (filters[i].compare(KW::ALL) == 0 ||
-                filters[i].compare(KW::ALWAYS) == 0) {
-                mode.setAll();
-            }
-            if (filters[i].compare(KW::USERUNHANDLED) == 0 ||
-                filters[i].compare(KW::USERUNHANDLED_A) == 0) {
-                mode.setUserUnhandled();
-            }
-            // Nothing to do for "unhandled"
-            if (filters[i].compare(KW::NEVER) == 0) {
-                mode.resetAll();
-            }
+            auto findFilter = g_VSCodeFilters.find(entry);
+            if (findFilter == g_VSCodeFilters.end())
+                return E_INVALIDARG;
+            // in case of VSCode protocol, we can't setup categoryHint during breakpoint setup, since this protocol don't provide such information
+            exceptionBreakpoints.emplace_back(ExceptionCategory::ANY, findFilter->second);
         }
 
-        const string globalExceptionBreakpoint = "*";
-        uint32_t id;
-        m_sharedDebugger->InsertExceptionBreakpoint(mode, globalExceptionBreakpoint, id);
+        for (auto &entry : filterOptions)
+        {
+            auto findId = entry.find("filterId");
+            if (findId == entry.end() || findId->second.empty())
+                return E_INVALIDARG;
 
-        // TODO:
-        // - implement options support. options not supported in
-        // current vscode 1.31.1 with C# plugin 1.17.1
-        // - use ExceptionBreakpointStorage type for support options feature
-        body["supportsExceptionOptions"] = false;
+            auto findFilter = g_VSCodeFilters.find(findId->second);
+            if (findFilter == g_VSCodeFilters.end())
+                return E_INVALIDARG;
+            // in case of VSCode protocol, we can't setup categoryHint during breakpoint setup, since this protocol don't provide such information
+            exceptionBreakpoints.emplace_back(ExceptionCategory::ANY, findFilter->second);
+
+            auto findCondition = entry.find("condition");
+            if (findCondition == entry.end() || findCondition->second.empty())
+                continue;
+
+            if (findCondition->second[0] == '!')
+            {
+                if (findCondition->second.size() == 1)
+                    continue;
+
+                findCondition->second[0] = ' ';
+                exceptionBreakpoints.back().negativeCondition = true;
+            }
+
+            std::replace(findCondition->second.begin(), findCondition->second.end(), ',', ' ');
+            std::stringstream ss(findCondition->second);
+            std::istream_iterator<std::string> begin(ss);
+            std::istream_iterator<std::string> end;
+            exceptionBreakpoints.back().condition = std::unordered_set<std::string>(begin, end);
+        }
+
+        HRESULT Status;
+        std::vector<Breakpoint> breakpoints;
+        IfFailRet(m_sharedDebugger->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints));
+
+        // TODO form body with breakpoints (optional output, MS vsdbg don't provide it for VSCode IDE now)
+        // body["breakpoints"] = breakpoints;
 
         return S_OK;
     } },
@@ -457,19 +498,16 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return m_sharedDebugger->ConfigurationDone();
     } },
     { "exceptionInfo", [this](const json &arguments, json &body) {
+        HRESULT Status;
         ThreadId threadId{int(arguments.at("threadId"))};
-        ExceptionInfoResponse exceptionResponse;
-        if (!m_sharedDebugger->GetExceptionInfoResponse(threadId, exceptionResponse))
-        {
-            body["breakMode"] = exceptionResponse.getVSCodeBreakMode();
-            body["exceptionId"] = exceptionResponse.exceptionId;
-            body["description"] = exceptionResponse.description;
-            body["details"] = getVSCode(exceptionResponse.details);
-            // vsdbg extension
-            // body["code"] = 0;
-            return S_OK;
-        }
-        return E_FAIL;
+        ExceptionInfo exceptionInfo;
+        IfFailRet(m_sharedDebugger->GetExceptionInfo(threadId, exceptionInfo));
+
+        body["exceptionId"] = exceptionInfo.exceptionId;
+        body["description"] = exceptionInfo.description;
+        body["breakMode"] = exceptionInfo.breakMode;
+        body["details"] = FormJsonForExceptionDetails(exceptionInfo.details);
+        return S_OK;
     } },
     { "setBreakpoints", [this](const json &arguments, json &body){
         HRESULT Status;
@@ -487,11 +525,11 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     } },
     {"launch", [this](const json &arguments, json &body) {
         auto cwdIt = arguments.find("cwd");
-        const string cwd(cwdIt != arguments.end() ? cwdIt.value().get<string>() : std::string{});
-        map<string, string> env;
+        const std::string cwd(cwdIt != arguments.end() ? cwdIt.value().get<std::string>() : std::string{});
+        std::map<std::string, std::string> env;
         try
         {
-            env = arguments.at("env").get<map<string, string> >();
+            env = arguments.at("env").get<std::map<std::string, std::string> >();
         }
         catch (std::exception &ex)
         {
@@ -506,7 +544,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         if (!m_fileExec.empty())
             return m_sharedDebugger->Launch(m_fileExec, m_execArgs, env, cwd, arguments.value("stopAtEntry", false));
 
-        vector<string> args = arguments.value("args", vector<string>());
+        std::vector<std::string> args = arguments.value("args", std::vector<std::string>());
         args.insert(args.begin(), arguments.at("program").get<std::string>());
 
         return m_sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
@@ -531,6 +569,10 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         m_sharedDebugger->Disconnect(action);
 
         m_exit = true;
+        return S_OK;
+    } },
+    { "terminate", [this](const json &arguments, json &body){
+        m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
         return S_OK;
     } },
     { "stackTrace", [this](const json &arguments, json &body){
@@ -926,30 +968,6 @@ void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
             return;
         }
     }
-}
-
-string ExceptionInfoResponse::getVSCodeBreakMode() const
-{
-    namespace KW = VSCodeExceptionBreakModeKeyWord;
-
-    if (breakMode.Never())
-        return KW::NEVER;
-
-    if (breakMode.All())
-        return KW::ALWAYS;
-
-    if (breakMode.OnlyUnhandled())
-        return KW::UNHANDLED;
-
-    // Throw() not supported for VSCode
-    //  - description of "always: always breaks".
-    // if (breakMode.Throw())
-
-    if (breakMode.UserUnhandled())
-        return KW::USERUNHANDLED;
-
-    // Logical Error
-    return "undefined";
 }
 
 } // namespace netcoredbg

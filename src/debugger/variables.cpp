@@ -20,9 +20,6 @@
 #include "utils/utf.h"
 #include "interfaces/types.h"
 
-using std::string;
-using std::vector;
-
 namespace netcoredbg
 {
 
@@ -134,7 +131,7 @@ HRESULT Variables::FetchFieldsAndProperties(
         ToRelease<ICorDebugValue> iCorResultValue;
         getValue(&iCorResultValue, evalFlags); // no result check here, since error is result too
 
-        string className;
+        std::string className;
         if (pType)
             TypePrinter::GetTypeOfValue(pType, className);
 
@@ -217,39 +214,8 @@ HRESULT Variables::AddVariableReference(Variable &variable, FrameId frameId, ICo
     return S_OK;
 }
 
-static HRESULT GetModuleName(ICorDebugThread *pThread, std::string &module)
+HRESULT Variables::GetExceptionVariable(FrameId frameId, ICorDebugThread *pThread, Variable &var)
 {
-    HRESULT Status;
-    ToRelease<ICorDebugFrame> pFrame;
-    IfFailRet(pThread->GetActiveFrame(&pFrame));
-    if (pFrame == nullptr)
-        return E_FAIL;
-
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-    ToRelease<IMetaDataImport> pMDImport;
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*)&pMDImport));
-
-    WCHAR mdName[mdNameLen];
-    ULONG nameLen;
-    IfFailRet(pMDImport->GetScopeProps(mdName, _countof(mdName), &nameLen, nullptr));
-    module = to_utf8(mdName);
-
-    return S_OK;
-}
-
-HRESULT Variables::GetExceptionVariable(
-    FrameId frameId,
-    ICorDebugThread *pThread,
-    Variable &var)
-{
-    HRESULT Status;
     ToRelease<ICorDebugValue> pExceptionValue;
     if (SUCCEEDED(pThread->GetCurrentException(&pExceptionValue)) && pExceptionValue != nullptr)
     {
@@ -260,14 +226,7 @@ HRESULT Variables::GetExceptionVariable(
         PrintValue(pExceptionValue, var.value, escape);
         TypePrinter::GetTypeOfValue(pExceptionValue, var.type);
 
-        // AddVariableReference is re-interable function.
-        IfFailRet(AddVariableReference(var, frameId, pExceptionValue, ValueIsVariable));
-
-        string excModule;
-        IfFailRet(GetModuleName(pThread, excModule));
-        var.module = excModule;
-
-        return S_OK;
+        return AddVariableReference(var, frameId, pExceptionValue, ValueIsVariable);
     }
 
     return E_FAIL;
@@ -283,7 +242,8 @@ HRESULT Variables::GetStackVariables(
     HRESULT Status;
     int currentIndex = -1;
     Variable var;
-    if (SUCCEEDED(GetExceptionVariable(frameId, pThread, var))) {
+    if (SUCCEEDED(GetExceptionVariable(frameId, pThread, var)))
+    {
         variables.push_back(var);
         ++currentIndex;
     }
@@ -466,7 +426,11 @@ HRESULT Variables::Evaluate(
         // Use simple name parser
         // Note, in case of fail we don't call Roslyn, since it will use simple eval check with same `expression`,
         // but in case we miss something with `regex_match`, Roslyn will use simple eval check from managed part.
-        IfFailRet(m_sharedEvaluator->EvalExpr(pThread, frameLevel, expression, &pResultValue, variable.evalFlags));
+        if (FAILED(Status = m_sharedEvaluator->EvalExpr(pThread, frameLevel, expression, &pResultValue, variable.evalFlags)))
+        {
+            output = "error: The name '" + expression + "' does not exist in the current context";
+            return Status;
+        }
     }
 
     int typeId;
@@ -601,8 +565,6 @@ HRESULT Variables::SetStackVariable(
     std::string &output)
 {
     HRESULT Status;
-
-    // TODO Exception?
 
     if (FAILED(Status = m_sharedEvaluator->WalkStackVars(pThread, ref.frameId.getLevel(),
         [&](const std::string &varName, Evaluator::GetValueCallback getValue) -> HRESULT

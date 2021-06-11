@@ -18,11 +18,6 @@
 
 #include "utils/logger.h"
 
-using namespace std::placeholders;
-using std::unordered_set;
-using std::string;
-using std::vector;
-
 namespace netcoredbg
 {
 
@@ -55,6 +50,32 @@ static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
     }
     output = ss.str();
     return Status;
+}
+
+// print last printBpCount breakpoints into output
+static HRESULT PrintExceptionBreakpoints(const std::vector<Breakpoint> &breakpoints, size_t printBpCount, std::string &output)
+{
+    if (printBpCount > breakpoints.size())
+        return E_FAIL;
+
+    if (printBpCount == 0 || breakpoints.empty())
+    {
+        output = "^done";
+        return S_OK;
+    }
+
+    std::ostringstream ss;
+    size_t bpIndex = breakpoints.size() - printBpCount;
+    ss << "{number=\"" << breakpoints[bpIndex].id << "\"}";
+    for (++bpIndex; bpIndex < breakpoints.size(); ++bpIndex)
+        ss << ",{number=\"" << breakpoints[bpIndex].id << "\"}";
+
+    if (printBpCount > 1)
+        output = "^done,bkpt=[" + ss.str() + "]";
+    else
+        output = "^done,bkpt=" + ss.str();
+
+    return S_OK;
 }
 
 void MIProtocol::EmitBreakpointEvent(const BreakpointEvent &event)
@@ -179,21 +200,10 @@ static HRESULT PrintVariables(const std::vector<Variable> &variables, std::strin
 
 static bool IsEditable(const std::string &type)
 {
-    if (type == "int"
-        || type == "bool"
-        || type == "char"
-        || type == "byte"
-        || type == "sbyte"
-        || type == "short"
-        || type == "ushort"
-        || type == "uint"
-        || type == "long"
-        || type == "ulong"
-        || type == "decimal"
-        || type == "string")
-        return true;
+    static std::unordered_set<std::string> editableTypes{
+        "int", "bool", "char", "byte", "sbyte", "short", "ushort", "uint", "long", "ulong", "decimal", "string"};
 
-    return false;
+    return editableTypes.find(type) != editableTypes.end();
 }
 
 static void PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
@@ -286,6 +296,7 @@ void MIProtocol::Cleanup()
     m_vars.clear(); // Important, must be sync with ManagedDebugger m_sharedVariables->Clear()
     m_lineBreakpoints.clear();
     m_funcBreakpoints.clear();
+    m_exceptionBreakpoints.clear();
 }
 
 HRESULT MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output)
@@ -371,7 +382,7 @@ HRESULT MIProtocol::SetLineBreakpoint(
 }
 
 HRESULT MIProtocol::SetFuncBreakpoint(const std::string &module, const std::string &funcname, const std::string &params,
-                                          const std::string &condition, Breakpoint &breakpoint)
+                                      const std::string &condition, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
@@ -387,6 +398,26 @@ HRESULT MIProtocol::SetFuncBreakpoint(const std::string &module, const std::stri
     // Note, SetFuncBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
     breakpoint = breakpoints.back();
     m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
+    return S_OK;
+}
+
+// Note, exceptionBreakpoints data will be invalidated by this call.
+HRESULT MIProtocol::SetExceptionBreakpoints(/* [in] */ std::vector<ExceptionBreakpoint> &exceptionBreakpoints, /* [out] */ std::vector<Breakpoint> &breakpoints)
+{
+    HRESULT Status;
+
+    std::vector<ExceptionBreakpoint> excBreakpoints;
+    for (const auto &it : m_exceptionBreakpoints)
+        excBreakpoints.push_back(it.second);
+
+    excBreakpoints.insert(excBreakpoints.end(), // Don't copy, but move exceptionBreakpoints into excBreakpoints.
+                          std::make_move_iterator(exceptionBreakpoints.begin()), std::make_move_iterator(exceptionBreakpoints.end()));
+
+    IfFailRet(m_sharedDebugger->SetExceptionBreakpoints(excBreakpoints, breakpoints));
+
+    for (size_t i = m_exceptionBreakpoints.size(); i < breakpoints.size(); ++i)
+        m_exceptionBreakpoints.insert(std::make_pair(breakpoints[i].id, std::move(excBreakpoints[i])));
+
     return S_OK;
 }
 
@@ -435,6 +466,20 @@ HRESULT MIProtocol::SetFuncBreakpointCondition(uint32_t id, const std::string &c
 
     std::vector<Breakpoint> tmpBreakpoints;
     return m_sharedDebugger->SetFuncBreakpoints(existingFuncBreakpoints, tmpBreakpoints);
+}
+
+static void ParseBreakpointIndexes(const std::vector<std::string> &args, std::function<void(const std::unordered_set<uint32_t> &ids)> cb)
+{
+    std::unordered_set<uint32_t> ids;
+    for (const std::string &idStr : args)
+    {
+        bool ok;
+        int id = ProtocolUtils::ParseInt(idStr, ok);
+        if (ok)
+            ids.insert(id);
+    }
+    if (!ids.empty())
+        cb(ids);
 }
 
 void MIProtocol::DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids)
@@ -486,47 +531,26 @@ void MIProtocol::DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids)
     m_sharedDebugger->SetFuncBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
 }
 
-HRESULT MIProtocol::InsertExceptionBreakpoints(const ExceptionBreakMode &mode, const vector<string>& names, string &output)
+void MIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids)
 {
-    if (names.empty())
-        return E_FAIL;
-
-    HRESULT Status;
-    string buf = "";
-    uint32_t id = 0;
-    for (const auto &name : names) {
-        Status = m_sharedDebugger->InsertExceptionBreakpoint(mode, name, id);
-        if (S_OK != Status) {
-            return Status;
+    std::size_t initialSize = m_exceptionBreakpoints.size();
+    std::vector<ExceptionBreakpoint> remainingExceptionBreakpoints;
+    for (auto it = m_exceptionBreakpoints.begin(); it != m_exceptionBreakpoints.end();)
+    {
+        if (ids.find(it->first) == ids.end())
+        {
+            remainingExceptionBreakpoints.push_back(it->second);
+            ++it;
         }
-        buf += "{number=\"" + std::to_string(id) + "\"},";
-    }
-    if (!buf.empty())
-        buf.pop_back();
-
-    // This line fixes double comma ',,' in output
-    if (names.size() > 1) {
-        output = "^done,bkpt=[" + buf + "]";
-    }
-    else {
-    // This sensitive for current CI Runner.cs
-        output = "^done,bkpt=" + buf;
+        else
+            it = m_exceptionBreakpoints.erase(it);
     }
 
-    return S_OK;
-}
+    if (initialSize == m_exceptionBreakpoints.size())
+        return;
 
-HRESULT MIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids, string &output)
-{
-    HRESULT Status;
-    for (const auto &id : ids) {
-        Status = m_sharedDebugger->DeleteExceptionBreakpoint(id);
-        if (S_OK != Status) {
-            output = "Cannot delete exception breakpoint by id=:'" + std::to_string(id) + "'";
-            return Status;
-        }
-    }
-    return S_OK;
+    std::vector<Breakpoint> tmpBreakpoints;
+    m_sharedDebugger->SetExceptionBreakpoints(remainingExceptionBreakpoints, tmpBreakpoints);
 }
 
 void MIProtocol::EmitStoppedEvent(const StoppedEvent &event)
@@ -552,13 +576,11 @@ void MIProtocol::EmitStoppedEvent(const StoppedEvent &event)
         }
         case StopException:
         {
-            std::string category = "clr";
-            std::string stage = "unhandled";
             MIProtocol::Printf("*stopped,reason=\"exception-received\",exception-name=\"%s\",exception=\"%s\",exception-stage=\"%s\",exception-category=\"%s\",thread-id=\"%i\",stopped-threads=\"all\",frame={%s}\n",
-                event.text.c_str(),
-                MIProtocol::EscapeMIValue(event.description).c_str(),
-                stage.c_str(),
-                category.c_str(),
+                event.exception_name.c_str(),
+                MIProtocol::EscapeMIValue(event.exception_message.empty() ? event.text : event.exception_message).c_str(),
+                event.exception_stage.c_str(),
+                event.exception_category.c_str(),
                 int(event.threadId),
                 frameLocation.c_str());
             break;
@@ -739,19 +761,77 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
 
         return Status;
     } },
-    { "break-delete", [this](const std::vector<std::string> &args, std::string &) -> HRESULT {
-        std::unordered_set<uint32_t> ids;
-        for (const std::string &idStr : args)
+    { "break-exception-insert", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        if (args.size() < 2)
         {
-            bool ok;
-            int id = ProtocolUtils::ParseInt(idStr, ok);
-            if (ok)
-                ids.insert(id);
+            output = "Command usage: -break-exception-insert [--mda] <unhandled|user-unhandled|throw|throw+user-unhandled> *|<Exception names>";
+            return E_INVALIDARG;
         }
-        DeleteLineBreakpoints(ids);
-        DeleteFuncBreakpoints(ids);
+
+        size_t i = 0;
+        ExceptionCategory category;
+        if (args.at(i) == "--mda")
+        {
+            category = ExceptionCategory::MDA;
+            ++i;
+        }
+        else
+            category = ExceptionCategory::CLR;
+
+        static std::unordered_map<std::string, ExceptionBreakpointFilter> MIFilters{
+            {"throw",                ExceptionBreakpointFilter::THROW},
+            {"user-unhandled",       ExceptionBreakpointFilter::USER_UNHANDLED},
+            {"throw+user-unhandled", ExceptionBreakpointFilter::THROW_USER_UNHANDLED},
+            {"unhandled",            ExceptionBreakpointFilter::UNHANDLED}};
+
+        auto findFilter = MIFilters.find(args.at(i));
+        if (findFilter == MIFilters.end())
+        {
+            output = "Command requires only: 'unhandled', 'user-unhandled', 'throw' and 'throw+user-unhandled' argument as an exception stage";
+            return E_INVALIDARG;
+        }
+        else
+            ++i;
+
+        std::vector<ExceptionBreakpoint> exceptionBreakpoints;
+        for (auto it = args.begin() + i; it != args.end(); ++it)
+        {
+            exceptionBreakpoints.emplace_back(category, findFilter->second);
+            // In case of "*" debugger must ignore condition check for this filter.
+            if (*it != "*")
+                exceptionBreakpoints.back().condition.emplace(*it);
+            // Note, no negativeCondition changes, since MI protocol works in another way.
+        }
+
+        size_t newBpCount = exceptionBreakpoints.size();
+        if (newBpCount == 0)
+            return E_INVALIDARG;
+
+        HRESULT Status;
+        std::vector<Breakpoint> breakpoints;
+        // `breakpoints` will return all configured exception breakpoints, not only configured by this command.
+        // Note, exceptionBreakpoints data will be invalidated by this call.
+        IfFailRet(SetExceptionBreakpoints(exceptionBreakpoints, breakpoints));
+        // Print only breakpoints configured by this command (last newBpCount entries).
+        IfFailRet(PrintExceptionBreakpoints(breakpoints, newBpCount, output));
+
+        return S_OK;
+    }},
+    { "break-delete", [this](const std::vector<std::string> &args, std::string &) -> HRESULT {
+        ParseBreakpointIndexes(args, [this](const std::unordered_set<uint32_t> &ids)
+        {
+            DeleteLineBreakpoints(ids);
+            DeleteFuncBreakpoints(ids);
+        });
         return S_OK;
     } },
+    { "break-exception-delete", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        ParseBreakpointIndexes(args, [this](const std::unordered_set<uint32_t> &ids)
+        {
+            DeleteExceptionBreakpoints(ids);
+        });
+        return S_OK;
+    }},
     { "break-condition", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.size() < 2)
         {
@@ -965,77 +1045,6 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
     }},
     { "interpreter-exec", [](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         return S_OK;
-    }},
-    { "break-exception-insert", [this](const vector<string> &args, string &output) -> HRESULT {
-        // That's all info about MI "-break-exception-insert" feature:
-        // https://sourceware.org/gdb/onlinedocs/gdb/GDB_002fMI.html#GDB_002fMI
-        // https://raw.githubusercontent.com/gregg-miskelly/MIEngine/f5f22f53908644aacffdc3f843fba20b639d07bb/src/MICore/MICommandFactory.cs
-        // https://github.com/OmniSharp/omnisharp-vscode/files/626936/vscodelog.txt
-        if (args.size() < 2) {
-            output = "Command usage: -break-exception-insert [--mda] <unhandled|user-unhandled|throw|throw+user-unhandled> *|<Exception names>";
-            return E_INVALIDARG;
-        }
-
-        size_t i = 0;
-        ExceptionBreakMode filterValue;
-        if (args.at(i) == "--mda") {
-            filterValue.category = ExceptionBreakCategory::MDA;
-            ++i;
-        }
-
-        // Unavailale for changing by user
-        if (args.at(i).compare("unhandled") == 0) {
-            return S_OK;
-        }
-
-        if (args.at(i).compare("user-unhandled") == 0) {
-            filterValue.setUserUnhandled();
-        }
-
-        if (args.at(i).compare("throw") == 0 ) {
-            filterValue.setThrow();
-        }
-
-        if (args.at(i).compare("throw+user-unhandled") == 0) {
-            filterValue.setThrow();
-            filterValue.setUserUnhandled();
-        }
-
-        if (!filterValue.AnyUser()) {
-            output = "Command requires only:'unhandled','user-unhandled','throw','throw+user-unhandled' arguments as an exception stages";
-            return E_FAIL;
-        }
-
-        // Exception names example:
-        // And vsdbg have common numbers for all type of breakpoints
-        //-break-exception-insert throw A B C
-        //^done,bkpt=[{number="1"},{number="2"},{number="3"}]
-        //(gdb)
-        //-break-insert Class1.cs:1
-        //^done,bkpt={number="4",type="breakpoint",disp="keep",enabled="y"}
-        //(gdb)
-        const vector<string> names(args.begin() + (i + 1), args.end());
-        return InsertExceptionBreakpoints(filterValue, names, output);
-    }},
-    { "break-exception-delete", [this](const vector<string> &args, string &output) -> HRESULT {
-        if (args.empty()) {
-            output = "Command usage: -break-exception-delete <Exception indexes>";
-            return E_INVALIDARG;
-        }
-        unordered_set<uint32_t> indexes;
-        for (const string &id : args)
-        {
-            bool isTrue = false;
-            int value = ProtocolUtils::ParseInt(id, isTrue);
-            if (isTrue) {
-                indexes.insert(value);
-            }
-            else {
-                output = "Invalid argument:'"+ id + "'";
-                return E_INVALIDARG;
-            }
-        }
-        return DeleteExceptionBreakpoints(indexes, output);
     }},
     { "var-show-attributes", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;

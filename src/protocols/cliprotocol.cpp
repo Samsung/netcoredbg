@@ -66,9 +66,6 @@ static int printf_checked(const char *, ...) { return -1; }
 namespace netcoredbg
 {
 
-using std::unordered_set;
-using std::string;
-using std::vector;
 using Utility::literal;
 using CommandTag = CLIProtocol::CommandTag;
 using CompletionTag = CLIProtocol::CompletionTag;
@@ -899,13 +896,11 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
         }
         case StopException:
         {
-            std::string category = "clr";
-            std::string stage = "unhandled";
             printf("\nstopped, reason: exception received, name: %s, exception: %s, stage: %s, category: %s, thread id: %i, stopped-threads: all, frame={%s\n}\n",
-                event.text.c_str(),
-                event.description.c_str(),
-                stage.c_str(),
-                category.c_str(),
+                event.exception_name.c_str(),
+                event.exception_message.empty() ? event.text.c_str() : event.exception_message.c_str(),
+                event.exception_stage.c_str(),
+                event.exception_category.c_str(),
                 int(event.threadId),
                 frameLocation.c_str());
             break;

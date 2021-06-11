@@ -26,10 +26,10 @@ class Breakpoints
 {
 public:
 
-    Breakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Variables> &sharedVariables, std::shared_ptr<Evaluator> &sharedEvaluator) :
+    Breakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator) :
         m_uniqueBreakBreakpoint(new BreakBreakpoint(sharedModules)),
         m_uniqueEntryBreakpoint(new EntryBreakpoint(sharedModules)),
-        m_uniqueExceptionBreakpoints(new ExceptionBreakpoints(sharedVariables, sharedEvaluator)),
+        m_uniqueExceptionBreakpoints(new ExceptionBreakpoints(sharedEvaluator)),
         m_uniqueFuncBreakpoints(new FuncBreakpoints(sharedModules)),
         m_uniqueLineBreakpoints(new LineBreakpoints(sharedModules)),
         m_nextBreakpointId(1)
@@ -44,10 +44,9 @@ public:
     HRESULT SetFuncBreakpoints(ICorDebugProcess *pProcess, const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints);
     HRESULT SetLineBreakpoints(ICorDebugProcess *pProcess, const std::string &filename,
                                const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints);
+    HRESULT SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints);
 
-    HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id);
-    HRESULT DeleteExceptionBreakpoint(const uint32_t id);
-    HRESULT GetExceptionInfoResponse(ICorDebugProcess *pProcess, ThreadId threadId, ExceptionInfoResponse &exceptionInfoResponse);
+    HRESULT GetExceptionInfo(ICorDebugThread *pThread, ExceptionInfo &exceptionInfo);
 
     void EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback);
     HRESULT BreakpointActivate(uint32_t id, bool act);
@@ -62,8 +61,9 @@ public:
     //     return S_OK;
     HRESULT ManagedCallbackBreak(ICorDebugThread *pThread, const ThreadId &lastStoppedThreadId);
     HRESULT ManagedCallbackBreakpoint(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, bool &atEntry);
-    HRESULT ManagedCallbackException(ICorDebugThread *pThread, CorDebugExceptionCallbackType dwEventType, StoppedEvent &event, std::string &textOutput);
+    HRESULT ManagedCallbackException(ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule, StoppedEvent &event);
     HRESULT ManagedCallbackLoadModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events);
+    HRESULT ManagedCallbackExitThread(ICorDebugThread *pThread);
 
 private:
 

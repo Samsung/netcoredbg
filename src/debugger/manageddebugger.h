@@ -75,8 +75,8 @@ private:
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     std::unique_ptr<Steppers> m_uniqueSteppers;
-    std::shared_ptr<Variables> m_sharedVariables;
     std::unique_ptr<Breakpoints> m_uniqueBreakpoints;
+    std::shared_ptr<Variables> m_sharedVariables;
     std::unique_ptr<ManagedCallback> m_managedCallback;
     ToRelease<ICorDebug> m_iCorDebug;
     ToRelease<ICorDebugProcess> m_iCorProcess;
@@ -130,7 +130,7 @@ public:
     HRESULT Initialize() override;
     HRESULT Attach(int pid) override;
     HRESULT Launch(const std::string &fileExec, const std::vector<std::string> &execArgs, const std::map<std::string, std::string> &env,
-        const std::string &cwd, bool stopAtEntry = false) override;
+                   const std::string &cwd, bool stopAtEntry = false) override;
     HRESULT ConfigurationDone() override;
 
     HRESULT Disconnect(DisconnectAction action = DisconnectDefault) override;
@@ -142,6 +142,7 @@ public:
     HRESULT GetThreads(std::vector<Thread> &threads) override;
     HRESULT SetLineBreakpoints(const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
+    HRESULT SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT BreakpointActivate(int id, bool act) override;
     void EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback) override;
     HRESULT AllBreakpointsActivate(bool act) override;
@@ -153,9 +154,7 @@ public:
     HRESULT Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output) override;
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
     HRESULT SetVariableByExpression(FrameId frameId, const Variable &variable, const std::string &value, std::string &output) override;
-    HRESULT GetExceptionInfoResponse(ThreadId threadId, ExceptionInfoResponse &exceptionResponse) override;
-    HRESULT InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id) override;
-    HRESULT DeleteExceptionBreakpoint(const uint32_t id) override;
+    HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) override;
     HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) override;
     void FreeUnmanaged(PVOID mem) override;
 

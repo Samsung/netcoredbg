@@ -25,8 +25,6 @@
 
 #include <palclr.h>
 
-using std::string;
-
 namespace netcoredbg
 {
 
@@ -34,6 +32,7 @@ void Breakpoints::SetJustMyCode(bool enable)
 {
     m_uniqueFuncBreakpoints->SetJustMyCode(enable);
     m_uniqueLineBreakpoints->SetJustMyCode(enable);
+    m_uniqueExceptionBreakpoints->SetJustMyCode(enable);
 }
 
 void Breakpoints::SetLastStoppedIlOffset(ICorDebugProcess *pProcess, const ThreadId &lastStoppedThreadId)
@@ -51,30 +50,12 @@ HRESULT Breakpoints::ManagedCallbackBreak(ICorDebugThread *pThread, const Thread
     return m_uniqueBreakBreakpoint->ManagedCallbackBreak(pThread, lastStoppedThreadId);
 }
 
-HRESULT Breakpoints::InsertExceptionBreakpoint(const ExceptionBreakMode &mode, const std::string &name, uint32_t &id)
-{
-    m_nextBreakpointIdMutex.lock();
-    id = m_nextBreakpointId++;
-    m_nextBreakpointIdMutex.unlock();
-
-    return m_uniqueExceptionBreakpoints->InsertExceptionBreakpoint(mode, name, id);
-}
-
-HRESULT Breakpoints::DeleteExceptionBreakpoint(const uint32_t id)
-{
-    return m_uniqueExceptionBreakpoints->DeleteExceptionBreakpoint(id);
-}
-
-HRESULT Breakpoints::GetExceptionInfoResponse(ICorDebugProcess *pProcess, ThreadId threadId, ExceptionInfoResponse &exceptionInfoResponse)
-{
-    return m_uniqueExceptionBreakpoints->GetExceptionInfoResponse(pProcess, threadId, exceptionInfoResponse);
-}
-
 void Breakpoints::DeleteAll()
 {
     m_uniqueEntryBreakpoint->Delete();
     m_uniqueFuncBreakpoints->DeleteAll();
     m_uniqueLineBreakpoints->DeleteAll();
+    m_uniqueExceptionBreakpoints->DeleteAll();
 }
 
 HRESULT Breakpoints::DisableAll(ICorDebugProcess *pProcess)
@@ -123,6 +104,20 @@ HRESULT Breakpoints::SetLineBreakpoints(ICorDebugProcess *pProcess, const std::s
     });
 }
 
+HRESULT Breakpoints::SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints)
+{
+    return m_uniqueExceptionBreakpoints->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints, [&]() -> uint32_t
+    {
+        std::lock_guard<std::mutex> lock(m_nextBreakpointIdMutex);
+        return m_nextBreakpointId++;
+    });
+}
+
+HRESULT Breakpoints::GetExceptionInfo(ICorDebugThread *pThread, ExceptionInfo &exceptionInfo)
+{
+    return m_uniqueExceptionBreakpoints->GetExceptionInfo(pThread, exceptionInfo);
+}
+
 HRESULT Breakpoints::ManagedCallbackBreakpoint(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, bool &atEntry)
 {
     // CheckBreakpointHit return:
@@ -164,9 +159,9 @@ HRESULT Breakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std::ve
     return S_OK;
 }
 
-HRESULT Breakpoints::ManagedCallbackException(ICorDebugThread *pThread, CorDebugExceptionCallbackType dwEventType, StoppedEvent &event, std::string &textOutput)
+HRESULT Breakpoints::ManagedCallbackException(ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule, StoppedEvent &event)
 {
-    return m_uniqueExceptionBreakpoints->ManagedCallbackException(pThread, dwEventType, event, textOutput);
+    return m_uniqueExceptionBreakpoints->ManagedCallbackException(pThread, eventType, excModule, event);
 }
 
 HRESULT Breakpoints::AllBreakpointsActivate(bool act)
@@ -201,6 +196,11 @@ void Breakpoints::EnumerateBreakpoints(std::function<bool (const IDebugger::Brea
             break;
     }
 
+}
+
+HRESULT Breakpoints::ManagedCallbackExitThread(ICorDebugThread *pThread)
+{
+    return m_uniqueExceptionBreakpoints->ManagedCallbackExitThread(pThread);
 }
 
 } // namespace netcoredbg

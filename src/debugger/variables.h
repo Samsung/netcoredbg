@@ -75,13 +75,6 @@ class Variables
 
     HRESULT AddVariableReference(Variable &variable, FrameId frameId, ICorDebugValue *pValue, ValueKind valueKind);
 
-public:
-    HRESULT GetExceptionVariable(
-        FrameId frameId,
-        ICorDebugThread *pThread,
-        Variable &variable);
-
-private:
     HRESULT GetStackVariables(
         FrameId frameId,
         ICorDebugThread *pThread,
@@ -178,6 +171,11 @@ public:
         FrameId frameId,
         const Variable &variable,
         ICorDebugValue **ppResult);
+
+    HRESULT GetExceptionVariable(
+        FrameId frameId,
+        ICorDebugThread *pThread,
+        Variable &variable);
 
     void Clear()
     {

@@ -18,16 +18,6 @@
 namespace netcoredbg
 {
 
-namespace VSCodeExceptionBreakModeKeyWord
-{
-    static const std::string ALL = "all";
-    static const std::string ALWAYS = "always";
-    static const std::string NEVER = "never";
-    static const std::string USERUNHANDLED = "userUnhandled";
-    static const std::string USERUNHANDLED_A = "user-unhandled";
-    static const std::string UNHANDLED = "unhandled";
-}
-
 class VSCodeProtocol : public IProtocol
 {
     static const std::string TWO_CRLF;
