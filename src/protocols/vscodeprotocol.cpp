@@ -489,22 +489,25 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         auto cwdIt = arguments.find("cwd");
         const string cwd(cwdIt != arguments.end() ? cwdIt.value().get<string>() : std::string{});
         map<string, string> env;
-        try {
+        try
+        {
             env = arguments.at("env").get<map<string, string> >();
         }
-        catch (std::exception &ex) {
+        catch (std::exception &ex)
+        {
             LOGI("exception '%s'", ex.what());
             // If we catch inconsistent state on the interrupted reading
             env.clear();
         }
-        if (!m_fileExec.empty()) {
-            return m_sharedDebugger->Launch(m_fileExec, m_execArgs, env, cwd, arguments.value("stopAtEntry", false));
-        }
-        vector<string> args = arguments.value("args", vector<string>());
-        args.insert(args.begin(), arguments.at("program").get<std::string>());
 
         m_sharedDebugger->SetJustMyCode(arguments.value("justMyCode", true)); // MS vsdbg have "justMyCode" enabled by default.
         m_sharedDebugger->SetStepFiltering(arguments.value("enableStepFiltering", true)); // MS vsdbg have "enableStepFiltering" enabled by default.
+
+        if (!m_fileExec.empty())
+            return m_sharedDebugger->Launch(m_fileExec, m_execArgs, env, cwd, arguments.value("stopAtEntry", false));
+
+        vector<string> args = arguments.value("args", vector<string>());
+        args.insert(args.begin(), arguments.at("program").get<std::string>());
 
         return m_sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
     } },
