@@ -40,6 +40,7 @@ ALL_TEST_NAMES=(
     "MITestNoJMCNoFilterStepping"
     "MITestNoJMCBreakpoint"
     "MITestNoJMCAsyncStepping"
+    "MITestNoJMCExceptionBreakpoint"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"

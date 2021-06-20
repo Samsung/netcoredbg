@@ -203,11 +203,9 @@ namespace NetcoreDbgTest.Script
             StackTraceResponse stackTraceResponse =
                 JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
 
-            foreach (var Frame in stackTraceResponse.body.stackFrames) {
-                if (Frame.line == lbp.NumLine
-                    && Frame.source.name == lbp.FileName)
-                    return;
-            }
+            if (stackTraceResponse.body.stackFrames[0].line == lbp.NumLine
+                && stackTraceResponse.body.stackFrames[0].source.name == lbp.FileName)
+                return;
 
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
@@ -252,11 +250,9 @@ namespace NetcoreDbgTest.Script
             StackTraceResponse stackTraceResponse =
                 JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
 
-            foreach (var Frame in stackTraceResponse.body.stackFrames) {
-                if (Frame.line == bp_line
-                    && Frame.source.name == bp_fileName)
-                    return;
-            }
+            if (stackTraceResponse.body.stackFrames[0].line == bp_line
+                && stackTraceResponse.body.stackFrames[0].source.name == bp_fileName)
+                return;
 
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
@@ -292,12 +288,10 @@ namespace VSCodeTestSrcBreakpointResolve
 
         public test_constructors()
         {
-
         }
 
         public test_constructors(int i)
         {
-            
         }
     }
 
@@ -539,12 +533,12 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp23");
 
-                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 291);
+                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291);
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291);
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

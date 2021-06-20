@@ -41,6 +41,7 @@
     <ProjectReference Include="..\MITestNoJMCNoFilterStepping\MITestNoJMCNoFilterStepping.csproj" />
     <ProjectReference Include="..\MITestNoJMCBreakpoint\MITestNoJMCBreakpoint.csproj" />
     <ProjectReference Include="..\MITestNoJMCAsyncStepping\MITestNoJMCAsyncStepping.csproj" />
+    <ProjectReference Include="..\MITestNoJMCExceptionBreakpoint\MITestNoJMCExceptionBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeExampleTest\VSCodeExampleTest.csproj" />
     <ProjectReference Include="..\VSCodeTestBreakpoint\VSCodeTestBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeTestFuncBreak\VSCodeTestFuncBreak.csproj" />
@@ -62,6 +63,8 @@
     <ProjectReference Include="..\VSCodeTestNoJMCNoFilterStepping\VSCodeTestNoJMCNoFilterStepping.csproj" />
     <ProjectReference Include="..\VSCodeTestNoJMCBreakpoint\VSCodeTestNoJMCBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeTestNoJMCAsyncStepping\VSCodeTestNoJMCAsyncStepping.csproj" />
+    <ProjectReference Include="..\VSCodeTestExceptionBreakpoint\VSCodeTestExceptionBreakpoint.csproj" />
+    <ProjectReference Include="..\VSCodeTestNoJMCExceptionBreakpoint\VSCodeTestNoJMCExceptionBreakpoint.csproj" />
   </ItemGroup>
 
 </Project>

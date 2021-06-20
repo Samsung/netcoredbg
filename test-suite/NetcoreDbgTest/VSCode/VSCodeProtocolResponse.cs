@@ -17,7 +17,7 @@ namespace NetcoreDbgTest.VSCode
     public class StackTraceResponseBody {
         public List<StackFrame> stackFrames;
         public int ?totalFrames;
-    };
+    }
 
     public class StackFrame {
         public Int64 id;
@@ -37,7 +37,7 @@ namespace NetcoreDbgTest.VSCode
 
     public class ThreadsResponseBody {
         public List<Thread> threads;
-    };
+    }
 
     public class Thread {
         public int id;
@@ -50,7 +50,7 @@ namespace NetcoreDbgTest.VSCode
 
     public class ScopesResponseBody {
         public List<Scope> scopes;
-    };
+    }
 
     public class Scope {
         public string name;
@@ -71,7 +71,7 @@ namespace NetcoreDbgTest.VSCode
 
     public class VariablesResponseBody {
         public List<Variable> variables;
-    };
+    }
 
     public class Variable {
         public string name;
@@ -101,7 +101,7 @@ namespace NetcoreDbgTest.VSCode
         public int variablesReference;
         public int ?namedVariables;
         public int ?indexedVariables;
-    };
+    }
 
     public class SetVariableResponse : Response {
         public SetVariableResponseBody body;
@@ -113,26 +113,47 @@ namespace NetcoreDbgTest.VSCode
         public int ?variablesReference;
         public int ?namedVariables;
         public int ?indexedVariables;
-    };
+    }
 
-	public class Breakpoint {
-		public int ?id;
-		public bool verified;
-		public string message;
-		public Source source;
-		public int ?line;
-		public int ?column;
-		public int ?endLine;
-		public int ?endColumn;
-		public string instructionReference;
-		public int ?offset;
-	};
+    public class Breakpoint {
+        public int ?id;
+        public bool verified;
+        public string message;
+        public Source source;
+        public int ?line;
+        public int ?column;
+        public int ?endLine;
+        public int ?endColumn;
+        public string instructionReference;
+        public int ?offset;
+    }
 
     public class SetBreakpointsResponseBody {
         public List<Breakpoint> breakpoints;
-    };
+    }
 
-	public class SetBreakpointsResponse : Response {
-		public SetBreakpointsResponseBody body;
-	}
+    public class SetBreakpointsResponse : Response {
+        public SetBreakpointsResponseBody body;
+    }
+
+    public class ExceptionInfoResponse : Response {
+        public ExceptionInfoResponseBody body;
+    }
+
+    public class ExceptionInfoResponseBody {
+        public string exceptionId;
+        public string? description;
+        public string breakMode; // "never" | "always" | "unhandled" | "userUnhandled"
+        public ExceptionDetails? details;
+    }
+
+    public class ExceptionDetails {
+        public string? message;
+        public string? typeName;
+        public string? fullTypeName;
+        public string? evaluateName;
+        public string stackTrace;
+        public List<ExceptionDetails> innerException;
+    }
+
 }

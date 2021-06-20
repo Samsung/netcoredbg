@@ -154,13 +154,11 @@ namespace NetcoreDbgTest.Script
             StackTraceResponse stackTraceResponse =
                 JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
 
-            foreach (var Frame in stackTraceResponse.body.stackFrames) {
-                if (Frame.line == lbp.NumLine
-                    && Frame.source.name == lbp.FileName
-                    // NOTE this code works only with one source file
-                    && Frame.source.path == ControlInfo.SourceFilesPath)
-                    return;
-            }
+            if (stackTraceResponse.body.stackFrames[0].line == lbp.NumLine
+                && stackTraceResponse.body.stackFrames[0].source.name == lbp.FileName
+                // NOTE this code works only with one source file
+                && stackTraceResponse.body.stackFrames[0].source.path == ControlInfo.SourceFilesPath)
+                return;
 
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }

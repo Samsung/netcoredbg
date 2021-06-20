@@ -105,6 +105,18 @@ namespace NetcoreDbgTest.VSCode
         public bool ?terminateDebuggee;
     }
 
+    public class TerminateRequest : Request {
+        public TerminateRequest()
+        {
+            command = "terminate";
+        }
+        public TerminateArguments arguments;
+    }
+
+    public class TerminateArguments {
+        public bool ?restart;
+    }
+
     public class SetBreakpointsRequest : Request {
         public SetBreakpointsRequest()
         {
@@ -253,7 +265,7 @@ namespace NetcoreDbgTest.VSCode
         {
             command = "evaluate";
         }
-		public EvaluateArguments arguments = new EvaluateArguments();
+        public EvaluateArguments arguments = new EvaluateArguments();
     }
 
     public class EvaluateArguments {
@@ -312,6 +324,47 @@ namespace NetcoreDbgTest.VSCode
     }
 
     public class StepOutArguments {
+        public int threadId;
+    }
+
+    public class SetExceptionBreakpointsRequest : Request {
+        public SetExceptionBreakpointsRequest()
+        {
+            command = "setExceptionBreakpoints";
+        }
+        public SetExceptionBreakpointsArguments arguments = new SetExceptionBreakpointsArguments();
+    }
+
+    public class SetExceptionBreakpointsArguments {
+        public List<string> filters = new List<string>();
+        public List<ExceptionFilterOptions> filterOptions;
+        public List<ExceptionOptions> exceptionOptions;
+    }
+
+    public class ExceptionFilterOptions {
+        public string filterId;
+        public string? condition;
+    }
+
+    public class ExceptionOptions {
+        public List<ExceptionPathSegment> path;
+        public string breakMode; // "never" | "always" | "unhandled" | "userUnhandled";
+    }
+
+    public class ExceptionPathSegment {
+        public bool? negate;
+        public List<string> names = new List<string>();
+    }
+
+    public class ExceptionInfoRequest : Request {
+        public ExceptionInfoRequest()
+        {
+            command = "exceptionInfo";
+        }
+        public ExceptionInfoArguments arguments = new ExceptionInfoArguments();
+    }
+
+    public class ExceptionInfoArguments {
         public int threadId;
     }
 }

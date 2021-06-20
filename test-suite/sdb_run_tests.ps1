@@ -26,6 +26,7 @@ $ALL_TEST_NAMES = @(
     "MITestNoJMCNoFilterStepping"
     "MITestNoJMCBreakpoint"
     "MITestNoJMCAsyncStepping"
+    "MITestNoJMCExceptionBreakpoint"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -44,6 +45,8 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestNoJMCNoFilterStepping"
     "VSCodeTestNoJMCBreakpoint"
     "VSCodeTestNoJMCAsyncStepping"
+    "VSCodeTestExceptionBreakpoint"
+    "VSCodeTestNoJMCExceptionBreakpoint"
 )
 
 # Skipped tests:

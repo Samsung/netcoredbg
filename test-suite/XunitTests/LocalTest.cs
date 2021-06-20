@@ -43,6 +43,7 @@ namespace XUnitTests
         [InlineData("MITestNoJMCNoFilterStepping", "Program.cs")]
         [InlineData("MITestNoJMCBreakpoint", "Program.cs")]
         [InlineData("MITestNoJMCAsyncStepping", "Program.cs")]
+        [InlineData("MITestNoJMCExceptionBreakpoint", "Program.cs")]
         [InlineData("VSCodeExampleTest", "Program.cs")]
         [InlineData("VSCodeTestBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestFuncBreak", "Program.cs")]
@@ -64,6 +65,8 @@ namespace XUnitTests
         [InlineData("VSCodeTestNoJMCNoFilterStepping", "Program.cs")]
         [InlineData("VSCodeTestNoJMCBreakpoint", "Program.cs")]
         [InlineData("VSCodeTestNoJMCAsyncStepping", "Program.cs")]
+        [InlineData("VSCodeTestExceptionBreakpoint", "Program.cs")]
+        [InlineData("VSCodeTestNoJMCExceptionBreakpoint", "Program.cs")]
         public void Run(string testCaseName, string testCourceList)
         {
             // Explicit encoding setup, since system console encoding could be not utf8 (Windows OS).
