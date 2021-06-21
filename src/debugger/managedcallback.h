@@ -6,7 +6,7 @@
 
 #include "debugger/manageddebugger.h"
 #include <thread>
-#include <queue>
+#include <list>
 
 namespace netcoredbg
 {
@@ -66,9 +66,9 @@ class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedC
 
     std::mutex m_callbacksMutex;
     std::condition_variable m_callbacksCV;
+    std::list<CallbackQueueEntry> m_callbacksQueue; // Make sure this one initialized before m_callbacksWorker.
+    bool m_stopEventInProcess; // Make sure this one initialized before m_callbacksWorker.
     std::thread m_callbacksWorker;
-    std::queue<CallbackQueueEntry> m_callbacksQueue;
-    bool m_stopEventInProcess;
 
     void CallbacksWorker();
     bool CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
@@ -83,7 +83,7 @@ class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedC
 public:
 
     ManagedCallback(ManagedDebugger &debugger) :
-        m_refCount(0), m_debugger(debugger), m_callbacksWorker{&ManagedCallback::CallbacksWorker, this}, m_stopEventInProcess(false) {}
+        m_refCount(0), m_debugger(debugger), m_stopEventInProcess(false), m_callbacksWorker{&ManagedCallback::CallbacksWorker, this} {}
     ~ManagedCallback();
     ULONG GetRefCount();
 

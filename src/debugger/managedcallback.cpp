@@ -145,11 +145,11 @@ void ManagedCallback::CallbacksWorker()
 
     while (true)
     {
-        if (m_callbacksQueue.empty() || m_stopEventInProcess)
+        while (m_callbacksQueue.empty() || m_stopEventInProcess)
         {
             // Note, during m_callbacksCV.wait() (waiting for notify_one call with entry added into queue),
             // m_callbacksMutex will be unlocked (see std::condition_variable for more info).
-            m_callbacksCV.wait(lock, [&]() { return !m_callbacksQueue.empty() && !m_stopEventInProcess; });
+            m_callbacksCV.wait(lock);
         }
 
         auto &c = m_callbacksQueue.front();
@@ -175,7 +175,7 @@ void ManagedCallback::CallbacksWorker()
         }
 
         ToRelease<ICorDebugAppDomain> iCorAppDomain(c.iCorAppDomain.Detach());
-        m_callbacksQueue.pop();
+        m_callbacksQueue.pop_front();
 
         // Continue process execution only in case we don't have stop event emitted and queue is empty.
         // We safe here against fast Continue()/AddCallbackToQueue() call from new callback call, since we don't unlock m_callbacksMutex.
@@ -339,9 +339,8 @@ ManagedCallback::~ManagedCallback()
     std::unique_lock<std::mutex> lock(m_callbacksMutex);
 
     // Clear queue and do notify_one call with FinishWorker request.
-    std::queue<CallbackQueueEntry> empty;
-    std::swap(m_callbacksQueue, empty);
-    m_callbacksQueue.emplace(CallbackQueueCall::FinishWorker, nullptr, nullptr, nullptr, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
+    m_callbacksQueue.clear();
+    m_callbacksQueue.emplace_front(CallbackQueueCall::FinishWorker, nullptr, nullptr, nullptr, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
     m_stopEventInProcess = false; // forced to proceed during brake too
     m_callbacksCV.notify_one(); // notify_one with lock
     lock.unlock();
@@ -422,7 +421,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Breakpoint(ICorDebugAppDomain *pAppDo
         pAppDomain->AddRef();
         pThread->AddRef();
         pBreakpoint->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::Breakpoint, pAppDomain, pThread, pBreakpoint, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
+        m_callbacksQueue.emplace_back(CallbackQueueCall::Breakpoint, pAppDomain, pThread, pBreakpoint, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
     });
 }
 
@@ -434,7 +433,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::StepComplete(ICorDebugAppDomain *pApp
     {
         pAppDomain->AddRef();
         pThread->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::StepComplete, pAppDomain, pThread, nullptr, reason, ExceptionCallbackType::FIRST_CHANCE);
+        m_callbacksQueue.emplace_back(CallbackQueueCall::StepComplete, pAppDomain, pThread, nullptr, reason, ExceptionCallbackType::FIRST_CHANCE);
     });
 }
 
@@ -445,7 +444,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Break(ICorDebugAppDomain *pAppDomain,
     {
         pAppDomain->AddRef();
         pThread->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::Break, pAppDomain, pThread, nullptr, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
+        m_callbacksQueue.emplace_back(CallbackQueueCall::Break, pAppDomain, pThread, nullptr, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
     });
 }
 
@@ -778,7 +777,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::Exception(ICorDebugAppDomain *pAppDom
 
         pAppDomain->AddRef();
         pThread->AddRef();
-        m_callbacksQueue.emplace(CallbackQueueCall::Exception, pAppDomain, pThread, nullptr, STEP_NORMAL, eventType, excModule);
+        m_callbacksQueue.emplace_back(CallbackQueueCall::Exception, pAppDomain, pThread, nullptr, STEP_NORMAL, eventType, excModule);
     });
 }
 
