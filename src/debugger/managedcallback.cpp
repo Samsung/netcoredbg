@@ -219,6 +219,9 @@ HRESULT ManagedCallback::ContinueAppDomainWithCallbacksQueue(ICorDebugAppDomain 
 {
     if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
     {
+        if (!pAppDomain)
+            return E_NOTIMPL;
+
         pAppDomain->Continue(0);
         return S_OK;
     }
@@ -226,8 +229,13 @@ HRESULT ManagedCallback::ContinueAppDomainWithCallbacksQueue(ICorDebugAppDomain 
     std::unique_lock<std::mutex> lock(m_callbacksMutex);
 
     ToRelease<ICorDebugProcess> iCorProcess;
-    if (m_callbacksQueue.empty() || (SUCCEEDED(pAppDomain->GetProcess(&iCorProcess)) && HasQueuedCallbacks(iCorProcess)))
+    if (m_callbacksQueue.empty() || (pAppDomain && SUCCEEDED(pAppDomain->GetProcess(&iCorProcess)) && HasQueuedCallbacks(iCorProcess)))
+    {
+        if (!pAppDomain)
+            return E_NOTIMPL;
+
         pAppDomain->Continue(0);
+    }
     else
         m_callbacksCV.notify_one(); // notify_one with lock
 
@@ -238,14 +246,22 @@ HRESULT ManagedCallback::ContinueProcessWithCallbacksQueue(ICorDebugProcess *pPr
 {
     if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
     {
+        if (!pProcess)
+            return E_NOTIMPL;
+
         pProcess->Continue(0);
         return S_OK;
     }
 
     std::unique_lock<std::mutex> lock(m_callbacksMutex);
 
-    if (m_callbacksQueue.empty() || HasQueuedCallbacks(pProcess))
+    if (m_callbacksQueue.empty() || (pProcess && HasQueuedCallbacks(pProcess)))
+    {
+        if (!pProcess)
+            return E_NOTIMPL;
+
         pProcess->Continue(0);
+    }
     else
         m_callbacksCV.notify_one(); // notify_one with lock
 
