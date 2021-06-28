@@ -105,7 +105,6 @@
 
 #else /* _WIN32 */
 
-#include <signal.h>
 #include <termios.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -121,6 +120,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 
 #include "linenoise.h"
 #include "ConvertUTF.h"
@@ -2512,9 +2512,7 @@ static bool isCharacterAlphanumeric(char32_t testChar) {
 #endif
 }
 
-#ifndef _WIN32
 static bool gotResize = false;
-#endif
 static int keyType = 0;
 
 int InputBuffer::getInputLine(PromptBase& pi) {
@@ -2571,7 +2569,7 @@ int InputBuffer::getInputLine(PromptBase& pi) {
           keyType = 2;
         }
       }
-#ifndef _WIN32
+
       if (c == 0 && gotResize) {
         // caught a window resize event
         // now redraw the prompt and line
@@ -2581,7 +2579,6 @@ int InputBuffer::getInputLine(PromptBase& pi) {
                        pos);  // redraw the original prompt with current input
         continue;
       }
-#endif
     } else {
       c = terminatingKeystroke;   // use the terminating keystroke from search
       terminatingKeystroke = -1;  // clear it once we've used it
@@ -3195,9 +3192,8 @@ void linenoisePreloadBuffer(const char* preloadText) {
  *               memory leaks
  */
 char* linenoise(const char* prompt) {
-#ifndef _WIN32
   gotResize = false;
-#endif
+
   if (isatty(STDIN_FILENO)) {  // input is from a terminal
     char32_t buf32[LINENOISE_MAX_LINE];
     char charWidths[LINENOISE_MAX_LINE];
@@ -3459,12 +3455,25 @@ void linenoisePrintKeyCodes(void) {
   disableRawMode();
 }
 
-#ifndef _WIN32
 static void WindowSizeChanged(int) {
   // do nothing here but setting this flag
   gotResize = true;
-}
+#ifdef _WIN32
+  INPUT_RECORD rec;
+  DWORD count;
+
+  signal(SIGTERM, WindowSizeChanged);
+  rec.EventType = KEY_EVENT;
+  rec.Event.KeyEvent.bKeyDown = 1;
+  rec.Event.KeyEvent.dwControlKeyState = CONTROL_KEY_STATE_NORMAL;
+  rec.Event.KeyEvent.uChar.AsciiChar = SYMBOL_TO_REFRESH_SCREEN;
+  rec.Event.KeyEvent.uChar.UnicodeChar = SYMBOL_TO_REFRESH_SCREEN;
+  rec.Event.KeyEvent.wRepeatCount = 1;
+  rec.Event.KeyEvent.wVirtualKeyCode = SYMBOL_TO_REFRESH_SCREEN;
+  rec.Event.KeyEvent.wVirtualScanCode = SCANCODE_TO_REFRESH_SCREEN;
+  WriteConsoleInput(GetStdHandle(STD_INPUT_HANDLE), &rec, 1, &count);
 #endif
+}
 
 int linenoiseInstallWindowChangeHandler(void) {
 #ifndef _WIN32
@@ -3476,6 +3485,9 @@ int linenoiseInstallWindowChangeHandler(void) {
   if (sigaction(SIGWINCH, &sa, nullptr) == -1) {
     return errno;
   }
+#else
+  if (signal(SIGTERM, WindowSizeChanged) == SIG_ERR)
+      return errno;
 #endif
   return 0;
 }

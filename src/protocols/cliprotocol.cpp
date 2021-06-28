@@ -2244,7 +2244,10 @@ void CLIProtocol::applyCommandMode()
 #ifndef WIN32
         m_repaint_fn = std::bind(pthread_kill, pthread_self(), SIGWINCH);
 #else
-        m_repaint_fn = []{ GenerateConsoleCtrlEvent(CTRL_C_EVENT , 0); };
+        // The SIGILL and SIGTERM signals are not generated under Windows. They are included for ANSI compatibility.
+        // Therefore, we can set signal handlers for these signals by using signal, 
+        // and we can also explicitly generate these signals by calling raise
+        m_repaint_fn = []{ raise(SIGTERM); };
 #endif
     }
     else

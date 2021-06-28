@@ -40,6 +40,10 @@
 #define LINENOISE_VERSION_MAJOR 1
 #define LINENOISE_VERSION_MINOR 1
 
+#define SYMBOL_TO_REFRESH_SCREEN 0xd
+#define SCANCODE_TO_REFRESH_SCREEN 0x1c
+#define CONTROL_KEY_STATE_NORMAL 0x20
+
 #ifdef __cplusplus
 extern "C" {
 #endif

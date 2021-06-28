@@ -338,10 +338,25 @@ Class::AsyncHandle Class::async_read(const FileHandle& fh, void *buf, size_t cou
         return {};
 
     DWORD val;
+    DWORD bytesRead;
+
     if (GetConsoleMode(fh.handle, &val))
-    {
-        // file handle is the console
-        if (GetNumberOfConsoleInputEvents(fh.handle, &val) && !val)
+    {   // file handle is the console
+        // first, remove all events before the first key event, if exists
+        while (GetNumberOfConsoleInputEvents(fh.handle, &val) && val)
+        {
+            INPUT_RECORD event;
+            if (!PeekConsoleInput(fh.handle, &event, 1, &bytesRead))
+                return {};
+            if (event.EventType != KEY_EVENT)
+            {
+                if (!ReadConsoleInput(fh.handle, &event, 1, &bytesRead))
+                    return {};
+            }
+            else
+                break;
+        }
+        if (!val)
         {
             // nothing to read from the console -- defer call to ReadFile
             result.buf = buf, result.count = count;
