@@ -3192,7 +3192,6 @@ void linenoisePreloadBuffer(const char* preloadText) {
  *               memory leaks
  */
 char* linenoise(const char* prompt) {
-  gotResize = false;
 
   if (isatty(STDIN_FILENO)) {  // input is from a terminal
     char32_t buf32[LINENOISE_MAX_LINE];
@@ -3463,14 +3462,9 @@ static void WindowSizeChanged(int) {
   DWORD count;
 
   signal(SIGTERM, WindowSizeChanged);
-  rec.EventType = KEY_EVENT;
-  rec.Event.KeyEvent.bKeyDown = 1;
-  rec.Event.KeyEvent.dwControlKeyState = CONTROL_KEY_STATE_NORMAL;
-  rec.Event.KeyEvent.uChar.AsciiChar = SYMBOL_TO_REFRESH_SCREEN;
-  rec.Event.KeyEvent.uChar.UnicodeChar = SYMBOL_TO_REFRESH_SCREEN;
-  rec.Event.KeyEvent.wRepeatCount = 1;
-  rec.Event.KeyEvent.wVirtualKeyCode = SYMBOL_TO_REFRESH_SCREEN;
-  rec.Event.KeyEvent.wVirtualScanCode = SCANCODE_TO_REFRESH_SCREEN;
+  rec.EventType = WINDOW_BUFFER_SIZE_EVENT;
+  rec.Event.WindowBufferSizeEvent.dwSize.X = -1;
+  rec.Event.WindowBufferSizeEvent.dwSize.Y = -1;
   WriteConsoleInput(GetStdHandle(STD_INPUT_HANDLE), &rec, 1, &count);
 #endif
 }

@@ -202,6 +202,7 @@ public:
         // This function reads next line (LineReader retain ownership
         // of just read line till next call to get_line).
         virtual std::tuple<string_view, Result> get_line(const char *prompt) = 0;
+        virtual void setLastCommand(std::string lc) {}
 
         virtual ~LineReader() {}
     };

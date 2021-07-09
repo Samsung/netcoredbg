@@ -348,7 +348,7 @@ Class::AsyncHandle Class::async_read(const FileHandle& fh, void *buf, size_t cou
             INPUT_RECORD event;
             if (!PeekConsoleInput(fh.handle, &event, 1, &bytesRead))
                 return {};
-            if (event.EventType != KEY_EVENT)
+            if (event.EventType != KEY_EVENT || (event.EventType == KEY_EVENT && !event.Event.KeyEvent.bKeyDown))
             {
                 if (!ReadConsoleInput(fh.handle, &event, 1, &bytesRead))
                     return {};
@@ -359,7 +359,7 @@ Class::AsyncHandle Class::async_read(const FileHandle& fh, void *buf, size_t cou
         if (!val)
         {
             // nothing to read from the console -- defer call to ReadFile
-            result.buf = buf, result.count = count;
+            result.buf = nullptr, result.count = 0;
             return result;
         }
     }

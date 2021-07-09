@@ -315,6 +315,7 @@ HRESULT CLIProtocol::printHelp<CLIProtocol::CLIParams::CommandInfo>(
 // This class reads input lines from console.
 class ConsoleLineReader : public CLIProtocol::LineReader
 {
+    std::string m_last_command;
 public:
     ConsoleLineReader() : cmdline(nullptr, deleter) {}
 
@@ -325,8 +326,16 @@ public:
         if (!cmdline)
             return {string_view{}, errno == EAGAIN ? Interrupt : Eof};
 
+        size_t len = strlen(cmdline.get());
+        if ((!len || strspn(cmdline.get(), " \r\n\t") == len) && !m_last_command.empty())
+            return {string_view{m_last_command.c_str()}, Success};
         linenoiseHistoryAdd(cmdline.get());
         return {string_view{cmdline.get()}, Success};
+    }
+
+    virtual void setLastCommand(std::string lc) override
+    {
+        m_last_command = lc;
     }
 
 private:
@@ -485,7 +494,7 @@ CLIProtocol::TermSettings::TermSettings(CLIProtocol& protocol)
     data.reset(reinterpret_cast<char*>(new decltype(modes) {modes}));
 
     // mode for IORedirect::async_input
-    modes.first |= ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT;
+    modes.first |= ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT | ENABLE_WINDOW_INPUT;
     SetConsoleMode(in, modes.first);
     SetConsoleMode(out, modes.second | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
@@ -1405,7 +1414,8 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
     int lines = m_listSize;
 
     std::string params;
-
+    std::string to_repeat = "l";  // eliminate any params to repeat the last command by pressing <Enter> 
+                                  // see exception below for "l -"
     if (!args.empty())
     {
         bool er;
@@ -1458,6 +1468,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
         else if (params.front() == '-') // ex: list -  -- m_listSize lines just before last printed
         {
             line -= 2 * m_listSize;
+            to_repeat = "l -";          // exception for this case to repeat command by pressing <Enter>
         }
         else if (params.front() == '+') // ex: list +  -- m_listSize lines just after last printed
         {
@@ -1497,6 +1508,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
         }
         m_sourceLine = line;
     }
+    line_reader->setLastCommand(to_repeat);
     return S_OK;
 }
 
@@ -2172,6 +2184,7 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr)
         };
 
         LOGD("executing: '%.*s'", int(input.size()), input.data());
+        line_reader->setLastCommand(input);
         auto unparsed = CommandsList::cli_helper.eval(input, handler);
         if (!have_result)
         {
