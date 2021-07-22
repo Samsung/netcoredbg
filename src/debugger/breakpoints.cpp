@@ -186,6 +186,7 @@ void Breakpoints::EnumerateBreakpoints(std::function<bool (const IDebugger::Brea
     std::vector<IDebugger::BreakpointInfo> list;
     m_uniqueLineBreakpoints->AddAllBreakpointsInfo(list);
     m_uniqueFuncBreakpoints->AddAllBreakpointsInfo(list);
+    m_uniqueExceptionBreakpoints->AddAllBreakpointsInfo(list);
 
     // sort breakpoint list by ascending order, preserve order of elements with same number
     std::stable_sort(list.begin(), list.end());

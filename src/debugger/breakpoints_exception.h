@@ -8,6 +8,7 @@
 #include "cordebug.h"
 
 #include "interfaces/types.h"
+#include "interfaces/idebugger.h"
 #include <unordered_map>
 #include <string>
 #include <memory>
@@ -18,6 +19,7 @@ namespace netcoredbg
 {
 
 class Evaluator;
+class IDebugger;
 
 class ExceptionBreakpoints
 {
@@ -45,6 +47,7 @@ public:
     //     return S_OK;
     HRESULT ManagedCallbackException(ICorDebugThread *pThread, ExceptionCallbackType eventType, std::string excModule, StoppedEvent &event);
     HRESULT ManagedCallbackExitThread(ICorDebugThread *pThread);
+    void AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInfo> &list);
 
 private:
 

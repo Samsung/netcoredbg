@@ -58,6 +58,7 @@ class CLIProtocol : public IProtocol
 
     std::unordered_map<std::string, std::unordered_map<uint32_t, LineBreakpoint> > m_lineBreakpoints;
     std::unordered_map<uint32_t, FuncBreakpoint> m_funcBreakpoints;
+    std::unordered_map<uint32_t, ExceptionBreakpoint> m_exceptionBreakpoints;
 
     FrameId m_frameId;
     std::string m_sourcePath;
@@ -81,6 +82,7 @@ class CLIProtocol : public IProtocol
     int printf_checked(const char *fmt, ...);
 
     static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output);
+    static HRESULT PrintExceptionBPs(const std::vector<Breakpoint> &breakpoints, size_t bpCnt, std::string &outStr, const std::string &filter);
     
 public:
     CLIProtocol(InStream& input, OutStream& output);
@@ -180,9 +182,11 @@ private:
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
     HRESULT SetLineBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFuncBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
+    HRESULT SetExceptionBreakpoints(std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints);
     HRESULT PrintVariable(const Variable &v, std::ostringstream &output, bool expand, bool is_static);
     void DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids);
     void DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids);
+    void DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
     bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
 

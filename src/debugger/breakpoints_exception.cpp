@@ -541,4 +541,35 @@ HRESULT ExceptionBreakpoints::ManagedCallbackExitThread(ICorDebugThread *pThread
     return S_OK;
 }
 
+void ExceptionBreakpoints::AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInfo> &list)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+    static std::vector<std::string>Filters{
+        "throw",
+        "user-unhandled",
+        "throw+user-unhandled",
+        "unhandled"
+    };
+    std::string ss;
+
+    list.reserve(list.size() + m_exceptionBreakpoints.size());
+
+    for (size_t filter = 0; filter < (size_t)ExceptionBreakpointFilter::Size; ++filter)
+    {
+        for (auto it = m_exceptionBreakpoints[filter].begin(); it != m_exceptionBreakpoints[filter].end();)
+        {
+            auto &bp = it->second;
+            ss = Filters[filter];
+            for (auto &entry : bp.condition)
+            {
+                ss += " ";
+                ss += entry;
+            }
+            list.emplace_back(IDebugger::BreakpointInfo{ bp.id, true, true, 0, "",
+                                                     "exception ", 0, 0, "", ss});
+            ++it;
+        }
+    }
+}
+
 } // namespace netcoredbg

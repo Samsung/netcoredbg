@@ -86,6 +86,7 @@ enum class CLIProtocol::CommandTag
     Help,
     Backtrace,
     Break,
+    Catch,
     Continue,
     Delete,
     Detach,
@@ -215,6 +216,9 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
                   "location might be filename.cs:line or function name.\n"
                   "Optional, module name also could be provided as part\n"
                   "of location: module.dll!filename.cs:line"}},
+
+    {CommandTag::Catch, {}, {}, {{"catch"}},
+        {{}, "Set exception breakpoints."}},
 
     {CommandTag::Continue, {}, {}, {{"continue", "c"}},
         {{}, "Continue debugging after stop/pause."}},
@@ -619,6 +623,30 @@ HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
     return Status;
 }
 
+HRESULT CLIProtocol::PrintExceptionBPs(const std::vector<Breakpoint> &breakpoints, size_t bpCnt, std::string &outStr, const std::string &filter)
+{
+    if (bpCnt > breakpoints.size())
+        return E_FAIL;
+
+    if (bpCnt == 0 || breakpoints.empty())
+    {
+        outStr = "^done";
+        return S_OK;
+    }
+
+    std::ostringstream oss;
+    size_t bpIdx = breakpoints.size() - bpCnt;
+    oss << breakpoints[bpIdx].id << " ";
+    for (++bpIdx; bpIdx < breakpoints.size(); ++bpIdx)
+        oss << breakpoints[bpIdx].id << " ";
+
+    if (bpCnt > 1)
+        outStr = "^done, Catchpoints " + oss.str() + "(" + filter + ")";
+    else
+        outStr = "^done, Catchpoint " + oss.str() + "(" + filter + ")";
+
+    return S_OK;
+}
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
@@ -737,6 +765,7 @@ void CLIProtocol::Cleanup()
 
     m_lineBreakpoints.clear();
     m_funcBreakpoints.clear();
+    m_exceptionBreakpoints.clear();
 }
 
 HRESULT CLIProtocol::SetLineBreakpoint(
@@ -797,6 +826,27 @@ HRESULT CLIProtocol::SetFuncBreakpoint(
 
     lock_guard lock(m_mutex);
     m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
+    return S_OK;
+}
+
+HRESULT CLIProtocol::SetExceptionBreakpoints(
+    std::vector<ExceptionBreakpoint> &exceptionBreakpoints,      /* [in] */
+    std::vector<Breakpoint> &breakpoints)     /* [out] */
+{
+    HRESULT Status;
+
+    std::vector<ExceptionBreakpoint> excBreakpoints;
+    for (const auto &it : m_exceptionBreakpoints)
+        excBreakpoints.push_back(it.second);
+
+    excBreakpoints.insert(excBreakpoints.end(), // Don't copy, but move exceptionBreakpoints into excBreakpoints.
+                          std::make_move_iterator(exceptionBreakpoints.begin()), std::make_move_iterator(exceptionBreakpoints.end()));
+
+    IfFailRet(m_sharedDebugger->SetExceptionBreakpoints(excBreakpoints, breakpoints));
+
+    for (size_t i = m_exceptionBreakpoints.size(); i < breakpoints.size(); ++i)
+        m_exceptionBreakpoints.insert(std::make_pair(breakpoints[i].id, std::move(excBreakpoints[i])));
+
     return S_OK;
 }
 
@@ -863,6 +913,28 @@ void CLIProtocol::DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids)
 
     std::vector<Breakpoint> tmpBreakpoints;
     m_sharedDebugger->SetFuncBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
+}
+
+void CLIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids)
+{
+    std::size_t initialSize = m_exceptionBreakpoints.size();
+    std::vector<ExceptionBreakpoint> remainingExceptionBreakpoints;
+    for (auto it = m_exceptionBreakpoints.begin(); it != m_exceptionBreakpoints.end();)
+    {
+        if (ids.find(it->first) == ids.end())
+        {
+            remainingExceptionBreakpoints.push_back(it->second);
+            ++it;
+        }
+        else
+            it = m_exceptionBreakpoints.erase(it);
+    }
+
+    if (initialSize == m_exceptionBreakpoints.size())
+        return;
+
+    std::vector<Breakpoint> tmpBreakpoints;
+    m_sharedDebugger->SetExceptionBreakpoints(remainingExceptionBreakpoints, tmpBreakpoints);
 }
 
 
@@ -1091,6 +1163,70 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
 }
 
 template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Catch>(const std::vector<std::string> &args, std::string &outStr)
+{
+    if (args.size() < 2)
+    {
+        outStr = "Command usage: catch [-mda|-native] <unhandled|user-unhandled|throw|throw+user-unhandled> *|<Exception names>";
+        return E_INVALIDARG;
+    }
+
+    static std::unordered_map<std::string, ExceptionBreakpointFilter> CLIFilters{
+        {"throw",                ExceptionBreakpointFilter::THROW},
+        {"user-unhandled",       ExceptionBreakpointFilter::USER_UNHANDLED},
+        {"throw+user-unhandled", ExceptionBreakpointFilter::THROW_USER_UNHANDLED},
+        {"unhandled",            ExceptionBreakpointFilter::UNHANDLED}};
+
+    size_t i = 0;
+    ExceptionCategory category;
+    
+    if (args.at(i) == "-mda")
+    {
+        category = ExceptionCategory::MDA;
+        ++i;
+    }
+    else if (args.at(i) == "-native")
+    {
+        ++i;
+    }
+    else
+        category = ExceptionCategory::CLR;
+
+    auto findFilter = CLIFilters.find(args.at(i));
+    if (findFilter == CLIFilters.end())
+    {
+        outStr = "Catch accepts only: 'throw', 'unhandled', 'user-unhandled' and 'throw+user-unhandled' argument as an exception stage";
+        return E_INVALIDARG;
+    }
+    else
+        ++i;
+
+    std::vector<ExceptionBreakpoint> exceptionBreakpoints;
+    for (auto it = args.begin() + i; it != args.end(); ++it)
+    {
+        exceptionBreakpoints.emplace_back(category, findFilter->second);
+        // In case of "*" debugger must ignore condition check for this filter.
+        if (*it != "*")
+            exceptionBreakpoints.back().condition.emplace(*it);
+        // Note, no negativeCondition changes, since MI protocol works in another way.
+    }
+
+    size_t newBreakPointCnt = exceptionBreakpoints.size();
+    if (newBreakPointCnt == 0)
+        return E_INVALIDARG;
+
+    HRESULT Status;
+    std::vector<Breakpoint> breakpoints;
+    // `breakpoints` will return all configured exception breakpoints, not only configured by this command.
+    // Note, exceptionBreakpoints data will be invalidated by this call.
+    IfFailRet(SetExceptionBreakpoints(exceptionBreakpoints, breakpoints));
+    // Print only breakpoints configured by this command (last newBreakPointCnt entries).
+    IfFailRet(PrintExceptionBPs(breakpoints, newBreakPointCnt, outStr, findFilter->first));
+
+    return S_OK;
+}
+
+template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Continue>(const std::vector<std::string> &, std::string &output)
 {
     {
@@ -1136,6 +1272,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Delete>(const std::vector<std::string
     }
     DeleteLineBreakpoints(ids);
     DeleteFuncBreakpoints(ids);
+    DeleteExceptionBreakpoints(ids);
     return S_OK;
 }
 
