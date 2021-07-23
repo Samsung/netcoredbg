@@ -222,7 +222,7 @@ static void PrintVar(const std::string &varobjName, Variable &v, ThreadId thread
         ss << "value=\"" << MIProtocol::EscapeMIValue(v.value) << "\",";
     }
     ss << "attributes=\"" << editable << "\",";
-    ss << "exp=\"" << (v.name.empty() ? v.evaluateName : v.name) << "\",";
+    ss << "exp=\"" << MIProtocol::EscapeMIValue(v.name.empty() ? v.evaluateName : v.name) << "\",";
     ss << "numchild=\"" << v.namedVariables << "\",";
     ss << "type=\"" << v.type << "\",";
     ss << "thread-id=\"" << int(threadId) << "\"";

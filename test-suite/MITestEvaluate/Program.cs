@@ -500,9 +500,8 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "int_i1 + 1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "int_i1 + int_i2");
 
-                // FIXME MI parser thowns MIParserException here
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "\\\"one\\\" + \\\"two\\\"");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "str_s1 + \\\"two\\\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "\\\"one\\\" + \\\"two\\\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "str_s1 + \\\"two\\\"");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "str_s1 + str_s2");
 
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 + not_var"); // error
