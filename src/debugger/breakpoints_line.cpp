@@ -531,9 +531,6 @@ void LineBreakpoints::AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInf
                                                          file_bps.first, bp.breakpoint.line, 0, bp.breakpoint.module, {} });
         }
     }
-
-    // remove duplicates (ones from m_lineBreakpointMapping which have resolved pair in m_lineResolvedBreakpoints)
-    list.erase(std::unique(list.begin(), list.end()), list.end());
 }
 
 } // namespace netcoredbg

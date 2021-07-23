@@ -191,6 +191,9 @@ void Breakpoints::EnumerateBreakpoints(std::function<bool (const IDebugger::Brea
     // sort breakpoint list by ascending order, preserve order of elements with same number
     std::stable_sort(list.begin(), list.end());
 
+    // remove duplicates (ones from m_lineBreakpointMapping which have resolved pair in m_lineResolvedBreakpoints)
+    list.erase(std::unique(list.begin(), list.end()), list.end());
+
     for (const auto &item : list)
     {
         if (!callback(item))
