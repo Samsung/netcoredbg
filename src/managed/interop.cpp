@@ -71,6 +71,9 @@ typedef  RetCode (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, 
 typedef  RetCode (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int32_t*, int32_t*, PVOID*);
 typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
+typedef  int (*GenerateStackMachineProgramDelegate)(const WCHAR*, PVOID*, BSTR*);
+typedef  void (*ReleaseStackMachineProgramDelegate)(PVOID);
+typedef  int (*NextStackCommandDelegate)(PVOID, int32_t*, PVOID*, BSTR*);
 typedef  RetCode (*StringToUpperDelegate)(const WCHAR*, BSTR*);
 typedef  void (*GCCollectDelegate)();
 typedef  PVOID (*CoTaskMemAllocDelegate)(int32_t);
@@ -92,6 +95,9 @@ GetSourceDelegate getSourceDelegate = nullptr;
 ParseExpressionDelegate parseExpressionDelegate = nullptr;
 EvalExpressionDelegate evalExpressionDelegate = nullptr;
 RegisterGetChildDelegate registerGetChildDelegate = nullptr;
+GenerateStackMachineProgramDelegate generateStackMachineProgramDelegate = nullptr;
+ReleaseStackMachineProgramDelegate releaseStackMachineProgramDelegate = nullptr;
+NextStackCommandDelegate nextStackCommandDelegate = nullptr;
 StringToUpperDelegate stringToUpperDelegate = nullptr;
 GCCollectDelegate gCCollectDelegate = nullptr;
 CoTaskMemAllocDelegate coTaskMemAllocDelegate = nullptr;
@@ -274,6 +280,9 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "RegisterGetChild", (void **)&registerGetChildDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "GenerateStackMachineProgram", (void **)&generateStackMachineProgramDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ReleaseStackMachineProgram", (void **)&releaseStackMachineProgramDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "NextStackCommand", (void **)&nextStackCommandDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "StringToUpper", (void **)&stringToUpperDelegate));
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "GCCollect", (void **)&gCCollectDelegate));
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "CoTaskMemAlloc", (void **)&coTaskMemAllocDelegate));
@@ -298,6 +307,9 @@ void Init(const std::string &coreClrPath)
                               parseExpressionDelegate &&
                               evalExpressionDelegate &&
                               registerGetChildDelegate &&
+                              generateStackMachineProgramDelegate &&
+                              releaseStackMachineProgramDelegate &&
+                              nextStackCommandDelegate &&
                               stringToUpperDelegate &&
                               gCCollectDelegate &&
                               coTaskMemAllocDelegate &&
@@ -573,6 +585,57 @@ HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId
     }
 
     return S_OK;
+}
+
+HRESULT GenerateStackMachineProgram(const std::string &expr, PVOID *ppStackProgram, std::string &textOutput)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!generateStackMachineProgramDelegate || !ppStackProgram)
+        return E_FAIL;
+
+    textOutput = "";
+    BSTR wTextOutput = nullptr;
+    HRESULT Status = generateStackMachineProgramDelegate(to_utf16(expr).c_str(), ppStackProgram, &wTextOutput);
+    read_lock.unlock();
+
+    if (wTextOutput)
+    {
+        textOutput = to_utf8(wTextOutput);
+        SysFreeString(wTextOutput);
+    }
+
+    return Status;
+}
+
+void ReleaseStackMachineProgram(PVOID pStackProgram)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!releaseStackMachineProgramDelegate || !pStackProgram)
+        return;
+
+    releaseStackMachineProgramDelegate(pStackProgram);
+}
+
+// Note, managed part will release Ptr unmanaged memory at object finalizer call after ReleaseStackMachineProgram() call.
+// Native part must not release Ptr memory, allocated by managed part.
+HRESULT NextStackCommand(PVOID pStackProgram, int32_t &Command, PVOID &Ptr, std::string &textOutput)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!nextStackCommandDelegate || !pStackProgram)
+        return E_FAIL;
+
+    textOutput = "";
+    BSTR wTextOutput = nullptr;
+    HRESULT Status = nextStackCommandDelegate(pStackProgram, &Command, &Ptr, &wTextOutput);
+    read_lock.unlock();
+
+    if (wTextOutput)
+    {
+        textOutput = to_utf8(wTextOutput);
+        SysFreeString(wTextOutput);
+    }
+
+    return Status;
 }
 
 PVOID AllocString(const std::string &str)

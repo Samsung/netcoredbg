@@ -210,10 +210,55 @@ namespace NetcoreDbgTest.Script
             return ((MIConst)res["name"]).CString;
         }
 
-        public void CheckErrorAtRequest(string caller_trace, string Expression)
+        public void CheckErrorAtRequest(string caller_trace, string Expression, string errMsgStart)
         {
             var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", Expression));
             Assert.Equal(MIResultClass.Error, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.True(((MIConst)res["msg"]).CString.StartsWith(errMsgStart), @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void AddExceptionBreakpoint(string caller_trace, string excStage, string excFilter)
+        {
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-break-exception-insert " + excStage + " " + excFilter).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasExceptionBreakpointHit(string caller_trace, string bpName, string excCategory, string excStage, string excName)
+        {
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
+
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+                var category = (MIConst)output["exception-category"];
+                var stage = (MIConst)output["exception-stage"];
+                var name = (MIConst)output["exception-name"];
+
+                if (reason.CString != "exception-received" ||
+                    category.CString != excCategory ||
+                    stage.CString != excStage ||
+                    name.CString != excName) {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)(frame["file"]);
+                var numLine = (MIConst)(frame["line"]);
+
+                if (fileName.CString == bp.FileName &&
+                    numLine.CString == bp.NumLine.ToString()) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
         public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
@@ -298,8 +343,8 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"2str\\\"", "string", "this_static_str");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "3", "int", "this_static_i");
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_this_t.this_i"); // error, cannot be accessed in this way
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_this_t.this_static_str"); // error, cannot be accessed in this way
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_this_t.this_i", "error:"); // error, cannot be accessed in this way
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_this_t.this_static_str", "error:"); // error, cannot be accessed in this way
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "3", "int", "MITestEvaluate.test_this_t.this_static_i");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -337,7 +382,6 @@ namespace MITestEvaluate
 
                         // nested tests:
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "nested_static_i");
-                        // FIXME debugger have wrong behavior and should be fixed first
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "test_static_class1_t.static_field_i1");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "test_static_struct1_t.static_field_i1");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "53", "int", "test_nested.nested_static_i");
@@ -345,11 +389,11 @@ namespace MITestEvaluate
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested_1.test_nested_2.nested_static_i");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "253", "int", "test_nested_2.nested_static_i");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", "353", "int", "test_nested_3.nested_static_i");
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested.test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested_2.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested_3.nested_i"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested.test_nested_1.test_nested_2.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested_1.test_nested_2.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested_2.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_nested_3.nested_i", "error:"); // error, cannot be accessed
 
                         Context.Continue(@"__FILE__:__LINE__");
                     });
@@ -430,6 +474,10 @@ namespace MITestEvaluate
             array2[0].i = 201;
             array2[2] = new test_array();
             array2[2].i = 401;
+            int i1 = 0;
+            int i2 = 2;
+            int i3 = 4;
+            int i4 = 1;
             int break_line1 = 1;                                                                    Label.Breakpoint("BREAK1");
 
             Label.Checkpoint("values_test", "expression_test", (Object context) => {
@@ -444,6 +492,9 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "array1[0]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "30", "int", "array1[2]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "50", "int", "array1[4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "array1[i1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "30", "int", "array1[i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "50", "int", "array1[i3]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "array1[ 0]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "30", "int", "array1[2 ]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "50", "int", "array1 [ 4 ]"); // check spaces
@@ -451,24 +502,29 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{int[2, 3]}", "int[,]", "multi_array2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "101", "int", "multi_array2[0,0]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "105", "int", "multi_array2[1,1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "104", "int", "multi_array2[1,0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "102", "int", "multi_array2[0,1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "104", "int", "multi_array2[i4,i1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "102", "int", "multi_array2[i1,i4]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "101", "int", "multi_array2[ 0 , 0 ]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "105", "int", "multi_array2  [ 1,1 ]"); // check spaces
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.test_array[4]}", "MITestEvaluate.test_array[]", "array2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.test_array}", "MITestEvaluate.test_array", "array2[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "201", "int", "array2[i1].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "201", "int", "array2[0].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "201", "int", "array2   [   0   ]   .   i"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.test_array}", "MITestEvaluate.test_array", "array2[2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "401", "int", "array2[i2].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "401", "int", "array2[2].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "401", "int", "array2  [  2  ]  .  i"); // check spaces
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "this.int_i"); // error, Main is static method that don't have "this"
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "int_i"); // error, don't have "this" (no object of type "Program" was created)
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "not_declared"); // error, no such variable
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "array1[]"); // error, no such variable
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "multi_array2[]"); // error, no such variable
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "multi_array2[,]"); // error, no such variable
-
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "this.int_i", "error:"); // error, Main is static method that don't have "this"
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "int_i", "error:"); // error, don't have "this" (no object of type "Program" was created)
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "not_declared", "error:"); // error, no such variable
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "array1[]", "error CS1519:"); // error, no such variable
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "multi_array2[]", "error CS1519:"); // error, no such variable
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "multi_array2[,]", "error CS1519:"); // error, no such variable
 
                 var attrDResult = Context.MIDebugger.Request("9-var-show-attributes " + varName);
                 Assert.Equal(MIResultClass.Done, attrDResult.Class, @"__FILE__:__LINE__");
@@ -504,7 +560,8 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "str_s1 + \\\"two\\\"");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "str_s1 + str_s2");
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 + not_var"); // error
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "int_i1 +/ int_i2", "error CS1525:");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 + not_var", "System.AggregateException"); // error
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -528,8 +585,8 @@ namespace MITestEvaluate
                 // test class fields/properties via local variable
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "5", "int", "cl", "static_field_i1");
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "7", "int", "cl", "static_property_i2");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "cl.st"); // error CS0176: Member 'test_static_class1_t.st' cannot be accessed with an instance reference; qualify it with a type name instead
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "cl.cl"); // error CS0176: Member 'test_static_class1_t.cl' cannot be accessed with an instance reference; qualify it with a type name instead
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "cl.st", "error:"); // error CS0176: Member 'test_static_class1_t.st' cannot be accessed with an instance reference; qualify it with a type name instead
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "cl.cl", "error:"); // error CS0176: Member 'test_static_class1_t.cl' cannot be accessed with an instance reference; qualify it with a type name instead
                 // test struct fields via local variable
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "4", "int", "st", "static_field_i1");
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "3", "float", "st", "static_field_f1");
@@ -546,10 +603,10 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "test_static_struct1_t.static_property_i2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "8", "int", "MITestEvaluate.test_static_class1_t.st.field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "7.1", "double", "MITestEvaluate.test_static_class1_t.cl.field_d1");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_class1_t.not_declared"); // error, no such field in class
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_struct1_t.not_declared"); // error, no such field in struct
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_class1_t.st.not_declared"); // error, no such field in struct
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_class1_t.cl.not_declared"); // error, no such field in class
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_class1_t.not_declared", "error:"); // error, no such field in class
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_struct1_t.not_declared", "error:"); // error, no such field in struct
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_class1_t.st.not_declared", "error:"); // error, no such field in struct
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_class1_t.cl.not_declared", "error:"); // error, no such field in class
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -626,13 +683,15 @@ namespace MITestEvaluate
             Lambda lambda2 = (argVar) => {
                 string localVar = "localVar";
 
-                Label.Checkpoint("lambda_test2", "finish", (Object context) => {
+                Label.Checkpoint("lambda_test2", "internal_var_test", (Object context) => {
                     Context Context = (Context)context;
                     Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK9");
 
-                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "mainVar");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "mainVar", "error:");
                     Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"localVar\\\"", "string", "localVar");
                     Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"argVar\\\"", "string", "argVar");
+
+                    Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "System.Exception");
 
                     Context.Continue(@"__FILE__:__LINE__");
                 });
@@ -641,6 +700,49 @@ namespace MITestEvaluate
             };
 
             lambda2("argVar");
+
+            // Test internal "$exception" variable name.
+
+            try
+            {
+                throw new System.Exception();                                                            Label.Breakpoint("BP_EXCEPTION");
+            }
+            catch {}
+
+            Label.Checkpoint("internal_var_test", "literals_test", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExceptionBreakpointHit(@"__FILE__:__LINE__", "BP_EXCEPTION", "clr", "throw", "System.Exception");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{System.Exception}", "System.Exception", "$exception");
+            });
+
+            // Test literals.
+
+            Label.Checkpoint("literals_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test\\\"", "string", "\\\"test\\\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"$exception\\\"", "string", "\\\"$exception\\\"");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "99 'c'", "char", "'c'");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10.5", "decimal", "10.5m");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10.5", "double", "10.5d");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10.5", "float", "10.5f");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "7");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "0x0F");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "42", "int", "0b00101010");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "uint", "7u");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "long", "7L");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "ulong", "7UL");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "object", "null");
+
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "0b_0010_1010", "error CS1013"); // Invalid number
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "'𐌞'", "error CS1012"); // '𐌞' character need 2 whcars and not supported
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;

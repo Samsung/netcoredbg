@@ -16,6 +16,8 @@ namespace netcoredbg
 
 class Evaluator;
 class EvalHelpers;
+class EvalWaiter;
+class EvalStackMachine;
 
 class Variables
 {
@@ -68,6 +70,7 @@ class Variables
 
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
+    std::unique_ptr<EvalStackMachine> m_uniqueEvalStackMachine;
     struct Member;
 
     std::recursive_mutex m_referencesMutex;
@@ -125,10 +128,7 @@ class Variables
 
 public:
 
-    Variables(std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Evaluator> &sharedEvaluator) :
-        m_sharedEvalHelpers(sharedEvalHelpers),
-        m_sharedEvaluator(sharedEvaluator)
-    {}
+    Variables(std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalWaiter> &sharedEvalWaiter);
 
     int GetNamedVariables(uint32_t variablesReference);
 
@@ -176,6 +176,8 @@ public:
         FrameId frameId,
         ICorDebugThread *pThread,
         Variable &variable);
+
+    HRESULT FindPredefinedTypes(ICorDebugModule *pModule);
 
     void Clear()
     {

@@ -89,6 +89,7 @@ set(netcoredbg_SRC
     debugger/breakpoints.cpp
     debugger/breakpointutils.cpp
     debugger/evalhelpers.cpp
+    debugger/evalstackmachine.cpp
     debugger/evaluator.cpp
     debugger/evalwaiter.cpp
     debugger/evalutils.cpp

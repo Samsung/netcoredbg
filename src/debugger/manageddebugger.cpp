@@ -16,6 +16,7 @@
 #include "debugger/threads.h"
 #include "debugger/frames.h"
 #include "debugger/evalhelpers.h"
+#include "debugger/evalstackmachine.h"
 #include "debugger/evaluator.h"
 #include "debugger/evalwaiter.h"
 #include "debugger/variables.h"
@@ -143,7 +144,7 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers)),
     m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
     m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator)),
-    m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator)),
+    m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator, m_sharedEvalWaiter)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_stepFiltering(true),

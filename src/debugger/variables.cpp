@@ -15,6 +15,7 @@
 #include "debugger/evalhelpers.h"
 #include "debugger/evaluator.h"
 #include "debugger/frames.h"
+#include "debugger/evalstackmachine.h"
 #include "managed/interop.h"
 #include "utils/logger.h"
 #include "utils/utf.h"
@@ -22,6 +23,12 @@
 
 namespace netcoredbg
 {
+
+Variables::Variables(std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
+    m_sharedEvalHelpers(sharedEvalHelpers),
+    m_sharedEvaluator(sharedEvaluator),
+    m_uniqueEvalStackMachine(new EvalStackMachine(sharedEvaluator, sharedEvalHelpers, sharedEvalWaiter))
+{}
 
 void Variables::GetNumChild(
     ICorDebugValue *pValue,
@@ -419,19 +426,9 @@ HRESULT Variables::Evaluate(
     IfFailRet(pProcess->GetThread(int(threadId), &pThread));
     ToRelease<ICorDebugValue> pResultValue;
 
-    static std::regex re("^ *(global::)?[A-Za-z\\$_][A-Za-z0-9_]* *(\\[ *\\d+ *(, *\\d+)* *\\])?(( *\\. *[A-Za-z_][A-Za-z0-9_]*)+( *\\[ *\\d+( *, *\\d+)* *\\])?)* *$");
-
-    if (std::regex_match(expression, re))
-    {
-        // Use simple name parser
-        // Note, in case of fail we don't call Roslyn, since it will use simple eval check with same `expression`,
-        // but in case we miss something with `regex_match`, Roslyn will use simple eval check from managed part.
-        if (FAILED(Status = m_sharedEvaluator->EvalExpr(pThread, frameLevel, expression, &pResultValue, variable.evalFlags)))
-        {
-            output = "error: The name '" + expression + "' does not exist in the current context";
-            return Status;
-        }
-    }
+    // EvalStackMachine::Run() return not error but S_FALSE in case some syntax kind not implemented.
+    if (FAILED(Status = m_uniqueEvalStackMachine->Run(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, output)))
+        return Status;
 
     int typeId;
 
@@ -637,7 +634,15 @@ HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId fram
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(pProcess->GetThread(int(threadId), &pThread));
 
-    return m_sharedEvaluator->EvalExpr(pThread, frameId.getLevel(), variable.evaluateName, ppResult, variable.evalFlags);
+    // Looks like all we need here is get ICorDebugValue by field/variable name.
+    // All "set value" code must be refactored in order to remove dependency from Roslyn.
+
+    std::string output;
+    Status = m_uniqueEvalStackMachine->Run(pThread, frameId.getLevel(), variable.evalFlags, variable.evaluateName, ppResult, output);
+    if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+        Status = E_FAIL;
+
+    return Status;
 }
 
 HRESULT Variables::SetVariable(
@@ -663,6 +668,11 @@ HRESULT Variables::SetVariable(
     bool escape = true;
     PrintValue(pVariable, output, escape);
     return S_OK;
+}
+
+HRESULT Variables::FindPredefinedTypes(ICorDebugModule *pModule)
+{
+    return m_uniqueEvalStackMachine->FindPredefinedTypes(pModule);
 }
 
 } // namespace netcoredbg

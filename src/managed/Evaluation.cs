@@ -15,7 +15,7 @@ using System.Text;
 
 namespace NetCoreDbg
 {
-    public class Evaluation
+    public partial class Evaluation
     {
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct BlittableChar

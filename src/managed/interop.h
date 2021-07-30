@@ -121,6 +121,9 @@ namespace Interop
     HRESULT GetSource(PVOID symbolReaderHandle, const std::string fileName, PVOID *data, int32_t *length);
     HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
     HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
+    HRESULT GenerateStackMachineProgram(const std::string &expr, PVOID *ppStackProgram, std::string &textOutput);
+    void ReleaseStackMachineProgram(PVOID pStackProgram);
+    HRESULT NextStackCommand(PVOID pStackProgram, int32_t &Command, PVOID &Ptr, std::string &textOutput);
     PVOID AllocString(const std::string &str);
     HRESULT StringToUpper(std::string &String);
     BSTR SysAllocStringLen(int32_t size);

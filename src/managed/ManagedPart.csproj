@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <Compile Include="Evaluation.cs" />
+    <Compile Include="StackMachine.cs" />
     <Compile Include="SymbolReader.cs" />
     <Compile Include="Utils.cs" />
   </ItemGroup>

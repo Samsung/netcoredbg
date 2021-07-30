@@ -198,13 +198,100 @@ namespace NetcoreDbgTest.Script
             Assert.Equal(ExpectedType, evaluateResponse.body.type, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public void CheckErrorAtRequest(string caller_trace, Int64 frameId, string Expression)
+        public void CheckErrorAtRequest(string caller_trace, Int64 frameId, string Expression, string errMsgStart)
         {
             EvaluateRequest evaluateRequest = new EvaluateRequest();
             evaluateRequest.arguments.expression = Expression;
             evaluateRequest.arguments.frameId = frameId;
             var ret = VSCodeDebugger.Request(evaluateRequest);
             Assert.False(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            EvaluateResponse evaluateResponse =
+                JsonConvert.DeserializeObject<EvaluateResponse>(ret.ResponseStr);
+
+            Assert.True(evaluateResponse.message.StartsWith(errMsgStart), @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void AddExceptionBreakpointFilterAllWithOptions(string options)
+        {
+            ExceptionFilterAllOptions = new ExceptionFilterOptions();
+            ExceptionFilterAllOptions.filterId = "all";
+            ExceptionFilterAllOptions.condition = options;
+        }
+
+        public void SetExceptionBreakpoints(string caller_trace)
+        {
+            SetExceptionBreakpointsRequest setExceptionBreakpointsRequest = new SetExceptionBreakpointsRequest();
+            if (ExceptionFilterAll)
+                setExceptionBreakpointsRequest.arguments.filters.Add("all");
+            if (ExceptionFilterUserUnhandled)
+                setExceptionBreakpointsRequest.arguments.filters.Add("user-unhandled");
+
+            if (ExceptionFilterAllOptions != null || ExceptionFilterUserUnhandledOptions != null)
+                setExceptionBreakpointsRequest.arguments.filterOptions = new List<ExceptionFilterOptions>();
+            if (ExceptionFilterAllOptions != null)
+                setExceptionBreakpointsRequest.arguments.filterOptions.Add(ExceptionFilterAllOptions);
+            if (ExceptionFilterUserUnhandledOptions != null)
+                setExceptionBreakpointsRequest.arguments.filterOptions.Add(ExceptionFilterUserUnhandledOptions);
+
+            Assert.True(VSCodeDebugger.Request(setExceptionBreakpointsRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void TestExceptionInfo(string caller_trace, string excCategory, string excMode, string excName)
+        {
+            ExceptionInfoRequest exceptionInfoRequest = new ExceptionInfoRequest();
+            exceptionInfoRequest.arguments.threadId = threadId;
+            var ret = VSCodeDebugger.Request(exceptionInfoRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            ExceptionInfoResponse exceptionInfoResponse =
+                JsonConvert.DeserializeObject<ExceptionInfoResponse>(ret.ResponseStr);
+
+            if (exceptionInfoResponse.body.breakMode == excMode
+                && exceptionInfoResponse.body.exceptionId == excCategory + "/" + excName
+                && exceptionInfoResponse.body.details.fullTypeName == excName)
+                return;
+
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasExceptionBreakpointHit(string caller_trace, string bpName, string excCategory, string excMode, string excName)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "exception")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
+
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            var lbp = (LineBreakpoint)breakpoint;
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+
+            if (stackTraceResponse.body.stackFrames[0].line == lbp.NumLine
+                && stackTraceResponse.body.stackFrames[0].source.name == lbp.FileName
+                // NOTE this code works only with one source file
+                && stackTraceResponse.body.stackFrames[0].source.path == ControlInfo.SourceFilesPath)
+            {
+                TestExceptionInfo(@"__FILE__:__LINE__"+"\n"+caller_trace, excCategory, excMode, excName);
+                return;
+            }
+
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
         public int GetVariablesReference(string caller_trace, Int64 frameId, string ScopeName)
@@ -292,6 +379,10 @@ namespace NetcoreDbgTest.Script
         string BreakpointSourceName;
         List<SourceBreakpoint> BreakpointList = new List<SourceBreakpoint>();
         List<int> BreakpointLines = new List<int>();
+        bool ExceptionFilterAll = false;
+        bool ExceptionFilterUserUnhandled = false;
+        ExceptionFilterOptions ExceptionFilterAllOptions = null;
+        ExceptionFilterOptions ExceptionFilterUserUnhandledOptions = null;
     }
 }
 
@@ -367,8 +458,8 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"2str\"", "string", "this_static_str");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "3", "int", "this_static_i");
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_this_t.this_i"); // error, cannot be accessed in this way
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_this_t.this_static_str"); // error, cannot be accessed in this way
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_this_t.this_i", "error:"); // error, cannot be accessed in this way
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_this_t.this_static_str", "error:"); // error, cannot be accessed in this way
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "3", "int", "VSCodeTestEvaluate.test_this_t.this_static_i");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -407,7 +498,6 @@ namespace VSCodeTestEvaluate
 
                         // nested tests:
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "nested_static_i");
-                        // FIXME debugger have wrong behavior and should be fixed first
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "test_static_class1_t.static_field_i1");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "test_static_struct1_t.static_field_i1");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "53", "int", "test_nested.nested_static_i");
@@ -415,11 +505,11 @@ namespace VSCodeTestEvaluate
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested_1.test_nested_2.nested_static_i");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "253", "int", "test_nested_2.nested_static_i");
                         Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "353", "int", "test_nested_3.nested_static_i");
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested.test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested_1.test_nested_2.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested_2.nested_i"); // error, cannot be accessed
-                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested_3.nested_i"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested.test_nested_1.test_nested_2.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested_1.test_nested_2.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested_2.nested_i", "error:"); // error, cannot be accessed
+                        Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_nested_3.nested_i", "error:"); // error, cannot be accessed
 
                         Context.Continue(@"__FILE__:__LINE__");
                     });
@@ -502,6 +592,10 @@ namespace VSCodeTestEvaluate
             array2[0].i = 201;
             array2[2] = new test_array();
             array2[2].i = 401;
+            int i1 = 0;
+            int i2 = 2;
+            int i3 = 4;
+            int i4 = 1;
             int break_line1 = 1;                                                                    Label.Breakpoint("BREAK1");
 
             Label.Checkpoint("values_test", "expression_test", (Object context) => {
@@ -517,6 +611,9 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10", "int", "array1[0]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "30", "int", "array1[2]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "50", "int", "array1[4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10", "int", "array1[i1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "30", "int", "array1[i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "50", "int", "array1[i3]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10", "int", "array1[ 0]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "30", "int", "array1[2 ]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "50", "int", "array1 [ 4 ]"); // check spaces
@@ -524,23 +621,29 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{int[2, 3]}", "int[,]", "multi_array2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "101", "int", "multi_array2[0,0]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "105", "int", "multi_array2[1,1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "104", "int", "multi_array2[1,0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "102", "int", "multi_array2[0,1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "104", "int", "multi_array2[i4,i1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "102", "int", "multi_array2[i1,i4]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "101", "int", "multi_array2[ 0 , 0 ]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "105", "int", "multi_array2  [ 1,1 ]"); // check spaces
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{VSCodeTestEvaluate.test_array[4]}", "VSCodeTestEvaluate.test_array[]", "array2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{VSCodeTestEvaluate.test_array}", "VSCodeTestEvaluate.test_array", "array2[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "201", "int", "array2[i1].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "201", "int", "array2[0].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "201", "int", "array2   [   0   ]   .   i"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{VSCodeTestEvaluate.test_array}", "VSCodeTestEvaluate.test_array", "array2[2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "401", "int", "array2[i2].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "401", "int", "array2[2].i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "401", "int", "array2  [  2  ]  .  i"); // check spaces
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "this.int_i"); // error, Main is static method that don't have "this"
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "int_i"); // error, don't have "this" (no object of type "Program" was created)
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "not_declared"); // error, no such variable
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "array1[]"); // error, no such variable
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "multi_array2[]"); // error, no such variable
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "multi_array2[,]"); // error, no such variable
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "this.int_i", "error:"); // error, Main is static method that don't have "this"
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "int_i", "error:"); // error, don't have "this" (no object of type "Program" was created)
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "not_declared", "error:"); // error, no such variable
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "array1[]", "error CS1519:"); // error, no such variable
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "multi_array2[]", "error CS1519:"); // error, no such variable
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "multi_array2[,]", "error CS1519:"); // error, no such variable
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -565,7 +668,8 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"onetwo\"", "", "str_s1 + \"two\"");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"onetwo\"", "", "str_s1 + str_s2");
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "1 + not_var"); // error
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "int_i1 +/ int_i2", "error CS1525:");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "1 + not_var", "System.AggregateException"); // error
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -590,8 +694,8 @@ namespace VSCodeTestEvaluate
                 // test class fields/properties via local variable
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", frameId, "5", "int", "cl", "static_field_i1");
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", frameId, "7", "int", "cl", "static_property_i2");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "cl.st"); // error CS0176: Member 'test_static_class1_t.st' cannot be accessed with an instance reference; qualify it with a type name instead
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "cl.cl"); // error CS0176: Member 'test_static_class1_t.cl' cannot be accessed with an instance reference; qualify it with a type name instead
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "cl.st", "error:"); // error CS0176: Member 'test_static_class1_t.st' cannot be accessed with an instance reference; qualify it with a type name instead
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "cl.cl", "error:"); // error CS0176: Member 'test_static_class1_t.cl' cannot be accessed with an instance reference; qualify it with a type name instead
                 // test struct fields via local variable
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", frameId, "4", "int", "st", "static_field_i1");
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", frameId, "3", "float", "st", "static_field_f1");
@@ -609,10 +713,10 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "6", "int", "test_static_struct1_t.static_property_i2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "8", "int", "VSCodeTestEvaluate.test_static_class1_t.st.field_i1");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7.1", "double", "VSCodeTestEvaluate.test_static_class1_t.cl.field_d1");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_class1_t.not_declared"); // error, no such field in class
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_struct1_t.not_declared"); // error, no such field in struct
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_class1_t.st.not_declared"); // error, no such field in struct
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_class1_t.cl.not_declared"); // error, no such field in class
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_class1_t.not_declared", "error:"); // error, no such field in class
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_struct1_t.not_declared", "error:"); // error, no such field in struct
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_class1_t.st.not_declared", "error:"); // error, no such field in struct
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "VSCodeTestEvaluate.test_static_class1_t.cl.not_declared", "error:"); // error, no such field in class
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -692,14 +796,17 @@ namespace VSCodeTestEvaluate
             Lambda lambda2 = (argVar) => {
                 string localVar = "localVar";
 
-                Label.Checkpoint("lambda_test2", "finish", (Object context) => {
+                Label.Checkpoint("lambda_test2", "internal_var_test", (Object context) => {
                     Context Context = (Context)context;
                     Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK9");
                     Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK9");
 
-                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "mainVar");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "mainVar", "error:");
                     Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"localVar\"", "string", "localVar");
                     Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"argVar\"", "string", "argVar");
+
+                    Context.AddExceptionBreakpointFilterAllWithOptions("System.Exception");
+                    Context.SetExceptionBreakpoints(@"__FILE__:__LINE__");
 
                     Context.Continue(@"__FILE__:__LINE__");
                 });
@@ -708,6 +815,51 @@ namespace VSCodeTestEvaluate
             };
 
             lambda2("argVar");
+
+            // Test internal "$exception" variable name.
+
+            try
+            {
+                throw new System.Exception();                                                            Label.Breakpoint("BP_EXCEPTION");
+            }
+            catch {}
+
+            Label.Checkpoint("internal_var_test", "literals_test", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasExceptionBreakpointHit(@"__FILE__:__LINE__", "BP_EXCEPTION", "CLR", "always", "System.Exception");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BP_EXCEPTION");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Exception}", "System.Exception", "$exception");
+            });
+
+            // Test literals.
+
+            Label.Checkpoint("literals_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BP_EXCEPTION");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"test\"", "string", "\"test\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"$exception\"", "string", "\"$exception\"");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "99 'c'", "char", "'c'");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10.5", "decimal", "10.5m");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10.5", "double", "10.5d");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10.5", "float", "10.5f");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "int", "7");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "0x0F");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "42", "int", "0b00101010");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "uint", "7u");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "long", "7L");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "ulong", "7UL");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "true", "bool", "true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "false", "bool", "false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "null", "object", "null");
+
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "0b_0010_1010", "error CS1013"); // Invalid number
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "'𐌞'", "error CS1012"); // '𐌞' character need 2 whcars and not supported
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
 
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;

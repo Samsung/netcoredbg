@@ -12,6 +12,7 @@
 #include <list>
 #include <mutex>
 #include "interfaces/types.h"
+#include "debugger/evaluationpart.h"
 #include "utils/torelease.h"
 
 namespace netcoredbg
@@ -44,7 +45,7 @@ public:
     HRESULT EvalExpr(
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
-        const std::string &expression,
+        std::vector<EvaluationPart> &parts,
         ICorDebugValue **ppResult,
         int evalFlags);
 
@@ -74,7 +75,7 @@ private:
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
         const std::string &methodClass,
-        const std::vector<std::string> &parts,
+        std::vector<EvaluationPart> &parts,
         ICorDebugValue **ppResult,
         int evalFlags);
 
@@ -83,17 +84,17 @@ private:
         FrameLevel frameLevel,
         ICorDebugValue *pValue,
         ValueKind valueKind,
-        const std::vector<std::string> &parts,
+        std::vector<EvaluationPart> &parts,
         int nextPart,
         ICorDebugValue **ppResult,
         int evalFlags);
 
-    HRESULT GetFieldOrPropertyWithName(
+    HRESULT GetFieldOrPropertyWithPart(
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
         ICorDebugValue *pInputValue,
         ValueKind valueKind,
-        const std::string &name,
+        EvaluationPart &part,
         ICorDebugValue **ppResultValue,
         int evalFlags);
 
