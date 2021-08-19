@@ -560,9 +560,7 @@ namespace NetCoreDbg
                             break;
 */
                         case SyntaxKind.ElementAccessExpression:
-/* TODO
                         case SyntaxKind.ElementBindingExpression:
-*/
                             // ElementAccessExpression/ElementBindingExpression
                             //     \ BracketedArgumentList
                             //           \ Argument
@@ -601,12 +599,12 @@ namespace NetCoreDbg
                         // skip, in case of stack machine program creation we don't use this kinds directly
                         case SyntaxKind.Argument:
                         case SyntaxKind.BracketedArgumentList:
+                        case SyntaxKind.ConditionalAccessExpression:
 /* TODO
                         case SyntaxKind.ArgumentList:
                         case SyntaxKind.TypeArgumentList:
                         case SyntaxKind.OmittedTypeArgument:
                         case SyntaxKind.ParenthesizedExpression:
-                        case SyntaxKind.ConditionalAccessExpression:
                         case SyntaxKind.UncheckedExpression:
                         case SyntaxKind.CheckedExpression:
 */
@@ -617,10 +615,10 @@ namespace NetCoreDbg
                         case SyntaxKind.FalseLiteralExpression:
                         case SyntaxKind.NullLiteralExpression:
                         case SyntaxKind.ThisExpression:
+                        case SyntaxKind.MemberBindingExpression:
 /* TODO
                         case SyntaxKind.QualifiedName:
                         case SyntaxKind.AliasQualifiedName:
-                        case SyntaxKind.MemberBindingExpression:
                         case SyntaxKind.ConditionalExpression:
                         case SyntaxKind.PointerMemberAccessExpression:
                         case SyntaxKind.CastExpression:

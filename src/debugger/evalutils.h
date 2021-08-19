@@ -9,7 +9,6 @@
 
 #include <vector>
 #include <string>
-#include "debugger/evaluationpart.h"
 
 namespace netcoredbg
 {
@@ -19,8 +18,8 @@ class Modules;
 namespace EvalUtils
 {
     HRESULT GetType(const std::string &typeName, ICorDebugThread *pThread, Modules *pModules, ICorDebugType **ppType);
-    std::vector<EvaluationPart> ParseType(const std::string &expression, std::vector<int> &ranks);
-    HRESULT FindType(const std::vector<EvaluationPart> &parts, int &nextPart, ICorDebugThread *pThread, Modules *pModules,
+    std::vector<std::string> ParseType(const std::string &expression, std::vector<int> &ranks);
+    HRESULT FindType(const std::vector<std::string> &identifiers, int &nextIdentifier, ICorDebugThread *pThread, Modules *pModules,
                      ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule = nullptr);
 }
 

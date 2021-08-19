@@ -14,14 +14,14 @@ namespace netcoredbg
 namespace EvalUtils
 {
 
-    static std::vector<std::string> ParseGenericParams(const std::string &part, std::string &typeName)
+    static std::vector<std::string> ParseGenericParams(const std::string &identifier, std::string &typeName)
     {
         std::vector<std::string> result;
 
-        std::size_t start = part.find('<');
+        std::size_t start = identifier.find('<');
         if (start == std::string::npos)
         {
-            typeName = part;
+            typeName = identifier;
             return result;
         }
 
@@ -30,9 +30,9 @@ namespace EvalUtils
 
         result.push_back("");
 
-        for (std::size_t i = start; i < part.size(); i++)
+        for (std::size_t i = start; i < identifier.size(); i++)
         {
-            char c = part.at(i);
+            char c = identifier.at(i);
             switch(c)
             {
                 case ',':
@@ -61,17 +61,17 @@ namespace EvalUtils
             }
             result.back() += c;
         }
-        typeName = part.substr(0, start) + '`' + std::to_string(result.size());
+        typeName = identifier.substr(0, start) + '`' + std::to_string(result.size());
         return result;
     }
 
-    static std::vector<std::string> GatherParameters(const std::vector<EvaluationPart> &parts, int indexEnd)
+    static std::vector<std::string> GatherParameters(const std::vector<std::string> &identifiers, int indexEnd)
     {
         std::vector<std::string> result;
         for (int i = 0; i < indexEnd; i++)
         {
             std::string typeName;
-            std::vector<std::string> params = ParseGenericParams(parts[i].name, typeName);
+            std::vector<std::string> params = ParseGenericParams(identifiers[i], typeName);
             result.insert(result.end(), params.begin(), params.end());
         }
         return result;
@@ -84,7 +84,7 @@ namespace EvalUtils
         return typeToken;
     }
 
-    static HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<EvaluationPart> &parts, int &nextPart, mdTypeDef &typeToken)
+    static HRESULT FindTypeInModule(ICorDebugModule *pModule, const std::vector<std::string> &identifiers, int &nextIdentifier, mdTypeDef &typeToken)
     {
         HRESULT Status;
 
@@ -96,16 +96,16 @@ namespace EvalUtils
         std::string currentTypeName;
 
         // Search for type in module
-        for (int i = nextPart; i < (int)parts.size(); i++)
+        for (int i = nextIdentifier; i < (int)identifiers.size(); i++)
         {
             std::string name;
-            ParseGenericParams(parts[i].name, name);
+            ParseGenericParams(identifiers[i], name);
             currentTypeName += (currentTypeName.empty() ? "" : ".") + name;
 
             typeToken = GetTypeTokenForName(pMD, mdTypeDefNil, currentTypeName);
             if (typeToken != mdTypeDefNil)
             {
-                nextPart = i + 1;
+                nextIdentifier = i + 1;
                 break;
             }
         }
@@ -114,15 +114,15 @@ namespace EvalUtils
             return E_FAIL;
 
         // Resolve nested class
-        for (int j = nextPart; j < (int)parts.size(); j++)
+        for (int j = nextIdentifier; j < (int)identifiers.size(); j++)
         {
             std::string name;
-            ParseGenericParams(parts[j].name, name);
+            ParseGenericParams(identifiers[j], name);
             mdTypeDef classToken = GetTypeTokenForName(pMD, typeToken, name);
             if (classToken == mdTypeDefNil)
                 break;
             typeToken = classToken;
-            nextPart = j + 1;
+            nextIdentifier = j + 1;
         }
 
         return S_OK;
@@ -132,13 +132,13 @@ namespace EvalUtils
     {
         HRESULT Status;
         std::vector<int> ranks;
-        std::vector<EvaluationPart> classParts = ParseType(typeName, ranks);
-        if (classParts.size() == 1)
-            classParts[0].name = TypePrinter::RenameToSystem(classParts[0].name);
+        std::vector<std::string> classIdentifiers = ParseType(typeName, ranks);
+        if (classIdentifiers.size() == 1)
+            classIdentifiers[0] = TypePrinter::RenameToSystem(classIdentifiers[0]);
 
         ToRelease<ICorDebugType> pType;
-        int nextClassPart = 0;
-        IfFailRet(FindType(classParts, nextClassPart, pThread, pModules, nullptr, &pType));
+        int nextClassIdentifier = 0;
+        IfFailRet(FindType(classIdentifiers, nextClassIdentifier, pThread, pModules, nullptr, &pType));
 
         if (!ranks.empty())
         {
@@ -162,9 +162,9 @@ namespace EvalUtils
         return S_OK;
     }
 
-    std::vector<EvaluationPart> ParseType(const std::string &expression, std::vector<int> &ranks)
+    std::vector<std::string> ParseType(const std::string &expression, std::vector<int> &ranks)
     {
-        std::vector<EvaluationPart> result;
+        std::vector<std::string> result;
         int paramDepth = 0;
 
         result.emplace_back();
@@ -210,7 +210,7 @@ namespace EvalUtils
                 default:
                     break;
             }
-            result.back().name += c;
+            result.back() += c;
         }
         return result;
     }
@@ -231,7 +231,7 @@ namespace EvalUtils
         return S_OK;
     }
 
-    HRESULT FindType(const std::vector<EvaluationPart> &parts, int &nextPart, ICorDebugThread *pThread, Modules *pModules,
+    HRESULT FindType(const std::vector<std::string> &identifiers, int &nextIdentifier, ICorDebugThread *pThread, Modules *pModules,
                      ICorDebugModule *pModule, ICorDebugType **ppType, ICorDebugModule **ppModule)
     {
         HRESULT Status;
@@ -248,7 +248,7 @@ namespace EvalUtils
                 if (typeToken != mdTypeDefNil) // already found
                     return S_OK;
 
-                if (SUCCEEDED(FindTypeInModule(pModule, parts, nextPart, typeToken)))
+                if (SUCCEEDED(FindTypeInModule(pModule, identifiers, nextIdentifier, typeToken)))
                 {
                     pModule->AddRef();
                     pTypeModule = pModule;
@@ -258,7 +258,7 @@ namespace EvalUtils
         }
         else
         {
-            FindTypeInModule(pTypeModule, parts, nextPart, typeToken);
+            FindTypeInModule(pTypeModule, identifiers, nextIdentifier, typeToken);
         }
 
         if (typeToken == mdTypeDefNil)
@@ -266,7 +266,7 @@ namespace EvalUtils
 
         if (ppType)
         {
-            std::vector<std::string> params = GatherParameters(parts, nextPart);
+            std::vector<std::string> params = GatherParameters(identifiers, nextIdentifier);
             std::vector< ToRelease<ICorDebugType> > types;
             IfFailRet(ResolveParameters(params, pThread, pModules, types));
 

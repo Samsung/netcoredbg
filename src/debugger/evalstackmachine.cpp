@@ -50,42 +50,6 @@ namespace
         PVOID Ptr;
     };
 
-    HRESULT GetValueByParts(std::list<EvalStackEntry> &evalStack, const std::vector<EvaluationPart> &parts, ICorDebugValue **ppResultValue, std::string &output, EvalData &ed)
-    {
-        if (parts.empty())
-            return E_INVALIDARG;
-
-        HRESULT Status;
-        if (FAILED(Status = ed.sharedEvaluator->EvalExpr(ed.pThread, ed.frameLevel, evalStack.front().parts, ppResultValue, ed.evalFlags)))
-        {
-            std::ostringstream ss;
-            for (size_t i = 0; i < evalStack.front().parts.size(); i++)
-            {
-                if (evalStack.front().parts[i].indexes.empty())
-                {
-                    if (i != 0)
-                        ss << ".";
-                    ss << evalStack.front().parts[i].name;
-                }
-                else
-                {
-                    ss << "[";
-                    for (size_t j = 0; j < evalStack.front().parts[i].indexes.size(); j++)
-                    {
-                        if (j != 0)
-                            ss << ",";
-                        ss << evalStack.front().parts[i].indexes[j];
-                    }
-                    ss << "]";
-                }
-            }
-            output = "error: The name '" + ss.str() + "' does not exist in the current context";
-            return Status;
-        }
-
-        return S_OK;
-    }
-
     void ReplaceAllSubstring(std::string &str, const std::string &from, const std::string &to)
     {
         size_t start = 0;
@@ -273,15 +237,65 @@ namespace
         return S_OK;
     }
 
+    HRESULT GetFrontStackEntryValue(ICorDebugValue **ppResultValue, std::list<EvalStackEntry> &evalStack, EvalData &ed, std::string &output)
+    {
+        HRESULT Status;
+        if (evalStack.front().iCorValue && !evalStack.front().identifiers.empty())
+            IfFailRet(ed.pEvaluator->FollowFields(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, Evaluator::ValueIsVariable,
+                                                  evalStack.front().identifiers, 0, ppResultValue, ed.evalFlags));
+        else if (evalStack.front().iCorValue)
+            *ppResultValue = evalStack.front().iCorValue.Detach();
+        else
+        {
+            if (evalStack.front().identifiers.empty())
+                return E_INVALIDARG;
+
+            if (FAILED(Status = ed.pEvaluator->EvalExpr(ed.pThread, ed.frameLevel, evalStack.front().identifiers, ppResultValue, ed.evalFlags)))
+            {
+                std::ostringstream ss;
+                for (size_t i = 0; i < evalStack.front().identifiers.size(); i++)
+                {
+                    if (i != 0)
+                        ss << ".";
+                    ss << evalStack.front().identifiers[i];
+                }
+                output = "error: The name '" + ss.str() + "' does not exist in the current context";
+                return Status;
+            }
+        }
+
+        return S_OK;
+    }
+
+    HRESULT GetIndexesFromStack(std::vector<ULONG32> &indexes, int dimension, std::list<EvalStackEntry> &evalStack, EvalData &ed, std::string &output)
+    {
+        HRESULT Status;
+
+        for (int32_t i = 0; i < dimension; i++)
+        {
+            ToRelease<ICorDebugValue> iCorValue;
+            IfFailRet(GetFrontStackEntryValue(&iCorValue, evalStack, ed, output));
+            evalStack.pop_front();
+
+            // TODO implicitly convert iCorValue to int, if type not int
+            //      at this moment GetElementIndex() work with integer types only
+
+            ULONG32 result_index = 0;
+            IfFailRet(GetElementIndex(iCorValue, result_index));
+            indexes.insert(indexes.begin(), result_index);
+        }
+
+        return S_OK;
+    }
+
 
     HRESULT IdentifierName(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
         std::string String = to_utf8(((FormatFS*)pArguments)->wString);
         ReplaceInternalNames(String, true);
 
-        // TODO care about case with empty `parts` but available `iCorValue`, for example, in case of expression `a.b().c`
         evalStack.emplace_front();
-        evalStack.front().parts.emplace_back(String);
+        evalStack.front().identifiers.emplace_back(std::move(String));
         return S_OK;
     }
 
@@ -313,31 +327,47 @@ namespace
 
         HRESULT Status;
         std::vector<ULONG32> indexes;
+        IfFailRet(GetIndexesFromStack(indexes, Int, evalStack, ed, output));
 
-        for (int32_t i = 0; i < Int; i++)
-        {
-            if (!evalStack.front().iCorValue)
-                IfFailRet(GetValueByParts(evalStack,evalStack.front().parts, &evalStack.front().iCorValue, output, ed));
+        if (evalStack.front().preventBinding)
+            return S_OK;
 
-            // TODO implicitly convert iCorValue to int, if type not int
-            //      at this moment GetElementIndex() work with integer types only
+        ToRelease<ICorDebugValue> iCorArrayValue;
+        IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, evalStack, ed, output));
 
-            ULONG32 result_index = 0;
-            IfFailRet(GetElementIndex(evalStack.front().iCorValue, result_index));
-            evalStack.pop_front();
-
-            indexes.insert(indexes.begin(), result_index);
-        }
-
-        // TODO care about case with empty `parts` but available `iCorValue`, for example, in case of expression `a.b()[c]`
-        evalStack.front().parts.emplace_back(indexes);
-        return S_OK;
+        evalStack.pop_front();
+        evalStack.emplace_front();
+        return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 
     HRESULT ElementBindingExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        int32_t Int = ((FormatFI*)pArguments)->Int;
+
+        HRESULT Status;
+        std::vector<ULONG32> indexes;
+        IfFailRet(GetIndexesFromStack(indexes, Int, evalStack, ed, output));
+
+        if (evalStack.front().preventBinding)
+            return S_OK;
+
+        ToRelease<ICorDebugValue> iCorArrayValue;
+        IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, evalStack, ed, output));
+
+        ToRelease<ICorDebugReferenceValue> pReferenceValue;
+        IfFailRet(iCorArrayValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue));
+        BOOL isNull = FALSE;
+        IfFailRet(pReferenceValue->IsNull(&isNull));
+
+        if (isNull == TRUE)
+        {
+            evalStack.front().preventBinding = true;
+            return S_OK;
+        }
+
+        evalStack.pop_front();
+        evalStack.emplace_front();
+        return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 
     HRESULT NumericLiteralExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -407,8 +437,33 @@ namespace
 
     HRESULT MemberBindingExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        assert(evalStack.size() > 1);
+        assert(evalStack.front().identifiers.size() == 1); // Only one unresolved identifier must be here.
+        assert(!evalStack.front().iCorValue); // Should be unresolved identifier only front element.
+
+        std::string identifier = std::move(evalStack.front().identifiers[0]);
+        evalStack.pop_front();
+
+        if (evalStack.front().preventBinding)
+            return S_OK;
+
+        HRESULT Status;
+        ToRelease<ICorDebugValue> iCorValue;
+        IfFailRet(GetFrontStackEntryValue(&iCorValue, evalStack, ed, output));
+        evalStack.front().iCorValue = iCorValue.Detach();
+        evalStack.front().identifiers.clear();
+
+        ToRelease<ICorDebugReferenceValue> pReferenceValue;
+        IfFailRet(evalStack.front().iCorValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue));
+        BOOL isNull = FALSE;
+        IfFailRet(pReferenceValue->IsNull(&isNull));
+
+        if (isNull == TRUE)
+            evalStack.front().preventBinding = true;
+        else
+            evalStack.front().identifiers.emplace_back(std::move(identifier));
+
+        return S_OK;
     }
 
     HRESULT ConditionalExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -420,16 +475,14 @@ namespace
     HRESULT SimpleMemberAccessExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
         assert(evalStack.size() > 1);
+        assert(!evalStack.front().iCorValue); // Should be unresolved identifier only front element.
+        assert(evalStack.front().identifiers.size() == 1); // Only one unresolved identifier must be here.
 
-        std::vector<EvaluationPart> vector2 = std::move(evalStack.front().parts);
-        evalStack.pop_front();
-        std::vector<EvaluationPart> vector1 = std::move(evalStack.front().parts);
+        std::string identifier = std::move(evalStack.front().identifiers[0]);
         evalStack.pop_front();
 
-        // Note we create new entry here instead of old entry reusing in order to be sure we reset all parts of entry state (that could be added in future).
-        evalStack.emplace_front();
-        evalStack.front().parts = std::move(vector1);
-        evalStack.front().parts.insert(evalStack.front().parts.end(), vector2.begin(), vector2.end());
+        if (!evalStack.front().preventBinding)
+            evalStack.front().identifiers.emplace_back(std::move(identifier));
 
         return S_OK;
     }
@@ -653,7 +706,7 @@ namespace
     HRESULT ThisExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
         evalStack.emplace_front();
-        evalStack.front().parts.emplace_back("this");
+        evalStack.front().identifiers.emplace_back("this");
         return S_OK;
     }
 
@@ -751,10 +804,7 @@ HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, i
     {
         assert(m_evalStack.size() == 1);
 
-        if (m_evalStack.front().iCorValue)
-            *ppResultValue = m_evalStack.front().iCorValue.Detach();
-        else
-            Status = GetValueByParts(m_evalStack, m_evalStack.front().parts, ppResultValue, output, m_evalData);
+        Status = GetFrontStackEntryValue(ppResultValue, m_evalStack, m_evalData, output);
     }
 
     Interop::ReleaseStackMachineProgram(pStackProgram);

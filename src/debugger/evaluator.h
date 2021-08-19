@@ -12,7 +12,6 @@
 #include <list>
 #include <mutex>
 #include "interfaces/types.h"
-#include "debugger/evaluationpart.h"
 #include "utils/torelease.h"
 
 namespace netcoredbg
@@ -45,7 +44,7 @@ public:
     HRESULT EvalExpr(
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
-        std::vector<EvaluationPart> &parts,
+        std::vector<std::string> &identifiers,
         ICorDebugValue **ppResult,
         int evalFlags);
 
@@ -66,6 +65,18 @@ public:
         ICorDebugThread *pThread,
         std::string &errorText);
 
+    HRESULT FollowFields(
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        ICorDebugValue *pValue,
+        ValueKind valueKind,
+        std::vector<std::string> &identifiers,
+        int nextIdentifier,
+        ICorDebugValue **ppResult,
+        int evalFlags);
+
+    HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
+
 private:
 
     std::shared_ptr<Modules> m_sharedModules;
@@ -75,26 +86,16 @@ private:
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
         const std::string &methodClass,
-        std::vector<EvaluationPart> &parts,
+        std::vector<std::string> &identifiers,
         ICorDebugValue **ppResult,
         int evalFlags);
 
-    HRESULT FollowFields(
-        ICorDebugThread *pThread,
-        FrameLevel frameLevel,
-        ICorDebugValue *pValue,
-        ValueKind valueKind,
-        std::vector<EvaluationPart> &parts,
-        int nextPart,
-        ICorDebugValue **ppResult,
-        int evalFlags);
-
-    HRESULT GetFieldOrPropertyWithPart(
+    HRESULT GetFieldOrPropertyByIdentifiers(
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
         ICorDebugValue *pInputValue,
         ValueKind valueKind,
-        EvaluationPart &part,
+        std::string &identifiers,
         ICorDebugValue **ppResultValue,
         int evalFlags);
 

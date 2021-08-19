@@ -11,7 +11,6 @@
 #include <memory>
 #include <vector>
 #include <list>
-#include "debugger/evaluationpart.h"
 #include "interfaces/types.h"
 #include "utils/torelease.h"
 
@@ -24,14 +23,23 @@ class EvalWaiter;
 
 struct EvalStackEntry
 {
-    std::vector<EvaluationPart> parts;
+    // Unresolved identifiers.
+    // Note, in case we already have some resolved identifiers (iCorValue), unresolved identifiers must be resolved within iCorValue.
+    std::vector<std::string> identifiers;
+    // Resolved to value identifiers.
     ToRelease<ICorDebugValue> iCorValue;
+    // Prevent future binding in case of conditional access with nulled object (`a?.b`, `a?[1]`, ...).
+    // Note, this state could be related to iCorValue only (iCorValue must be checked for null first).
+    bool preventBinding;
+
+    EvalStackEntry() : preventBinding(false)
+    {}
 };
 
 struct EvalData
 {
     ICorDebugThread *pThread;
-    Evaluator *sharedEvaluator;
+    Evaluator *pEvaluator;
     EvalHelpers *pEvalHelpers;
     EvalWaiter *pEvalWaiter;
     ICorDebugClass *pDecimalClass;
@@ -39,7 +47,7 @@ struct EvalData
     int evalFlags;
 
     EvalData() :
-        pThread(nullptr), sharedEvaluator(nullptr), pEvalHelpers(nullptr), pEvalWaiter(nullptr), pDecimalClass(nullptr), evalFlags(defaultEvalFlags)
+        pThread(nullptr), pEvaluator(nullptr), pEvalHelpers(nullptr), pEvalWaiter(nullptr), pDecimalClass(nullptr), evalFlags(defaultEvalFlags)
     {}
 };
 
@@ -61,7 +69,7 @@ public:
         m_sharedEvalHelpers(sharedEvalHelpers),
         m_sharedEvalWaiter(sharedEvalWaiter)
     {
-        m_evalData.sharedEvaluator = m_sharedEvaluator.get();
+        m_evalData.pEvaluator = m_sharedEvaluator.get();
         m_evalData.pEvalHelpers = m_sharedEvalHelpers.get();
         m_evalData.pEvalWaiter = m_sharedEvalWaiter.get();
     }

@@ -434,6 +434,27 @@ namespace MITestEvaluate
         public int i_child = 402;
     }
 
+    public class conditional_access1
+    {
+        public int i = 555;
+        public int index = 1;
+    }
+
+    public class conditional_access2
+    {
+        public conditional_access1 member = new conditional_access1();
+    }
+
+    public class conditional_access3
+    {
+        public conditional_access1 member;
+    }
+
+    public class object_with_array
+    {
+        public int[] array = new int[] { 551, 552, 553 };
+    }
+
     public struct test_array
     {
         public int i;
@@ -461,6 +482,7 @@ namespace MITestEvaluate
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK7");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK8");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK9");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK10");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -718,7 +740,7 @@ namespace MITestEvaluate
 
             // Test literals.
 
-            Label.Checkpoint("literals_test", "finish", (Object context) => {
+            Label.Checkpoint("literals_test", "conditional_access_test", (Object context) => {
                 Context Context = (Context)context;
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test\\\"", "string", "\\\"test\\\"");
@@ -738,8 +760,53 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "object", "null");
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "0b_0010_1010", "error CS1013"); // Invalid number
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "0b_0010_1010", "error"); // Error could be CS1013 or CS8107 here.
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "'𐌞'", "error CS1012"); // '𐌞' character need 2 whcars and not supported
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test conditional access.
+
+            test_child child_null;
+            conditional_access2 conditional_access_null;
+            conditional_access2 conditional_access = new conditional_access2();
+            conditional_access3 conditional_access_double_null = new conditional_access3();
+            conditional_access3 conditional_access_double = new conditional_access3();
+            conditional_access_double.member = new conditional_access1();
+            int[] array1_null;
+            conditional_access2[] conditional_array_null;
+            conditional_access2[] conditional_array = new conditional_access2[] { new conditional_access2(), new conditional_access2() };
+            object_with_array object_with_array_null;
+            object_with_array object_with_array = new object_with_array();
+            int break_line10 = 1;                                                                        Label.Breakpoint("BREAK10");
+
+            Label.Checkpoint("conditional_access_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK10");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.test_child", "child_null?.i_child");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.test_child", "child_null?.i_parent");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "402", "int", "child?.i_child");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "302", "int", "child?.i_parent");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.conditional_access1}", "MITestEvaluate.conditional_access1", "conditional_access?.member");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "conditional_access?.member.i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.conditional_access2", "conditional_access_null?.member");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.conditional_access2", "conditional_access_null?.member.i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.conditional_access1", "conditional_access_double_null?.member?.i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "conditional_access_double?.member?.i");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "array1?[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "20", "int", "array1?[conditional_access?.member.index]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "int[]", "array1_null?[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.conditional_access2[]", "conditional_array_null?[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.conditional_access2[]", "conditional_array_null?[0].member");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.conditional_access2[]", "conditional_array_null?[0].member.i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.conditional_access2}", "MITestEvaluate.conditional_access2", "conditional_array?[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.conditional_access1}", "MITestEvaluate.conditional_access1", "conditional_array?[0].member");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "conditional_array?[0].member.i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.object_with_array", "object_with_array_null?.array[1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "552", "int", "object_with_array?.array[1]");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
