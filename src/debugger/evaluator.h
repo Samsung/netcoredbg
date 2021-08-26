@@ -27,6 +27,8 @@ public:
     typedef std::function<HRESULT(const std::string&,std::string&,int)> SetValueCallback;
     typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetValueCallback)> WalkMembersCallback;
     typedef std::function<HRESULT(const std::string&,GetValueCallback)> WalkStackVarsCallback;
+    typedef std::function<HRESULT(ICorDebugFunction**)> GetFunctionCallback;
+    typedef std::function<HRESULT(bool,ULONG,const std::string&,GetFunctionCallback)> WalkMethodsCallback;
 
     enum ValueKind
     {
@@ -41,11 +43,13 @@ public:
         m_sharedEvalHelpers(sharedEvalHelpers)
     {}
 
-    HRESULT EvalExpr(
+    HRESULT ResolveIdentifiers(
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
+        ICorDebugValue *pInputValue,
         std::vector<std::string> &identifiers,
-        ICorDebugValue **ppResult,
+        ICorDebugValue **ppResultValue,
+        ICorDebugType **ppResultType,
         int evalFlags);
 
     HRESULT WalkMembers(
@@ -65,6 +69,22 @@ public:
         ICorDebugThread *pThread,
         std::string &errorText);
 
+    HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
+    HRESULT WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb);
+
+private:
+
+    std::shared_ptr<Modules> m_sharedModules;
+    std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
+
+    HRESULT FollowNestedFindValue(
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        const std::string &methodClass,
+        std::vector<std::string> &identifiers,
+        ICorDebugValue **ppResult,
+        int evalFlags);
+
     HRESULT FollowFields(
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
@@ -75,48 +95,12 @@ public:
         ICorDebugValue **ppResult,
         int evalFlags);
 
-    HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
-
-private:
-
-    std::shared_ptr<Modules> m_sharedModules;
-    std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
-
-    HRESULT FollowNested(
-        ICorDebugThread *pThread,
-        FrameLevel frameLevel,
-        const std::string &methodClass,
-        std::vector<std::string> &identifiers,
-        ICorDebugValue **ppResult,
-        int evalFlags);
-
-    HRESULT GetFieldOrPropertyByIdentifiers(
-        ICorDebugThread *pThread,
-        FrameLevel frameLevel,
-        ICorDebugValue *pInputValue,
-        ValueKind valueKind,
-        std::string &identifiers,
-        ICorDebugValue **ppResultValue,
-        int evalFlags);
-
     HRESULT WalkMembers(
         ICorDebugValue *pInputValue,
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
         ICorDebugType *pTypeCast,
         WalkMembersCallback cb);
-
-    HRESULT HandleSpecialLocalVar(
-        const std::string &localName,
-        ICorDebugValue *pLocalValue,
-        std::unordered_set<std::string> &locals,
-        WalkStackVarsCallback cb);
-
-    HRESULT HandleSpecialThisParam(
-        ICorDebugValue *pThisValue,
-        std::unordered_set<std::string> &locals,
-        WalkStackVarsCallback cb);
-
 };
 
 } // namespace netcoredbg

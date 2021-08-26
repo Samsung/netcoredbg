@@ -669,7 +669,15 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         Status = m_sharedDebugger->Evaluate(frameId, expression, variable, output);
         if (FAILED(Status))
         {
-            body["message"] = output;
+            if (output.empty())
+            {
+                std::stringstream stream;
+                stream << "error: 0x" << std::hex << Status;
+                body["message"] = stream.str();
+            }
+            else
+                body["message"] = output;
+
             return Status;
         }
 

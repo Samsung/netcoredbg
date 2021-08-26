@@ -530,9 +530,11 @@ namespace NetCoreDbg
                             }
                             stackMachineProgram.Commands.Add(new TwoOperandCommand(node.Kind(), CurrentScopeFlags.Peek(), node.GetFirstToken().Value, GenericNameArgs));
                             break;
-
+*/
                         case SyntaxKind.InvocationExpression:
+/* TODO
                         case SyntaxKind.ObjectCreationExpression:
+*/
                             // InvocationExpression/ObjectCreationExpression
                             //     \ ArgumentList
                             //           \ Argument
@@ -558,7 +560,7 @@ namespace NetCoreDbg
                             }
                             stackMachineProgram.Commands.Add(new OneOperandCommand(node.Kind(), CurrentScopeFlags.Peek(), ArgsCount));
                             break;
-*/
+
                         case SyntaxKind.ElementAccessExpression:
                         case SyntaxKind.ElementBindingExpression:
                             // ElementAccessExpression/ElementBindingExpression
@@ -600,8 +602,8 @@ namespace NetCoreDbg
                         case SyntaxKind.Argument:
                         case SyntaxKind.BracketedArgumentList:
                         case SyntaxKind.ConditionalAccessExpression:
-/* TODO
                         case SyntaxKind.ArgumentList:
+/* TODO
                         case SyntaxKind.TypeArgumentList:
                         case SyntaxKind.OmittedTypeArgument:
                         case SyntaxKind.ParenthesizedExpression:

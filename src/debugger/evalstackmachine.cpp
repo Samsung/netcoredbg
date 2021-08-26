@@ -240,31 +240,20 @@ namespace
     HRESULT GetFrontStackEntryValue(ICorDebugValue **ppResultValue, std::list<EvalStackEntry> &evalStack, EvalData &ed, std::string &output)
     {
         HRESULT Status;
-        if (evalStack.front().iCorValue && !evalStack.front().identifiers.empty())
-            IfFailRet(ed.pEvaluator->FollowFields(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, Evaluator::ValueIsVariable,
-                                                  evalStack.front().identifiers, 0, ppResultValue, ed.evalFlags));
-        else if (evalStack.front().iCorValue)
-            *ppResultValue = evalStack.front().iCorValue.Detach();
-        else
+        if (FAILED(Status = ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, evalStack.front().identifiers, ppResultValue, nullptr, ed.evalFlags))
+            && !evalStack.front().identifiers.empty())
         {
-            if (evalStack.front().identifiers.empty())
-                return E_INVALIDARG;
-
-            if (FAILED(Status = ed.pEvaluator->EvalExpr(ed.pThread, ed.frameLevel, evalStack.front().identifiers, ppResultValue, ed.evalFlags)))
+            std::ostringstream ss;
+            for (size_t i = 0; i < evalStack.front().identifiers.size(); i++)
             {
-                std::ostringstream ss;
-                for (size_t i = 0; i < evalStack.front().identifiers.size(); i++)
-                {
-                    if (i != 0)
-                        ss << ".";
-                    ss << evalStack.front().identifiers[i];
-                }
-                output = "error: The name '" + ss.str() + "' does not exist in the current context";
-                return Status;
+                if (i != 0)
+                    ss << ".";
+                ss << evalStack.front().identifiers[i];
             }
+            output = "error: The name '" + ss.str() + "' does not exist in the current context";
         }
 
-        return S_OK;
+        return Status;
     }
 
     HRESULT GetIndexesFromStack(std::vector<ULONG32> &indexes, int dimension, std::list<EvalStackEntry> &evalStack, EvalData &ed, std::string &output)
@@ -309,9 +298,65 @@ namespace
 
     HRESULT InvocationExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatFI*)pArguments)->Flags;
-        // TODO int32_t Int = ((FormatFI*)pArguments)->Int;
-        return E_NOTIMPL;
+        int32_t Int = ((FormatFI*)pArguments)->Int;
+        if (Int < 0)
+            return E_INVALIDARG;
+
+        // TODO add implementation for method call with parameters
+        if (Int != 0)
+            return E_NOTIMPL;
+
+        assert(evalStack.front().identifiers.size() > 0); // We must have at least method name (identifier).
+
+        // TODO local defined function (compiler will create such function with name like `<Calc1>g__Calc2|0_0`)
+        HRESULT Status;
+        std::string funcName = evalStack.front().identifiers.back();
+        evalStack.front().identifiers.pop_back();
+
+        if (!evalStack.front().iCorValue && evalStack.front().identifiers.empty())
+            evalStack.front().identifiers.emplace_back("this");
+
+        ToRelease<ICorDebugValue> iCorValue;
+        ToRelease<ICorDebugType> iCorType;
+        IfFailRet(ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, evalStack.front().identifiers, &iCorValue, &iCorType, ed.evalFlags));
+
+        bool searchStatic = false;
+        if (iCorType)
+        {
+            searchStatic = true;
+        }
+        else
+        {
+            ToRelease<ICorDebugValue2> iCorValue2;
+            IfFailRet(iCorValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+            IfFailRet(iCorValue2->GetExactType(&iCorType));
+        }
+
+        ToRelease<ICorDebugFunction> iCorFunc;
+        // TODO add predefined types support, for example `ToString()` for `int` type
+        ed.pEvaluator->WalkMethods(iCorType, [&](
+            bool is_static,
+            ULONG cParams,
+            const std::string &methodName,
+            Evaluator::GetFunctionCallback getFunction)
+        {
+            if ((searchStatic && !is_static) || (!searchStatic && is_static) ||
+                cParams != (ULONG)Int || funcName != methodName)
+                return S_OK;
+
+            IfFailRet(getFunction(&iCorFunc));
+
+            return E_ABORT; // Fast exit from cycle.
+        });
+        if (!iCorFunc)
+            return E_FAIL;
+
+        evalStack.front().ResetEntry();
+
+        if (searchStatic)
+            return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, nullptr, 0, &evalStack.front().iCorValue, ed.evalFlags);
+        else
+            return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, iCorType.GetRef(), 1, iCorValue.GetRef(), 1, &evalStack.front().iCorValue, ed.evalFlags);
     }
 
     HRESULT ObjectCreationExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -335,8 +380,7 @@ namespace
         ToRelease<ICorDebugValue> iCorArrayValue;
         IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, evalStack, ed, output));
 
-        evalStack.pop_front();
-        evalStack.emplace_front();
+        evalStack.front().ResetEntry();
         return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 
@@ -365,8 +409,7 @@ namespace
             return S_OK;
         }
 
-        evalStack.pop_front();
-        evalStack.emplace_front();
+        evalStack.front().ResetEntry();
         return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 

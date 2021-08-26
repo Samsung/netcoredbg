@@ -34,6 +34,13 @@ struct EvalStackEntry
 
     EvalStackEntry() : preventBinding(false)
     {}
+
+    void ResetEntry()
+    {
+        identifiers.clear();
+        iCorValue.Free();
+        preventBinding = false;
+    }
 };
 
 struct EvalData

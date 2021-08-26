@@ -319,6 +319,16 @@ namespace MITestEvaluate
 
     public class test_this_t
     {
+        static int Calc1()
+        {
+            return 15;
+        }
+
+        int Calc2()
+        {
+            return 16;
+        }
+
         public int this_i = 1;
         public string this_static_str = "2str";
         public static int this_static_i = 3;
@@ -346,6 +356,14 @@ namespace MITestEvaluate
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_this_t.this_i", "error:"); // error, cannot be accessed in this way
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_this_t.this_static_str", "error:"); // error, cannot be accessed in this way
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "3", "int", "MITestEvaluate.test_this_t.this_static_i");
+
+                // Test method calls.
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "Calc1()", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "this.Calc1()", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "16", "int", "Calc2()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "16", "int", "this.Calc2()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.test_this_t\\\"", "string", "ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.test_this_t\\\"", "string", "this.ToString()");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -428,10 +446,20 @@ namespace MITestEvaluate
     public class test_parent
     {
         public int i_parent = 302;
+
+        public virtual int GetNumber()
+        {
+            return 10;
+        }
     }
     public class test_child : test_parent
     {
         public int i_child = 402;
+
+        public override int GetNumber()
+        {
+            return 11;
+        }
     }
 
     public class conditional_access1
@@ -462,6 +490,24 @@ namespace MITestEvaluate
 
     delegate void Lambda(string argVar);
 
+    public class MethodCallTest1
+    {
+        public static int Calc1()
+        {
+            return 5;
+        }
+
+        public int Calc2()
+        {
+            return 6;
+        }
+    }
+
+    public class MethodCallTest2
+    {
+        public static MethodCallTest1 member1 = new MethodCallTest1();
+    }
+
     class Program
     {
         int int_i = 505;
@@ -483,6 +529,7 @@ namespace MITestEvaluate
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK8");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK9");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK10");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK11");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -656,10 +703,10 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "402", "int", "MITestEvaluate.test_static_child.static_i_p_child");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "301", "int", "MITestEvaluate.test_static_child.static_i_f_parent");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "302", "int", "MITestEvaluate.test_static_child.static_i_p_parent");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.test_static_child}", "MITestEvaluate.test_static_child", "MITestEvaluate.test_static_child");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "test_nested_static_instance.nested_i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "Program.test_nested_static_instance.nested_i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "MITestEvaluate.Program.test_nested_static_instance.nested_i");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.test_static_child", "error:");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -781,7 +828,7 @@ namespace MITestEvaluate
             object_with_array object_with_array = new object_with_array();
             int break_line10 = 1;                                                                        Label.Breakpoint("BREAK10");
 
-            Label.Checkpoint("conditional_access_test", "finish", (Object context) => {
+            Label.Checkpoint("conditional_access_test", "method_calls_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK10");
 
@@ -807,6 +854,52 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "conditional_array?[0].member.i");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.object_with_array", "object_with_array_null?.array[1]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "552", "int", "object_with_array?.array[1]");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test method calls.
+
+            int Calc3()
+            {
+                return 8;
+            }
+
+            MethodCallTest1 MethodCallTest = new MethodCallTest1();
+            test_child TestCallChild = new test_child();
+            test_parent TestCallParentOverride = new test_child();
+            test_parent TestCallParent = new test_parent();
+            int break_line11 = 1;                                                                        Label.Breakpoint("BREAK11");
+
+            Label.Checkpoint("method_calls_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK11");
+
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MethodCallTest.Calc1()", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MethodCallTest.Calc2()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MethodCallTest?.Calc1()", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MethodCallTest?.Calc2()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.MethodCallTest1\\\"", "string", "MethodCallTest?.ToString()");
+                // TODO add predefined types support, for example `ToString()` for `int` (System.Int32) type:
+                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "", "string", "MethodCallTest?.Calc2().ToString()");
+                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "", "string", "7.ToString()");
+
+                // Call non static method in static member.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MITestEvaluate.MethodCallTest2.member1.Calc2()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MethodCallTest2.member1.Calc2()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.MethodCallTest2.member1.Calc1()", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MethodCallTest2.member1.Calc1()", "Error");
+
+                // Call static method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "MITestEvaluate.MethodCallTest1.Calc1()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MITestEvaluate.MethodCallTest1.Calc2()", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "MethodCallTest1.Calc1()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MethodCallTest1.Calc2()", "Error");
+
+                // Call virtual/override.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "11", "int", "TestCallChild.GetNumber()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "11", "int", "TestCallParentOverride.GetNumber()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "TestCallParent.GetNumber()");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
