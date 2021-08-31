@@ -128,7 +128,7 @@ namespace
         return iCorEval->CreateValue(ELEMENT_TYPE_CLASS, nullptr, ppValue);
     }
 
-    HRESULT CreateDecimalValue(EvalWaiter *pEvalWaiter, ICorDebugThread *pThread, ICorDebugClass *pDecimalClass, ICorDebugValue **ppValue, PVOID ptr)
+    HRESULT CreateValueType(EvalWaiter *pEvalWaiter, ICorDebugThread *pThread, ICorDebugClass *pValueTypeClass, ICorDebugValue **ppValue, PVOID ptr)
     {
         HRESULT Status;
         // Create value (without calling a constructor)
@@ -138,7 +138,7 @@ namespace
                 // Note, this code execution protected by EvalWaiter mutex.
                 ToRelease<ICorDebugEval2> pEval2;
                 IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-                IfFailRet(pEval2->NewParameterizedObjectNoConstructor(pDecimalClass, 0, nullptr));
+                IfFailRet(pEval2->NewParameterizedObjectNoConstructor(pValueTypeClass, 0, nullptr));
                 return S_OK;
             }));
 
@@ -327,13 +327,35 @@ namespace
         }
         else
         {
+            CorElementType elemType;
+            IfFailRet(iCorValue->GetType(&elemType));
+
+            // Boxing built-in element type into value type in order to call methods.
+            auto entry = ed.corElementToValueClassMap.find(elemType);
+            if (entry != ed.corElementToValueClassMap.end())
+            {
+                ULONG32 cbSize;
+                IfFailRet(iCorValue->GetSize(&cbSize));
+                ArrayHolder<BYTE> elemValue = new (std::nothrow) BYTE[cbSize];
+                if (elemValue == nullptr)
+                    return E_OUTOFMEMORY;
+
+                memset(elemValue.GetPtr(), 0, cbSize * sizeof(BYTE));
+
+                ToRelease<ICorDebugGenericValue> pGenericValue;
+                IfFailRet(iCorValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+                IfFailRet(pGenericValue->GetValue((LPVOID) &(elemValue[0])));
+
+                iCorValue.Free();
+                CreateValueType(ed.pEvalWaiter, ed.pThread, entry->second, &iCorValue, elemValue.GetPtr());
+            }
+
             ToRelease<ICorDebugValue2> iCorValue2;
             IfFailRet(iCorValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
             IfFailRet(iCorValue2->GetExactType(&iCorType));
         }
 
         ToRelease<ICorDebugFunction> iCorFunc;
-        // TODO add predefined types support, for example `ToString()` for `int` type
         ed.pEvaluator->WalkMethods(iCorType, [&](
             bool is_static,
             ULONG cParams,
@@ -439,7 +461,7 @@ namespace
 
         evalStack.emplace_front();
         if (BasicTypesAlias[Int] == ELEMENT_TYPE_VALUETYPE)
-            return CreateDecimalValue(ed.pEvalWaiter, ed.pThread, ed.pDecimalClass, &evalStack.front().iCorValue, Ptr);
+            return CreateValueType(ed.pEvalWaiter, ed.pThread, ed.iCorDecimalClass, &evalStack.front().iCorValue, Ptr);
         else
             return CreatePrimitiveValue(ed.pThread, &evalStack.front().iCorValue, BasicTypesAlias[Int], Ptr);
     }
@@ -866,9 +888,30 @@ HRESULT EvalStackMachine::FindPredefinedTypes(ICorDebugModule *pModule)
     mdTypeDef typeDef = mdTypeDefNil;
     static const WCHAR strTypeDef[] = W("System.Decimal");
     IfFailRet(pMD->FindTypeDefByName(strTypeDef, NULL, &typeDef));
-    IfFailRet(pModule->GetClassFromToken(typeDef, &m_iCorDecimalClass));
+    IfFailRet(pModule->GetClassFromToken(typeDef, &m_evalData.iCorDecimalClass));
 
-    m_evalData.pDecimalClass = m_iCorDecimalClass.GetPtr();
+    static const std::vector<std::pair<CorElementType, const WCHAR*>> corElementToValueNameMap{
+        {ELEMENT_TYPE_BOOLEAN,  W("System.Boolean")},
+        {ELEMENT_TYPE_CHAR,     W("System.Char")},
+        {ELEMENT_TYPE_I1,       W("System.SByte")},
+        {ELEMENT_TYPE_U1,       W("System.Byte")},
+        {ELEMENT_TYPE_I2,       W("System.Int16")},
+        {ELEMENT_TYPE_U2,       W("System.UInt16")},
+        {ELEMENT_TYPE_I4,       W("System.Int32")},
+        {ELEMENT_TYPE_U4,       W("System.UInt32")},
+        {ELEMENT_TYPE_I8,       W("System.Int64")},
+        {ELEMENT_TYPE_U8,       W("System.UInt64")},
+        {ELEMENT_TYPE_R4,       W("System.Single")},
+        {ELEMENT_TYPE_R8,       W("System.Double")}
+    };
+
+    for (auto &entry : corElementToValueNameMap)
+    {
+        typeDef = mdTypeDefNil;
+        IfFailRet(pMD->FindTypeDefByName(entry.second, NULL, &typeDef));
+        IfFailRet(pModule->GetClassFromToken(typeDef, &m_evalData.corElementToValueClassMap[entry.first]));
+    }
+
     return S_OK;
 }
 

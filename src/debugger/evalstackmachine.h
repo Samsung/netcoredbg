@@ -11,6 +11,7 @@
 #include <memory>
 #include <vector>
 #include <list>
+#include <unordered_map>
 #include "interfaces/types.h"
 #include "utils/torelease.h"
 
@@ -49,12 +50,15 @@ struct EvalData
     Evaluator *pEvaluator;
     EvalHelpers *pEvalHelpers;
     EvalWaiter *pEvalWaiter;
-    ICorDebugClass *pDecimalClass;
+    // In case of NumericLiteralExpression with Decimal, NewParameterizedObjectNoConstructor() are used.
+    // Proper ICorDebugClass must be provided for Decimal (will be found during FindPredefinedTypes() call).
+    ToRelease<ICorDebugClass> iCorDecimalClass;
+    std::unordered_map<CorElementType, ToRelease<ICorDebugClass>> corElementToValueClassMap;
     FrameLevel frameLevel;
     int evalFlags;
 
     EvalData() :
-        pThread(nullptr), pEvaluator(nullptr), pEvalHelpers(nullptr), pEvalWaiter(nullptr), pDecimalClass(nullptr), evalFlags(defaultEvalFlags)
+        pThread(nullptr), pEvaluator(nullptr), pEvalHelpers(nullptr), pEvalWaiter(nullptr), evalFlags(defaultEvalFlags)
     {}
 };
 
@@ -65,9 +69,6 @@ class EvalStackMachine
     std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
     std::list<EvalStackEntry> m_evalStack;
     EvalData m_evalData;
-    // In case of NumericLiteralExpression with Decimal, NewParameterizedObjectNoConstructor() are used.
-    // Proper ICorDebugClass must be provided for Decimal (will be found during FindPredefinedTypes() call).
-    ToRelease<ICorDebugClass> m_iCorDecimalClass;
 
 public:
 

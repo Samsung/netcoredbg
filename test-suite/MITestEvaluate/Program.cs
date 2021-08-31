@@ -869,6 +869,22 @@ namespace MITestEvaluate
             test_child TestCallChild = new test_child();
             test_parent TestCallParentOverride = new test_child();
             test_parent TestCallParent = new test_parent();
+
+            decimal decimalToString = 1.01M;
+            double doubleToString = 2.02;
+            float floatToString = 3.03f;
+            char charToString = 'c';
+            bool boolToString = true;
+            sbyte sbyteToString = -5;
+            byte byteToString = 5;
+            short shortToString = -6;
+            ushort ushortToString = 6;
+            int intToString = -7;
+            uint uintToString = 7;
+            long longToString = -8;
+            ulong ulongToString = 8;
+            string stringToString = "string";
+
             int break_line11 = 1;                                                                        Label.Breakpoint("BREAK11");
 
             Label.Checkpoint("method_calls_test", "finish", (Object context) => {
@@ -880,9 +896,6 @@ namespace MITestEvaluate
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MethodCallTest?.Calc1()", "Error");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MethodCallTest?.Calc2()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.MethodCallTest1\\\"", "string", "MethodCallTest?.ToString()");
-                // TODO add predefined types support, for example `ToString()` for `int` (System.Int32) type:
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "", "string", "MethodCallTest?.Calc2().ToString()");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "", "string", "7.ToString()");
 
                 // Call non static method in static member.
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MITestEvaluate.MethodCallTest2.member1.Calc2()");
@@ -900,6 +913,29 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "11", "int", "TestCallChild.GetNumber()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "11", "int", "TestCallParentOverride.GetNumber()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "TestCallParent.GetNumber()");
+
+                // Call built-in types methods.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"1.01\\\"", "string", "1.01M.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"1.01\\\"", "string", "decimalToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"2.02\\\"", "string", "2.02.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"2.02\\\"", "string", "doubleToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"3.03\\\"", "string", "3.03f.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"3.03\\\"", "string", "floatToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"c\\\"", "string", "'c'.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"c\\\"", "string", "charToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"True\\\"", "string", "boolToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"-5\\\"", "string", "sbyteToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"5\\\"", "string", "byteToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"-6\\\"", "string", "shortToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"6\\\"", "string", "ushortToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"6\\\"", "string", "MethodCallTest?.Calc2().ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"7\\\"", "string", "7.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"-7\\\"", "string", "intToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"7\\\"", "string", "uintToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"-8\\\"", "string", "longToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"8\\\"", "string", "ulongToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "\\\"string\\\".ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "stringToString.ToString()");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
