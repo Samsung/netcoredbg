@@ -13,7 +13,21 @@ print_help()
     echo "  -p, --tools_path  path to tools dir on target,"
     echo "                    \"/home/owner/share/tmp/sdk_tools\" by default"
     echo "  -r, --rpm         path to netcordbg rmp file"
+    echo "  -x, --xml_path    path to test-results xml xunit format file,"
+    echo "                    \"/home/owner/share/tmp/\" by default"
     echo "      --help        display this help and exit"
+}
+generate_xml()
+{
+    local xml_path=$1
+    local testnames=$2
+
+    echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?>
+        <testsuites>
+            <testsuite name=\"Tests\" tests=\"\" failures=\"\" errors=\"\" time=\"\">
+                ${testnames}
+            </testsuite>
+        </testsuites>" > "${XML_ABS_PATH}/test-results.xml"
 }
 
 ALL_TEST_NAMES=(
@@ -73,6 +87,7 @@ REPEAT=${REPEAT:-1}
 GBSROOT=${GBSROOT:-$HOME/GBS-ROOT}
 TOOLS_ABS_PATH=${TOOLS_ABS_PATH:-/home/owner/share/tmp/sdk_tools}
 SCRIPTDIR=$(dirname $(readlink -f $0))
+XML_ABS_PATH=${XML_ABS_PATH:-/home/owner/share/tmp/}
 
 for i in "$@"
 do
@@ -103,6 +118,10 @@ case $i in
     ;;
     -r=*|--rpm=*)
     RPMFILE="${i#*=}"
+    shift
+    ;;
+    -x=*|--xml_path=*)
+    XML_ABS_PATH="${i#*=}"
     shift
     ;;
     -h|--help)
@@ -172,6 +191,7 @@ $SDB forward tcp:$PORT tcp:4711
 test_pass=0
 test_fail=0
 test_list=""
+test_xml=""
 
 for i in $(eval echo {1..$REPEAT}); do
 # Build, push and run tests
@@ -218,12 +238,17 @@ for TEST_NAME in $TEST_NAMES; do
     if [ "$?" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
         test_list="$test_list$TEST_NAME ... failed\n"
+        test_xml+="<testcase name=\"$TEST_NAME\"><failure></failure></testcase>"
     else
         test_pass=$(($test_pass + 1))
         test_list="$test_list$TEST_NAME ... passed\n"
+        test_xml+="<testcase name=\"$TEST_NAME\"></testcase>"
     fi
 done
 done # REPEAT
+
+#Generate xml test file to XML_ABS_PATH
+generate_xml "${XML_ABS_PATH}" "${test_xml}"
 
 echo ""
 echo -e $test_list

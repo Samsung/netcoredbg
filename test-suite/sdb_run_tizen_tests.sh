@@ -15,9 +15,23 @@ print_help()
     echo "      --repeat      repeat tests, \"1\" by default"
     echo "  -g, --gbsroot     path to GBS root folder, \"\$HOME/GBS-ROOT\" by default"
     echo "  -r, --rpm         path to netcordbg rmp file"
+    echo "  -x, --xml_path    path to test-results-tizen xml xunit format file,"
+    echo "                    \"/home/owner/share/tmp/\" by default"
     echo "      --help        display this help and exit"
 }
 
+generate_xml()
+{
+    local xml_path=$1
+    local testnames=$2
+
+    echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?>
+        <testsuites>
+            <testsuite name=\"Tests-tizen-app\" tests=\"\" failures=\"\" errors=\"\" time=\"\">
+                ${testnames}
+            </testsuite>
+        </testsuites>" > "${XML_ABS_PATH}/test-results-tizen.xml"
+}
 # DO NOT CHANGE
 # we use first test control program for both tests, since we need NI generation in second test
 # make sure, that you have all sources synchronized
@@ -34,6 +48,7 @@ GBSROOT=${GBSROOT:-$HOME/GBS-ROOT}
 # launch_app have hardcoded path
 TOOLS_ABS_PATH=/home/owner/share/tmp/sdk_tools
 SCRIPTDIR=$(dirname $(readlink -f $0))
+XML_ABS_PATH=${XML_ABS_PATH:-/home/owner/share/tmp/}
 
 for i in "$@"
 do
@@ -60,6 +75,10 @@ case $i in
     ;;
     -r=*|--rpm=*)
     RPMFILE="${i#*=}"
+    shift
+    ;;
+    -x=*|--xml_path=*)
+    XML_ABS_PATH="${i#*=}"
     shift
     ;;
     -h|--help)
@@ -145,14 +164,19 @@ for TEST_NAME in ${ALL_TEST_NAMES[@]}; do
     if [ "$?" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
         test_list="$test_list$TEST_NAME ... failed\n"
+        test_xml+="<testcase name=\"$TEST_NAME\"><failure></failure></testcase>"
     else
         test_pass=$(($test_pass + 1))
         test_list="$test_list$TEST_NAME ... passed\n"
+        test_xml+="<testcase name=\"$TEST_NAME\"></testcase>"
     fi
 
     $SDB shell pkgcmd -u -n org.tizen.example.$TEST_NAME
 done
 done # REPEAT
+
+#Generate xml test file to XML_ABS_PATH
+generate_xml "${XML_ABS_PATH}" "${test_xml}"
 
 echo ""
 echo -e $test_list
