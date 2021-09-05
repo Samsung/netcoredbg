@@ -10,6 +10,7 @@
 #include <functional>
 #include <unordered_set>
 #include <list>
+#include <vector>
 #include <mutex>
 #include "interfaces/types.h"
 #include "utils/torelease.h"
@@ -23,12 +24,23 @@ class EvalHelpers;
 class Evaluator
 {
 public:
+
+    struct ArgElementType
+    {
+        CorElementType corType;
+        std::string typeName;
+
+        ArgElementType() :
+            corType(ELEMENT_TYPE_END)
+        {}
+    };
+
     typedef std::function<HRESULT(ICorDebugValue**,int)> GetValueCallback;
     typedef std::function<HRESULT(const std::string&,std::string&,int)> SetValueCallback;
     typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetValueCallback)> WalkMembersCallback;
     typedef std::function<HRESULT(const std::string&,GetValueCallback)> WalkStackVarsCallback;
     typedef std::function<HRESULT(ICorDebugFunction**)> GetFunctionCallback;
-    typedef std::function<HRESULT(bool,ULONG,const std::string&,GetFunctionCallback)> WalkMethodsCallback;
+    typedef std::function<HRESULT(bool,const std::string&,std::vector<ArgElementType>&,GetFunctionCallback)> WalkMethodsCallback;
 
     enum ValueKind
     {

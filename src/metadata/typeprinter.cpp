@@ -170,6 +170,34 @@ HRESULT TypePrinter::NameForTypeRef(
     return S_OK;
 }
 
+HRESULT TypePrinter::NameForTypeToken(mdToken mb,
+                                     IMetaDataImport *pImport,
+                                     std::string &mdName)
+{
+    mdName[0] = L'\0';
+    if (TypeFromToken(mb) != mdtTypeDef
+        && TypeFromToken(mb) != mdtTypeRef)
+    {
+        return E_FAIL;
+    }
+
+    HRESULT hr;
+    if (TypeFromToken(mb) == mdtTypeDef)
+    {
+        hr = NameForTypeDef(mb, pImport, mdName, nullptr);
+    }
+    else if (TypeFromToken(mb) == mdtTypeRef)
+    {
+        hr = NameForTypeRef(mb, pImport, mdName);
+    }
+    else
+    {
+        hr = E_FAIL;
+    }
+
+    return hr;
+}
+
 HRESULT TypePrinter::NameForToken(mdToken mb,
                                   IMetaDataImport *pImport,
                                   std::string &mdName,

@@ -508,6 +508,34 @@ namespace MITestEvaluate
         public static MethodCallTest1 member1 = new MethodCallTest1();
     }
 
+    public class MethodCallTest3
+    {
+        public int Calc1(int i)
+        {
+            return i + 1;
+        }
+
+        public decimal Calc1(decimal d)
+        {
+            return d + 1;
+        }
+
+        public float Calc2(float f1, float f2, float f3)
+        {
+            return f1 * 100 + f2 * 10 + f3;
+        }
+
+        public int Calc2(int i1, int i2, int i3)
+        {
+            return i1 * 100 + i2 * 10 + i3;
+        }
+
+        public int Calc2(int i1, int i2, float f3)
+        {
+            return i1 * 100 + i2 * 10 + (int)f3;
+        }
+    }
+
     class Program
     {
         int int_i = 505;
@@ -885,6 +913,8 @@ namespace MITestEvaluate
             ulong ulongToString = 8;
             string stringToString = "string";
 
+            MethodCallTest3 mcTest3 = new MethodCallTest3();
+
             int break_line11 = 1;                                                                        Label.Breakpoint("BREAK11");
 
             Label.Checkpoint("method_calls_test", "finish", (Object context) => {
@@ -936,6 +966,11 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"8\\\"", "string", "ulongToString.ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "\\\"string\\\".ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "stringToString.ToString()");
+
+                // Call with arguments.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2.0", "decimal", "mcTest3.Calc1(1.0M)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "123", "int", "mcTest3.Calc2(1, 2, 3)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "456", "int", "mcTest3.Calc2(4, 5, 6.0f)");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

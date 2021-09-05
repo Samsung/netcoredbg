@@ -11,6 +11,7 @@
 #include "debugger/evalwaiter.h"
 #include "debugger/valueprint.h"
 #include "managed/interop.h"
+#include "metadata/typeprinter.h"
 #include "utils/utf.h"
 
 
@@ -302,14 +303,17 @@ namespace
         if (Int < 0)
             return E_INVALIDARG;
 
-        // TODO add implementation for method call with parameters
-        if (Int != 0)
-            return E_NOTIMPL;
+        HRESULT Status;
+        std::vector<ToRelease<ICorDebugValue>> iCorArgs(Int);
+        for (int32_t i = Int - 1; i >= 0; i--)
+        {
+            IfFailRet(GetFrontStackEntryValue(&iCorArgs[i], evalStack, ed, output));
+            evalStack.pop_front();
+        }
 
         assert(evalStack.front().identifiers.size() > 0); // We must have at least method name (identifier).
 
         // TODO local defined function (compiler will create such function with name like `<Calc1>g__Calc2|0_0`)
-        HRESULT Status;
         std::string funcName = evalStack.front().identifiers.back();
         evalStack.front().identifiers.pop_back();
 
@@ -355,16 +359,50 @@ namespace
             IfFailRet(iCorValue2->GetExactType(&iCorType));
         }
 
+        std::vector<Evaluator::ArgElementType> funcArgs(Int);
+        for (int32_t i = 0; i < Int; ++i)
+        {
+            ToRelease<ICorDebugValue> iCorValue;
+            IfFailRet(DereferenceAndUnboxValue(iCorArgs[i].GetPtr(), &iCorValue, nullptr));
+            IfFailRet(iCorValue->GetType(&funcArgs[i].corType));
+
+            if (funcArgs[i].corType == ELEMENT_TYPE_VALUETYPE || funcArgs[i].corType == ELEMENT_TYPE_CLASS)
+            {
+                ToRelease<ICorDebugValue2> iCorValue2;
+                IfFailRet(iCorValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+                ToRelease<ICorDebugType> iCorType;
+                IfFailRet(iCorValue2->GetExactType(&iCorType));
+                ToRelease<ICorDebugClass> pClass;
+                IfFailRet(iCorType->GetClass(&pClass));
+                ToRelease<ICorDebugModule> pModule;
+                IfFailRet(pClass->GetModule(&pModule));
+                ToRelease<IUnknown> pMDUnknown;
+                IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+                ToRelease<IMetaDataImport> pMD;
+                IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+                mdToken tk;
+                IfFailRet(pClass->GetToken(&tk));
+                IfFailRet(TypePrinter::NameForTypeToken(tk, pMD, funcArgs[i].typeName));
+            }
+        }
+
         ToRelease<ICorDebugFunction> iCorFunc;
         ed.pEvaluator->WalkMethods(iCorType, [&](
             bool is_static,
-            ULONG cParams,
             const std::string &methodName,
+            std::vector<Evaluator::ArgElementType> &methodArgs,
             Evaluator::GetFunctionCallback getFunction)
         {
             if ((searchStatic && !is_static) || (!searchStatic && is_static) ||
-                cParams != (ULONG)Int || funcName != methodName)
+                funcArgs.size() != methodArgs.size() || funcName != methodName)
                 return S_OK;
+
+            for (size_t i = 0; i < funcArgs.size(); ++i)
+            {
+                if (funcArgs[i].corType != methodArgs[i].corType ||
+                    funcArgs[i].typeName != methodArgs[i].typeName)
+                    return S_OK;
+            }
 
             IfFailRet(getFunction(&iCorFunc));
 
@@ -375,10 +413,19 @@ namespace
 
         evalStack.front().ResetEntry();
 
-        if (searchStatic)
-            return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, nullptr, 0, &evalStack.front().iCorValue, ed.evalFlags);
-        else
-            return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, iCorType.GetRef(), 1, iCorValue.GetRef(), 1, &evalStack.front().iCorValue, ed.evalFlags);
+        ULONG32 realArgsCount = Int + (searchStatic ? 0 : 1);
+        std::vector<ICorDebugValue*> iCorValueArgs;
+        iCorValueArgs.reserve(realArgsCount);
+        if (!searchStatic)
+        {
+            iCorValueArgs.emplace_back(iCorValue.GetPtr());
+        }
+        for (int32_t i = 0; i < Int; i++)
+        {
+            iCorValueArgs.emplace_back(iCorArgs[i].GetPtr());
+        }
+
+        return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, iCorValueArgs.data(), realArgsCount, &evalStack.front().iCorValue, ed.evalFlags);
     }
 
     HRESULT ObjectCreationExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)

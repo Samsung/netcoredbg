@@ -405,6 +405,109 @@ static HRESULT ForEachProperties(IMetaDataImport *pMD, mdTypeDef currentTypeDef,
     return Status;
 }
 
+// https://github.com/dotnet/runtime/blob/57bfe474518ab5b7cfe6bf7424a79ce3af9d6657/docs/design/coreclr/profiling/davbr-blog-archive/samples/sigparse.cpp
+// This blog post originally appeared on David Broman's blog on 10/13/2005
+
+// Sig ::= MethodDefSig | MethodRefSig | StandAloneMethodSig | FieldSig | PropertySig | LocalVarSig
+// MethodDefSig ::= [[HASTHIS] [EXPLICITTHIS]] (DEFAULT|VARARG|GENERIC GenParamCount) ParamCount RetType Param*
+// MethodRefSig ::= [[HASTHIS] [EXPLICITTHIS]] VARARG ParamCount RetType Param* [SENTINEL Param+]
+// StandAloneMethodSig ::= [[HASTHIS] [EXPLICITTHIS]] (DEFAULT|VARARG|C|STDCALL|THISCALL|FASTCALL) ParamCount RetType Param* [SENTINEL Param+]
+// FieldSig ::= FIELD CustomMod* Type
+// PropertySig ::= PROPERTY [HASTHIS] ParamCount CustomMod* Type Param*
+// LocalVarSig ::= LOCAL_SIG Count (TYPEDBYREF | ([CustomMod] [Constraint])* [BYREF] Type)+ 
+
+// -------------
+
+// CustomMod ::= ( CMOD_OPT | CMOD_REQD ) ( TypeDefEncoded | TypeRefEncoded )
+// Constraint ::= #define ELEMENT_TYPE_PINNED
+// Param ::= CustomMod* ( TYPEDBYREF | [BYREF] Type )
+// RetType ::= CustomMod* ( VOID | TYPEDBYREF | [BYREF] Type )
+// Type ::= ( BOOLEAN | CHAR | I1 | U1 | U2 | U2 | I4 | U4 | I8 | U8 | R4 | R8 | I | U |
+// | VALUETYPE TypeDefOrRefEncoded
+// | CLASS TypeDefOrRefEncoded
+// | STRING 
+// | OBJECT
+// | PTR CustomMod* VOID
+// | PTR CustomMod* Type
+// | FNPTR MethodDefSig
+// | FNPTR MethodRefSig
+// | ARRAY Type ArrayShape
+// | SZARRAY CustomMod* Type
+// | GENERICINST (CLASS | VALUETYPE) TypeDefOrRefEncoded GenArgCount Type*
+// | VAR Number
+// | MVAR Number
+
+// ArrayShape ::= Rank NumSizes Size* NumLoBounds LoBound*
+
+// TypeDefOrRefEncoded ::= TypeDefEncoded | TypeRefEncoded
+// TypeDefEncoded ::= 32-bit-3-part-encoding-for-typedefs-and-typerefs
+// TypeRefEncoded ::= 32-bit-3-part-encoding-for-typedefs-and-typerefs
+
+// ParamCount ::= 29-bit-encoded-integer
+// GenArgCount ::= 29-bit-encoded-integer
+// Count ::= 29-bit-encoded-integer
+// Rank ::= 29-bit-encoded-integer
+// NumSizes ::= 29-bit-encoded-integer
+// Size ::= 29-bit-encoded-integer
+// NumLoBounds ::= 29-bit-encoded-integer
+// LoBounds ::= 29-bit-encoded-integer
+// Number ::= 29-bit-encoded-integer
+
+static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Evaluator::ArgElementType &argElementType)
+{
+    HRESULT Status;
+    ULONG corType;
+    mdToken tk;
+    *ppSig += CorSigUncompressData(*ppSig, &corType);
+    argElementType.corType = (CorElementType)corType;
+
+    switch (argElementType.corType)
+    {
+        case ELEMENT_TYPE_VOID:
+        case ELEMENT_TYPE_BOOLEAN:
+        case ELEMENT_TYPE_CHAR:
+        case ELEMENT_TYPE_I1:
+        case ELEMENT_TYPE_U1:
+        case ELEMENT_TYPE_I2:
+        case ELEMENT_TYPE_U2:
+        case ELEMENT_TYPE_I4:
+        case ELEMENT_TYPE_U4:
+        case ELEMENT_TYPE_I8:
+        case ELEMENT_TYPE_U8:
+        case ELEMENT_TYPE_R4:
+        case ELEMENT_TYPE_R8:
+        case ELEMENT_TYPE_STRING:
+        case ELEMENT_TYPE_OBJECT:
+            break;
+
+        case ELEMENT_TYPE_VALUETYPE:
+        case ELEMENT_TYPE_CLASS:
+            *ppSig += CorSigUncompressToken(*ppSig, &tk);
+            IfFailRet(TypePrinter::NameForTypeToken(tk, pMD, argElementType.typeName));
+            break;
+
+// TODO
+        case ELEMENT_TYPE_U: // "nuint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
+        case ELEMENT_TYPE_I: // "nint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
+        case ELEMENT_TYPE_TYPEDBYREF:
+        case ELEMENT_TYPE_ARRAY:
+        case ELEMENT_TYPE_PTR: // int* ptr (unsafe code only)
+        case ELEMENT_TYPE_BYREF: // ref, in, out
+        case ELEMENT_TYPE_SZARRAY:
+        case ELEMENT_TYPE_VAR: // Generic parameter in a generic type definition, represented as number
+        case ELEMENT_TYPE_MVAR: // Generic parameter in a generic method definition, represented as number
+        case ELEMENT_TYPE_GENERICINST: // A type modifier for generic types - List<>, Dictionary<>, ...
+        case ELEMENT_TYPE_CMOD_REQD:
+        case ELEMENT_TYPE_CMOD_OPT:
+            return S_FALSE;
+
+        default:
+            return E_INVALIDARG;
+    }
+
+    return S_OK;
+}
+
 HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb)
 {
     HRESULT Status;
@@ -449,7 +552,22 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
         elementSize = CorSigUncompressData(pSig, &cParams);
         pSig += elementSize;
 
-        // TODO add implementation for method search with parameters
+        // 3. return type
+        ArgElementType returnElementType;
+        IfFailRet(ParseElementType(pMD, &pSig, returnElementType));
+        if (Status == S_FALSE)
+            continue;
+
+        // 4. get next element from method signature
+        std::vector<ArgElementType> argElementTypes(cParams);
+        for (ULONG i = 0; i < cParams; ++i)
+        {
+            IfFailRet(ParseElementType(pMD, &pSig, argElementTypes[i]));
+            if (Status == S_FALSE)
+                break;
+        }
+        if (Status == S_FALSE)
+            continue;
 
         bool is_static = (methodAttr & mdStatic);
 
@@ -458,7 +576,7 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
             return pModule->GetFunctionFromToken(methodDef, ppResultFunction);
         };
 
-        Status = cb(is_static, cParams, to_utf8(szFunctionName), getFunction);
+        Status = cb(is_static, to_utf8(szFunctionName), argElementTypes, getFunction);
         if (FAILED(Status))
         {
             pMD->CloseEnum(fEnum);
