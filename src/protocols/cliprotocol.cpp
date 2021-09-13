@@ -953,7 +953,11 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
 
     // call repaint() at function exit
     std::unique_ptr<void, std::function<void(void*)> >
-        on_exit(this, [&](void *) { repaint(); });
+        on_exit(this, [&](void *)
+        { 
+            lock_guard lock(m_mutex);
+            repaint();
+        });
 
     std::string frameLocation;
     PrintFrameLocation(event.frame, frameLocation);
@@ -1834,7 +1838,16 @@ HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::vector<std::string
     std::unique_ptr<std::istream> file {new std::ifstream(args[0].c_str())};
     if (file->fail())
     {
-        output = args[0] + ": " + ::strerror(errno);
+        output = args[0] + ": ";
+        char buf[1024];
+#if defined(_MSC_VER)
+        if (strerror_s(buf, sizeof(buf), errno) == 0)
+            output += buf;
+        else
+            output += "Could not translate errno to a string";
+#else
+        output += strerror_r(errno, buf, sizeof(buf));
+#endif
         return E_FAIL;
     }
 
@@ -1906,7 +1919,16 @@ HRESULT CLIProtocol::doCommand<CommandTag::SaveBreakpoints>(const std::vector<st
             file.reset(fopen(filename.c_str(), "w"));
             if (!file)
             {
-                output = filename + ": " + strerror(errno);
+                output = filename + ": ";
+                char buf[1024];
+#if defined(_MSC_VER)
+                if (strerror_s(buf, sizeof(buf), errno) == 0)
+                    output += buf;
+                else
+                    output += "Could not translate errno to a string";
+#else
+                output += strerror_r(errno, buf, sizeof(buf));
+#endif
                 result = E_FAIL;
                 return false;
             }
@@ -2375,19 +2397,18 @@ void CLIProtocol::Source(span<const string_view> init_commands)
 }
 
 
+// Note, caller must lock m_mutex.
 void CLIProtocol::repaint()
 {
-    lock_guard lock(m_mutex);
     if (m_repaint_fn)
         m_repaint_fn();
 }
 
 
 // set m_repaint_fn depending on m_commandMode
+// Note, caller must lock m_mutex.
 void CLIProtocol::applyCommandMode()
 {
-    lock_guard lock(m_mutex);
-
     if (_isatty(_fileno(stdin)))
     {
         // setup function which is called after Stop/Exit events to redraw screen, etc...
