@@ -69,6 +69,7 @@ typedef  RetCode (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int32_t*)
 typedef  RetCode (*GetSourceDelegate)(PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  RetCode (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int32_t*, BSTR*);
 typedef  RetCode (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int32_t*, int32_t*, PVOID*);
+typedef  RetCode (*CalculationDelegate)(PVOID, int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*, BSTR*);
 typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
 typedef  int (*GenerateStackMachineProgramDelegate)(const WCHAR*, PVOID*, BSTR*);
@@ -104,6 +105,7 @@ CoTaskMemAllocDelegate coTaskMemAllocDelegate = nullptr;
 CoTaskMemFreeDelegate coTaskMemFreeDelegate = nullptr;
 SysAllocStringLenDelegate sysAllocStringLenDelegate = nullptr;
 SysFreeStringDelegate sysFreeStringDelegate = nullptr;
+CalculationDelegate calculationDelegate = nullptr;
 
 constexpr char ManagedPartDllName[] = "ManagedPart";
 constexpr char SymbolReaderClassName[] = "NetCoreDbg.SymbolReader";
@@ -280,6 +282,7 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "RegisterGetChild", (void **)&registerGetChildDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "CalculationDelegate", (void **)&calculationDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "GenerateStackMachineProgram", (void **)&generateStackMachineProgramDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ReleaseStackMachineProgram", (void **)&releaseStackMachineProgramDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "NextStackCommand", (void **)&nextStackCommandDelegate)) &&
@@ -315,7 +318,8 @@ void Init(const std::string &coreClrPath)
                               coTaskMemAllocDelegate &&
                               coTaskMemFreeDelegate &&
                               sysAllocStringLenDelegate &&
-                              sysFreeStringDelegate;
+                              sysFreeStringDelegate &&
+                              calculationDelegate;
 
     if (!allDelegatesInited)
         throw std::runtime_error("Some delegates nulled");
@@ -372,6 +376,7 @@ void Shutdown()
     coTaskMemFreeDelegate = nullptr;
     sysAllocStringLenDelegate = nullptr;
     sysFreeStringDelegate = nullptr;
+    calculationDelegate = nullptr;
 }
 
 HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 ilOffset, SequencePoint *sequencePoint)
@@ -437,6 +442,33 @@ HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, mdMethodDef met
     Interop::SysFreeString(wszParamName);
 
     return S_OK;
+}
+
+HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, int32_t secondType, int32_t operationType, int32_t &resultType, PVOID *data, std::string &errorText)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!calculationDelegate)
+        return E_FAIL;
+
+    BSTR werrorText;
+    RetCode retCode = calculationDelegate(firstOp, firstType, secondOp, secondType, operationType, &resultType, data, &werrorText);
+    read_lock.unlock();
+    BasicTypes resType = static_cast<BasicTypes>(resultType);
+
+    if (retCode != RetCode::OK)
+    {
+        errorText = to_utf8(werrorText);
+        Interop::SysFreeString(werrorText);
+        return E_FAIL;
+    }
+
+    if (resType == BasicTypes::TypeString)
+    {
+        auto dataStr = to_utf8((BSTR)(data));
+        Interop::SysFreeString((BSTR)&dataStr);
+    }
+
+    return (retCode == RetCode::OK) ? S_OK : E_FAIL;
 }
 
 HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset)

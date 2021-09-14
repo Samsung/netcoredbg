@@ -88,6 +88,15 @@ namespace Interop
         TypeString,  //        "System.String"
     };
 
+    // Keep in sync with OperationType enum in Evaluation.cs
+    enum class OperationType
+    {
+        Addition = 1,
+        Subtraction,
+        Multiplication,
+        Division,
+        Remainder,
+    };
     struct AsyncAwaitInfoBlock
     {
         uint32_t yield_offset;
@@ -120,6 +129,7 @@ namespace Interop
     HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo);
     HRESULT GetSource(PVOID symbolReaderHandle, const std::string fileName, PVOID *data, int32_t *length);
     HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
+    HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, int32_t secondType, int32_t operationType, int32_t &resultType, PVOID *data, std::string &errorText);
     HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
     HRESULT GenerateStackMachineProgram(const std::string &expr, PVOID *ppStackProgram, std::string &textOutput);
     void ReleaseStackMachineProgram(PVOID pStackProgram);
