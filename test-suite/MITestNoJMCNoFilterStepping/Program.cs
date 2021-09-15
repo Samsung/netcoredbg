@@ -255,6 +255,8 @@ namespace MITestNoJMCNoFilterStepping
 
             Label.Checkpoint("test_property_attr3", "test_property_attr4", (Object context) => {
                 Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_property2");
+                Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_property3");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -262,13 +264,45 @@ namespace MITestNoJMCNoFilterStepping
             int i4 = test_property4;                                        Label.Breakpoint("test_property4");
             Console.WriteLine("Test debugger attribute on property end.");  Label.Breakpoint("test_step_filtering_end");
 
-            Label.Checkpoint("test_property_attr4", "finish", (Object context) => {
+            Label.Checkpoint("test_property_attr4", "test_step_through", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "test_property4");
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_property4_in");
                 Context.StepOut(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_property4");
+                Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_filtering_end");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            // Test step through.
+
+            int res = TestImplHolder.getImpl1.Calc1();                      Label.Breakpoint("test_step_through1");
+            res = TestImplHolder.getImpl2().Calc1();                        Label.Breakpoint("test_step_through2");
+            Console.WriteLine("Test step through end.");                    Label.Breakpoint("test_step_through_end");
+
+            Label.Checkpoint("test_step_through", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through_getImpl1");
+                Context.StepOut(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through_Calc1");
+                Context.StepOut(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through_getImpl2");
+                Context.StepOut(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through_Calc1");
+                Context.StepOut(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through_end");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
 
@@ -333,6 +367,32 @@ namespace MITestNoJMCNoFilterStepping
     {
         public static void test_func()
         {                                              Label.Breakpoint("test_attr_class2_func_in");
+        }
+    }
+
+    public class TestImpl
+    {
+        public int Calc1()
+        {                                                                   Label.Breakpoint("test_step_through_Calc1");
+            return 5;
+        }
+    }
+
+    public class TestImplHolder
+    {
+        static TestImpl impl = new TestImpl();
+
+        static public TestImpl getImpl1
+        {
+            get 
+            {                                                               Label.Breakpoint("test_step_through_getImpl1");
+                return impl;
+            }
+        }
+
+        static public TestImpl getImpl2()
+        {                                                                   Label.Breakpoint("test_step_through_getImpl2");
+            return impl;
         }
     }
 }

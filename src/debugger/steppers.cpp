@@ -67,6 +67,7 @@ static const std::unordered_set<WSTRING> g_operatorMethodNames
 HRESULT Steppers::SetupStep(ICorDebugThread *pThread, IDebugger::StepType stepType)
 {
     HRESULT Status;
+    m_filteredPrevStep = false;
 
     ToRelease<ICorDebugProcess> pProcess;
     IfFailRet(pThread->GetProcess(&pProcess));
@@ -127,6 +128,7 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
             if (g_operatorMethodNames.find(szFunctionName) != g_operatorMethodNames.end())
             {
                 IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
+                m_filteredPrevStep = true;
                 return S_OK;
             }
         }
@@ -146,11 +148,15 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
 
                 iMD->CloseEnum(propEnum);
                 IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
+                m_filteredPrevStep = true;
                 return S_OK;
             }
         }
         iMD->CloseEnum(propEnum);
     }
+
+    bool filteredPrevStep = m_filteredPrevStep;
+    m_filteredPrevStep = false;
 
     // Same behaviour as MS vsdbg and MSVS C# debugger have - step only for code with PDB loaded (no matter JMC enabled or not by user).
     ULONG32 ipOffset;
@@ -158,16 +164,24 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
     bool noUserCodeFound = false; // Must be initialized with `false`, since GetFrameILAndNextUserCodeILOffset call could be failed before delegate call.
     if (SUCCEEDED(Status = m_sharedModules->GetFrameILAndNextUserCodeILOffset(iCorFrame, ipOffset, ilCloseUserCodeOffset, &noUserCodeFound)))
     {
-        // Current IL offset less than IL offset of next close user code line, or that was step-out.
-        if (ipOffset < ilCloseUserCodeOffset || reason == CorDebugStepReason::STEP_RETURN)
+        // Current IL offset less than IL offset of next close user code line.
+        if (ipOffset < ilCloseUserCodeOffset)
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OVER));
+            return S_OK;
+        }
+        // was return from filtered method
+        else if (reason == CorDebugStepReason::STEP_RETURN && filteredPrevStep)
+        {
+            IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
             return S_OK;
         }
     }
     else if (noUserCodeFound)
     {
         IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
+        // In case step-in will return from method (no user code was called), step-in again.
+        m_filteredPrevStep = true;
         return S_OK;
     }
     else // Note, in case JMC enabled ManagedCallbackStepComplete() called only for user code.
@@ -181,6 +195,8 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
         if (HasAttribute(iMD, typeDef, DebuggerAttribute::StepThrough) || HasAttribute(iMD, methodDef, attrNames))
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
+            // In case step-in will return from method (no other user code was called), step-in again.
+            m_filteredPrevStep = true;
             return S_OK;
         }
     }

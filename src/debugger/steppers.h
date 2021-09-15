@@ -26,7 +26,8 @@ public:
         m_asyncStepper(new AsyncStepper(m_simpleStepper, sharedModules, sharedEvalHelpers)),
         m_sharedModules(sharedModules),
         m_justMyCode(true),
-        m_stepFiltering(true)
+        m_stepFiltering(true),
+        m_filteredPrevStep(false)
     {}
 
     HRESULT SetupStep(ICorDebugThread *pThread, IDebugger::StepType stepType);
@@ -53,7 +54,12 @@ private:
     std::unique_ptr<AsyncStepper> m_asyncStepper;
     std::shared_ptr<Modules> m_sharedModules;
     bool m_justMyCode;
+    // https://docs.microsoft.com/en-us/visualstudio/debugger/navigating-through-code-with-the-debugger?view=vs-2019#BKMK_Step_into_properties_and_operators_in_managed_code
+    // The debugger steps over properties and operators in managed code by default. In most cases, this provides a better debugging experience.
     bool m_stepFiltering;
+    // Previous step-in was made in method that must not be stepped. We need store this information in order to step-in again as soon, as we leave this method.
+    // Usually this is code related to m_stepFiltering, but in some cases we could also filter compiler generated code and code covered by StepThrough attribute.
+    bool m_filteredPrevStep;
 };
 
 } // namespace netcoredbg
