@@ -170,9 +170,9 @@ HRESULT TypePrinter::NameForTypeRef(
     return S_OK;
 }
 
-HRESULT TypePrinter::NameForTypeToken(mdToken mb,
-                                     IMetaDataImport *pImport,
-                                     std::string &mdName)
+HRESULT TypePrinter::NameForTypeByToken(mdToken mb,
+                                        IMetaDataImport *pImport,
+                                        std::string &mdName)
 {
     mdName[0] = L'\0';
     if (TypeFromToken(mb) != mdtTypeDef
@@ -196,6 +196,32 @@ HRESULT TypePrinter::NameForTypeToken(mdToken mb,
     }
 
     return hr;
+}
+
+HRESULT TypePrinter::NameForTypeByType(ICorDebugType *pType, std::string &mdName)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugClass> pClass;
+    IfFailRet(pType->GetClass(&pClass));
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pClass->GetModule(&pModule));
+    ToRelease<IUnknown> pMDUnknown;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+    mdToken tk;
+    IfFailRet(pClass->GetToken(&tk));
+    return NameForTypeByToken(tk, pMD, mdName);
+}
+
+HRESULT TypePrinter::NameForTypeByValue(ICorDebugValue *pValue, std::string &mdName)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue2> iCorValue2;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+    ToRelease<ICorDebugType> iCorType;
+    IfFailRet(iCorValue2->GetExactType(&iCorType));
+    return NameForTypeByType(iCorType, mdName);
 }
 
 HRESULT TypePrinter::NameForToken(mdToken mb,

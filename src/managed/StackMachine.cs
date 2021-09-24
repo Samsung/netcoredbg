@@ -244,7 +244,7 @@ namespace NetCoreDbg
                 public uint Flags;
                 public IntPtr String;
             }
-            
+
             [StructLayout(LayoutKind.Sequential)]
             internal struct FormatFI
             {
@@ -320,7 +320,7 @@ namespace NetCoreDbg
                 public int Int;
                 public IntPtr String;
             }
-            
+
             [StructLayout(LayoutKind.Sequential)]
             internal struct FormatFIP
             {
@@ -382,7 +382,7 @@ namespace NetCoreDbg
                 else
                 {
                     throw new NotImplementedException(Arguments[0].GetType() + " + " + Arguments[1].GetType() + " pair not implemented in TwoOperandCommand!");
-                }              
+                }
 
                 argsStruct.Flags = Flags;
                 Marshal.StructureToPtr(argsStruct, argsStructPtr, false);
@@ -618,6 +618,8 @@ namespace NetCoreDbg
                         case SyntaxKind.NullLiteralExpression:
                         case SyntaxKind.ThisExpression:
                         case SyntaxKind.MemberBindingExpression:
+                        case SyntaxKind.UnaryPlusExpression:
+                        case SyntaxKind.UnaryMinusExpression:
 /* TODO
                         case SyntaxKind.QualifiedName:
                         case SyntaxKind.AliasQualifiedName:
@@ -644,8 +646,6 @@ namespace NetCoreDbg
                         case SyntaxKind.GreaterThanOrEqualExpression:
                         case SyntaxKind.LessThanOrEqualExpression:
                         case SyntaxKind.IsExpression:
-                        case SyntaxKind.UnaryPlusExpression:
-                        case SyntaxKind.UnaryMinusExpression:
                         case SyntaxKind.LogicalNotExpression:
                         case SyntaxKind.BitwiseNotExpression:
                         case SyntaxKind.PreIncrementExpression:

@@ -483,7 +483,7 @@ static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Ev
         case ELEMENT_TYPE_VALUETYPE:
         case ELEMENT_TYPE_CLASS:
             *ppSig += CorSigUncompressToken(*ppSig, &tk);
-            IfFailRet(TypePrinter::NameForTypeToken(tk, pMD, argElementType.typeName));
+            IfFailRet(TypePrinter::NameForTypeByToken(tk, pMD, argElementType.typeName));
             break;
 
 // TODO

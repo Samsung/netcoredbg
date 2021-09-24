@@ -24,7 +24,9 @@ class TypePrinter
 public:
     static HRESULT NameForToken(mdToken mb, IMetaDataImport *pImport, std::string &mdName, bool bClassName,
                                 std::list<std::string> *args);
-    static HRESULT NameForTypeToken(mdToken mb, IMetaDataImport *pImport, std::string &mdName);
+    static HRESULT NameForTypeByToken(mdToken mb, IMetaDataImport *pImport, std::string &mdName);
+    static HRESULT NameForTypeByType(ICorDebugType *pType, std::string &mdName);
+    static HRESULT NameForTypeByValue(ICorDebugValue *pValue, std::string &mdName);
     static void NameForTypeSig(PCCOR_SIGNATURE typePtr, ICorDebugType *enclosingType, IMetaDataImport *pImport, std::string &typeName);
     static HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &output);
     static HRESULT GetTypeOfValue(ICorDebugValue *pValue, std::string &output);

@@ -278,6 +278,137 @@ namespace
         return S_OK;
     }
 
+    template<typename T1, typename T2>
+    HRESULT NumericPromotionWithValue(ICorDebugValue *pInputValue, ICorDebugValue **ppResultValue, EvalData &ed)
+    {
+        HRESULT Status;
+        ToRelease<ICorDebugGenericValue> pGenericValue;
+        IfFailRet(pInputValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+
+        T1 oldTypeValue = 0;
+        IfFailRet(pGenericValue->GetValue((LPVOID) &oldTypeValue));
+        T2 newTypeValue = oldTypeValue;
+
+        static_assert(std::is_same<T2, int32_t>::value || std::is_same<T2, int64_t>::value, "only int32_t or int64_t allowed");
+        CorElementType elemType = std::is_same<T2, int32_t>::value ? ELEMENT_TYPE_I4 : ELEMENT_TYPE_I8;
+
+        return CreatePrimitiveValue(ed.pThread, ppResultValue, elemType, &newTypeValue);
+    }
+
+    HRESULT UnaryNumericPromotion(ICorDebugValue *pInputValue, ICorDebugValue **ppResultValue, EvalData &ed)
+    {
+        HRESULT Status;
+        CorElementType elemType;
+        IfFailRet(pInputValue->GetType(&elemType));
+
+        // From ECMA-334:
+        // Unary numeric promotions
+        // Unary numeric promotion occurs for the operands of the predefined +, -, and ~unary operators.
+        // Unary numeric promotion simply consists of converting operands of type sbyte, byte, short, ushort, or char to type int.
+        // Additionally, for the unary - operator, unary numeric promotion converts operands of type uint to type long.
+
+        switch (elemType)
+        {
+            case ELEMENT_TYPE_CHAR:
+                return NumericPromotionWithValue<uint16_t, int32_t>(pInputValue, ppResultValue, ed);
+
+            case ELEMENT_TYPE_I1:
+                return NumericPromotionWithValue<int8_t, int32_t>(pInputValue, ppResultValue, ed);
+
+            case ELEMENT_TYPE_U1:
+                return NumericPromotionWithValue<uint8_t, int32_t>(pInputValue, ppResultValue, ed);
+
+            case ELEMENT_TYPE_I2:
+                return NumericPromotionWithValue<int16_t, int32_t>(pInputValue, ppResultValue, ed);
+
+            case ELEMENT_TYPE_U2:
+                return NumericPromotionWithValue<uint16_t, int32_t>(pInputValue, ppResultValue, ed);
+
+            case ELEMENT_TYPE_U4:
+                return NumericPromotionWithValue<uint32_t, int64_t>(pInputValue, ppResultValue, ed);
+
+            default:
+                return E_INVALIDARG;
+        }
+    }
+
+    template<typename T>
+    HRESULT InvertNumberValue(ICorDebugValue *pInputValue)
+    {
+        HRESULT Status;
+        ToRelease<ICorDebugGenericValue> pGenericValue;
+        IfFailRet(pInputValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+
+        T value = 0;
+        IfFailRet(pGenericValue->GetValue(&value));
+        value = -value;
+        return pGenericValue->SetValue(&value);
+    }
+
+    HRESULT InvertNumber(ICorDebugValue *pValue)
+    {
+        HRESULT Status;
+        CorElementType elemType;
+        IfFailRet(pValue->GetType(&elemType));
+
+        switch (elemType)
+        {
+            case ELEMENT_TYPE_I1:
+                return InvertNumberValue<int8_t>(pValue);
+
+            case ELEMENT_TYPE_I2:
+                return InvertNumberValue<int16_t>(pValue);
+
+            case ELEMENT_TYPE_I4:
+                return InvertNumberValue<int32_t>(pValue);
+
+            case ELEMENT_TYPE_I8:
+                return InvertNumberValue<int64_t>(pValue);
+
+            case ELEMENT_TYPE_R4:
+                return InvertNumberValue<float>(pValue);
+
+            case ELEMENT_TYPE_R8:
+                return InvertNumberValue<double>(pValue);
+
+            default:
+                return E_INVALIDARG;
+        }
+    }
+
+    HRESULT CallUnaryOperator(const std::string opName, ICorDebugValue *pValue, ICorDebugValue **pResultValue, EvalData &ed)
+    {
+        HRESULT Status;
+        ToRelease<ICorDebugValue2> iCorValue2;
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+        ToRelease<ICorDebugType> iCorType;
+        IfFailRet(iCorValue2->GetExactType(&iCorType));
+        std::string typeName;
+        IfFailRet(TypePrinter::NameForTypeByType(iCorType, typeName));
+        CorElementType elemType;
+        IfFailRet(pValue->GetType(&elemType));
+
+        ToRelease<ICorDebugFunction> iCorFunc;
+        ed.pEvaluator->WalkMethods(iCorType, [&](
+            bool is_static,
+            const std::string &methodName,
+            std::vector<Evaluator::ArgElementType> &methodArgs,
+            Evaluator::GetFunctionCallback getFunction)
+        {
+            if (!is_static || methodArgs.size() != 1 || opName != methodName ||
+                elemType != methodArgs[0].corType || typeName != methodArgs[0].typeName)
+                return S_OK;
+
+            IfFailRet(getFunction(&iCorFunc));
+
+            return E_ABORT; // Fast exit from cycle.
+        });
+        if (!iCorFunc)
+            return E_FAIL;
+
+        return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, &pValue, 1, pResultValue, ed.evalFlags);
+    }
+
 
     HRESULT IdentifierName(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
@@ -367,23 +498,7 @@ namespace
             IfFailRet(iCorValue->GetType(&funcArgs[i].corType));
 
             if (funcArgs[i].corType == ELEMENT_TYPE_VALUETYPE || funcArgs[i].corType == ELEMENT_TYPE_CLASS)
-            {
-                ToRelease<ICorDebugValue2> iCorValue2;
-                IfFailRet(iCorValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
-                ToRelease<ICorDebugType> iCorType;
-                IfFailRet(iCorValue2->GetExactType(&iCorType));
-                ToRelease<ICorDebugClass> pClass;
-                IfFailRet(iCorType->GetClass(&pClass));
-                ToRelease<ICorDebugModule> pModule;
-                IfFailRet(pClass->GetModule(&pModule));
-                ToRelease<IUnknown> pMDUnknown;
-                IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-                ToRelease<IMetaDataImport> pMD;
-                IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-                mdToken tk;
-                IfFailRet(pClass->GetToken(&tk));
-                IfFailRet(TypePrinter::NameForTypeToken(tk, pMD, funcArgs[i].typeName));
-            }
+                IfFailRet(TypePrinter::NameForTypeByValue(iCorValue, funcArgs[i].typeName));
         }
 
         ToRelease<ICorDebugFunction> iCorFunc;
@@ -733,14 +848,100 @@ namespace
 
     HRESULT UnaryPlusExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        HRESULT Status;
+        ToRelease<ICorDebugValue> iCorRefValue;
+        IfFailRet(GetFrontStackEntryValue(&iCorRefValue, evalStack, ed, output));
+        evalStack.front().ResetEntry();
+
+        ToRelease<ICorDebugValue> iCorValue;
+        IfFailRet(DereferenceAndUnboxValue(iCorRefValue, &iCorValue, nullptr));
+        CorElementType elemType;
+        IfFailRet(iCorValue->GetType(&elemType));
+
+        switch (elemType)
+        {
+            case ELEMENT_TYPE_CHAR:
+            case ELEMENT_TYPE_I1:
+            case ELEMENT_TYPE_U1:
+            case ELEMENT_TYPE_I2:
+            case ELEMENT_TYPE_U2:
+                return UnaryNumericPromotion(iCorValue, &evalStack.front().iCorValue, ed);
+
+            case ELEMENT_TYPE_I4:
+            case ELEMENT_TYPE_U4:
+            case ELEMENT_TYPE_I8:
+            case ELEMENT_TYPE_U8:
+            case ELEMENT_TYPE_R4:
+            case ELEMENT_TYPE_R8:
+                evalStack.front().iCorValue = iCorValue.Detach();
+                return S_OK;
+
+            case ELEMENT_TYPE_VALUETYPE:
+            case ELEMENT_TYPE_CLASS:
+                if (SUCCEEDED(CallUnaryOperator("op_UnaryPlus", iCorValue, &evalStack.front().iCorValue, ed)))
+                    return S_OK;
+                else
+                {
+                    std::string typeName;
+                    IfFailRet(TypePrinter::NameForTypeByValue(iCorValue, typeName));
+                    output = "error CS0023: Operator '+' cannot be applied to operand of type " + typeName;
+                    return E_INVALIDARG;
+                }
+
+            default:
+                return E_INVALIDARG;
+        }
     }
 
     HRESULT UnaryMinusExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        HRESULT Status;
+        ToRelease<ICorDebugValue> iCorRefValue;
+        IfFailRet(GetFrontStackEntryValue(&iCorRefValue, evalStack, ed, output));
+        evalStack.front().ResetEntry();
+
+        ToRelease<ICorDebugValue> iCorValue;
+        IfFailRet(DereferenceAndUnboxValue(iCorRefValue, &iCorValue, nullptr));
+        CorElementType elemType;
+        IfFailRet(iCorValue->GetType(&elemType));
+
+        switch (elemType)
+        {
+            case ELEMENT_TYPE_U8:
+                output = "error CS0023: Operator '-' cannot be applied to operand of type 'ulong'";
+                return E_INVALIDARG;
+
+            case ELEMENT_TYPE_CHAR:
+            case ELEMENT_TYPE_I1:
+            case ELEMENT_TYPE_U1:
+            case ELEMENT_TYPE_I2:
+            case ELEMENT_TYPE_U2:
+            case ELEMENT_TYPE_U4:
+                IfFailRet(UnaryNumericPromotion(iCorValue, &evalStack.front().iCorValue, ed));
+                return InvertNumber(evalStack.front().iCorValue);
+
+            case ELEMENT_TYPE_I4:
+            case ELEMENT_TYPE_I8:
+            case ELEMENT_TYPE_R4:
+            case ELEMENT_TYPE_R8:
+                evalStack.front().iCorValue = iCorValue.Detach();
+                return InvertNumber(evalStack.front().iCorValue);
+
+            case ELEMENT_TYPE_VALUETYPE:
+            case ELEMENT_TYPE_CLASS:
+                if (SUCCEEDED(CallUnaryOperator("op_UnaryNegation", iCorValue, &evalStack.front().iCorValue, ed)))
+                    return S_OK;
+                else
+                {
+                    std::string typeName;
+                    IfFailRet(TypePrinter::NameForTypeByValue(iCorValue, typeName));
+                    output = "error CS0023: Operator '-' cannot be applied to operand of type " + typeName;
+                    return E_INVALIDARG;
+                }
+
+            default:
+                return E_INVALIDARG;
+        }
     }
 
     HRESULT LogicalNotExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)

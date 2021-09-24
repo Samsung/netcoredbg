@@ -652,6 +652,12 @@ namespace VSCodeTestEvaluate
         }
     }
 
+    enum enumUnary_t
+    {
+        ONE,
+        TWO
+    };
+
     class Program
     {
         int int_i = 505;
@@ -673,6 +679,7 @@ namespace VSCodeTestEvaluate
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK9");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK10");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK11");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK12");
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.PrepareEnd(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
@@ -1035,7 +1042,7 @@ namespace VSCodeTestEvaluate
 
             int break_line11 = 1;                                                                        Label.Breakpoint("BREAK11");
 
-            Label.Checkpoint("method_calls_test", "finish", (Object context) => {
+            Label.Checkpoint("method_calls_test", "unary_operators_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK11");
                 Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK11");
@@ -1090,6 +1097,88 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2.0", "decimal", "mcTest3.Calc1(1.0M)");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "123", "int", "mcTest3.Calc2(1, 2, 3)");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "456", "int", "mcTest3.Calc2(4, 5, 6.0f)");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test unary plus and negation operators.
+
+            char charUnary = '영';
+            sbyte sbyteUnary = -5;
+            byte byteUnary = 5;
+            short shortUnary = -6;
+            ushort ushortUnary = 6;
+            int intUnary = -7;
+            uint uintUnary = 7;
+            long longUnary = -8;
+            ulong ulongUnary = 8;
+
+            decimal decimalUnary = 1.01M;
+            double doubleUnary = 2.02;
+            float floatUnary = 3.03f;
+
+            enumUnary_t enumUnary = enumUnary_t.TWO;
+
+            int break_line12 = 1;                                                                        Label.Breakpoint("BREAK12");
+
+            Label.Checkpoint("unary_operators_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK12");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK12");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TWO", "VSCodeTestEvaluate.enumUnary_t", "enumUnary");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "+enumUnary", "error CS0023");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "-enumUnary", "error CS0023");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "49", "int", "+'1'");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-49", "int", "-'1'");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "50689", "int", "+charUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-50689", "int", "-charUnary");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-5", "int", "+sbyteUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "-sbyteUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "5", "int", "+byteUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-5", "int", "-byteUnary");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-6", "int", "+shortUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "6", "int", "-shortUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "6", "int", "+ushortUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-6", "int", "-ushortUnary");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "int", "+7");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-7", "int", "+intUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-7", "int", "-7");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "int", "-(-7)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-7", "int", "+(-7)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "int", "-intUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "uint", "+7u");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "7", "uint", "+uintUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-7", "long", "-7u");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-7", "long", "-uintUnary");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "8", "long", "+8L");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-8", "long", "+longUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-8", "long", "-8L");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "8", "long", "-longUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "8", "ulong", "+8UL");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "8", "ulong", "+ulongUnary");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "-8UL", "error CS0023");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "-ulongUnary", "error CS0023");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10.5", "decimal", "+10.5m");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1.01", "decimal", "+decimalUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-10.5", "decimal", "-10.5m");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-1.01", "decimal", "-decimalUnary");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10.5", "double", "+10.5d");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2.02", "double", "+doubleUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-10.5", "double", "-10.5d");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-2.02", "double", "-doubleUnary");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "10.5", "float", "+10.5f");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "3.03", "float", "+floatUnary");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-10.5", "float", "-10.5f");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-3.03", "float", "-floatUnary");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
