@@ -70,7 +70,7 @@ class Variables
 
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<Evaluator> m_sharedEvaluator;
-    std::unique_ptr<EvalStackMachine> m_uniqueEvalStackMachine;
+    std::shared_ptr<EvalStackMachine> m_sharedEvalStackMachine;
     struct Member;
 
     std::recursive_mutex m_referencesMutex;
@@ -128,7 +128,13 @@ class Variables
 
 public:
 
-    Variables(std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalWaiter> &sharedEvalWaiter);
+    Variables(std::shared_ptr<EvalHelpers> &sharedEvalHelpers,
+              std::shared_ptr<Evaluator> &sharedEvaluator,
+              std::shared_ptr<EvalStackMachine> &sharedEvalStackMachine) :
+        m_sharedEvalHelpers(sharedEvalHelpers),
+        m_sharedEvaluator(sharedEvaluator),
+        m_sharedEvalStackMachine(sharedEvalStackMachine)
+    {}
 
     int GetNamedVariables(uint32_t variablesReference);
 
@@ -152,6 +158,7 @@ public:
         ICorDebugValue *pVariable,
         const std::string &value,
         FrameId frameId,
+        int evalFlags,
         std::string &output);
 
     HRESULT GetScopes(

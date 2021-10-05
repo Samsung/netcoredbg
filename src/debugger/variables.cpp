@@ -24,12 +24,6 @@
 namespace netcoredbg
 {
 
-Variables::Variables(std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
-    m_sharedEvalHelpers(sharedEvalHelpers),
-    m_sharedEvaluator(sharedEvaluator),
-    m_uniqueEvalStackMachine(new EvalStackMachine(sharedEvaluator, sharedEvalHelpers, sharedEvalWaiter))
-{}
-
 void Variables::GetNumChild(
     ICorDebugValue *pValue,
     int &numChild,
@@ -427,7 +421,7 @@ HRESULT Variables::Evaluate(
     ToRelease<ICorDebugValue> pResultValue;
 
     // EvalStackMachine::Run() return not error but S_FALSE in case some syntax kind not implemented.
-    if (FAILED(Status = m_uniqueEvalStackMachine->Run(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, output)))
+    if (FAILED(Status = m_sharedEvalStackMachine->Run(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, output)))
         return Status;
 
     int typeId;
@@ -571,7 +565,9 @@ HRESULT Variables::SetStackVariable(
 
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, ref.evalFlags));
-        IfFailRet(m_sharedEvaluator->SetValue(iCorValue, value, pThread, output));
+        IfFailRet(m_sharedEvalStackMachine->Run(pThread, ref.frameId.getLevel(), ref.evalFlags, value, iCorValue.GetRef(), output));
+        if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+            return E_FAIL;
         bool escape = true;
         PrintValue(iCorValue, output, escape);
         return E_ABORT; // Fast exit from cycle.
@@ -638,7 +634,7 @@ HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId fram
     // All "set value" code must be refactored in order to remove dependency from Roslyn.
 
     std::string output;
-    Status = m_uniqueEvalStackMachine->Run(pThread, frameId.getLevel(), variable.evalFlags, variable.evaluateName, ppResult, output);
+    Status = m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), variable.evalFlags, variable.evaluateName, ppResult, output);
     if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
         Status = E_FAIL;
 
@@ -650,6 +646,7 @@ HRESULT Variables::SetVariable(
     ICorDebugValue *pVariable,
     const std::string &value,
     FrameId frameId,
+    int evalFlags,
     std::string &output)
 {
     HRESULT Status;
@@ -664,7 +661,9 @@ HRESULT Variables::SetVariable(
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(pProcess->GetThread(int(threadId), &pThread));
 
-    IfFailRet(m_sharedEvaluator->SetValue(pVariable, value, pThread, output));
+    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), evalFlags, value, &pVariable, output));
+    if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+        return E_FAIL;
     bool escape = true;
     PrintValue(pVariable, output, escape);
     return S_OK;
@@ -672,7 +671,7 @@ HRESULT Variables::SetVariable(
 
 HRESULT Variables::FindPredefinedTypes(ICorDebugModule *pModule)
 {
-    return m_uniqueEvalStackMachine->FindPredefinedTypes(pModule);
+    return m_sharedEvalStackMachine->FindPredefinedTypes(pModule);
 }
 
 } // namespace netcoredbg

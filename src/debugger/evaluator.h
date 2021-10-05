@@ -20,6 +20,7 @@ namespace netcoredbg
 
 class Modules;
 class EvalHelpers;
+class EvalStackMachine;
 
 class Evaluator
 {
@@ -34,13 +35,14 @@ public:
             corType(ELEMENT_TYPE_END)
         {}
     };
+    typedef ArgElementType ReturnElementType;
 
     typedef std::function<HRESULT(ICorDebugValue**,int)> GetValueCallback;
     typedef std::function<HRESULT(const std::string&,std::string&,int)> SetValueCallback;
     typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetValueCallback)> WalkMembersCallback;
     typedef std::function<HRESULT(const std::string&,GetValueCallback)> WalkStackVarsCallback;
     typedef std::function<HRESULT(ICorDebugFunction**)> GetFunctionCallback;
-    typedef std::function<HRESULT(bool,const std::string&,std::vector<ArgElementType>&,GetFunctionCallback)> WalkMethodsCallback;
+    typedef std::function<HRESULT(bool,const std::string&,ReturnElementType&,std::vector<ArgElementType>&,GetFunctionCallback)> WalkMethodsCallback;
 
     enum ValueKind
     {
@@ -50,9 +52,11 @@ public:
     };
 
     Evaluator(std::shared_ptr<Modules> &sharedModules,
-              std::shared_ptr<EvalHelpers> &sharedEvalHelpers) :
+              std::shared_ptr<EvalHelpers> &sharedEvalHelpers,
+              std::shared_ptr<EvalStackMachine> &sharedEvalStackMachine) :
         m_sharedModules(sharedModules),
-        m_sharedEvalHelpers(sharedEvalHelpers)
+        m_sharedEvalHelpers(sharedEvalHelpers),
+        m_sharedEvalStackMachine(sharedEvalStackMachine)
     {}
 
     HRESULT ResolveIdentifiers(
@@ -75,19 +79,15 @@ public:
         FrameLevel frameLevel,
         WalkStackVarsCallback cb);
 
-    HRESULT SetValue(
-        ICorDebugValue *pValue,
-        const std::string &value,
-        ICorDebugThread *pThread,
-        std::string &errorText);
-
     HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
     HRESULT WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb);
+    HRESULT WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallback cb);
 
 private:
 
     std::shared_ptr<Modules> m_sharedModules;
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
+    std::shared_ptr<EvalStackMachine> m_sharedEvalStackMachine;
 
     HRESULT FollowNestedFindValue(
         ICorDebugThread *pThread,

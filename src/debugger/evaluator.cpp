@@ -9,6 +9,7 @@
 #include "debugger/evalhelpers.h"
 #include "debugger/evalutils.h"
 #include "debugger/evaluator.h"
+#include "debugger/evalstackmachine.h"
 #include "debugger/frames.h"
 #include "utils/utf.h"
 #include "metadata/modules.h"
@@ -508,6 +509,17 @@ static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Ev
     return S_OK;
 }
 
+HRESULT Evaluator::WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallback cb)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue2> iCorValue2;
+    IfFailRet(pInputTypeValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+    ToRelease<ICorDebugType> iCorType;
+    IfFailRet(iCorValue2->GetExactType(&iCorType));
+
+    return WalkMethods(iCorType, cb);
+}
+
 HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb)
 {
     HRESULT Status;
@@ -576,7 +588,7 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
             return pModule->GetFunctionFromToken(methodDef, ppResultFunction);
         };
 
-        Status = cb(is_static, to_utf8(szFunctionName), argElementTypes, getFunction);
+        Status = cb(is_static, to_utf8(szFunctionName), returnElementType, argElementTypes, getFunction);
         if (FAILED(Status))
         {
             pMD->CloseEnum(fEnum);
@@ -629,7 +641,10 @@ HRESULT Evaluator::WalkMembers(
 
             ToRelease<ICorDebugValue> iCorValue;
             IfFailRet(getValue(&iCorValue, evalFlags));
-            return SetValue(iCorValue, value, pThread, output);
+            Status = m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
+            if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+                Status = E_FAIL;
+            return Status;
         };
 
         return cb(nullptr, false, "", getValue, setValue);
@@ -669,7 +684,10 @@ HRESULT Evaluator::WalkMembers(
 
                 ToRelease<ICorDebugValue> iCorValue;
                 IfFailRet(getValue(&iCorValue, evalFlags));
-                return SetValue(iCorValue, value, pThread, output);
+                Status = m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
+                if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+                    Status = E_FAIL;
+                return Status;
             };
 
             IfFailRet(cb(nullptr, false, "[" + IndiciesToStr(ind, base) + "]", getValue, setValue));
@@ -778,7 +796,10 @@ HRESULT Evaluator::WalkMembers(
 
                 ToRelease<ICorDebugValue> iCorValue;
                 IfFailRet(getValue(&iCorValue, evalFlags));
-                return SetValue(iCorValue, value, pThread, output);
+                Status = m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
+                if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+                    Status = E_FAIL;
+                return Status;
             };
 
             IfFailRet(cb(pType, is_static, name, getValue, setValue));
@@ -875,52 +896,40 @@ HRESULT Evaluator::WalkMembers(
                 ToRelease<ICorDebugFunction> iCorFunc;
                 IfFailRet(pModule->GetFunctionFromToken(mdSetter, &iCorFunc));
 
-                // Find real type of property.
                 ToRelease<ICorDebugValue> iCorValue;
                 IfFailRet(getValue(&iCorValue, evalFlags));
-                ToRelease<ICorDebugValue2> iCorValue2;
-                IfFailRet(iCorValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
-                ToRelease<ICorDebugType> iCorTmpType;
-                IfFailRet(iCorValue2->GetExactType(&iCorTmpType));
-
-                // Create temporary variable with value we need set via setter.
                 CorElementType corType;
                 IfFailRet(iCorValue->GetType(&corType));
-                ToRelease<ICorDebugValue> iCorTmpValue;
+
                 if (corType == ELEMENT_TYPE_STRING)
                 {
-                    std::string data;
-                    IfFailRet(Interop::ParseExpression(value, "System.String", data, output));
-                    IfFailRet(m_sharedEvalHelpers->CreateString(pThread, data, &iCorTmpValue));
+                    // FIXME investigate, why in this case we can't use ICorDebugReferenceValue::SetValue() for string in iCorValue
+                    iCorValue.Free();
+                    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, &iCorValue, output));
+                    if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+                        return E_FAIL;
+
+                    CorElementType elemType;
+                    IfFailRet(iCorValue->GetType(&elemType));
+                    if (elemType != ELEMENT_TYPE_STRING)
+                        return E_INVALIDARG;
                 }
-                else if (corType == ELEMENT_TYPE_ARRAY || corType == ELEMENT_TYPE_SZARRAY)
+                else // Allow stack machine decide what types are supported.
                 {
-                    // ICorDebugEval2::NewParameterizedArray
-                    return E_NOTIMPL;
-                }
-                else // Allow SetValue() decide what types are supported.
-                {
-                    // https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/icordebugeval2-createvaluefortype-method
-                    // ICorDebugEval2::CreateValueForType
-                    // The type must be a class or a value type. You cannot use this method to create array values or string values.
-                    ToRelease<ICorDebugEval> iCorEval;
-                    IfFailRet(pThread->CreateEval(&iCorEval));
-                    ToRelease<ICorDebugEval2> iCorEval2;
-                    IfFailRet(iCorEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &iCorEval2));
-                    IfFailRet(iCorEval2->CreateValueForType(iCorTmpType, &iCorTmpValue));
-                    IfFailRet(SetValue(iCorTmpValue, value, pThread, output));
+                    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output));
+                    if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
+                        return E_FAIL;
                 }
 
                 // Call setter.
                 if (is_static)
                 {
-                    return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, iCorTmpType.GetRef(), 1, iCorTmpValue.GetRef(), 1, nullptr, evalFlags);
+                    return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, nullptr, 0, iCorValue.GetRef(), 1, nullptr, evalFlags);
                 }
                 else
                 {
-                    ICorDebugType *ppArgsType[] = {pType, iCorTmpType};
-                    ICorDebugValue *ppArgsValue[] = {pInputValue, iCorTmpValue};
-                    return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, evalFlags);
+                    ICorDebugValue *ppArgsValue[] = {pInputValue, iCorValue};
+                    return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, nullptr, 0, ppArgsValue, 2, nullptr, evalFlags);
                 }
             };
             IfFailRet(cb(pType, is_static, name, getValue, setValue));
@@ -1198,92 +1207,6 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
             IfFailRet(cb(paramName, getValue));
         }
     }
-
-    return S_OK;
-}
-
-HRESULT Evaluator::SetValue(
-    ICorDebugValue *pValue,
-    const std::string &value,
-    ICorDebugThread *pThread,
-    std::string &errorText)
-{
-    HRESULT Status;
-
-    ULONG32 size;
-    IfFailRet(pValue->GetSize(&size));
-
-    std::string data;
-
-    CorElementType corType;
-    IfFailRet(pValue->GetType(&corType));
-
-    static const std::unordered_map<int, std::string> cor2name = {
-        {ELEMENT_TYPE_BOOLEAN, "System.Boolean"},
-        {ELEMENT_TYPE_U1,      "System.Byte"},
-        {ELEMENT_TYPE_I1,      "System.SByte"},
-        {ELEMENT_TYPE_CHAR,    "System.Char"},
-        {ELEMENT_TYPE_R8,      "System.Double"},
-        {ELEMENT_TYPE_R4,      "System.Single"},
-        {ELEMENT_TYPE_I4,      "System.Int32"},
-        {ELEMENT_TYPE_U4,      "System.UInt32"},
-        {ELEMENT_TYPE_I8,      "System.Int64"},
-        {ELEMENT_TYPE_U8,      "System.UInt64"},
-        {ELEMENT_TYPE_I2,      "System.Int16"},
-        {ELEMENT_TYPE_U2,      "System.UInt16"},
-        {ELEMENT_TYPE_I,       "System.IntPtr"},
-        {ELEMENT_TYPE_U,       "System.UIntPtr"}
-    };
-    auto renamed = cor2name.find(corType);
-    if (renamed != cor2name.end())
-    {
-        IfFailRet(Interop::ParseExpression(value, renamed->second, data, errorText));
-    }
-    else if (corType == ELEMENT_TYPE_STRING)
-    {
-        IfFailRet(Interop::ParseExpression(value, "System.String", data, errorText));
-
-        ToRelease<ICorDebugValue> pNewString;
-        IfFailRet(m_sharedEvalHelpers->CreateString(pThread, data, &pNewString));
-
-        // Switch object addresses
-        ToRelease<ICorDebugReferenceValue> pRefNew;
-        IfFailRet(pNewString->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefNew));
-        ToRelease<ICorDebugReferenceValue> pRefOld;
-        IfFailRet(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID *) &pRefOld));
-
-        CORDB_ADDRESS addr;
-        IfFailRet(pRefNew->GetValue(&addr));
-        IfFailRet(pRefOld->SetValue(addr));
-
-        return S_OK;
-    }
-    else if (corType == ELEMENT_TYPE_VALUETYPE || corType == ELEMENT_TYPE_CLASS)
-    {
-        std::string typeName;
-        TypePrinter::GetTypeOfValue(pValue, typeName);
-        if (typeName != "decimal")
-        {
-            errorText = "Unable to set value of type '" + typeName + "'";
-            return E_FAIL;
-        }
-        IfFailRet(Interop::ParseExpression(value, "System.Decimal", data, errorText));
-    }
-    else
-    {
-        errorText = "Unable to set value";
-        return E_FAIL;
-    }
-
-    if (size != data.size())
-    {
-        errorText = "Marshalling size mismatch: " + std::to_string(size) + " != " + std::to_string(data.size());
-        return E_FAIL;
-    }
-
-    ToRelease<ICorDebugGenericValue> pGenValue;
-    IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID *) &pGenValue));
-    IfFailRet(pGenValue->SetValue((LPVOID) &data[0]));
 
     return S_OK;
 }

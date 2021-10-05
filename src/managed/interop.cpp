@@ -453,7 +453,6 @@ HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, in
     BSTR werrorText;
     RetCode retCode = calculationDelegate(firstOp, firstType, secondOp, secondType, operationType, &resultType, data, &werrorText);
     read_lock.unlock();
-    BasicTypes resType = static_cast<BasicTypes>(resultType);
 
     if (retCode != RetCode::OK)
     {
@@ -462,13 +461,7 @@ HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, in
         return E_FAIL;
     }
 
-    if (resType == BasicTypes::TypeString)
-    {
-        auto dataStr = to_utf8((BSTR)(data));
-        Interop::SysFreeString((BSTR)&dataStr);
-    }
-
-    return (retCode == RetCode::OK) ? S_OK : E_FAIL;
+    return S_OK;
 }
 
 HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset)

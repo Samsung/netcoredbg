@@ -141,10 +141,11 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedModules(new Modules),
     m_sharedEvalWaiter(new EvalWaiter(m_sharedThreads)),
     m_sharedEvalHelpers(new EvalHelpers(m_sharedModules, m_sharedEvalWaiter)),
-    m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers)),
+    m_sharedEvalStackMachine(new EvalStackMachine),
+    m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers, m_sharedEvalStackMachine)),
+    m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator, m_sharedEvalStackMachine)),
     m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
     m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator)),
-    m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator, m_sharedEvalWaiter)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_stepFiltering(true),
@@ -157,6 +158,7 @@ ManagedDebugger::ManagedDebugger() :
         std::bind(&ManagedDebugger::InputCallback, this, std::placeholders::_1, std::placeholders::_2)
     )
 {
+    m_sharedEvalStackMachine->SetupEval(m_sharedEvaluator, m_sharedEvalHelpers, m_sharedEvalWaiter);
 }
 
 ManagedDebugger::~ManagedDebugger()
@@ -1020,7 +1022,7 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     ToRelease<ICorDebugValue> pResultValue;
 
     IfFailRet(m_sharedVariables->GetValueByExpression(m_iCorProcess, frameId, variable, &pResultValue));
-    return m_sharedVariables->SetVariable(m_iCorProcess, pResultValue, value, frameId, output);
+    return m_sharedVariables->SetVariable(m_iCorProcess, pResultValue, value, frameId, variable.evalFlags, output);
 }
 
 

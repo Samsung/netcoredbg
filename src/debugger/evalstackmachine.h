@@ -32,15 +32,19 @@ struct EvalStackEntry
     // Prevent future binding in case of conditional access with nulled object (`a?.b`, `a?[1]`, ...).
     // Note, this state could be related to iCorValue only (iCorValue must be checked for null first).
     bool preventBinding;
+    // This is literal entry (value was created from literal).
+    bool literal;
 
-    EvalStackEntry() : preventBinding(false)
+    EvalStackEntry() : preventBinding(false), literal(false)
     {}
 
-    void ResetEntry()
+    void ResetEntry(bool skipLiteral = false)
     {
         identifiers.clear();
         iCorValue.Free();
         preventBinding = false;
+        if (!skipLiteral)
+            literal = false;
     }
 };
 
@@ -72,11 +76,11 @@ class EvalStackMachine
 
 public:
 
-    EvalStackMachine(std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
-        m_sharedEvaluator(sharedEvaluator),
-        m_sharedEvalHelpers(sharedEvalHelpers),
-        m_sharedEvalWaiter(sharedEvalWaiter)
+    void SetupEval(std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<EvalWaiter> &sharedEvalWaiter)
     {
+        m_sharedEvaluator = sharedEvaluator;
+        m_sharedEvalHelpers = sharedEvalHelpers;
+        m_sharedEvalWaiter = sharedEvalWaiter;
         m_evalData.pEvaluator = m_sharedEvaluator.get();
         m_evalData.pEvalHelpers = m_sharedEvalHelpers.get();
         m_evalData.pEvalWaiter = m_sharedEvalWaiter.get();

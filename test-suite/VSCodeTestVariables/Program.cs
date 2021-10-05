@@ -178,28 +178,6 @@ namespace NetcoreDbgTest.Script
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public void CheckVariablesCount(string caller_trace, Int64 frameId, string ScopeName, int VarCount)
-        {
-            ScopesRequest scopesRequest = new ScopesRequest();
-            scopesRequest.arguments.frameId = frameId;
-            var ret = VSCodeDebugger.Request(scopesRequest);
-            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
-
-            ScopesResponse scopesResponse =
-                JsonConvert.DeserializeObject<ScopesResponse>(ret.ResponseStr);
-
-            foreach (var Scope in scopesResponse.body.scopes) {
-                if (Scope.name == ScopeName) {
-                    Assert.True(VarCount == Scope.namedVariables
-                                || (VarCount == 0 && null == Scope.namedVariables),
-                                @"__FILE__:__LINE__"+"\n"+caller_trace);
-                    return;
-                }
-            }
-
-            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
-        }
-
         public int GetVariablesReference(string caller_trace, Int64 frameId, string ScopeName)
         {
             ScopesRequest scopesRequest = new ScopesRequest();
@@ -237,6 +215,49 @@ namespace NetcoreDbgTest.Script
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void GetAndCheckValue(string caller_trace, Int64 frameId, string Expression, string ExpectedResult)
+        {
+            EvaluateRequest evaluateRequest = new EvaluateRequest();
+            evaluateRequest.arguments.expression = Expression;
+            evaluateRequest.arguments.frameId = frameId;
+            var ret = VSCodeDebugger.Request(evaluateRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            EvaluateResponse evaluateResponse =
+                JsonConvert.DeserializeObject<EvaluateResponse>(ret.ResponseStr);
+
+            var fixedVal = evaluateResponse.body.result;
+            if (evaluateResponse.body.type == "char")
+            {
+                int foundStr = fixedVal.IndexOf(" ");
+                if (foundStr >= 0)
+                    fixedVal = fixedVal.Remove(foundStr);
+            }
+
+            Assert.Equal(ExpectedResult, fixedVal, @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public string GetVariable(string caller_trace, Int64 frameId, string Expression)
+        {
+            EvaluateRequest evaluateRequest = new EvaluateRequest();
+            evaluateRequest.arguments.expression = Expression;
+            evaluateRequest.arguments.frameId = frameId;
+            var ret = VSCodeDebugger.Request(evaluateRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            EvaluateResponse evaluateResponse =
+                JsonConvert.DeserializeObject<EvaluateResponse>(ret.ResponseStr);
+
+            var fixedVal = evaluateResponse.body.result;
+            if (evaluateResponse.body.type == "char")
+            {
+                int foundStr = fixedVal.IndexOf(" ");
+                if (foundStr >= 0)
+                    fixedVal = fixedVal.Remove(foundStr);
+            }
+            return fixedVal;
+        }
+
         public void EvalVariable(string caller_trace, int variablesReference, string Type, string Name, string Value)
         {
             VariablesRequest variablesRequest = new VariablesRequest();
@@ -249,8 +270,18 @@ namespace NetcoreDbgTest.Script
 
             foreach (var Variable in variablesResponse.body.variables) {
                 if (Variable.name == Name) {
-                    Assert.Equal(Type, Variable.type, @"__FILE__:__LINE__"+"\n"+caller_trace);
-                    Assert.Equal(Value, Variable.value, @"__FILE__:__LINE__"+"\n"+caller_trace);
+                    if (Type != "")
+                        Assert.Equal(Type, Variable.type, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+                    var fixedVal = Variable.value;
+                    if (Variable.type == "char")
+                    {
+                        int foundStr = fixedVal.IndexOf(" ");
+                        if (foundStr >= 0)
+                            fixedVal = fixedVal.Remove(foundStr);
+                    }
+
+                    Assert.Equal(Value, fixedVal, @"__FILE__:__LINE__"+"\n"+caller_trace);
                     return;
                 }
             }
@@ -278,13 +309,28 @@ namespace NetcoreDbgTest.Script
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public VSCodeResult SetVariable(string caller_trace, int variablesReference, string Name, string Value)
+        public void SetVariable(string caller_trace, Int64 frameId, int variablesReference, string Name, string Value, bool ignoreCheck = false)
         {
             SetVariableRequest setVariableRequest = new SetVariableRequest();
             setVariableRequest.arguments.variablesReference = variablesReference;
             setVariableRequest.arguments.name = Name;
             setVariableRequest.arguments.value = Value;
-            return VSCodeDebugger.Request(setVariableRequest);
+            Assert.True(VSCodeDebugger.Request(setVariableRequest).Success, @"__FILE__:__LINE__");
+
+            if (ignoreCheck)
+                return;
+
+            string realValue = GetVariable(@"__FILE__:__LINE__"+"\n"+caller_trace, frameId, Value);
+            EvalVariable(@"__FILE__:__LINE__"+"\n"+caller_trace, variablesReference, "", Name, realValue);
+        }
+
+        public void ErrorSetVariable(string caller_trace, int variablesReference, string Name, string Value)
+        {
+            SetVariableRequest setVariableRequest = new SetVariableRequest();
+            setVariableRequest.arguments.variablesReference = variablesReference;
+            setVariableRequest.arguments.name = Name;
+            setVariableRequest.arguments.value = Value;
+            Assert.False(VSCodeDebugger.Request(setVariableRequest).Success, @"__FILE__:__LINE__");
         }
 
         public void Continue(string caller_trace)
@@ -312,14 +358,221 @@ namespace NetcoreDbgTest.Script
 
 namespace VSCodeTestVariables
 {
+    public class TestImplicitCast1
+    {
+        public int data;
+        public TestImplicitCast1(int data_)
+        {
+            data = data_;
+        }
+
+        public static implicit operator TestImplicitCast1(char value) => new TestImplicitCast1((int)value);
+        public static implicit operator TestImplicitCast1(int value) => new TestImplicitCast1(value);
+        public static implicit operator TestImplicitCast1(decimal value) => new TestImplicitCast1((int)value);
+        public static implicit operator int(TestImplicitCast1 value) => value.data;
+        public static implicit operator decimal(TestImplicitCast1 value) => (decimal)value.data;
+
+        public override string ToString()
+        {
+            return data.ToString();
+        }
+
+        public decimal GetDecimal()
+        {
+            return 11.1M;
+        }
+    }
+
+    public class TestImplicitCast2
+    {
+        private long data;
+        public TestImplicitCast2(long data_)
+        {
+            data = data_;
+        }
+
+        public static implicit operator TestImplicitCast2(TestImplicitCast1 value) => new TestImplicitCast2(value.data * 10);
+
+        public override string ToString()
+        {
+            return data.ToString();
+        }
+    }
+
+    public struct TestImplicitCast3
+    {
+        private float data;
+
+        public TestImplicitCast3(decimal data_)
+        {
+            data = (float)data_;
+        }
+
+        public static implicit operator TestImplicitCast3(decimal value) => new TestImplicitCast3(value);
+
+        public override string ToString()
+        {
+            return data.ToString();
+        }
+    }
+
+    public struct TestStruct4
+    {
+        [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+        public int val1
+        {
+            get
+            {
+                return 666; 
+            }
+        }
+
+        [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.Never)]
+        public int val2
+        {
+            get
+            {
+                return 777; 
+            }
+        }
+
+        public int val3
+        {
+            get
+            {
+                return 888; 
+            }
+        }
+    }
+
+    public struct TestStruct5
+    {
+        public int val1
+        {
+            get
+            {
+                return 111; 
+            }
+        }
+
+        public int val2
+        {
+            get
+            {
+                System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+                return 222; 
+            }
+        }
+
+        public string val3
+        {
+            get
+            {
+                return "text_333"; 
+            }
+        }
+
+        public float val4
+        {
+            get
+            {
+                System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
+                return 444.4f; 
+            }
+        }
+
+        public float val5
+        {
+            get
+            {
+                return 555.5f; 
+            }
+        }
+    }
+
+    public struct TestStruct6
+    {
+        public int val1
+        {
+            get
+            {
+                // Test, that debugger ignore Break() callback during eval.
+                Debugger.Break();
+                return 123; 
+            }
+        }
+
+        public int val2
+        {
+            get
+            {
+                System.Threading.Thread.Sleep(5000000);
+                return 999; 
+            }
+        }
+
+        public string val3
+        {
+            get
+            {
+                // Test, that debugger ignore Breakpoint() callback during eval.
+                return "text_123";                              Label.Breakpoint("bp_getter");
+            }
+        }
+    }
+
+    public struct TestStruct7
+    {
+        public int val1
+        {
+            get
+            {
+                return 567; 
+            }
+        }
+
+        public int val2
+        {
+            get
+            {
+                try {
+                    throw new System.DivideByZeroException();
+                }
+                catch
+                {
+                    return 777; 
+                }
+                return 888; 
+            }
+        }
+
+        public int val3
+        {
+            get
+            {
+                throw new System.DivideByZeroException();
+                return 777; 
+            }
+        }
+
+        public string val4
+        {
+            get
+            {
+                return "text_567"; 
+            }
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "bp_test", (Object context) => {
+            Label.Checkpoint("init", "setup_var", (Object context) => {
                 Context Context = (Context)context;
                 Context.PrepareStart(@"__FILE__:__LINE__");
-                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK1");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp3");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp4");
@@ -332,28 +585,538 @@ namespace VSCodeTestVariables
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
-            int i = 2;
-            string test_string = "test";
-            Console.WriteLine("i = " + i.ToString());
-            Console.WriteLine(test_string);
-            Console.WriteLine("A breakpoint \"bp\" is set on this line"); Label.Breakpoint("bp");
+            // Test set variable.
 
-            Label.Checkpoint("bp_test", "bp_func_test", (Object context) => {
+            sbyte   testSByte = -2;
+            byte    testByte = 1;
+            short   testShort = -3;
+            ushort  testUShort = 4;
+            int     testInt = -5;
+            uint    testUInt = 6;
+            long    testLong = -7;
+            ulong   testULong = 8;
+            float   testFloat = 9.9f;
+            double  testDouble = 10.1;
+            decimal testDecimal = 11.11M;
+            char    testChar = 'ㅎ';
+            bool    testBool = true;
+            string  testString = "some string that I'll test with";
+            TestImplicitCast1 testClass = new TestImplicitCast1(12);
+
+            sbyte   varSByte = -102;
+            byte    varByte = 101;
+            short   varShort = -103;
+            ushort  varUShort = 104;
+            int     varInt = -105;
+            uint    varUInt = 106;
+            long    varLong = -107;
+            ulong   varULong = 108;
+            float   varFloat = 109.9f;
+            double  varDouble = 1010.1;
+            decimal varDecimal = 1011.11M;
+            char    varChar = 'Ф';
+            bool    varBool = false;
+            string  varString = "another string";
+            TestImplicitCast1 varClass = new TestImplicitCast1(112);
+            TestImplicitCast2 varClass2 = new TestImplicitCast2(312);
+            TestImplicitCast3 varStruct3;
+
+            sbyte   litSByte = -103;
+            byte    litByte = 102;
+            short   litShort = -104;
+            ushort  litUShort = 204;
+            int     litInt = -205;
+            uint    litUInt = 206;
+            long    litLong = -207;
+            ulong   litULong = 208;
+            float   litFloat = 209.9f;
+            double  litDouble = 2010.1;
+            decimal litDecimal = 2011.11M;
+            char    litChar = 'Й';
+            bool    litBool = false;
+            string  litString = "string";
+            TestImplicitCast1 litClass = new TestImplicitCast1(212);
+
+            int dummy1 = 1;                                     Label.Breakpoint("BREAK1");
+
+            Label.Checkpoint("setup_var", "test_var", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp");
-                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp");
-                Context.CheckVariablesCount(@"__FILE__:__LINE__", frameId, "Locals", 7);
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK1");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK1");
                 int variablesReference = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
-                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "string[]", "args" , "{string[0]}");
-                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "i", "2");
-                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "string", "test_string", "\"test\"");
 
-                Assert.True(Context.SetVariable(@"__FILE__:__LINE__", variablesReference, "i", "5").Success, @"__FILE__:__LINE__");
-                Assert.False(Context.SetVariable(@"__FILE__:__LINE__", variablesReference, "i", "\"string\"").Success, @"__FILE__:__LINE__");
-                Assert.True(Context.SetVariable(@"__FILE__:__LINE__", variablesReference, "test_string", "\"changed_String\"").Success, @"__FILE__:__LINE__");
-                Assert.False(Context.SetVariable(@"__FILE__:__LINE__", variablesReference, "test_string", "5").Success, @"__FILE__:__LINE__");
-                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "i", "5");
-                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "string", "test_string", "\"changed_String\"");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varChar", "testChar");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testSByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varChar", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litChar", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "310");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "310u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "310L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "310ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "310.1f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "310.1d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "310.1m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litChar", "\"string\"");
+
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testChar");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varByte", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varByte", "testClass");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "301");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litByte", "103");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "-103");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "103u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "-103L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "103ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "103f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "103d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "103m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litByte", "\"string\"");
+
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varSByte", "testSByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varSByte", "testClass");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "-301");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litSByte", "-105");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "103u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "-103L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "103ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "-103f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "-103d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "-103m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litSByte", "\"string\"");
+
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varShort", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varShort", "testByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varShort", "testShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varShort", "testClass");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "-30000005");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litShort", "-205");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "205u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "-205L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "205ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "205f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "205d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "205m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litShort", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varUShort", "testChar");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varUShort", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varUShort", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUShort", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litUShort", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "30000005");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litUShort", "205");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "-205");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "205u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "205L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "205ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "205f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "205d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "205m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUShort", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varInt", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varInt", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varInt", "testByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varInt", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varInt", "testUShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varInt", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varInt", "testString");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varInt", "testClass", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litInt", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "-2147483649");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litInt", "-305");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "305u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "-305L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "305ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "-305f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "-305d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "-305m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litInt", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varUInt", "testChar");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varUInt", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varUInt", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varUInt", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varUInt", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litUInt", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "4294967297");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litUInt", "306");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "-306");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litUInt", "306u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "306L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "306ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "306f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "306d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "306m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litUInt", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testUShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testUInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varLong", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varLong", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varLong", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varLong", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varLong", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varLong", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varLong", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varLong", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litLong", "'A'");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litLong", "-307");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litLong", "307u");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litLong", "-307L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litLong", "307ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litLong", "-307f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litLong", "-307d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litLong", "-307m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litLong", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litLong", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varULong", "testChar");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varULong", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varULong", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varULong", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testLong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varULong", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varULong", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litULong", "'A'");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litULong", "308");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litULong", "-308");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litULong", "308u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litULong", "308L");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litULong", "308ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litULong", "308f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litULong", "308d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litULong", "308m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litULong", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litULong", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testUShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testUInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testLong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testULong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varFloat", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varFloat", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varFloat", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varFloat", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varFloat", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varFloat", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litFloat", "'A'");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litFloat", "309");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litFloat", "309u");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litFloat", "309L");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litFloat", "309ul");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litFloat", "309.9f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litFloat", "309.9d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litFloat", "309.9m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litFloat", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litFloat", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testUShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testUInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testLong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testULong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testFloat", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDouble", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDouble", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDouble", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDouble", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDouble", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDouble", "'A'");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDouble", "310");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDouble", "310u");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDouble", "310L");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDouble", "310ul");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDouble", "310.1f", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDouble", "310.1d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litDouble", "310.1m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litDouble", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litDouble", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testUShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testUInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testLong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDecimal", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDecimal", "testDouble");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDecimal", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varDecimal", "testString");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varDecimal", "testClass", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDecimal", "'A'");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDecimal", "311");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDecimal", "311u");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDecimal", "311L");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDecimal", "311ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litDecimal", "311.11f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litDecimal", "311.11d");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litDecimal", "311.11m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litDecimal", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litDecimal", "\"string\"");
+
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testChar");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testSByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testDecimal");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varBool", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varBool", "testClass");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "310");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "310u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "310L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "310ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "310.1f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "310.1d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "310.1m");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litBool", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litBool", "\"string\"");
+
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testChar");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testSByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testUShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testBool");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varString", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varString", "testClass");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "'A'");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "310");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "310u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "310L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "310ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "310.1f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "310.1d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "310.1m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litString", "true");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litString", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varClass", "testChar", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass.ToString()", "\"12622\"");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testSByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testByte");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testShort");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testUShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varClass", "testInt", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass.ToString()", "\"-5\"");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testUInt");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testLong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testULong");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testFloat");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testDouble");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varClass", "testDecimal", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass.ToString()", "\"11\"");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varClass", "varClass.GetDecimal()", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass.ToString()", "\"11\"");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varClass", "testString");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varClass", "testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass.ToString()", "\"12\"");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litClass", "'A'", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litClass.ToString()", "\"65\"");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litClass", "5", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litClass.ToString()", "\"5\"");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litClass", "310u");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litClass", "310L");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litClass", "310ul");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litClass", "310.1f");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litClass", "310.1d");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "litClass", "310.1m", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litClass.ToString()", "\"310\"");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litClass", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "litClass", "\"string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varClass2", "testClass", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass2.ToString()", "\"120\"");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varStruct3", "11m", true);
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varStruct3.ToString()", "\"11\"");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            int dummy2 = 2;                                     Label.Breakpoint("BREAK2");
+
+            Label.Checkpoint("test_var", "bp_func_test", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK2");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK2");
+                int variablesReference = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varChar", "12622");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litChar", "65");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varSByte", "-2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litSByte", "-105");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varByte", "1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litByte", "103");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varShort", "-3");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litShort", "-205");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varUShort", "4");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litUShort", "205");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varInt", "12");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litInt", "-305");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varUInt", "6");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litUInt", "306");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varLong", "-7");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litLong", "-307");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varULong", "8");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litULong", "308");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varFloat", "9.8999996");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litFloat", "309.89999");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varDouble", "10.1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litDouble", "310.1");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varDecimal", "12");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litDecimal", "311.11");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varBool", "true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litBool", "true");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varString", "\"some string that I'll test with\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litString", "\"string\"");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass.ToString()", "\"12\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "litClass.ToString()", "\"310\"");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass2.ToString()", "\"120\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varStruct3.ToString()", "\"11\"");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -362,6 +1125,7 @@ namespace VSCodeTestVariables
 
             TestStruct4 ts4 = new TestStruct4();
 
+            int i = 0;
             i++;                                                           Label.Breakpoint("bp2");
 
             Label.Checkpoint("test_debugger_browsable_state", "test_NotifyOfCrossThreadDependency", (Object context) => {
@@ -484,160 +1248,11 @@ namespace VSCodeTestVariables
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_func");
                 Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp_func");
-                Context.CheckVariablesCount(@"__FILE__:__LINE__", frameId, "Locals", 2);
                 int variablesReference = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
                 Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "t", "10");
                 Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "f", "5");
                 Context.Continue(@"__FILE__:__LINE__");
             });
-        }
-
-        public struct TestStruct4
-        {
-            [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-            public int val1
-            {
-                get
-                {
-                    return 666; 
-                }
-            }
-
-            [System.Diagnostics.DebuggerBrowsable(DebuggerBrowsableState.Never)]
-            public int val2
-            {
-                get
-                {
-                    return 777; 
-                }
-            }
-
-            public int val3
-            {
-                get
-                {
-                    return 888; 
-                }
-            }
-        }
-
-        public struct TestStruct5
-        {
-            public int val1
-            {
-                get
-                {
-                    return 111; 
-                }
-            }
-
-            public int val2
-            {
-                get
-                {
-                    System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
-                    return 222; 
-                }
-            }
-
-            public string val3
-            {
-                get
-                {
-                    return "text_333"; 
-                }
-            }
-
-            public float val4
-            {
-                get
-                {
-                    System.Diagnostics.Debugger.NotifyOfCrossThreadDependency();
-                    return 444.4f; 
-                }
-            }
-
-            public float val5
-            {
-                get
-                {
-                    return 555.5f; 
-                }
-            }
-        }
-
-        public struct TestStruct6
-        {
-            public int val1
-            {
-                get
-                {
-                    // Test, that debugger ignore Break() callback during eval.
-                    Debugger.Break();
-                    return 123; 
-                }
-            }
-
-            public int val2
-            {
-                get
-                {
-                    System.Threading.Thread.Sleep(5000000);
-                    return 999; 
-                }
-            }
-
-            public string val3
-            {
-                get
-                {
-                    // Test, that debugger ignore Breakpoint() callback during eval.
-                    return "text_123";                              Label.Breakpoint("bp_getter");
-                }
-            }
-        }
-
-        public struct TestStruct7
-        {
-            public int val1
-            {
-                get
-                {
-                    return 567; 
-                }
-            }
-
-            public int val2
-            {
-                get
-                {
-                    try {
-                        throw new System.DivideByZeroException();
-                    }
-                    catch
-                    {
-                        return 777; 
-                    }
-                    return 888; 
-                }
-            }
-
-            public int val3
-            {
-                get
-                {
-                    throw new System.DivideByZeroException();
-                    return 777; 
-                }
-            }
-
-            public string val4
-            {
-                get
-                {
-                    return "text_567"; 
-                }
-            }
         }
     }
 }
