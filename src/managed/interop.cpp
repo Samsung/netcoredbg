@@ -67,16 +67,11 @@ typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID, int32_t, PVOID, int32_t, i
 typedef  RetCode (*GetMethodLastIlOffsetDelegate)(PVOID, mdMethodDef, uint32_t*);
 typedef  RetCode (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int32_t*);
 typedef  RetCode (*GetSourceDelegate)(PVOID, const WCHAR*, int32_t*, PVOID*);
-typedef  RetCode (*ParseExpressionDelegate)(const WCHAR*, const WCHAR*, PVOID*, int32_t*, BSTR*);
-typedef  RetCode (*EvalExpressionDelegate)(const WCHAR*, PVOID, BSTR*, int32_t*, int32_t*, PVOID*);
 typedef  RetCode (*CalculationDelegate)(PVOID, int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*, BSTR*);
-typedef  BOOL (*GetChildDelegate)(PVOID, PVOID, const WCHAR*, int32_t*, PVOID*);
-typedef  BOOL (*RegisterGetChildDelegate)(GetChildDelegate);
 typedef  int (*GenerateStackMachineProgramDelegate)(const WCHAR*, PVOID*, BSTR*);
 typedef  void (*ReleaseStackMachineProgramDelegate)(PVOID);
 typedef  int (*NextStackCommandDelegate)(PVOID, int32_t*, PVOID*, BSTR*);
 typedef  RetCode (*StringToUpperDelegate)(const WCHAR*, BSTR*);
-typedef  void (*GCCollectDelegate)();
 typedef  PVOID (*CoTaskMemAllocDelegate)(int32_t);
 typedef  void (*CoTaskMemFreeDelegate)(PVOID);
 typedef  PVOID (*SysAllocStringLenDelegate)(int32_t);
@@ -93,14 +88,10 @@ ResolveBreakPointsDelegate resolveBreakPointsDelegate = nullptr;
 GetMethodLastIlOffsetDelegate getMethodLastIlOffsetDelegate = nullptr;
 GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate = nullptr;
 GetSourceDelegate getSourceDelegate = nullptr;
-ParseExpressionDelegate parseExpressionDelegate = nullptr;
-EvalExpressionDelegate evalExpressionDelegate = nullptr;
-RegisterGetChildDelegate registerGetChildDelegate = nullptr;
 GenerateStackMachineProgramDelegate generateStackMachineProgramDelegate = nullptr;
 ReleaseStackMachineProgramDelegate releaseStackMachineProgramDelegate = nullptr;
 NextStackCommandDelegate nextStackCommandDelegate = nullptr;
 StringToUpperDelegate stringToUpperDelegate = nullptr;
-GCCollectDelegate gCCollectDelegate = nullptr;
 CoTaskMemAllocDelegate coTaskMemAllocDelegate = nullptr;
 CoTaskMemFreeDelegate coTaskMemFreeDelegate = nullptr;
 SysAllocStringLenDelegate sysAllocStringLenDelegate = nullptr;
@@ -190,16 +181,6 @@ void DisposeSymbols(PVOID pSymbolReaderHandle)
     disposeDelegate(pSymbolReaderHandle);
 }
 
-struct GetChildProxy
-{
-    GetChildCallback &m_cb;
-    static BOOL GetChild(PVOID opaque, PVOID corValue, const WCHAR* name, int *typeId, PVOID *data)
-    {
-        std::string uft8Name = to_utf8(name);
-        return static_cast<GetChildProxy*>(opaque)->m_cb(corValue, uft8Name, typeId, data);
-    }
-};
-
 // WARNING! Due to CoreCLR limitations, Init() / Shutdown() sequence can be used only once during process execution.
 // Note, init in case of error will throw exception, since this is fatal for debugger (CoreCLR can't be re-init).
 void Init(const std::string &coreClrPath)
@@ -279,15 +260,11 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetMethodLastIlOffset", (void **)&getMethodLastIlOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodsSteppingInfo", (void **)&getAsyncMethodsSteppingInfoDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSource", (void **)&getSourceDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ParseExpression", (void **)&parseExpressionDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "EvalExpression", (void **)&evalExpressionDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "RegisterGetChild", (void **)&registerGetChildDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "CalculationDelegate", (void **)&calculationDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "GenerateStackMachineProgram", (void **)&generateStackMachineProgramDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "ReleaseStackMachineProgram", (void **)&releaseStackMachineProgramDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "NextStackCommand", (void **)&nextStackCommandDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "StringToUpper", (void **)&stringToUpperDelegate));
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "GCCollect", (void **)&gCCollectDelegate));
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "CoTaskMemAlloc", (void **)&coTaskMemAllocDelegate));
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "CoTaskMemFree", (void **)&coTaskMemFreeDelegate));
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, UtilsClassName, "SysAllocStringLen", (void **)&sysAllocStringLenDelegate));
@@ -307,14 +284,10 @@ void Init(const std::string &coreClrPath)
                               getMethodLastIlOffsetDelegate &&
                               getAsyncMethodsSteppingInfoDelegate &&
                               getSourceDelegate &&
-                              parseExpressionDelegate &&
-                              evalExpressionDelegate &&
-                              registerGetChildDelegate &&
                               generateStackMachineProgramDelegate &&
                               releaseStackMachineProgramDelegate &&
                               nextStackCommandDelegate &&
                               stringToUpperDelegate &&
-                              gCCollectDelegate &&
                               coTaskMemAllocDelegate &&
                               coTaskMemFreeDelegate &&
                               sysAllocStringLenDelegate &&
@@ -323,24 +296,6 @@ void Init(const std::string &coreClrPath)
 
     if (!allDelegatesInited)
         throw std::runtime_error("Some delegates nulled");
-
-    if (!registerGetChildDelegate(GetChildProxy::GetChild))
-        throw std::runtime_error("GetChildDelegate failed");
-
-    // Warm up Roslyn
-    std::thread( [](ParseExpressionDelegate parseExpressionDelegate, GCCollectDelegate gCCollectDelegate,
-                    SysFreeStringDelegate sysFreeStringDelegate, CoTaskMemFreeDelegate coTaskMemFreeDelegate){
-        BSTR werrorText;
-        PVOID dataPtr;
-        int dataSize = 0;
-        parseExpressionDelegate(W("1"), W("System.Int32"), &dataPtr, &dataSize, &werrorText);
-        // Dirty workaround, in order to prevent memory leak by Roslyn, since it create assembly that can't be unloaded each eval.
-        // https://github.com/dotnet/roslyn/issues/22219
-        // https://github.com/dotnet/roslyn/issues/41722
-        gCCollectDelegate();
-        sysFreeStringDelegate(werrorText);
-        coTaskMemFreeDelegate(dataPtr);
-    }, parseExpressionDelegate, gCCollectDelegate, sysFreeStringDelegate, coTaskMemFreeDelegate).detach();
 }
 
 // WARNING! Due to CoreCLR limitations, Shutdown() can't be called out of the Main() scope, for example, from global object destructor.
@@ -367,11 +322,7 @@ void Shutdown()
     getMethodLastIlOffsetDelegate = nullptr;
     getAsyncMethodsSteppingInfoDelegate = nullptr;
     getSourceDelegate = nullptr;
-    parseExpressionDelegate = nullptr;
-    evalExpressionDelegate = nullptr;
-    registerGetChildDelegate = nullptr;
     stringToUpperDelegate = nullptr;
-    gCCollectDelegate = nullptr;
     coTaskMemAllocDelegate = nullptr;
     coTaskMemFreeDelegate = nullptr;
     sysAllocStringLenDelegate = nullptr;
@@ -518,97 +469,6 @@ HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<Async
     AsyncAwaitInfo.assign(allocatedAsyncInfo, allocatedAsyncInfo + asyncInfoCount);
 
     Interop::CoTaskMemFree(allocatedAsyncInfo);
-    return S_OK;
-}
-
-HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText)
-{
-    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!parseExpressionDelegate || !gCCollectDelegate)
-        return E_FAIL;
-
-    BSTR werrorText;
-    PVOID dataPtr;
-    int32_t dataSize = 0;
-    RetCode retCode = parseExpressionDelegate(to_utf16(expr).c_str(), to_utf16(typeName).c_str(), &dataPtr, &dataSize, &werrorText);
-    // Dirty workaround, in order to prevent memory leak by Roslyn, since it create assembly that can't be unloaded each eval.
-    // https://github.com/dotnet/roslyn/issues/22219
-    // https://github.com/dotnet/roslyn/issues/41722
-    gCCollectDelegate();
-
-    read_lock.unlock();
-    
-    if (retCode != RetCode::OK)
-    {
-        errorText = to_utf8(werrorText);
-        Interop::SysFreeString(werrorText);
-        return E_FAIL;
-    }
-
-    if (typeName == "System.String")
-    {
-        data = to_utf8((BSTR)dataPtr);
-        Interop::SysFreeString((BSTR)dataPtr);
-    }
-    else
-    {
-        data.resize(dataSize);
-        memmove(&data[0], dataPtr, dataSize);
-        Interop::CoTaskMemFree(dataPtr);
-    }
-
-    return S_OK;
-}
-
-HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb)
-{
-    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!evalExpressionDelegate || !gCCollectDelegate || !typeId || !ppValue)
-        return E_FAIL;
-
-    GetChildProxy proxy { cb };
-    PVOID valuePtr = nullptr;
-    int32_t size = 0;
-    BSTR resultText;
-    RetCode retCode = evalExpressionDelegate(to_utf16(expr).c_str(), &proxy, &resultText, typeId, &size, &valuePtr);
-    // Dirty workaround, in order to prevent memory leak by Roslyn, since it create assembly that can't be unloaded each eval.
-    // https://github.com/dotnet/roslyn/issues/22219
-    // https://github.com/dotnet/roslyn/issues/41722
-    gCCollectDelegate();
-
-    read_lock.unlock();
-
-    if (retCode != RetCode::OK)
-    {
-        if (resultText)
-        {
-            result = to_utf8(resultText);
-            Interop::SysFreeString(resultText);
-        }
-        return E_FAIL;
-    }
-
-    switch(*typeId)
-    {
-        case TypeCorValue:
-            *ppValue = static_cast<ICorDebugValue*>(valuePtr);
-            if (*ppValue)
-                (*ppValue)->AddRef();
-            break;
-        case TypeObject:
-            result = std::string();
-            break;
-        case TypeString:
-            result = to_utf8((BSTR)valuePtr);
-            Interop::SysFreeString((BSTR)valuePtr);
-            break;
-        default:
-            result.resize(size);
-            memmove(&result[0], valuePtr, size);
-            Interop::CoTaskMemFree(valuePtr);
-            break;
-    }
-
     return S_OK;
 }
 

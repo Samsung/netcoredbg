@@ -641,10 +641,7 @@ HRESULT Evaluator::WalkMembers(
 
             ToRelease<ICorDebugValue> iCorValue;
             IfFailRet(getValue(&iCorValue, evalFlags));
-            Status = m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
-            if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
-                Status = E_FAIL;
-            return Status;
+            return m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
         };
 
         return cb(nullptr, false, "", getValue, setValue);
@@ -684,10 +681,7 @@ HRESULT Evaluator::WalkMembers(
 
                 ToRelease<ICorDebugValue> iCorValue;
                 IfFailRet(getValue(&iCorValue, evalFlags));
-                Status = m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
-                if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
-                    Status = E_FAIL;
-                return Status;
+                return m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
             };
 
             IfFailRet(cb(nullptr, false, "[" + IndiciesToStr(ind, base) + "]", getValue, setValue));
@@ -796,10 +790,7 @@ HRESULT Evaluator::WalkMembers(
 
                 ToRelease<ICorDebugValue> iCorValue;
                 IfFailRet(getValue(&iCorValue, evalFlags));
-                Status = m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
-                if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
-                    Status = E_FAIL;
-                return Status;
+                return m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output);
             };
 
             IfFailRet(cb(pType, is_static, name, getValue, setValue));
@@ -906,8 +897,6 @@ HRESULT Evaluator::WalkMembers(
                     // FIXME investigate, why in this case we can't use ICorDebugReferenceValue::SetValue() for string in iCorValue
                     iCorValue.Free();
                     IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, &iCorValue, output));
-                    if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
-                        return E_FAIL;
 
                     CorElementType elemType;
                     IfFailRet(iCorValue->GetType(&elemType));
@@ -917,8 +906,6 @@ HRESULT Evaluator::WalkMembers(
                 else // Allow stack machine decide what types are supported.
                 {
                     IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), output));
-                    if (Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
-                        return E_FAIL;
                 }
 
                 // Call setter.

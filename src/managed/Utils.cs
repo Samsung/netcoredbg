@@ -52,16 +52,5 @@ namespace NetCoreDbg
         {
             Marshal.FreeCoTaskMem(ptr);
         }
-
-        internal static void GCCollect()
-        {
-            try
-            {
-                GC.Collect();
-            }
-            catch
-            {
-            }
-        }
     }
 }

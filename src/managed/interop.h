@@ -66,28 +66,6 @@ namespace Interop
         }
     };
 
-    // Keep in sync with string[] basicTypes in Evaluation.cs
-    enum BasicTypes {
-        TypeCorValue = -1,
-        TypeObject = 0, //     "System.Object",
-        TypeBoolean, //        "System.Boolean",
-        TypeByte,    //        "System.Byte",
-        TypeSByte,   //        "System.SByte",
-        TypeChar,    //        "System.Char",
-        TypeDouble,  //        "System.Double",
-        TypeSingle,  //        "System.Single",
-        TypeInt32,   //        "System.Int32",
-        TypeUInt32,  //        "System.UInt32",
-        TypeInt64,   //        "System.Int64",
-        TypeUInt64,  //        "System.UInt64",
-        TypeInt16,   //        "System.Int16",
-        TypeUInt16,  //        "System.UInt16",
-        TypeIntPtr,  //        "System.IntPtr",
-        TypeUIntPtr, //        "System.UIntPtr",
-        TypeDecimal, //        "System.Decimal",
-        TypeString,  //        "System.String"
-    };
-
     // Keep in sync with OperationType enum in Evaluation.cs
     enum class OperationType
     {
@@ -123,8 +101,6 @@ namespace Interop
         {}
     };
 
-    typedef std::function<bool(PVOID, const std::string&, int*, PVOID*)> GetChildCallback;
-
     // WARNING! Due to CoreCLR limitations, Init() / Shutdown() sequence can be used only once during process execution.
     // Note, init in case of error will throw exception, since this is fatal for debugger (CoreCLR can't be re-init).
     void Init(const std::string &coreClrPath);
@@ -143,9 +119,7 @@ namespace Interop
     HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandle, int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t nestedToken, int32_t &Count, PVOID *data);
     HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo);
     HRESULT GetSource(PVOID symbolReaderHandle, const std::string fileName, PVOID *data, int32_t *length);
-    // TODO remove all related code - HRESULT ParseExpression(const std::string &expr, const std::string &typeName, std::string &data, std::string &errorText);
     HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, int32_t secondType, int32_t operationType, int32_t &resultType, PVOID *data, std::string &errorText);
-    HRESULT EvalExpression(const std::string &expr, std::string &result, int *typeId, ICorDebugValue **ppValue, GetChildCallback cb);
     HRESULT GenerateStackMachineProgram(const std::string &expr, PVOID *ppStackProgram, std::string &textOutput);
     void ReleaseStackMachineProgram(PVOID pStackProgram);
     HRESULT NextStackCommand(PVOID pStackProgram, int32_t &Command, PVOID &Ptr, std::string &textOutput);

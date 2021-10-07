@@ -1370,11 +1370,7 @@ HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, i
 
     HRESULT Status;
     PVOID pStackProgram = nullptr;
-    if (FAILED(Status = Interop::GenerateStackMachineProgram(fixed_expression, &pStackProgram, output)) ||
-        Status == S_FALSE) // return not error but S_FALSE in case some syntax kind not implemented.
-    {
-        return Status;
-    }
+    IfFailRet(Interop::GenerateStackMachineProgram(fixed_expression, &pStackProgram, output));
 
     static constexpr int32_t ProgramFinished = -1;
     int32_t Command;

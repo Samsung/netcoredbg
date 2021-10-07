@@ -14,6 +14,72 @@ namespace NetCoreDbg
 {
     public partial class Evaluation
     {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct BlittableChar
+        {
+            public char Value;
+
+            public static explicit operator BlittableChar(char value)
+            {
+                return new BlittableChar { Value = value };
+            }
+
+            public static implicit operator char (BlittableChar value)
+            {
+                return value.Value;
+            }
+        }
+
+        public struct BlittableBoolean
+        {
+            private byte byteValue;
+
+            public bool Value
+            {
+                get { return Convert.ToBoolean(byteValue); }
+                set { byteValue = Convert.ToByte(value); }
+            }
+
+            public static explicit operator BlittableBoolean(bool value)
+            {
+                return new BlittableBoolean { Value = value };
+            }
+
+            public static implicit operator bool (BlittableBoolean value)
+            {
+                return value.Value;
+            }
+        }
+
+        static void MarshalValue(object value, out int size, out IntPtr data)
+        {
+            if (value is string)
+            {
+                data = Marshal.StringToBSTR(value as string);
+                size = 0;
+            }
+            else if (value is char)
+            {
+                BlittableChar c = (BlittableChar)((char)value);
+                size = Marshal.SizeOf(c);
+                data = Marshal.AllocCoTaskMem(size);
+                Marshal.StructureToPtr(c, data, false);
+            }
+            else if (value is bool)
+            {
+                BlittableBoolean b = (BlittableBoolean)((bool)value);
+                size = Marshal.SizeOf(b);
+                data = Marshal.AllocCoTaskMem(size);
+                Marshal.StructureToPtr(b, data, false);
+            }
+            else
+            {
+                size = Marshal.SizeOf(value);
+                data = Marshal.AllocCoTaskMem(size);
+                Marshal.StructureToPtr(value, data, false);
+            }
+        }
+
         enum ePredefinedType
         {
             BoolKeyword,
@@ -184,7 +250,6 @@ namespace NetCoreDbg
         };
 
         internal const int S_OK = 0;
-        internal const int S_FALSE = 1;
         internal const int E_INVALIDARG = unchecked((int)0x80070057);
 
         public abstract class ICommand
@@ -603,10 +668,10 @@ namespace NetCoreDbg
                         case SyntaxKind.BracketedArgumentList:
                         case SyntaxKind.ConditionalAccessExpression:
                         case SyntaxKind.ArgumentList:
+                        case SyntaxKind.ParenthesizedExpression:
 /* TODO
                         case SyntaxKind.TypeArgumentList:
                         case SyntaxKind.OmittedTypeArgument:
-                        case SyntaxKind.ParenthesizedExpression:
                         case SyntaxKind.UncheckedExpression:
                         case SyntaxKind.CheckedExpression:
 */
@@ -750,13 +815,6 @@ namespace NetCoreDbg
                     textOutput = Marshal.StringToBSTR("error: no expression found");
                     return E_INVALIDARG;
                 }
-            }
-            catch (SyntaxKindNotImplementedException e)
-            {
-                // Note, return not error but S_FALSE in case some syntax kind not implemented.
-                // TODO remove this when new eval will be fully implemented
-                textOutput = Marshal.StringToBSTR(e.GetType().ToString() + ": " + e.Message);
-                return S_FALSE;
             }
             catch (Exception e)
             {
