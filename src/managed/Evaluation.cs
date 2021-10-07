@@ -467,7 +467,12 @@ namespace NetCoreDbg
             Multiplication,
             Division,
             Remainder,
-            Compound
+            BitwiseRightShift,
+            BitwiseLeftShift,
+            BitwiseAnd,
+            BitwiseXor,
+            BitwiseOr,
+            BitwiseComplement
         };
 
         internal static Dictionary<OperationType, Func<object, object, object>> operationTypesMap = new Dictionary<OperationType, Func<object, object, object>>
@@ -476,7 +481,13 @@ namespace NetCoreDbg
             { OperationType.Division, (object firstOp, object secondOp) => { return Division(firstOp, secondOp); }},
             { OperationType.Multiplication, (object firstOp, object secondOp) => { return Multiplication(firstOp, secondOp); }},
             { OperationType.Remainder, (object firstOp, object secondOp) => { return Remainder(firstOp, secondOp); }},
-            { OperationType.Subtraction, (object firstOp, object secondOp) => { return Subtraction(firstOp, secondOp); }}
+            { OperationType.Subtraction, (object firstOp, object secondOp) => { return Subtraction(firstOp, secondOp); }},
+            { OperationType.BitwiseRightShift, (object firstOp, object secondOp) => { return BitwiseRightShift(firstOp, secondOp); }},
+            { OperationType.BitwiseLeftShift, (object firstOp, object secondOp) => { return BitwiseLeftShift(firstOp, secondOp); }},
+            { OperationType.BitwiseAnd, (object firstOp, object secondOp) => { return BitwiseAnd(firstOp, secondOp); }},
+            { OperationType.BitwiseXor, (object firstOp, object secondOp) => { return BitwiseXor(firstOp, secondOp); }},
+            { OperationType.BitwiseOr, (object firstOp, object secondOp) => { return BitwiseOr(firstOp, secondOp); }},
+            { OperationType.BitwiseComplement, (object firstOp, object secondOp) => { return BitwiseComplement(firstOp); }}
         };
 
         internal static Dictionary<BasicTypes, Func<byte[], object>> typesMap = new Dictionary<BasicTypes, Func<byte[], object>>
@@ -611,6 +622,36 @@ namespace NetCoreDbg
         private static object Remainder(dynamic first, dynamic second)
         {
             return first % second;
+        }
+
+        private static object BitwiseRightShift(dynamic first, dynamic second) 
+        {
+            return first >> second;
+        }
+
+        private static object BitwiseLeftShift(dynamic first, dynamic second)
+        {
+            return first << second;
+        }
+
+        private static object BitwiseAnd(dynamic first, dynamic second)
+        {
+            return first & second;
+        }
+
+        private static object BitwiseXor(dynamic first, dynamic second)
+        {
+            return first ^ second;
+        }
+
+        private static object BitwiseOr(dynamic first, dynamic second)
+        {
+            return first | second;
+        }
+
+        private static object BitwiseComplement(dynamic first)
+        {
+            return ~first;
         }
     }
 }

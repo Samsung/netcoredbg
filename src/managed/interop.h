@@ -96,6 +96,12 @@ namespace Interop
         Multiplication,
         Division,
         Remainder,
+        BitwiseRightShift,
+        BitwiseLeftShift,
+        BitwiseAnd,
+        BitwiseXor,
+        BitwiseOr,
+        BitwiseComplement
     };
     struct AsyncAwaitInfoBlock
     {
