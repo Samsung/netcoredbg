@@ -469,10 +469,19 @@ namespace NetCoreDbg
             Remainder,
             BitwiseRightShift,
             BitwiseLeftShift,
-            BitwiseAnd,
-            BitwiseXor,
-            BitwiseOr,
-            BitwiseComplement
+            BitwiseComplement,
+            LogicalAnd,
+            LogicalOR,
+            LogicalXOR,
+            ConditionalLogicalAnd,
+            ConditionalLogicalOR,
+            LogicalNegation,
+            Equality,
+            Inequality,
+            LessThan,
+            GreaterThan,
+            LessThanOrEqual,
+            GreaterThanOrEqual
         };
 
         internal static Dictionary<OperationType, Func<object, object, object>> operationTypesMap = new Dictionary<OperationType, Func<object, object, object>>
@@ -484,10 +493,19 @@ namespace NetCoreDbg
             { OperationType.Subtraction, (object firstOp, object secondOp) => { return Subtraction(firstOp, secondOp); }},
             { OperationType.BitwiseRightShift, (object firstOp, object secondOp) => { return BitwiseRightShift(firstOp, secondOp); }},
             { OperationType.BitwiseLeftShift, (object firstOp, object secondOp) => { return BitwiseLeftShift(firstOp, secondOp); }},
-            { OperationType.BitwiseAnd, (object firstOp, object secondOp) => { return BitwiseAnd(firstOp, secondOp); }},
-            { OperationType.BitwiseXor, (object firstOp, object secondOp) => { return BitwiseXor(firstOp, secondOp); }},
-            { OperationType.BitwiseOr, (object firstOp, object secondOp) => { return BitwiseOr(firstOp, secondOp); }},
-            { OperationType.BitwiseComplement, (object firstOp, object secondOp) => { return BitwiseComplement(firstOp); }}
+            { OperationType.BitwiseComplement, (object firstOp, object secondOp) => { return BitwiseComplement(firstOp); }},
+            { OperationType.LogicalAnd, (object firstOp, object secondOp) => { return LogicalAnd(firstOp, secondOp); }},
+            { OperationType.LogicalOR, (object firstOp, object secondOp) => { return LogicalOR(firstOp, secondOp); }},
+            { OperationType.LogicalXOR, (object firstOp, object secondOp) => { return LogicalXOR(firstOp, secondOp); }},
+            { OperationType.ConditionalLogicalAnd, (object firstOp, object secondOp) => { return ConditionalLogicalAnd(firstOp, secondOp); }},
+            { OperationType.ConditionalLogicalOR, (object firstOp, object secondOp) => { return ConditionalLogicalOR(firstOp, secondOp); }},
+            { OperationType.LogicalNegation, (object firstOp, object secondOp) => { return LogicalNegation(firstOp); }},
+            { OperationType.Equality, (object firstOp, object secondOp) => { return Equality(firstOp, secondOp); }},
+            { OperationType.Inequality, (object firstOp, object secondOp) => { return Inequality(firstOp, secondOp); }},
+            { OperationType.LessThan, (object firstOp, object secondOp) => { return LessThan(firstOp, secondOp); }},
+            { OperationType.GreaterThan, (object firstOp, object secondOp) => { return GreaterThan(firstOp, secondOp); }},
+            { OperationType.LessThanOrEqual, (object firstOp, object secondOp) => { return LessThanOrEqual(firstOp, secondOp); }},
+            { OperationType.GreaterThanOrEqual, (object firstOp, object secondOp) => { return GreaterThanOrEqual(firstOp, secondOp); }}
         };
 
         internal static Dictionary<BasicTypes, Func<byte[], object>> typesMap = new Dictionary<BasicTypes, Func<byte[], object>>
@@ -634,24 +652,69 @@ namespace NetCoreDbg
             return first << second;
         }
 
-        private static object BitwiseAnd(dynamic first, dynamic second)
+        private static object BitwiseComplement(dynamic first)
+        {
+            return ~first;
+        }
+
+        private static object LogicalAnd(dynamic first, dynamic second)
         {
             return first & second;
         }
 
-        private static object BitwiseXor(dynamic first, dynamic second)
-        {
-            return first ^ second;
-        }
-
-        private static object BitwiseOr(dynamic first, dynamic second)
+        private static object LogicalOR(dynamic first, dynamic second)
         {
             return first | second;
         }
 
-        private static object BitwiseComplement(dynamic first)
+        private static object LogicalXOR(dynamic first, dynamic second)
         {
-            return ~first;
+            return first ^ second;
+        }
+
+        private static bool ConditionalLogicalAnd(dynamic first, dynamic second)
+        {
+            return first && second;
+        }
+
+        private static bool ConditionalLogicalOR(dynamic first, dynamic second)
+        {
+            return first || second;
+        }
+
+        private static object LogicalNegation(dynamic first)
+        {
+            return !first;
+        }
+
+        private static bool Equality(dynamic first, dynamic second)
+        {
+            return first == second;
+        }
+
+        private static bool Inequality(dynamic first, dynamic second) 
+        {
+            return first != second;
+        }
+
+        private static bool LessThan(dynamic first, dynamic second)
+        {
+            return first < second;
+        }
+
+        private static bool GreaterThan(dynamic first, dynamic second)
+        {
+            return first > second;
+        }
+
+        private static bool LessThanOrEqual(dynamic first, dynamic second)
+        {
+            return first <= second;
+        }
+
+        private static bool GreaterThanOrEqual(dynamic first, dynamic second)
+        {
+            return first >= second;
         }
     }
 }

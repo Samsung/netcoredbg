@@ -98,10 +98,19 @@ namespace Interop
         Remainder,
         BitwiseRightShift,
         BitwiseLeftShift,
-        BitwiseAnd,
-        BitwiseXor,
-        BitwiseOr,
-        BitwiseComplement
+        BitwiseComplement,
+        LogicalAnd,
+        LogicalOR,
+        LogicalXOR,
+        ConditionalLogicalAnd,
+        ConditionalLogicalOR,
+        LogicalNegation,
+        Equality,
+        Inequality,
+        LessThan,
+        GreaterThan,
+        LessThanOrEqual,
+        GreaterThanOrEqual
     };
     struct AsyncAwaitInfoBlock
     {
