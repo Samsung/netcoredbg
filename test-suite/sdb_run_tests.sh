@@ -55,6 +55,7 @@ ALL_TEST_NAMES=(
     "MITestNoJMCBreakpoint"
     "MITestNoJMCAsyncStepping"
     "MITestNoJMCExceptionBreakpoint"
+    "MITestSizeof"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -75,6 +76,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestNoJMCNoFilterStepping"
     "VSCodeTestNoJMCBreakpoint"
     "VSCodeTestNoJMCAsyncStepping"
+    "VSCodeTestSizeof"
 )
 
 # Skipped tests:

@@ -198,6 +198,7 @@ namespace NetcoreDbgTestCore
 
         Compilation CompileTree(SyntaxTree tree)
         {
+            //var CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
             var compilation = CSharpCompilation.Create(
                 "ControlScript",
                 new SyntaxTree[] {tree},

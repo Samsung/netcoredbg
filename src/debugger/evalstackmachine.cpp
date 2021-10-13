@@ -133,6 +133,9 @@ namespace
         IfFailRet(pThread->CreateEval(&iCorEval));
         IfFailRet(iCorEval->CreateValue(type, nullptr, ppValue));
 
+        if (!ptr)
+            return S_OK;
+
         ToRelease<ICorDebugGenericValue> iCorGenValue;
         IfFailRet((*ppValue)->QueryInterface(IID_ICorDebugGenericValue, (LPVOID *) &iCorGenValue));
         return iCorGenValue->SetValue(ptr);
@@ -302,6 +305,31 @@ namespace
                 ss << evalStack.front().identifiers[i];
             }
             output = "error: The name '" + ss.str() + "' does not exist in the current context";
+        }
+
+        return Status;
+    }
+
+    HRESULT GetFrontStackEntryType(ICorDebugType **ppResultType, std::list<EvalStackEntry> &evalStack, EvalData &ed, std::string &output)
+    {
+        HRESULT Status;
+        ToRelease<ICorDebugValue> iCorValue;
+        if ((FAILED(Status = ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, evalStack.front().identifiers, &iCorValue, ppResultType, ed.evalFlags))
+            && !evalStack.front().identifiers.empty()) || iCorValue)
+        {
+            std::ostringstream ss;
+            for (size_t i = 0; i < evalStack.front().identifiers.size(); i++)
+            {
+                if (i != 0)
+                    ss << ".";
+                ss << evalStack.front().identifiers[i];
+            }
+            if(!iCorValue)
+                output = "error: The type or namespace name '" + ss.str() + "' couldn't be found";
+            else
+                output = "error: '" + ss.str() + "' is a variable but is used like a type";
+            if (SUCCEEDED(Status))
+                Status = E_FAIL;
         }
 
         return Status;
@@ -1254,15 +1282,33 @@ namespace
 
     HRESULT PredefinedType(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatFI*)pArguments)->Flags;
-        // TODO int32_t Int = ((FormatFI*)pArguments)->Int;
-        return E_NOTIMPL;
-    }
+        static const CorElementType BasicTypesAlias[] {
+            ELEMENT_TYPE_BOOLEAN,   // Boolean
+            ELEMENT_TYPE_U1,        // Byte
+            ELEMENT_TYPE_CHAR,      // Char
+            ELEMENT_TYPE_VALUETYPE, // Decimal
+            ELEMENT_TYPE_R8,        // Double
+            ELEMENT_TYPE_R4,        // Float
+            ELEMENT_TYPE_I4,        // Int
+            ELEMENT_TYPE_I8,        // Long
+            ELEMENT_TYPE_MAX,       // Object
+            ELEMENT_TYPE_I1,        // SByte
+            ELEMENT_TYPE_I2,        // Short
+            ELEMENT_TYPE_MAX,       // String
+            ELEMENT_TYPE_U2,        // UShort
+            ELEMENT_TYPE_U4,        // UInt
+            ELEMENT_TYPE_U8         // ULong
+        };
 
-    HRESULT QualifiedName(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
-    {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        // TODO uint32_t Flags = ((FormatFI*)pArguments)->Flags;
+        int32_t Int = ((FormatFI*)pArguments)->Int;
+
+        evalStack.emplace_front();
+
+        if (BasicTypesAlias[Int] == ELEMENT_TYPE_VALUETYPE)
+            return CreateValueType(ed.pEvalWaiter, ed.pThread, ed.iCorDecimalClass, &evalStack.front().iCorValuePredefined, nullptr);
+        else
+            return CreatePrimitiveValue(ed.pThread, &evalStack.front().iCorValuePredefined, BasicTypesAlias[Int], nullptr);
     }
 
     HRESULT AliasQualifiedName(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -1321,6 +1367,11 @@ namespace
             evalStack.front().identifiers.emplace_back(std::move(identifier));
 
         return S_OK;
+    }
+
+    HRESULT QualifiedName(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
+    {
+        return SimpleMemberAccessExpression(evalStack, pArguments, output, ed);
     }
 
     HRESULT PointerMemberAccessExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -1504,9 +1555,62 @@ namespace
 
     HRESULT SizeOfExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        assert(evalStack.size() > 0);
+        HRESULT Status;
+        uint32_t size = 0;
+        PVOID szPtr = &size;
+
+        if (evalStack.front().iCorValuePredefined)
+        {
+            //  predefined type
+            CorElementType elType;
+            IfFailRet(evalStack.front().iCorValuePredefined->GetType(&elType));
+            if(elType == ELEMENT_TYPE_CLASS)
+            {
+                ToRelease<ICorDebugValue> iCorValue;
+                IfFailRet(DereferenceAndUnboxValue(evalStack.front().iCorValuePredefined, &iCorValue, nullptr));
+                IfFailRet(iCorValue->GetSize(&size));
+            }
+            else
+            {
+                IfFailRet(evalStack.front().iCorValuePredefined->GetSize(&size));
+            }
+        }
+        else
+        {
+            ToRelease<ICorDebugType> iCorType;
+            ToRelease<ICorDebugValue> iCorValueRef, iCorValue;
+
+            IfFailRet(GetFrontStackEntryType(&iCorType, evalStack, ed, output));
+            if(iCorType)
+            {
+                CorElementType elType;
+                IfFailRet(iCorType->GetType(&elType));
+                if (elType == ELEMENT_TYPE_VALUETYPE)
+                {
+                    // user defined type (structure)
+                    ToRelease<ICorDebugClass> iCorClass;
+
+                    IfFailRet(iCorType->GetClass(&iCorClass));
+                    IfFailRet(CreateValueType(ed.pEvalWaiter, ed.pThread, iCorClass, &iCorValueRef, nullptr));
+                    IfFailRet(DereferenceAndUnboxValue(iCorValueRef, &iCorValue, nullptr));
+                    IfFailRet(iCorValue->GetSize(&size));
+                }
+                else
+                {
+                    return E_INVALIDARG;
+                }
+            }
+            else
+            {
+                // TODO other cases
+                return E_NOTIMPL;
+            }
+        }
+        evalStack.front().ResetEntry();
+        return CreatePrimitiveValue(ed.pThread, &evalStack.front().iCorValue, ELEMENT_TYPE_U4, szPtr);
     }
+
 
     HRESULT TypeOfExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {

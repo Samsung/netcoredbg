@@ -60,6 +60,7 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestExitCode", "MITestExitCode\MITestExitCode.csproj", "{9308CF34-12C5-4D5B-A318-00AD7AC1907A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestExitCode", "VSCodeTestExitCode\VSCodeTestExitCode.csproj", "{045EE2A3-F595-4D40-8E1A-734CA9CEB10C}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestEvalNotEnglish", "MITestEvalNotEnglish\MITestEvalNotEnglish.csproj", "{76D789CF-9499-4A12-9128-7378592B7BDC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestEvalNotEnglish", "VSCodeTestEvalNotEnglish\VSCodeTestEvalNotEnglish.csproj", "{5FE6BDFF-AD0E-4E1C-A596-6D583D0777BC}"
@@ -67,6 +68,7 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITest中文目录", "MITest中文目录\MITest中文目录.csproj", "{6B76C4A1-D871-4A78-B284-FE8E2FCBA10D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTest中文目录", "VSCodeTest中文目录\VSCodeTest中文目录.csproj", "{56BFF745-3A77-44BF-B068-3E13901295A1}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestSrcBreakpointResolve", "MITestSrcBreakpointResolve\MITestSrcBreakpointResolve.csproj", "{81372498-2551-49D6-8A36-4F57C4985E5E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestSrcBreakpointResolve", "VSCodeTestSrcBreakpointResolve\VSCodeTestSrcBreakpointResolve.csproj", "{C4B66CFD-47AA-4B41-BE26-B6FE2282FF09}"
@@ -76,9 +78,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestEnum", "MITestEnum\MITestEnum.csproj", "{D52DD1E9-42C9-4378-B505-C94C6B282C49}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestEnum", "VSCodeTestEnum\VSCodeTestEnum.csproj", "{751C9FDC-5992-4734-ABD0-126148F3818D}"
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestAsyncStepping", "VSCodeTestAsyncStepping\VSCodeTestAsyncStepping.csproj", "{CDC2D04E-9433-4D2F-9A77-1839982F6834}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestAsyncStepping", "MITestAsyncStepping\MITestAsyncStepping.csproj", "{C1400CFC-3087-42E1-B580-DE8A00C3686B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestAsyncStepping", "VSCodeTestAsyncStepping\VSCodeTestAsyncStepping.csproj", "{CDC2D04E-9433-4D2F-9A77-1839982F6834}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestBreak", "VSCodeTestBreak\VSCodeTestBreak.csproj", "{0EB5EE41-E73C-4946-8561-4C2BB0EB26BC}"
 EndProject
@@ -103,6 +106,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestNoJMCExceptionBreakpoint", "VSCodeTestNoJMCExceptionBreakpoint\VSCodeTestNoJMCExceptionBreakpoint.csproj", "{445B1655-BC1E-491A-A706-D2280FDC3BDD}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestExceptionBreakpoint", "VSCodeTestExceptionBreakpoint\VSCodeTestExceptionBreakpoint.csproj", "{1770637A-2007-4E96-A8E5-A32772831AD3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestSizeof", "MITestSizeof\MITestSizeof.csproj", "{8FD648F2-8F88-4030-A622-823BFA1A3E1C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestSizeof", "VSCodeTestSizeof\VSCodeTestSizeof.csproj", "{C8053627-4094-4913-8E9D-74AD38DCC39F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -741,5 +748,29 @@ Global
 		{1770637A-2007-4E96-A8E5-A32772831AD3}.Release|x64.Build.0 = Release|Any CPU
 		{1770637A-2007-4E96-A8E5-A32772831AD3}.Release|x86.ActiveCfg = Release|Any CPU
 		{1770637A-2007-4E96-A8E5-A32772831AD3}.Release|x86.Build.0 = Release|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Debug|x64.Build.0 = Debug|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Debug|x86.Build.0 = Debug|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Release|x64.ActiveCfg = Release|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Release|x64.Build.0 = Release|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Release|x86.ActiveCfg = Release|Any CPU
+		{8FD648F2-8F88-4030-A622-823BFA1A3E1C}.Release|x86.Build.0 = Release|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Debug|x64.Build.0 = Debug|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Debug|x86.Build.0 = Debug|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Release|x64.ActiveCfg = Release|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Release|x64.Build.0 = Release|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Release|x86.ActiveCfg = Release|Any CPU
+		{C8053627-4094-4913-8E9D-74AD38DCC39F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

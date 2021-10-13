@@ -658,11 +658,11 @@ namespace NetCoreDbg
                         case SyntaxKind.CharacterLiteralExpression: // 1 wchar
                             stackMachineProgram.Commands.Add(new TwoOperandCommand(node.Kind(), CurrentScopeFlags.Peek(), TypeAlias[node.GetFirstToken().Value.GetType()], node.GetFirstToken().Value));
                             break;
-/* TODO
+
                         case SyntaxKind.PredefinedType:
                             stackMachineProgram.Commands.Add(new OneOperandCommand(node.Kind(), CurrentScopeFlags.Peek(), TypeKindAlias[node.GetFirstToken().Kind()]));
                             break;
-*/
+
                         // skip, in case of stack machine program creation we don't use this kinds directly
                         case SyntaxKind.Argument:
                         case SyntaxKind.BracketedArgumentList:
@@ -705,9 +705,9 @@ namespace NetCoreDbg
                         case SyntaxKind.LessThanExpression:
                         case SyntaxKind.GreaterThanOrEqualExpression:
                         case SyntaxKind.LessThanOrEqualExpression:
+                        case SyntaxKind.QualifiedName:
 
 /* TODO
-                        case SyntaxKind.QualifiedName:
                         case SyntaxKind.AliasQualifiedName:
                         case SyntaxKind.ConditionalExpression:
                         case SyntaxKind.PointerMemberAccessExpression:
@@ -718,7 +718,9 @@ namespace NetCoreDbg
                         case SyntaxKind.PostIncrementExpression:
                         case SyntaxKind.PreDecrementExpression:
                         case SyntaxKind.PostDecrementExpression:
+*/
                         case SyntaxKind.SizeOfExpression:
+/*
                         case SyntaxKind.TypeOfExpression:
                         case SyntaxKind.CoalesceExpression:
 */

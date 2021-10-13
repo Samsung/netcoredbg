@@ -65,6 +65,8 @@
     <ProjectReference Include="..\VSCodeTestNoJMCAsyncStepping\VSCodeTestNoJMCAsyncStepping.csproj" />
     <ProjectReference Include="..\VSCodeTestExceptionBreakpoint\VSCodeTestExceptionBreakpoint.csproj" />
     <ProjectReference Include="..\VSCodeTestNoJMCExceptionBreakpoint\VSCodeTestNoJMCExceptionBreakpoint.csproj" />
+    <ProjectReference Include="..\MITestSizeof\MITestSizeof.csproj" />
+    <ProjectReference Include="..\VSCodeTestSizeof\VSCodeTestSizeof.csproj" />
   </ItemGroup>
 
 </Project>
