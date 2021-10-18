@@ -1642,8 +1642,49 @@ namespace
 
     HRESULT CoalesceExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        HRESULT Status;
+        ToRelease<ICorDebugValue> iCorRealValueRightOp;
+        ToRelease<ICorDebugValue> iCorRightOpValue;
+        CorElementType elemTypeRightOp;
+        IfFailRet(GetFrontStackEntryValue(&iCorRightOpValue, evalStack, ed, output));
+        IfFailRet(GetRealValueWithType(iCorRightOpValue, &iCorRealValueRightOp, &elemTypeRightOp));
+        auto rightOperand = std::move(evalStack.front());
+        evalStack.pop_front();
+
+        ToRelease<ICorDebugValue> iCorRealValueLeftOp;
+        ToRelease<ICorDebugValue> iCorLeftOpValue;
+        CorElementType elemTypeLeftOp;
+        IfFailRet(GetFrontStackEntryValue(&iCorLeftOpValue, evalStack, ed, output));
+        IfFailRet(GetRealValueWithType(iCorLeftOpValue, &iCorRealValueLeftOp, &elemTypeLeftOp));
+        std::string typeNameLeft;
+        std::string typeNameRigth;
+
+        //TODO add implementation for object type ?? other
+        if((elemTypeRightOp == ELEMENT_TYPE_STRING && elemTypeLeftOp == ELEMENT_TYPE_STRING)
+           || ((elemTypeRightOp == ELEMENT_TYPE_CLASS && elemTypeLeftOp == ELEMENT_TYPE_CLASS)
+              && SUCCEEDED(TypePrinter::NameForTypeByValue(iCorRealValueLeftOp, typeNameLeft))
+              && SUCCEEDED(TypePrinter::NameForTypeByValue(iCorRealValueRightOp, typeNameRigth))
+              && typeNameLeft == typeNameRigth))
+        {
+            ToRelease<ICorDebugReferenceValue> pRefValue;
+            IfFailRet(iCorLeftOpValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pRefValue));
+            BOOL isNull = FALSE;
+            IfFailRet(pRefValue->IsNull(&isNull));
+
+            if (isNull == TRUE)
+            {
+                evalStack.pop_front();
+                evalStack.push_front(std::move(rightOperand));
+            }
+            return S_OK;
+        }
+        //TODO add proccesing for parent-child class relationship
+        std::string typeName1;
+        std::string typeName2;
+        IfFailRet(TypePrinter::GetTypeOfValue(iCorRealValueLeftOp, typeName1));
+        IfFailRet(TypePrinter::GetTypeOfValue(iCorRealValueRightOp, typeName2));
+        output = "error CS0019: Operator ?? cannot be applied to operands of type '" + typeName1 + "' and '" + typeName2 + "'";
+        return E_INVALIDARG;
     }
 
     HRESULT ThisExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)

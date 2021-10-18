@@ -706,6 +706,7 @@ namespace NetCoreDbg
                         case SyntaxKind.GreaterThanOrEqualExpression:
                         case SyntaxKind.LessThanOrEqualExpression:
                         case SyntaxKind.QualifiedName:
+                        case SyntaxKind.CoalesceExpression:
 
 /* TODO
                         case SyntaxKind.AliasQualifiedName:
@@ -722,7 +723,6 @@ namespace NetCoreDbg
                         case SyntaxKind.SizeOfExpression:
 /*
                         case SyntaxKind.TypeOfExpression:
-                        case SyntaxKind.CoalesceExpression:
 */
                             stackMachineProgram.Commands.Add(new NoOperandsCommand(node.Kind(), CurrentScopeFlags.Peek()));
                             break;

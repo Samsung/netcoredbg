@@ -475,6 +475,17 @@ namespace MITestEvaluate
             return 10;
         }
     }
+
+    public class coalesce_test_A
+    {
+        public string A = "A";
+    }
+
+    public class coalesce_test_B
+    {
+        public string B = "B";
+    }
+
     public class test_child : test_parent
     {
         public int i_child = 402;
@@ -687,6 +698,7 @@ namespace MITestEvaluate
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK11");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK12");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK13");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK14");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -1385,13 +1397,96 @@ namespace MITestEvaluate
             });
 
             int break_line_13 = 13;                                                                           Label.Breakpoint("BREAK13");
-            Label.Checkpoint("function_evaluation_test", "finish", (Object context) => {
+            Label.Checkpoint("function_evaluation_test", "coalesce_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK13");
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "111", "int", "stGetInt()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "666", "int", "stGetInt(333)");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "getInt()", "Error:");
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+            
+            coalesce_test_A test_null = null;
+            coalesce_test_A A_class = new coalesce_test_A();
+            coalesce_test_B B_class = new coalesce_test_B();
+
+            string str_null = null;
+            string A_string = "A";
+            string B_string = "B";
+            string C_string = "C";
+
+            test_struct1_t test_struct = new test_struct1_t();
+            decimal test_decimal = 1;
+            int test_int = 1;
+
+            int break_line14 = 1;                                                                        Label.Breakpoint("BREAK14");
+            Label.Checkpoint("coalesce_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK14");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"first\\\"", "string", "\\\"first\\\".ToString()??\\\"second\\\".ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.coalesce_test_A}", "MITestEvaluate.coalesce_test_A", "A_class??test_null");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.coalesce_test_A}", "MITestEvaluate.coalesce_test_A", "test_null??A_class");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.coalesce_test_A", "test_null??test_null");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.coalesce_test_A}", "MITestEvaluate.coalesce_test_A", "test_null??test_null??A_class");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.coalesce_test_A}", "MITestEvaluate.coalesce_test_A", "A_class??test_null??test_null");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.coalesce_test_A}", "MITestEvaluate.coalesce_test_A", "test_null??A_class??test_null");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.coalesce_test_A", "test_null??test_null??test_null");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"B\\\"", "string", "str_null??B_string.ToString()??C_string.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"C\\\"", "string", "str_null??str_null??C_string.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"A\\\"", "string", "A_string.ToString()??str_null??C_string.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"A\\\"", "string", "A_string.ToString()??str_null??str_null");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"B\\\"", "string", "str_null??B_string.ToString()??str_null");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"A\\\"", "string", "A_string.ToString()??B_string.ToString()??str_null");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"A\\\"", "string", "A_string.ToString()??B_string.ToString()??C_string.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.coalesce_test_A", "test_null??test_null??test_null");
+
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "A_string.ToString()??1", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1??A_string.ToString()", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "A_class??1", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1??A_class", "error CS0019");
+
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "A_string.ToString()??test_int", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_int??A_string.ToString()", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "A_class??test_int", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_int??A_class", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_int??test_null", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_null??test_int", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_int??test_int", "error CS0019");
+                
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__","A_string.ToString()??test_struct", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_struct??A_string.ToString()", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__","A_class??test_struct", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_struct??A_class", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_null??test_struct", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_struct??test_null", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_struct??test_struct", "error CS0019");
+                
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__","A_string.ToString()??test_decimal", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_decimal??A_string.ToString()", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__","A_class??test_decimal", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_decimal??A_class", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_null??test_decimal", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_decimal??test_null", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_decimal??test_decimal", "error CS0019");
+                
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__","\\\"first\\\".ToString()??test_decimal", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_decimal??\\\"first\\\".ToString()", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "\\\"first\\\".ToString()??test_int", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_int??\\\"first\\\".ToString()", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "\\\"first\\\".ToString()??test_struct", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_struct??\\\"first\\\".ToString()", "error CS0019");
+
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_null??\\\"first\\\".ToString()", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "\\\"first\\\".ToString()??test_null", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_null??str_null", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "A_class??B_class", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "B_class??A_class", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "B_class??str_null", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "str_null??B_class", "error CS0019");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
