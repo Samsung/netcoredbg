@@ -1525,7 +1525,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::str
 
     HRESULT Status;
     IfFailRet(m_sharedDebugger->Pause());
-    output = "^done";
+    output = "^stopped";
     return S_OK;
 }
 
@@ -2341,15 +2341,7 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr)
 
         if (SUCCEEDED(hr))
         {
-            const char *resultClass;
-            if (output.empty())
-                resultClass = "^done";
-            else if (output.at(0) == '^')
-                resultClass = "";
-            else
-                resultClass = "^done,";
-
-            printf("%.*s%s%s\n", int(prefix.size()), prefix.data(), resultClass, output.c_str());
+            printf("%.*s%s\n", int(prefix.size()), prefix.data(), output.c_str());
         }
         else
         {
