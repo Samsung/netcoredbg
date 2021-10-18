@@ -4,6 +4,8 @@
 #pragma once
 #include <utility>
 #include <string>
+#include "utility.h"
+#include "utils/span.h"
 #include "utils/string_view.h"
 
 namespace netcoredbg
@@ -63,9 +65,9 @@ namespace EscapedStringInternal
         // it's template parameters should be stored in `Params` class.
         struct Params
         {
-            string_view forbidden;  // characters which must be replaced
-            string_view subst;      // characters to which `forbidden` characters must be replaced
-            char        escape;     // character, which preceedes each substitution
+            string_view forbidden;                  // characters which must be replaced
+            Utility::span<const string_view> subst; // strings to which `forbidden` characters must be replaced
+            char escape;                            // character, which preceedes each substitution
         };
 
         using TempRef = TempReference<EscapedStringImpl>;
@@ -183,10 +185,10 @@ private:
 // instantiation of Params structure for particular Traits template parameter
 template <typename Traits> EscapedStringInternal::EscapedStringImpl::Params EscapedString<Traits>::params =
 {
-    { ((void)([]() -> void {static_assert(sizeof(Traits::forbidden_chars) == sizeof(Traits::subst_chars),
+    { ((void)([]() -> void {static_assert(sizeof(Traits::forbidden_chars)-1 == Utility::Size(Traits::subst_chars),
         "forbidden_chars and subst_chars must have same size!");}),
       string_view(Traits::forbidden_chars)) },
-    { string_view(Traits::subst_chars) },
+    { Traits::subst_chars },
     Traits::escape_char
 };
 

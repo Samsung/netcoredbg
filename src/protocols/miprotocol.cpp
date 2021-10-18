@@ -1253,14 +1253,14 @@ struct MIProtocol::MIProtocolChars
     static const char forbidden_chars[];
 
     // substitutions (except of '\\' prefix)
-    static const char subst_chars[];
+    static const string_view subst_chars[];
 
     static constexpr const char escape_char = '\\';
 };
 
 
 const char MIProtocol::MIProtocolChars::forbidden_chars[] = "\"\\\0\a\b\f\n\r\t\v";
-const char MIProtocol::MIProtocolChars::subst_chars[] = "\"\\0abfnrtv";
+const string_view MIProtocol::MIProtocolChars::subst_chars[] = { "\\\"", "\\\\", "\\0", "\\a", "\\b", "\\f", "\\n", "\\r", "\\t", "\\v" };
 const char MIProtocol::MIProtocolChars::escape_char;
 
 
