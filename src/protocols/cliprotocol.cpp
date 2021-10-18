@@ -1833,7 +1833,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::vector<std::string
         return E_FAIL;
     }
 
-    return execCommands(FileLineReader(std::move(file)));
+    return execCommands(FileLineReader(std::move(file)), true);
 }
 
 
@@ -2218,7 +2218,7 @@ std::tuple<string_view, CLIProtocol::LineReader::Result> CLIProtocol::getLine(co
 }
 
 
-HRESULT CLIProtocol::execCommands(LineReader&& lr)
+HRESULT CLIProtocol::execCommands(LineReader&& lr, bool printCommands)
 {
     // preserve currently existing line reader and restore it on exit
     auto restorer = [&](LineReader* save) { line_reader = save; };
@@ -2325,6 +2325,10 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr)
         };
 
         LOGD("executing: '%.*s'", int(input.size()), input.data());
+
+        if (printCommands) {
+            printf("%s\n", input.data());
+        }
         line_reader->setLastCommand(input);
         auto unparsed = CommandsList::cli_helper.eval(input, handler);
         if (!have_result)

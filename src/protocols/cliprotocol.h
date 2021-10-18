@@ -218,7 +218,7 @@ private:
 
     // This function interprets commands from the input till reaching Eof or Error.
     // Function returns E_FAIL in case of input error.
-    HRESULT execCommands(LineReader&&);
+    HRESULT execCommands(LineReader&&, bool printCommands = false);
 
     // update screen (after asynchronous message printed)
     void repaint();
