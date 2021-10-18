@@ -253,7 +253,7 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
     {CommandTag::Print, {}, {{{1, CompletionTag::Print}}}, {{"print", "p"}},
         {"<expr>", "Print variable value or evaluate an expression."}},
 
-    {CommandTag::Quit, {}, {}, {{"quit" /*, "q" TODO: ask confirmation */}},
+    {CommandTag::Quit, {}, {}, {{"quit" , "q"}},
         {{}, "Quit the debugger."}},
 
     {CommandTag::Run, {}, {}, {{"run", "r"}},
