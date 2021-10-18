@@ -701,25 +701,14 @@ HRESULT CLIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::strin
 {
     std::ostringstream ss;
 
+    ss << stackFrame.name;
     if (!stackFrame.source.IsNull())
     {
-        ss << "\n    " << stackFrame.source.path << ":" << stackFrame.line << "  (col: " << stackFrame.column << " to line: " << stackFrame.endLine << " col: " << stackFrame.endColumn << ")\n";
+        ss << " at "  << stackFrame.source.path << ":" << stackFrame.line;
     }
-
-    if (stackFrame.clrAddr.methodToken != 0)
-    {
-        ss << "    clr-addr: {module-id {" << stackFrame.moduleId << "}"
-           << ", method-token: 0x" << std::setw(8) << std::setfill('0') << std::hex << stackFrame.clrAddr.methodToken 
-           << " il-offset: " << std::dec << stackFrame.clrAddr.ilOffset << ", native offset: " << stackFrame.clrAddr.nativeOffset << "}";
-    }
-
-    ss << "\n    " << stackFrame.name;
-    if (stackFrame.id != 0)
-        ss << ", addr: " << ProtocolUtils::AddrToString(stackFrame.addr);
 
     output = ss.str();
-
-    return stackFrame.source.IsNull() ? S_FALSE : S_OK;
+    return S_OK;
 }
 
 HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame)
@@ -734,25 +723,18 @@ HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLe
 
     int currentFrame = int(lowFrame);
 
-    ss << "stack=[";
-    const char *sep = "";
-
     for (const StackFrame &stackFrame : stackFrames)
     {
-        ss << sep;
-        sep = ",";
+        ss << "#" << currentFrame;
 
         std::string frameLocation;
         PrintFrameLocation(stackFrame, frameLocation);
-
-        ss << "\nframe={ level: " << currentFrame;
         if (!frameLocation.empty())
-            ss << "," << frameLocation;
-        ss << "\n}";
+            ss << " " << frameLocation;
+        ss << "\n";
         currentFrame++;
     }
 
-    ss << "]";
 
     output = ss.str();
 
