@@ -66,30 +66,6 @@ namespace Interop
         }
     };
 
-    // Keep in sync with OperationType enum in Evaluation.cs
-    enum class OperationType
-    {
-        Addition = 1,
-        Subtraction,
-        Multiplication,
-        Division,
-        Remainder,
-        BitwiseRightShift,
-        BitwiseLeftShift,
-        BitwiseComplement,
-        LogicalAnd,
-        LogicalOR,
-        LogicalXOR,
-        ConditionalLogicalAnd,
-        ConditionalLogicalOR,
-        LogicalNegation,
-        Equality,
-        Inequality,
-        LessThan,
-        GreaterThan,
-        LessThanOrEqual,
-        GreaterThanOrEqual
-    };
     struct AsyncAwaitInfoBlock
     {
         uint32_t yield_offset;

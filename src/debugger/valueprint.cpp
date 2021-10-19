@@ -560,7 +560,7 @@ static HRESULT PrintArrayValue(ICorDebugValue *pValue, std::string &output)
     return S_OK;
 }
 
-static HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output)
+HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output)
 {
     HRESULT Status;
 

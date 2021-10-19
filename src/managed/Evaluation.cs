@@ -5,13 +5,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using Microsoft.CodeAnalysis.CSharp.Scripting;
-using Microsoft.CodeAnalysis.Scripting;
-using Microsoft.CodeAnalysis;
-using System.Reflection;
-using System.Dynamic;
-using Microsoft.CodeAnalysis.CSharp;
-using System.Text;
 
 namespace NetCoreDbg
 {
@@ -20,9 +13,7 @@ namespace NetCoreDbg
         //BasicTypes enum must be sync with enum from native part
         internal enum BasicTypes
         {
-            TypeCorValue = -1,
-            TypeObject = 0,
-            TypeBoolean,
+            TypeBoolean = 1,
             TypeByte,
             TypeSByte,
             TypeChar,
@@ -34,59 +25,60 @@ namespace NetCoreDbg
             TypeUInt64,
             TypeInt16,
             TypeUInt16,
-            TypeIntPtr,
-            TypeUIntPtr,
-            TypeDecimal,
             TypeString,
         };
 
         //OperationType enum must be sync with enum from native part
         internal enum OperationType
         {
-            Addition = 1,
-            Subtraction,
-            Multiplication,
-            Division,
-            Remainder,
-            BitwiseRightShift,
-            BitwiseLeftShift,
-            BitwiseComplement,
-            LogicalAnd,
-            LogicalOR,
-            LogicalXOR,
-            ConditionalLogicalAnd,
-            ConditionalLogicalOR,
-            LogicalNegation,
-            Equality,
-            Inequality,
-            LessThan,
-            GreaterThan,
-            LessThanOrEqual,
-            GreaterThanOrEqual
+            AddExpression = 1,
+            SubtractExpression,
+            MultiplyExpression,
+            DivideExpression,
+            ModuloExpression,
+            RightShiftExpression,
+            LeftShiftExpression,
+            BitwiseNotExpression,
+            LogicalAndExpression,
+            LogicalOrExpression,
+            ExclusiveOrExpression,
+            BitwiseAndExpression,
+            BitwiseOrExpression,
+            LogicalNotExpression,
+            EqualsExpression,
+            NotEqualsExpression,
+            LessThanExpression,
+            GreaterThanExpression,
+            LessThanOrEqualExpression,
+            GreaterThanOrEqualExpression,
+            UnaryPlusExpression,
+            UnaryMinusExpression
         };
 
         internal static Dictionary<OperationType, Func<object, object, object>> operationTypesMap = new Dictionary<OperationType, Func<object, object, object>>
         {
-            { OperationType.Addition, (object firstOp, object secondOp) => { return Addition(firstOp, secondOp); }},
-            { OperationType.Division, (object firstOp, object secondOp) => { return Division(firstOp, secondOp); }},
-            { OperationType.Multiplication, (object firstOp, object secondOp) => { return Multiplication(firstOp, secondOp); }},
-            { OperationType.Remainder, (object firstOp, object secondOp) => { return Remainder(firstOp, secondOp); }},
-            { OperationType.Subtraction, (object firstOp, object secondOp) => { return Subtraction(firstOp, secondOp); }},
-            { OperationType.BitwiseRightShift, (object firstOp, object secondOp) => { return BitwiseRightShift(firstOp, secondOp); }},
-            { OperationType.BitwiseLeftShift, (object firstOp, object secondOp) => { return BitwiseLeftShift(firstOp, secondOp); }},
-            { OperationType.BitwiseComplement, (object firstOp, object secondOp) => { return BitwiseComplement(firstOp); }},
-            { OperationType.LogicalAnd, (object firstOp, object secondOp) => { return LogicalAnd(firstOp, secondOp); }},
-            { OperationType.LogicalOR, (object firstOp, object secondOp) => { return LogicalOR(firstOp, secondOp); }},
-            { OperationType.LogicalXOR, (object firstOp, object secondOp) => { return LogicalXOR(firstOp, secondOp); }},
-            { OperationType.ConditionalLogicalAnd, (object firstOp, object secondOp) => { return ConditionalLogicalAnd(firstOp, secondOp); }},
-            { OperationType.ConditionalLogicalOR, (object firstOp, object secondOp) => { return ConditionalLogicalOR(firstOp, secondOp); }},
-            { OperationType.LogicalNegation, (object firstOp, object secondOp) => { return LogicalNegation(firstOp); }},
-            { OperationType.Equality, (object firstOp, object secondOp) => { return Equality(firstOp, secondOp); }},
-            { OperationType.Inequality, (object firstOp, object secondOp) => { return Inequality(firstOp, secondOp); }},
-            { OperationType.LessThan, (object firstOp, object secondOp) => { return LessThan(firstOp, secondOp); }},
-            { OperationType.GreaterThan, (object firstOp, object secondOp) => { return GreaterThan(firstOp, secondOp); }},
-            { OperationType.LessThanOrEqual, (object firstOp, object secondOp) => { return LessThanOrEqual(firstOp, secondOp); }},
-            { OperationType.GreaterThanOrEqual, (object firstOp, object secondOp) => { return GreaterThanOrEqual(firstOp, secondOp); }}
+            { OperationType.AddExpression, (object firstOp, object secondOp) => { return AddExpression(firstOp, secondOp); }},
+            { OperationType.DivideExpression, (object firstOp, object secondOp) => { return DivideExpression(firstOp, secondOp); }},
+            { OperationType.MultiplyExpression, (object firstOp, object secondOp) => { return MultiplyExpression(firstOp, secondOp); }},
+            { OperationType.ModuloExpression, (object firstOp, object secondOp) => { return ModuloExpression(firstOp, secondOp); }},
+            { OperationType.SubtractExpression, (object firstOp, object secondOp) => { return SubtractExpression(firstOp, secondOp); }},
+            { OperationType.RightShiftExpression, (object firstOp, object secondOp) => { return RightShiftExpression(firstOp, secondOp); }},
+            { OperationType.LeftShiftExpression, (object firstOp, object secondOp) => { return LeftShiftExpression(firstOp, secondOp); }},
+            { OperationType.BitwiseNotExpression, (object firstOp, object secondOp) => { return BitwiseNotExpression(firstOp); }},
+            { OperationType.LogicalAndExpression, (object firstOp, object secondOp) => { return LogicalAndExpression(firstOp, secondOp); }},
+            { OperationType.LogicalOrExpression, (object firstOp, object secondOp) => { return LogicalOrExpression(firstOp, secondOp); }},
+            { OperationType.ExclusiveOrExpression, (object firstOp, object secondOp) => { return ExclusiveOrExpression(firstOp, secondOp); }},
+            { OperationType.BitwiseAndExpression, (object firstOp, object secondOp) => { return BitwiseAndExpression(firstOp, secondOp); }},
+            { OperationType.BitwiseOrExpression, (object firstOp, object secondOp) => { return BitwiseOrExpression(firstOp, secondOp); }},
+            { OperationType.LogicalNotExpression, (object firstOp, object secondOp) => { return LogicalNotExpression(firstOp); }},
+            { OperationType.EqualsExpression, (object firstOp, object secondOp) => { return EqualsExpression(firstOp, secondOp); }},
+            { OperationType.NotEqualsExpression, (object firstOp, object secondOp) => { return NotEqualsExpression(firstOp, secondOp); }},
+            { OperationType.LessThanExpression, (object firstOp, object secondOp) => { return LessThanExpression(firstOp, secondOp); }},
+            { OperationType.GreaterThanExpression, (object firstOp, object secondOp) => { return GreaterThanExpression(firstOp, secondOp); }},
+            { OperationType.LessThanOrEqualExpression, (object firstOp, object secondOp) => { return LessThanOrEqualExpression(firstOp, secondOp); }},
+            { OperationType.GreaterThanOrEqualExpression, (object firstOp, object secondOp) => { return GreaterThanOrEqualExpression(firstOp, secondOp); }},
+            { OperationType.UnaryPlusExpression, (object firstOp, object secondOp) => { return UnaryPlusExpression(firstOp); }},
+            { OperationType.UnaryMinusExpression, (object firstOp, object secondOp) => { return UnaryMinusExpression(firstOp); }}
         };
 
         internal static Dictionary<BasicTypes, Func<byte[], object>> typesMap = new Dictionary<BasicTypes, Func<byte[], object>>
@@ -118,18 +110,9 @@ namespace NetCoreDbg
             { typeof(Single), BasicTypes.TypeSingle },
             { typeof(UInt16), BasicTypes.TypeUInt16 },
             { typeof(UInt32), BasicTypes.TypeUInt32 },
-            { typeof(UInt64), BasicTypes.TypeUInt64 }
+            { typeof(UInt64), BasicTypes.TypeUInt64 },
+            { typeof(String), BasicTypes.TypeString }
         };
-
-        /// <summary>
-        /// Convert Single(float) type to Int32
-        /// </summary>
-        /// <param name="value">float value</param>
-        /// <returns></returns>
-        private static unsafe int floatToInt32Bits(float value)
-        {
-            return *((int*)&value);
-        }
 
         /// <summary>
         /// Converts value ​​to a IntPtr to IntPtr
@@ -138,41 +121,37 @@ namespace NetCoreDbg
         /// <returns></returns>
         private static IntPtr valueToPtr(object value) 
         {
-            IntPtr result = IntPtr.Zero;
-            IntPtr ptr = IntPtr.Zero;
-            Int64 newValue = 0;
             if (value.GetType() == typeof(string))
+                return Marshal.StringToBSTR(value as string);
+
+            dynamic dynValue = value;
+            byte[] bytes = BitConverter.GetBytes(dynValue);
+            IntPtr ptr = Marshal.AllocCoTaskMem(bytes.Length);
+            for (int i = 0; i < bytes.Length; i++)
             {
-                result = Marshal.AllocHGlobal(Marshal.SizeOf(newValue));
-                ptr = Marshal.StringToBSTR(value as string);
+                Marshal.WriteByte(ptr, i, bytes[i]);
             }
-            else 
-            {
-                if (value.GetType() == typeof(float) || value.GetType() == typeof(double))
-                    newValue = value.GetType() == typeof(float) ? Convert.ToInt64(floatToInt32Bits(Convert.ToSingle(value))) : BitConverter.DoubleToInt64Bits(Convert.ToDouble(value));
-                else
-                    newValue = Convert.ToInt64(value);
-                var size = Marshal.SizeOf(newValue);
-                result = Marshal.AllocHGlobal(Marshal.SizeOf(newValue));
-                ptr = Marshal.AllocHGlobal(size);
-                Marshal.WriteInt64(ptr, newValue);
-            }
-            Marshal.WriteIntPtr(result, ptr);
-            return result;
+            return ptr;
         }
 
         private static object ptrToValue(IntPtr ptr, int type) 
         {
             if ((BasicTypes)type == BasicTypes.TypeString)
-                return Marshal.PtrToStringAuto(ptr);
+            {
+                if (ptr == IntPtr.Zero)
+                    return String.Empty;
+                else
+                    return Marshal.PtrToStringBSTR(ptr);
+            }
 
             var intValue = Marshal.ReadInt64(ptr);
             var bytesArray = BitConverter.GetBytes(intValue);
             return typesMap[(BasicTypes)type](bytesArray);
         }
 
-        internal static RetCode CalculationDelegate(IntPtr firstOpPtr, int firstType, IntPtr secondOpPtr, int secondType, int operation, int resultType, out IntPtr result, out IntPtr errorText)
+        internal static RetCode CalculationDelegate(IntPtr firstOpPtr, int firstType, IntPtr secondOpPtr, int secondType, int operation, out int resultType, out IntPtr result, out IntPtr errorText)
         {
+            resultType = 0;
             result = IntPtr.Zero;
             errorText = IntPtr.Zero;
 
@@ -184,118 +163,123 @@ namespace NetCoreDbg
                 resultType = (int)basicTypesMap[operationResult.GetType()];
                 result = valueToPtr(operationResult);
             }
-            catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException ex)
-            {
-                errorText = Marshal.StringToBSTR(ex.ToString());
-                return RetCode.Exception;
-            }
             catch (System.Exception ex)
             {
-                errorText = Marshal.StringToBSTR(ex.ToString());
+                errorText = Marshal.StringToBSTR("error: " + ex.Message);
                 return RetCode.Exception;
             }
 
             return RetCode.OK;
         }
 
-        private static object Addition(dynamic first, dynamic second)
+        private static object AddExpression(dynamic first, dynamic second)
         {
             return first + second;
         }
 
-        private static object Subtraction(dynamic first, dynamic second)
+        private static object SubtractExpression(dynamic first, dynamic second)
         {
             return first - second;
         }
 
-        private static object Multiplication(dynamic first, dynamic second)
+        private static object MultiplyExpression(dynamic first, dynamic second)
         {
             return first * second;
         }
 
-        private static object Division(dynamic first, dynamic second)
+        private static object DivideExpression(dynamic first, dynamic second)
         {
             return first / second;
         }
 
-        private static object Remainder(dynamic first, dynamic second)
+        private static object ModuloExpression(dynamic first, dynamic second)
         {
             return first % second;
         }
 
-        private static object BitwiseRightShift(dynamic first, dynamic second) 
+        private static object RightShiftExpression(dynamic first, dynamic second) 
         {
             return first >> second;
         }
 
-        private static object BitwiseLeftShift(dynamic first, dynamic second)
+        private static object LeftShiftExpression(dynamic first, dynamic second)
         {
             return first << second;
         }
 
-        private static object BitwiseComplement(dynamic first)
+        private static object BitwiseNotExpression(dynamic first)
         {
             return ~first;
         }
 
-        private static object LogicalAnd(dynamic first, dynamic second)
-        {
-            return first & second;
-        }
-
-        private static object LogicalOR(dynamic first, dynamic second)
-        {
-            return first | second;
-        }
-
-        private static object LogicalXOR(dynamic first, dynamic second)
+        private static object ExclusiveOrExpression(dynamic first, dynamic second)
         {
             return first ^ second;
         }
 
-        private static bool ConditionalLogicalAnd(dynamic first, dynamic second)
+        private static object BitwiseAndExpression(dynamic first, dynamic second)
+        {
+            return first & second;
+        }
+
+        private static object BitwiseOrExpression(dynamic first, dynamic second)
+        {
+            return first | second;
+        }
+
+        private static bool LogicalAndExpression(dynamic first, dynamic second)
         {
             return first && second;
         }
 
-        private static bool ConditionalLogicalOR(dynamic first, dynamic second)
+        private static bool LogicalOrExpression(dynamic first, dynamic second)
         {
             return first || second;
         }
 
-        private static object LogicalNegation(dynamic first)
+        private static object LogicalNotExpression(dynamic first)
         {
             return !first;
         }
 
-        private static bool Equality(dynamic first, dynamic second)
+        private static bool EqualsExpression(dynamic first, dynamic second)
         {
             return first == second;
         }
 
-        private static bool Inequality(dynamic first, dynamic second) 
+        private static bool NotEqualsExpression(dynamic first, dynamic second) 
         {
             return first != second;
         }
 
-        private static bool LessThan(dynamic first, dynamic second)
+        private static bool LessThanExpression(dynamic first, dynamic second)
         {
             return first < second;
         }
 
-        private static bool GreaterThan(dynamic first, dynamic second)
+        private static bool GreaterThanExpression(dynamic first, dynamic second)
         {
             return first > second;
         }
 
-        private static bool LessThanOrEqual(dynamic first, dynamic second)
+        private static bool LessThanOrEqualExpression(dynamic first, dynamic second)
         {
             return first <= second;
         }
 
-        private static bool GreaterThanOrEqual(dynamic first, dynamic second)
+        private static bool GreaterThanOrEqualExpression(dynamic first, dynamic second)
         {
             return first >= second;
+        }
+
+        private static object UnaryPlusExpression(dynamic first)
+        {
+            return +first;
+        }
+
+        private static object UnaryMinusExpression(dynamic first)
+        {
+            return -first;
         }
     }
 }

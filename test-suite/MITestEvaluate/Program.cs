@@ -210,6 +210,19 @@ namespace NetcoreDbgTest.Script
             return ((MIConst)res["name"]).CString;
         }
 
+        public string GetAndCheckValue(string caller_trace, string ExpectedResult1, string ExpectedResult2, string ExpectedType, string Expression)
+        {
+            var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", Expression));
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Assert.Equal(Expression, ((MIConst)res["exp"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(ExpectedType, ((MIConst)res["type"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.True(ExpectedResult1 == ((MIConst)res["value"]).CString ||
+                        ExpectedResult2 == ((MIConst)res["value"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            return ((MIConst)res["name"]).CString;
+        }
+
         public void CheckErrorAtRequest(string caller_trace, string Expression, string errMsgStart)
         {
             var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", Expression));
@@ -542,6 +555,89 @@ namespace MITestEvaluate
         TWO
     };
 
+    public class TestOperators1
+    {
+        public int data;
+        public TestOperators1(int data_)
+        {
+            data = data_;
+        }
+
+        public static implicit operator TestOperators1(int value) => new TestOperators1(value);
+
+        public static int operator +(TestOperators1 d1, int d2) => 55;
+        public static int operator +(int d1, TestOperators1 d2) => 66;
+
+        public static int operator ~(TestOperators1 d1) => ~d1.data;
+        public static bool operator !(TestOperators1 d1) => true;
+        public static int operator +(TestOperators1 d1, TestOperators1 d2) => d1.data + d2.data;
+        public static int operator -(TestOperators1 d1, TestOperators1 d2) => d1.data - d2.data;
+        public static int operator *(TestOperators1 d1, TestOperators1 d2) => d1.data * d2.data;
+        public static int operator /(TestOperators1 d1, TestOperators1 d2) => d1.data / d2.data;
+        public static int operator %(TestOperators1 d1, TestOperators1 d2) => d1.data % d2.data;
+        public static int operator ^(TestOperators1 d1, TestOperators1 d2) => d1.data ^ d2.data;
+        public static int operator &(TestOperators1 d1, TestOperators1 d2) => d1.data & d2.data;
+        public static int operator |(TestOperators1 d1, TestOperators1 d2) => d1.data | d2.data;
+        public static int operator >>(TestOperators1 d1, int d2) => d1.data >> d2;
+        public static int operator <<(TestOperators1 d1, int d2) => d1.data << d2;
+        public static bool operator ==(TestOperators1 d1, TestOperators1 d2) => d1.data == d2.data;
+        public static bool operator !=(TestOperators1 d1, TestOperators1 d2) => d1.data != d2.data;
+        public static bool operator <(TestOperators1 d1, TestOperators1 d2) => d1.data < d2.data;
+        public static bool operator <=(TestOperators1 d1, TestOperators1 d2) => d1.data <= d2.data;
+        public static bool operator >(TestOperators1 d1, TestOperators1 d2) => d1.data > d2.data;
+        public static bool operator >=(TestOperators1 d1, TestOperators1 d2) => d1.data >= d2.data;
+    }
+
+    public struct TestOperators2
+    {
+        public int data;
+        public TestOperators2(int data_)
+        {
+            data = data_;
+        }
+        public static implicit operator TestOperators2(int value) => new TestOperators2(value);
+
+        public static int operator +(TestOperators2 d1, int d2) => 55;
+        public static int operator +(int d1, TestOperators2 d2) => 66;
+
+        public static int operator ~(TestOperators2 d1) => ~d1.data;
+        public static bool operator !(TestOperators2 d1) => true;
+        public static int operator +(TestOperators2 d1, TestOperators2 d2) => d1.data + d2.data;
+        public static int operator -(TestOperators2 d1, TestOperators2 d2) => d1.data - d2.data;
+        public static int operator *(TestOperators2 d1, TestOperators2 d2) => d1.data * d2.data;
+        public static int operator /(TestOperators2 d1, TestOperators2 d2) => d1.data / d2.data;
+        public static int operator %(TestOperators2 d1, TestOperators2 d2) => d1.data % d2.data;
+        public static int operator ^(TestOperators2 d1, TestOperators2 d2) => d1.data ^ d2.data;
+        public static int operator &(TestOperators2 d1, TestOperators2 d2) => d1.data & d2.data;
+        public static int operator |(TestOperators2 d1, TestOperators2 d2) => d1.data | d2.data;
+        public static int operator >>(TestOperators2 d1, int d2) => d1.data >> d2;
+        public static int operator <<(TestOperators2 d1, int d2) => d1.data << d2;
+        public static bool operator ==(TestOperators2 d1, TestOperators2 d2) => d1.data == d2.data;
+        public static bool operator !=(TestOperators2 d1, TestOperators2 d2) => d1.data != d2.data;
+        public static bool operator <(TestOperators2 d1, TestOperators2 d2) => d1.data < d2.data;
+        public static bool operator <=(TestOperators2 d1, TestOperators2 d2) => d1.data <= d2.data;
+        public static bool operator >(TestOperators2 d1, TestOperators2 d2) => d1.data > d2.data;
+        public static bool operator >=(TestOperators2 d1, TestOperators2 d2) => d1.data >= d2.data;
+    }
+
+    public struct TestOperators3
+    {
+        public int data;
+        public TestOperators3(int data_)
+        {
+            data = data_;
+        }
+
+        // Note, in order to test that was used proper operator, we use fixed return here.
+
+        public static implicit operator int(TestOperators3 value) => 777;
+
+        public static int operator +(TestOperators3 d1, int d2) => 555;
+        public static int operator +(int d1, TestOperators3 d2) => 666;
+        public static int operator >>(TestOperators3 d1, int d2) => 777;
+        public static int operator <<(TestOperators3 d1, int d2) => 888;
+    }
+
     class Program
     {
         int int_i = 505;
@@ -645,28 +741,227 @@ namespace MITestEvaluate
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
-
-            int int_i1 = 5;
-            int int_i2 = 5;
-            string str_s1 = "one";
-            string str_s2 = "two";
+            // Test expression calculation.
+            TestOperators1 testClass = new TestOperators1(12);
+            TestOperators2 testStruct;
+            TestOperators3 testStruct2;
+            testStruct.data = 5;
+            string testString1 = null;
+            string testString2 = "test";
             int break_line2 = 1;                                                                    Label.Breakpoint("BREAK2");
 
             Label.Checkpoint("expression_test", "static_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK2");
-/*
+
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "int", "1 + 1");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "int_i1 + 1");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "int_i1 + int_i2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "float", "1u + 1f");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "long", "1u + 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "decimal", "1m + 1m");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "decimal", "1m + 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "decimal", "1 + 1m");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "66", "int", "1 + testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "testClass + 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "66", "int", "1 + testStruct");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "55", "int", "testStruct + 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "666", "int", "1 + testStruct2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "testStruct2 + 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"stringC\\\"", "string", "\\\"string\\\" + 'C'");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test\\\"", "string", "testString1 + testString2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test\\\"", "string", "testString2 + testString1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"\\\"", "string", "testString1 + testString1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"testtest\\\"", "string", "testString2 + testString2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test\\\"", "string", "\\\"\\\" + \\\"test\\\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test\\\"", "string", "\\\"test\\\" + \\\"\\\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"\\\"", "string", "\\\"\\\" + \\\"\\\"");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"testtest\\\"", "string", "\\\"test\\\" + \\\"test\\\"");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1UL + 1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true + 1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 + not_var", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1u + testClass", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testClass + 1u", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1u + testStruct", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testStruct + 1u", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testClass + testStruct", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testStruct + testClass", "error CS0019");
 
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "\\\"one\\\" + \\\"two\\\"");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "str_s1 + \\\"two\\\"");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"onetwo\\\"", "", "str_s1 + str_s2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "int", "3 - 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "decimal", "3m - 1m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true - 1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 - not_var", "error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "-11", "int", "1 - testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "11", "int", "testClass - 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "-4", "int", "1 - testStruct");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "testStruct - 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "-776", "int", "1 - testStruct2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "776", "int", "testStruct2 - 1");
 
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "int_i1 +/ int_i2", "error CS1525:");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 + not_var", "System.AggregateException"); // error
-*/
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "2 * 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "decimal", "2m * 2m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true * 2", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 * not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "1", "int", "2 / 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "1", "decimal", "2m / 2m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true / 2", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 / not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "2 % 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "decimal", "2m % 2m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true % 2", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 % not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "1 << 2");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1m << 2m", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true << 2", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 << not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "1", "int", "4 >> 2");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1m >> 2m", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true >> 2", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 >> not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "-2", "int", "~1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "-13", "int", "~testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "-6", "int", "~testStruct");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "~1m", "error CS0023");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "~true", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "~not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true && true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "true && false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false && true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false && false");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 && 1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1m && 1m", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true && not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true || true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true || false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "false || true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false || false");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 || 1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1m || 1m", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true || not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "true ^ true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true ^ false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "false ^ true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false ^ false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "1 ^ 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "1", "int", "1 ^ 0");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "1", "int", "0 ^ 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "0 ^ 0");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "14", "int", "testClass ^ 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "14", "int", "2 ^ testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "testClass ^ testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "testStruct ^ 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "2 ^ testStruct");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "testStruct ^ testStruct");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testStruct2 ^ testStruct2", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1m ^ 1m", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 ^ not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true & true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "true & false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false & true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false & false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "1", "int", "3 & 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "5 & 8");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "10 & 0");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "0 & 7");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "0 & 0");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "testClass & 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "2 & testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "12", "int", "testClass & testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "testStruct & 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "2 & testStruct");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "testStruct & testStruct");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testStruct2 & testStruct2", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1m & 1m", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 & not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true | true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "true | false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "false | true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "false | false");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "13", "int", "5 | 8");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "10 | 0");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "0 | 7");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "0 | 0");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "14", "int", "testClass | 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "14", "int", "2 | testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "12", "int", "testClass | testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "testStruct | 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "7", "int", "2 | testStruct");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "testStruct | testStruct");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testStruct2 | testStruct2", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1m | 1m", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 | not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "!true");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "!testClass");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "!testStruct");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "!1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "!1m", "error CS0023");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "!not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "1 == 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "2 == 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "2m == 1m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 == not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "1 != 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "2 != 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "2m != 1m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 != not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "1 < 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "1 < 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "1m < 1m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true < false", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 < not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "2 > 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "1 > 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "1m > 1m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true > false", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 > not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "1 <= 2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "1 <= 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "1 <= 0");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "1m <= 0m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true <= false", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 <= not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "2 >= 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "1 >= 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "0 >= 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "0m >= 1m");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "true >= false", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 >= not_var", "error");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "4", "int", "2 << 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "888", "int", "testStruct2 << testStruct2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "24", "int", "testClass << 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "testStruct << 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "20", "int", "testStruct << 2");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1f << 1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1f << 1f", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testClass << testClass", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testStruct << testStruct", "error CS0019");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "int", "4 >> 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "777", "int", "testStruct2 >> testStruct2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "testClass >> 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "2", "int", "testStruct >> 1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "1", "int", "testStruct >> 2");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1f >> 1", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1f >> 1f", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testClass >> testClass", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testStruct >> testStruct", "error CS0019");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -952,12 +1247,12 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "TestCallParent.GetNumber()");
 
                 // Call built-in types methods.
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"1.01\\\"", "string", "1.01M.ToString()");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"1.01\\\"", "string", "decimalToString.ToString()");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"2.02\\\"", "string", "2.02.ToString()");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"2.02\\\"", "string", "doubleToString.ToString()");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"3.03\\\"", "string", "3.03f.ToString()");
-                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"3.03\\\"", "string", "floatToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"1.01\\\"", "\\\"1,01\\\"", "string", "1.01M.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"1.01\\\"", "\\\"1,01\\\"", "string", "decimalToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"2.02\\\"", "\\\"2,02\\\"", "string", "2.02.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"2.02\\\"", "\\\"2,02\\\"", "string", "doubleToString.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"3.03\\\"", "\\\"3,03\\\"", "string", "3.03f.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"3.03\\\"", "\\\"3,03\\\"", "string", "floatToString.ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"c\\\"", "string", "'c'.ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"c\\\"", "string", "charToString.ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"True\\\"", "string", "boolToString.ToString()");
@@ -1042,8 +1337,8 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "8", "long", "-longUnary");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "8", "ulong", "+8UL");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "8", "ulong", "+ulongUnary");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "-8UL", "error CS0023");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "-ulongUnary", "error CS0023");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "-8UL", "error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "-ulongUnary", "error");
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "10.5", "decimal", "+10.5m");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "1.01", "decimal", "+decimalUnary");

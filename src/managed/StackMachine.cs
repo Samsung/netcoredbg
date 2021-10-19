@@ -685,6 +685,27 @@ namespace NetCoreDbg
                         case SyntaxKind.MemberBindingExpression:
                         case SyntaxKind.UnaryPlusExpression:
                         case SyntaxKind.UnaryMinusExpression:
+                        case SyntaxKind.AddExpression:
+                        case SyntaxKind.MultiplyExpression:
+                        case SyntaxKind.SubtractExpression:
+                        case SyntaxKind.DivideExpression:
+                        case SyntaxKind.ModuloExpression:
+                        case SyntaxKind.RightShiftExpression:
+                        case SyntaxKind.LeftShiftExpression:
+                        case SyntaxKind.BitwiseNotExpression:
+                        case SyntaxKind.LogicalAndExpression:
+                        case SyntaxKind.LogicalOrExpression:
+                        case SyntaxKind.ExclusiveOrExpression:
+                        case SyntaxKind.BitwiseAndExpression:
+                        case SyntaxKind.BitwiseOrExpression:
+                        case SyntaxKind.LogicalNotExpression:
+                        case SyntaxKind.EqualsExpression:
+                        case SyntaxKind.NotEqualsExpression:
+                        case SyntaxKind.GreaterThanExpression:
+                        case SyntaxKind.LessThanExpression:
+                        case SyntaxKind.GreaterThanOrEqualExpression:
+                        case SyntaxKind.LessThanOrEqualExpression:
+
 /* TODO
                         case SyntaxKind.QualifiedName:
                         case SyntaxKind.AliasQualifiedName:
@@ -692,27 +713,7 @@ namespace NetCoreDbg
                         case SyntaxKind.PointerMemberAccessExpression:
                         case SyntaxKind.CastExpression:
                         case SyntaxKind.AsExpression:
-                        case SyntaxKind.AddExpression:
-                        case SyntaxKind.MultiplyExpression:
-                        case SyntaxKind.SubtractExpression:
-                        case SyntaxKind.DivideExpression:
-                        case SyntaxKind.ModuloExpression:
-                        case SyntaxKind.LeftShiftExpression:
-                        case SyntaxKind.RightShiftExpression:
-                        case SyntaxKind.BitwiseAndExpression:
-                        case SyntaxKind.BitwiseOrExpression:
-                        case SyntaxKind.ExclusiveOrExpression:
-                        case SyntaxKind.LogicalAndExpression:
-                        case SyntaxKind.LogicalOrExpression:
-                        case SyntaxKind.EqualsExpression:
-                        case SyntaxKind.NotEqualsExpression:
-                        case SyntaxKind.GreaterThanExpression:
-                        case SyntaxKind.LessThanExpression:
-                        case SyntaxKind.GreaterThanOrEqualExpression:
-                        case SyntaxKind.LessThanOrEqualExpression:
                         case SyntaxKind.IsExpression:
-                        case SyntaxKind.LogicalNotExpression:
-                        case SyntaxKind.BitwiseNotExpression:
                         case SyntaxKind.PreIncrementExpression:
                         case SyntaxKind.PostIncrementExpression:
                         case SyntaxKind.PreDecrementExpression:

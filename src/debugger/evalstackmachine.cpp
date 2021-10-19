@@ -53,6 +53,51 @@ namespace
         PVOID Ptr;
     };
 
+    // Keep in sync with BasicTypes enum in Evaluation.cs
+    enum class BasicTypes : int32_t
+    {
+        TypeBoolean = 1,
+        TypeByte,
+        TypeSByte,
+        TypeChar,
+        TypeDouble,
+        TypeSingle,
+        TypeInt32,
+        TypeUInt32,
+        TypeInt64,
+        TypeUInt64,
+        TypeInt16,
+        TypeUInt16,
+        TypeString
+    };
+
+    // Keep in sync with OperationType enum in Evaluation.cs
+    enum class OperationType : int32_t
+    {
+        AddExpression = 1,
+        SubtractExpression,
+        MultiplyExpression,
+        DivideExpression,
+        ModuloExpression,
+        RightShiftExpression,
+        LeftShiftExpression,
+        BitwiseNotExpression,
+        LogicalAndExpression,
+        LogicalOrExpression,
+        ExclusiveOrExpression,
+        BitwiseAndExpression,
+        BitwiseOrExpression,
+        LogicalNotExpression,
+        EqualsExpression,
+        NotEqualsExpression,
+        LessThanExpression,
+        GreaterThanExpression,
+        LessThanOrEqualExpression,
+        GreaterThanOrEqualExpression,
+        UnaryPlusExpression,
+        UnaryMinusExpression
+    };
+
     void ReplaceAllSubstring(std::string &str, const std::string &from, const std::string &to)
     {
         size_t start = 0;
@@ -280,104 +325,6 @@ namespace
         return S_OK;
     }
 
-    template<typename T1, typename T2>
-    HRESULT NumericPromotionWithValue(ICorDebugValue *pInputValue, ICorDebugValue **ppResultValue, EvalData &ed)
-    {
-        HRESULT Status;
-        ToRelease<ICorDebugGenericValue> pGenericValue;
-        IfFailRet(pInputValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
-
-        T1 oldTypeValue = 0;
-        IfFailRet(pGenericValue->GetValue((LPVOID) &oldTypeValue));
-        T2 newTypeValue = oldTypeValue;
-
-        static_assert(std::is_same<T2, int32_t>::value || std::is_same<T2, int64_t>::value, "only int32_t or int64_t allowed");
-        CorElementType elemType = std::is_same<T2, int32_t>::value ? ELEMENT_TYPE_I4 : ELEMENT_TYPE_I8;
-
-        return CreatePrimitiveValue(ed.pThread, ppResultValue, elemType, &newTypeValue);
-    }
-
-    HRESULT UnaryNumericPromotion(ICorDebugValue *pInputValue, ICorDebugValue **ppResultValue, EvalData &ed)
-    {
-        HRESULT Status;
-        CorElementType elemType;
-        IfFailRet(pInputValue->GetType(&elemType));
-
-        // From ECMA-334:
-        // Unary numeric promotions
-        // Unary numeric promotion occurs for the operands of the predefined +, -, and ~unary operators.
-        // Unary numeric promotion simply consists of converting operands of type sbyte, byte, short, ushort, or char to type int.
-        // Additionally, for the unary - operator, unary numeric promotion converts operands of type uint to type long.
-
-        switch (elemType)
-        {
-            case ELEMENT_TYPE_CHAR:
-                return NumericPromotionWithValue<uint16_t, int32_t>(pInputValue, ppResultValue, ed);
-
-            case ELEMENT_TYPE_I1:
-                return NumericPromotionWithValue<int8_t, int32_t>(pInputValue, ppResultValue, ed);
-
-            case ELEMENT_TYPE_U1:
-                return NumericPromotionWithValue<uint8_t, int32_t>(pInputValue, ppResultValue, ed);
-
-            case ELEMENT_TYPE_I2:
-                return NumericPromotionWithValue<int16_t, int32_t>(pInputValue, ppResultValue, ed);
-
-            case ELEMENT_TYPE_U2:
-                return NumericPromotionWithValue<uint16_t, int32_t>(pInputValue, ppResultValue, ed);
-
-            case ELEMENT_TYPE_U4:
-                return NumericPromotionWithValue<uint32_t, int64_t>(pInputValue, ppResultValue, ed);
-
-            default:
-                return E_INVALIDARG;
-        }
-    }
-
-    template<typename T>
-    HRESULT InvertNumberValue(ICorDebugValue *pInputValue)
-    {
-        HRESULT Status;
-        ToRelease<ICorDebugGenericValue> pGenericValue;
-        IfFailRet(pInputValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
-
-        T value = 0;
-        IfFailRet(pGenericValue->GetValue(&value));
-        value = -value;
-        return pGenericValue->SetValue(&value);
-    }
-
-    HRESULT InvertNumber(ICorDebugValue *pValue)
-    {
-        HRESULT Status;
-        CorElementType elemType;
-        IfFailRet(pValue->GetType(&elemType));
-
-        switch (elemType)
-        {
-            case ELEMENT_TYPE_I1:
-                return InvertNumberValue<int8_t>(pValue);
-
-            case ELEMENT_TYPE_I2:
-                return InvertNumberValue<int16_t>(pValue);
-
-            case ELEMENT_TYPE_I4:
-                return InvertNumberValue<int32_t>(pValue);
-
-            case ELEMENT_TYPE_I8:
-                return InvertNumberValue<int64_t>(pValue);
-
-            case ELEMENT_TYPE_R4:
-                return InvertNumberValue<float>(pValue);
-
-            case ELEMENT_TYPE_R8:
-                return InvertNumberValue<double>(pValue);
-
-            default:
-                return E_INVALIDARG;
-        }
-    }
-
     HRESULT GetArgData(ICorDebugValue *pTypeValue, std::string &typeName, CorElementType &elemType)
     {
         HRESULT Status;
@@ -393,7 +340,7 @@ namespace
         return S_OK;
     };
 
-    HRESULT CallUnaryOperator(const std::string opName, ICorDebugValue *pValue, ICorDebugValue **pResultValue, EvalData &ed)
+    HRESULT CallUnaryOperator(const std::string &opName, ICorDebugValue *pValue, ICorDebugValue **pResultValue, EvalData &ed)
     {
         HRESULT Status;
         std::string typeName;
@@ -422,16 +369,13 @@ namespace
         return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, &pValue, 1, pResultValue, ed.evalFlags);
     }
 
-    HRESULT CallCastOperator(const std::string opName, ICorDebugValue *pValue, ICorDebugValue *pType1Value, ICorDebugValue *pType2Value,
-                             ICorDebugValue **pResultValue, EvalData &ed)
+    HRESULT CallCastOperator(const std::string &opName, ICorDebugValue *pValue, CorElementType elemRetType, const std::string &typeRetName,
+                             ICorDebugValue *pTypeValue, ICorDebugValue **pResultValue, EvalData &ed)
     {
         HRESULT Status;
-        std::string typeName1;
-        CorElementType elemType1;
-        IfFailRet(GetArgData(pType1Value, typeName1, elemType1));
-        std::string typeName2;
-        CorElementType elemType2;
-        IfFailRet(GetArgData(pType2Value, typeName2, elemType2));
+        std::string typeName;
+        CorElementType elemType;
+        IfFailRet(GetArgData(pTypeValue, typeName, elemType));
 
         ToRelease<ICorDebugFunction> iCorFunc;
         ed.pEvaluator->WalkMethods(pValue, [&](
@@ -442,8 +386,8 @@ namespace
             Evaluator::GetFunctionCallback getFunction)
         {
             if (!is_static || methodArgs.size() != 1 || opName != methodName ||
-                elemType1 != methodRet.corType || typeName1 != methodRet.typeName ||
-                elemType2 != methodArgs[0].corType || typeName2 != methodArgs[0].typeName)
+                elemRetType != methodRet.corType || typeRetName != methodRet.typeName ||
+                elemType != methodArgs[0].corType || typeName != methodArgs[0].typeName)
                 return S_OK;
 
             IfFailRet(getFunction(&iCorFunc));
@@ -453,7 +397,18 @@ namespace
         if (!iCorFunc)
             return E_FAIL;
 
-        return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, &pType2Value, 1, pResultValue, ed.evalFlags);
+        return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, &pTypeValue, 1, pResultValue, ed.evalFlags);
+    }
+
+    HRESULT CallCastOperator(const std::string &opName, ICorDebugValue *pValue, ICorDebugValue *pTypeRetValue, ICorDebugValue *pTypeValue,
+                             ICorDebugValue **pResultValue, EvalData &ed)
+    {
+        HRESULT Status;
+        std::string typeRetName;
+        CorElementType elemRetType;
+        IfFailRet(GetArgData(pTypeRetValue, typeRetName, elemRetType));
+
+        return CallCastOperator(opName, pValue, elemRetType, typeRetName, pTypeValue, pResultValue, ed);
     }
 
     template<typename T1, typename T2>
@@ -540,23 +495,28 @@ namespace
         return implicitCastLiteralMap;
     }
 
-    HRESULT GetRealValueWithType(ICorDebugValue *pValue, ICorDebugValue **ppResultValue, CorElementType &elemType)
+    HRESULT GetRealValueWithType(ICorDebugValue *pValue, ICorDebugValue **ppResultValue, CorElementType *pElemType = nullptr)
     {
         HRESULT Status;
         // Dereference and unbox value, since we need real value.
         ToRelease<ICorDebugValue> iCorRealValue;
         IfFailRet(DereferenceAndUnboxValue(pValue, &iCorRealValue));
+        CorElementType elemType;
         IfFailRet(iCorRealValue->GetType(&elemType));
         // Note, in case of class (string is class), we must use reference instead.
         if (elemType == ELEMENT_TYPE_STRING ||
             elemType == ELEMENT_TYPE_CLASS)
         {
             pValue->AddRef();
-            (*ppResultValue) = pValue;
+            *ppResultValue = pValue;
+            if (pElemType)
+                *pElemType = elemType;
         }
         else
         {
-            (*ppResultValue) = iCorRealValue.Detach();
+            *ppResultValue = iCorRealValue.Detach();
+            if (pElemType)
+                *pElemType = elemType;
         }
 
         return S_OK;
@@ -627,11 +587,11 @@ namespace
         
         ToRelease<ICorDebugValue> iCorRealValue1;
         CorElementType elemType1;
-        IfFailRet(GetRealValueWithType(pSrcValue, &iCorRealValue1, elemType1));
+        IfFailRet(GetRealValueWithType(pSrcValue, &iCorRealValue1, &elemType1));
 
         ToRelease<ICorDebugValue> iCorRealValue2;
         CorElementType elemType2;
-        IfFailRet(GetRealValueWithType(pDstValue, &iCorRealValue2, elemType2));
+        IfFailRet(GetRealValueWithType(pDstValue, &iCorRealValue2, &elemType2));
 
         bool haveSameType = true;
         if (elemType1 == elemType2)
@@ -662,7 +622,7 @@ namespace
                 return Status;
 
             iCorRealValue1.Free();
-            IfFailRet(GetRealValueWithType(iCorResultValue, &iCorRealValue1, elemType1));
+            IfFailRet(GetRealValueWithType(iCorResultValue, &iCorRealValue1, &elemType1));
 
             haveSameType = true;
         }
@@ -680,6 +640,368 @@ namespace
             return implicitCastMap[elemType1][elemType2](iCorRealValue1, iCorRealValue2, false);
 
         return E_INVALIDARG;
+    }
+
+    HRESULT GetOperandDataTypeByValue(ICorDebugValue *pValue, CorElementType elemType, PVOID &resultData, int32_t &resultType)
+    {
+        HRESULT Status;
+
+        if (elemType == ELEMENT_TYPE_STRING)
+        {
+            resultType = (int32_t)BasicTypes::TypeString;
+            ToRelease<ICorDebugValue> iCorValue;
+            BOOL isNull = FALSE;
+            IfFailRet(DereferenceAndUnboxValue(pValue, &iCorValue, &isNull));
+            resultData = 0;
+            if (!isNull)
+            {
+                std::string String;
+                IfFailRet(PrintStringValue(iCorValue, String));
+                resultData = Interop::AllocString(String);
+            }
+            return S_OK;
+        }
+
+        static std::unordered_map<CorElementType, BasicTypes> basicTypesMap
+        {
+            {ELEMENT_TYPE_BOOLEAN, BasicTypes::TypeBoolean},
+            {ELEMENT_TYPE_U1, BasicTypes::TypeByte},
+            {ELEMENT_TYPE_I1, BasicTypes::TypeSByte},
+            {ELEMENT_TYPE_CHAR, BasicTypes::TypeChar},
+            {ELEMENT_TYPE_R8, BasicTypes::TypeDouble},
+            {ELEMENT_TYPE_R4, BasicTypes::TypeSingle},
+            {ELEMENT_TYPE_I4, BasicTypes::TypeInt32},
+            {ELEMENT_TYPE_U4, BasicTypes::TypeUInt32},
+            {ELEMENT_TYPE_I8, BasicTypes::TypeInt64},
+            {ELEMENT_TYPE_U8, BasicTypes::TypeUInt64},
+            {ELEMENT_TYPE_I2, BasicTypes::TypeInt16},
+            {ELEMENT_TYPE_U2, BasicTypes::TypeUInt16}
+        };
+
+        auto findType = basicTypesMap.find(elemType);
+        if (findType == basicTypesMap.end())
+            return E_FAIL;
+        resultType = (int32_t)findType->second;
+
+        ToRelease<ICorDebugGenericValue> iCorGenValue;
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID *) &iCorGenValue));
+        return iCorGenValue->GetValue(resultData);
+    }
+
+    HRESULT GetValueByOperandDataType(PVOID valueData, BasicTypes valueType, ICorDebugValue **ppValue, EvalData &ed)
+    {
+        if (valueType == BasicTypes::TypeString)
+        {
+            std::string String = to_utf8((WCHAR*)valueData);
+            return ed.pEvalHelpers->CreateString(ed.pThread, String, ppValue);
+        }
+
+        static std::unordered_map<BasicTypes, CorElementType> basicTypesMap
+        {
+            {BasicTypes::TypeBoolean, ELEMENT_TYPE_BOOLEAN},
+            {BasicTypes::TypeByte, ELEMENT_TYPE_U1},
+            {BasicTypes::TypeSByte, ELEMENT_TYPE_I1},
+            {BasicTypes::TypeChar, ELEMENT_TYPE_CHAR},
+            {BasicTypes::TypeDouble, ELEMENT_TYPE_R8},
+            {BasicTypes::TypeSingle, ELEMENT_TYPE_R4},
+            {BasicTypes::TypeInt32, ELEMENT_TYPE_I4},
+            {BasicTypes::TypeUInt32, ELEMENT_TYPE_U4},
+            {BasicTypes::TypeInt64, ELEMENT_TYPE_I8},
+            {BasicTypes::TypeUInt64, ELEMENT_TYPE_U8},
+            {BasicTypes::TypeInt16, ELEMENT_TYPE_I2},
+            {BasicTypes::TypeUInt16, ELEMENT_TYPE_U2}
+        };
+
+        auto findType = basicTypesMap.find(valueType);
+        if (findType == basicTypesMap.end())
+            return E_FAIL;
+
+        return CreatePrimitiveValue(ed.pThread, ppValue, findType->second, valueData);
+    }
+
+    HRESULT CallBinaryOperator(const std::string &opName, ICorDebugValue *pValue, ICorDebugValue *pType1Value, ICorDebugValue *pType2Value,
+                               ICorDebugValue **pResultValue, EvalData &ed)
+    {
+        HRESULT Status;
+        std::string typeName1;
+        CorElementType elemType1;
+        IfFailRet(GetArgData(pType1Value, typeName1, elemType1));
+        std::string typeName2;
+        CorElementType elemType2;
+        IfFailRet(GetArgData(pType2Value, typeName2, elemType2));
+        // https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/operators/operator-overloading
+        // A unary operator has one input parameter. A binary operator has two input parameters. In each case,
+        // at least one parameter must have type T or T? where T is the type that contains the operator declaration.
+        std::string typeName;
+        CorElementType elemType;
+        IfFailRet(GetArgData(pValue, typeName, elemType));
+        if ((elemType != elemType1 || typeName != typeName1) && (elemType != elemType2 || typeName != typeName2))
+            return E_INVALIDARG;
+
+        ToRelease<ICorDebugValue> iCorTypeValue;
+        auto CallOperator = [&](std::function<HRESULT(std::vector<Evaluator::ArgElementType>&)> cb)
+        {
+            ToRelease<ICorDebugFunction> iCorFunc;
+            ed.pEvaluator->WalkMethods(pValue, [&](
+                bool is_static,
+                const std::string &methodName,
+                Evaluator::ReturnElementType&,
+                std::vector<Evaluator::ArgElementType> &methodArgs,
+                Evaluator::GetFunctionCallback getFunction)
+            {
+                if (!is_static || methodArgs.size() != 2 || opName != methodName ||
+                    FAILED(cb(methodArgs)))
+                    return S_OK; // Return with success to continue walk.
+
+                IfFailRet(getFunction(&iCorFunc));
+
+                return E_ABORT; // Fast exit from cycle, since we already found iCorFunc.
+            });
+            if (!iCorFunc)
+                return E_INVALIDARG;
+
+            ICorDebugValue *ppArgsValue[] = {pType1Value, pType2Value};
+            return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, ppArgsValue, 2, pResultValue, ed.evalFlags);
+        };
+
+        // Try execute operator for exact same type as provided values.
+        if (SUCCEEDED(CallOperator([&](std::vector<Evaluator::ArgElementType> &methodArgs)
+            {
+                return elemType1 != methodArgs[0].corType || typeName1 != methodArgs[0].typeName ||
+                       elemType2 != methodArgs[1].corType || typeName2 != methodArgs[1].typeName
+                       ? E_FAIL : S_OK;
+            })))
+            return S_OK;
+
+        // Try execute operator with implicit cast for second value.
+        // Make sure we don't cast "base" struct/class value for this case, since "... at least one parameter must have type T...".
+        if (elemType == elemType1 && typeName == typeName1 &&
+            SUCCEEDED(CallOperator([&](std::vector<Evaluator::ArgElementType> &methodArgs)
+            {
+                if (elemType1 != methodArgs[0].corType || typeName1 != methodArgs[0].typeName)
+                    return E_FAIL;
+
+                ToRelease<ICorDebugValue> iCorResultValue;
+                if (FAILED(CallCastOperator("op_Implicit", pType1Value, methodArgs[1].corType, methodArgs[1].typeName, pType2Value, &iCorResultValue, ed)) &&
+                    FAILED(CallCastOperator("op_Implicit", pType2Value, methodArgs[1].corType, methodArgs[1].typeName, pType2Value, &iCorResultValue, ed)))
+                    return E_FAIL;
+
+                IfFailRet(GetRealValueWithType(iCorResultValue, &iCorTypeValue));
+                pType2Value = iCorTypeValue.GetPtr();
+
+                return S_OK;
+            })))
+            return S_OK;
+
+        // Try execute operator with implicit cast for first value.
+        return CallOperator([&](std::vector<Evaluator::ArgElementType> &methodArgs)
+            {
+                if (elemType2 != methodArgs[1].corType || typeName2 != methodArgs[1].typeName)
+                    return E_FAIL;
+
+                ToRelease<ICorDebugValue> iCorResultValue;
+                if (FAILED(CallCastOperator("op_Implicit", pType1Value, methodArgs[0].corType, methodArgs[0].typeName, pType1Value, &iCorResultValue, ed)) &&
+                    FAILED(CallCastOperator("op_Implicit", pType2Value, methodArgs[0].corType, methodArgs[0].typeName, pType1Value, &iCorResultValue, ed)))
+                    return E_FAIL;
+
+                iCorTypeValue.Free();
+                IfFailRet(GetRealValueWithType(iCorResultValue, &iCorTypeValue));
+                pType1Value = iCorTypeValue.GetPtr();
+
+                return S_OK;
+            });
+    }
+
+    bool SupportedByCalculationDelegateType(CorElementType elemType)
+    {
+        static std::unordered_set<CorElementType> supportedElementTypes{
+            ELEMENT_TYPE_BOOLEAN,
+            ELEMENT_TYPE_U1,
+            ELEMENT_TYPE_I1,
+            ELEMENT_TYPE_CHAR,
+            ELEMENT_TYPE_R8,
+            ELEMENT_TYPE_R4,
+            ELEMENT_TYPE_I4,
+            ELEMENT_TYPE_U4,
+            ELEMENT_TYPE_I8,
+            ELEMENT_TYPE_U8,
+            ELEMENT_TYPE_I2,
+            ELEMENT_TYPE_U2,
+            ELEMENT_TYPE_STRING
+        };
+
+        return supportedElementTypes.find(elemType) != supportedElementTypes.end();
+    }
+
+    HRESULT CalculateTwoOparands(OperationType opType, std::list<EvalStackEntry> &evalStack, std::string &output, EvalData &ed)
+    {
+        HRESULT Status;
+        ToRelease<ICorDebugValue> iCorValue2;
+        IfFailRet(GetFrontStackEntryValue(&iCorValue2, evalStack, ed, output));
+        evalStack.pop_front();
+        ToRelease<ICorDebugValue> iCorRealValue2;
+        CorElementType elemType2;
+        IfFailRet(GetRealValueWithType(iCorValue2, &iCorRealValue2, &elemType2));
+
+        ToRelease<ICorDebugValue> iCorValue1;
+        IfFailRet(GetFrontStackEntryValue(&iCorValue1, evalStack, ed, output));
+        evalStack.front().ResetEntry();
+        ToRelease<ICorDebugValue> iCorRealValue1;
+        CorElementType elemType1;
+        IfFailRet(GetRealValueWithType(iCorValue1, &iCorRealValue1, &elemType1));
+
+        if (elemType1 == ELEMENT_TYPE_VALUETYPE || elemType2 == ELEMENT_TYPE_VALUETYPE ||
+            elemType1 == ELEMENT_TYPE_CLASS || elemType2 == ELEMENT_TYPE_CLASS)
+        {
+            static std::unordered_map<OperationType, std::pair<std::string,std::string>> opMap{
+                {OperationType::AddExpression, {"op_Addition", "+"}},
+                {OperationType::SubtractExpression, {"op_Subtraction", "-"}},
+                {OperationType::MultiplyExpression, {"op_Multiply", "*"}},
+                {OperationType::DivideExpression, {"op_Division", "/"}},
+                {OperationType::ModuloExpression, {"op_Modulus", "%"}},
+                {OperationType::RightShiftExpression, {"op_RightShift", ">>"}},
+                {OperationType::LeftShiftExpression, {"op_LeftShift", "<<"}},
+                {OperationType::LogicalAndExpression, {"op_LogicalAnd", "&&"}},
+                {OperationType::LogicalOrExpression, {"op_LogicalOr", "||"}},
+                {OperationType::ExclusiveOrExpression, {"op_ExclusiveOr", "^"}},
+                {OperationType::BitwiseAndExpression, {"op_BitwiseAnd", "&"}},
+                {OperationType::BitwiseOrExpression, {"op_BitwiseOr", "|"}},
+                {OperationType::EqualsExpression, {"op_Equality", "=="}},
+                {OperationType::NotEqualsExpression, {"op_Inequality", "!="}},
+                {OperationType::LessThanExpression, {"op_LessThan", "<"}},
+                {OperationType::GreaterThanExpression, {"op_GreaterThan", ">"}},
+                {OperationType::LessThanOrEqualExpression, {"op_LessThanOrEqual", "<="}},
+                {OperationType::GreaterThanOrEqualExpression, {"op_GreaterThanOrEqual", ">="}}
+            };
+
+            auto findOpName = opMap.find(opType);
+            if (findOpName == opMap.end())
+                return E_FAIL;
+
+            if (((elemType1 == ELEMENT_TYPE_VALUETYPE || elemType1 == ELEMENT_TYPE_CLASS) &&
+                    SUCCEEDED(CallBinaryOperator(findOpName->second.first, iCorRealValue1, iCorRealValue1, iCorRealValue2, &evalStack.front().iCorValue, ed))) ||
+                ((elemType2 == ELEMENT_TYPE_VALUETYPE || elemType2 == ELEMENT_TYPE_CLASS) &&
+                    SUCCEEDED(CallBinaryOperator(findOpName->second.first, iCorRealValue2, iCorRealValue1, iCorRealValue2, &evalStack.front().iCorValue, ed))))
+                return S_OK;
+
+            std::string typeRetName;
+            CorElementType elemRetType;
+            ToRelease<ICorDebugValue> iCorResultValue;
+            // Try to implicitly cast struct/class object into build-in type supported by CalculationDelegate().
+            if (SupportedByCalculationDelegateType(elemType2) && // First is ELEMENT_TYPE_VALUETYPE or ELEMENT_TYPE_CLASS
+                SUCCEEDED(GetArgData(iCorRealValue2, typeRetName, elemRetType)) &&
+                SUCCEEDED(CallCastOperator("op_Implicit", iCorRealValue1, elemRetType, typeRetName, iCorRealValue1, &iCorResultValue, ed)))
+            {
+                iCorRealValue1.Free();
+                IfFailRet(GetRealValueWithType(iCorResultValue, &iCorRealValue1, &elemType1));
+                // goto CalculationDelegate() related routine (see code below this 'if' statement scope)
+            }
+            else if (SupportedByCalculationDelegateType(elemType1) && // Second is ELEMENT_TYPE_VALUETYPE or ELEMENT_TYPE_CLASS
+                     SUCCEEDED(GetArgData(iCorRealValue1, typeRetName, elemRetType)) &&
+                     SUCCEEDED(CallCastOperator("op_Implicit", iCorRealValue2, elemRetType, typeRetName, iCorRealValue2, &iCorResultValue, ed)))
+            {
+                iCorRealValue2.Free();
+                IfFailRet(GetRealValueWithType(iCorResultValue, &iCorRealValue2, &elemType2));
+                // goto CalculationDelegate() related routine (see code below this 'if' statement scope)
+            }
+            else
+            {
+                std::string typeName1;
+                IfFailRet(TypePrinter::GetTypeOfValue(iCorRealValue1, typeName1));
+                std::string typeName2;
+                IfFailRet(TypePrinter::GetTypeOfValue(iCorRealValue2, typeName2));
+                output = "error CS0019: Operator '" + findOpName->second.second + "' cannot be applied to operands of type '" + typeName1 + "' and '" + typeName2 + "'";
+                return E_INVALIDARG;
+            }
+        }
+        else if (!SupportedByCalculationDelegateType(elemType1) || !SupportedByCalculationDelegateType(elemType2))
+            return E_INVALIDARG;
+
+        int64_t valueDataHolder1 = 0;
+        PVOID valueData1 = &valueDataHolder1;
+        int32_t valueType1 = 0;
+        int64_t valueDataHolder2 = 0;
+        PVOID valueData2 = &valueDataHolder2;
+        int32_t valueType2 = 0;
+        PVOID resultData = NULL;
+        int32_t resultType = 0;
+        if (SUCCEEDED(Status = GetOperandDataTypeByValue(iCorRealValue1, elemType1, valueData1, valueType1)) &&
+            SUCCEEDED(Status = GetOperandDataTypeByValue(iCorRealValue2, elemType2, valueData2, valueType2)) &&
+            SUCCEEDED(Status = Interop::CalculationDelegate(valueData1, valueType1, valueData2, valueType2, (int32_t)opType, resultType, &resultData, output)))
+        {
+            Status = GetValueByOperandDataType(resultData, (BasicTypes)resultType, &evalStack.front().iCorValue, ed);
+            if (resultType == (int32_t)BasicTypes::TypeString)
+                Interop::SysFreeString((BSTR)resultData);
+            else
+                Interop::CoTaskMemFree(resultData);
+        }
+
+        if (valueType1 == (int32_t)BasicTypes::TypeString && valueData1)
+            Interop::SysFreeString((BSTR)valueData1);
+
+        if (valueType2 == (int32_t)BasicTypes::TypeString && valueData2)
+            Interop::SysFreeString((BSTR)valueData2);
+
+        return Status;
+    }
+
+    HRESULT CalculateOneOparand(OperationType opType, std::list<EvalStackEntry> &evalStack, std::string &output, EvalData &ed)
+    {
+        HRESULT Status;
+        ToRelease<ICorDebugValue> iCorValue;
+        IfFailRet(GetFrontStackEntryValue(&iCorValue, evalStack, ed, output));
+        evalStack.front().ResetEntry(true); // Don't reset literal status.
+        ToRelease<ICorDebugValue> iCorRealValue;
+        CorElementType elemType;
+        IfFailRet(GetRealValueWithType(iCorValue, &iCorRealValue, &elemType));
+
+        if (elemType == ELEMENT_TYPE_VALUETYPE || elemType == ELEMENT_TYPE_CLASS)
+        {
+            static std::unordered_map<OperationType, std::pair<std::string,std::string>> opMap{
+                {OperationType::LogicalNotExpression, {"op_LogicalNot", "!"}},
+                {OperationType::BitwiseNotExpression, {"op_OnesComplement", "~"}},
+                {OperationType::UnaryPlusExpression, {"op_UnaryPlus", "+"}},
+                {OperationType::UnaryMinusExpression, {"op_UnaryNegation", "-"}}
+            };
+
+            auto findOpName = opMap.find(opType);
+            if (findOpName == opMap.end())
+                return E_FAIL;
+
+            if (SUCCEEDED(CallUnaryOperator(findOpName->second.first, iCorRealValue, &evalStack.front().iCorValue, ed)))
+                return S_OK;
+            else
+            {
+                std::string typeName;
+                IfFailRet(TypePrinter::GetTypeOfValue(iCorRealValue, typeName));
+                output = "error CS0023: Operator '" + findOpName->second.second + "' cannot be applied to operand of type '" + typeName + "'";
+                return E_INVALIDARG;
+            }
+        }
+        else if (!SupportedByCalculationDelegateType(elemType))
+            return E_INVALIDARG;
+
+        int64_t valueDataHolder1 = 0;
+        PVOID valueData1 = &valueDataHolder1;
+        int32_t valueType1 = 0;
+        // Note, we need fake second operand for delegate.
+        int64_t fakeValueData2 = 0;
+        PVOID resultData = NULL;
+        int32_t resultType = 0;
+        if (SUCCEEDED(Status = GetOperandDataTypeByValue(iCorRealValue, elemType, valueData1, valueType1)) &&
+            SUCCEEDED(Status = Interop::CalculationDelegate(valueData1, valueType1, &fakeValueData2, (int32_t)BasicTypes::TypeInt64, (int32_t)opType, resultType, &resultData, output)))
+        {
+            Status = GetValueByOperandDataType(resultData, (BasicTypes)resultType, &evalStack.front().iCorValue, ed);
+            if (resultType == (int32_t)BasicTypes::TypeString)
+                Interop::SysFreeString((BSTR)resultData);
+            else
+                Interop::CoTaskMemFree(resultData);
+        }
+
+        if (valueType1 == (int32_t)BasicTypes::TypeString && valueData1)
+            Interop::SysFreeString((BSTR)valueData1);
+
+        return Status;
     }
 
 
@@ -1011,110 +1333,92 @@ namespace
 
     HRESULT AddExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::AddExpression, evalStack, output, ed);
     }
 
     HRESULT MultiplyExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::MultiplyExpression, evalStack, output, ed);
     }
 
     HRESULT SubtractExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::SubtractExpression, evalStack, output, ed);
     }
 
     HRESULT DivideExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::DivideExpression, evalStack, output, ed);
     }
 
     HRESULT ModuloExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::ModuloExpression, evalStack, output, ed);
     }
 
     HRESULT LeftShiftExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::LeftShiftExpression, evalStack, output, ed);
     }
 
     HRESULT RightShiftExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::RightShiftExpression, evalStack, output, ed);
     }
 
     HRESULT BitwiseAndExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::BitwiseAndExpression, evalStack, output, ed);
     }
 
     HRESULT BitwiseOrExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::BitwiseOrExpression, evalStack, output, ed);
     }
 
     HRESULT ExclusiveOrExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::ExclusiveOrExpression, evalStack, output, ed);
     }
 
     HRESULT LogicalAndExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::LogicalAndExpression, evalStack, output, ed);
     }
 
     HRESULT LogicalOrExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::LogicalOrExpression, evalStack, output, ed);
     }
 
     HRESULT EqualsExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::EqualsExpression, evalStack, output, ed);
     }
 
     HRESULT NotEqualsExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::NotEqualsExpression, evalStack, output, ed);
     }
 
     HRESULT GreaterThanExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::GreaterThanExpression, evalStack, output, ed);
     }
 
     HRESULT LessThanExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::LessThanExpression, evalStack, output, ed);
     }
 
     HRESULT GreaterThanOrEqualExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::GreaterThanOrEqualExpression, evalStack, output, ed);
     }
 
     HRESULT LessThanOrEqualExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateTwoOparands(OperationType::LessThanOrEqualExpression, evalStack, output, ed);
     }
 
     HRESULT IsExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -1125,112 +1429,22 @@ namespace
 
     HRESULT UnaryPlusExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        HRESULT Status;
-        ToRelease<ICorDebugValue> iCorRefValue;
-        IfFailRet(GetFrontStackEntryValue(&iCorRefValue, evalStack, ed, output));
-        evalStack.front().ResetEntry(true);
-
-        ToRelease<ICorDebugValue> iCorValue;
-        IfFailRet(DereferenceAndUnboxValue(iCorRefValue, &iCorValue, nullptr));
-        CorElementType elemType;
-        IfFailRet(iCorValue->GetType(&elemType));
-
-        switch (elemType)
-        {
-            case ELEMENT_TYPE_CHAR:
-            case ELEMENT_TYPE_I1:
-            case ELEMENT_TYPE_U1:
-            case ELEMENT_TYPE_I2:
-            case ELEMENT_TYPE_U2:
-                return UnaryNumericPromotion(iCorValue, &evalStack.front().iCorValue, ed);
-
-            case ELEMENT_TYPE_I4:
-            case ELEMENT_TYPE_U4:
-            case ELEMENT_TYPE_I8:
-            case ELEMENT_TYPE_U8:
-            case ELEMENT_TYPE_R4:
-            case ELEMENT_TYPE_R8:
-                evalStack.front().iCorValue = iCorValue.Detach();
-                return S_OK;
-
-            case ELEMENT_TYPE_VALUETYPE:
-            case ELEMENT_TYPE_CLASS:
-                if (SUCCEEDED(CallUnaryOperator("op_UnaryPlus", iCorValue, &evalStack.front().iCorValue, ed)))
-                    return S_OK;
-                else
-                {
-                    std::string typeName;
-                    IfFailRet(TypePrinter::NameForTypeByValue(iCorValue, typeName));
-                    output = "error CS0023: Operator '+' cannot be applied to operand of type " + typeName;
-                    return E_INVALIDARG;
-                }
-
-            default:
-                return E_INVALIDARG;
-        }
+        return CalculateOneOparand(OperationType::UnaryPlusExpression, evalStack, output, ed);
     }
 
     HRESULT UnaryMinusExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        HRESULT Status;
-        ToRelease<ICorDebugValue> iCorRefValue;
-        IfFailRet(GetFrontStackEntryValue(&iCorRefValue, evalStack, ed, output));
-        evalStack.front().ResetEntry(true);
-
-        ToRelease<ICorDebugValue> iCorValue;
-        IfFailRet(DereferenceAndUnboxValue(iCorRefValue, &iCorValue, nullptr));
-        CorElementType elemType;
-        IfFailRet(iCorValue->GetType(&elemType));
-
-        switch (elemType)
-        {
-            case ELEMENT_TYPE_U8:
-                output = "error CS0023: Operator '-' cannot be applied to operand of type 'ulong'";
-                return E_INVALIDARG;
-
-            case ELEMENT_TYPE_CHAR:
-            case ELEMENT_TYPE_I1:
-            case ELEMENT_TYPE_U1:
-            case ELEMENT_TYPE_I2:
-            case ELEMENT_TYPE_U2:
-            case ELEMENT_TYPE_U4:
-                IfFailRet(UnaryNumericPromotion(iCorValue, &evalStack.front().iCorValue, ed));
-                return InvertNumber(evalStack.front().iCorValue);
-
-            case ELEMENT_TYPE_I4:
-            case ELEMENT_TYPE_I8:
-            case ELEMENT_TYPE_R4:
-            case ELEMENT_TYPE_R8:
-                evalStack.front().iCorValue = iCorValue.Detach();
-                return InvertNumber(evalStack.front().iCorValue);
-
-            case ELEMENT_TYPE_VALUETYPE:
-            case ELEMENT_TYPE_CLASS:
-                if (SUCCEEDED(CallUnaryOperator("op_UnaryNegation", iCorValue, &evalStack.front().iCorValue, ed)))
-                    return S_OK;
-                else
-                {
-                    std::string typeName;
-                    IfFailRet(TypePrinter::NameForTypeByValue(iCorValue, typeName));
-                    output = "error CS0023: Operator '-' cannot be applied to operand of type " + typeName;
-                    return E_INVALIDARG;
-                }
-
-            default:
-                return E_INVALIDARG;
-        }
+        return CalculateOneOparand(OperationType::UnaryMinusExpression, evalStack, output, ed);
     }
 
     HRESULT LogicalNotExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateOneOparand(OperationType::LogicalNotExpression, evalStack, output, ed);
     }
 
     HRESULT BitwiseNotExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatF*)pArguments)->Flags;
-        return E_NOTIMPL;
+        return CalculateOneOparand(OperationType::BitwiseNotExpression, evalStack, output, ed);
     }
 
     HRESULT TrueLiteralExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -1406,7 +1620,7 @@ HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, i
         if (FAILED(Status = GetFrontStackEntryValue(&iCorValue, m_evalStack, m_evalData, output)))
             break;
 
-        Status = ImplicitCast(iCorValue, (*ppResultValue), m_evalStack.front().literal, m_evalData);
+        Status = ImplicitCast(iCorValue, *ppResultValue, m_evalStack.front().literal, m_evalData);
     }
     while (0);
 
