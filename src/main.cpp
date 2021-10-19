@@ -259,13 +259,13 @@ int main(int argc, char* argv[])
         { "--help", [&](int& i){
 
             print_help();
-            return EXIT_SUCCESS;
+            exit(EXIT_SUCCESS);
 
         } },
         { "--buildinfo", [&](int& i){
 
             print_buildinfo();
-            return EXIT_SUCCESS;
+            exit(EXIT_SUCCESS);
 
         } },
         { "--version", [&](int& i){
@@ -275,7 +275,7 @@ int main(int argc, char* argv[])
             fprintf(stdout, "\nCopyright (c) 2020 Samsung Electronics Co., LTD\n");
             fprintf(stdout, "Distributed under the MIT License.\n");
             fprintf(stdout, "See the LICENSE file in the project root for more information.\n");
-            return EXIT_SUCCESS;
+            exit(EXIT_SUCCESS);
 
         } },
         { "--log", [&](int& i){
