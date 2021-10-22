@@ -61,6 +61,7 @@ static std::string ConsumeGenericArgs(const std::string &name, std::list<std::st
 std::string TypePrinter::RenameToSystem(const std::string &typeName)
 {
     static const std::unordered_map<std::string, std::string> cs2system = {
+        {"void",    "System.Void"},
         {"bool",    "System.Boolean"},
         {"byte",    "System.Byte"},
         {"sbyte",   "System.SByte"},
@@ -86,6 +87,7 @@ std::string TypePrinter::RenameToSystem(const std::string &typeName)
 std::string TypePrinter::RenameToCSharp(const std::string &typeName)
 {
     static const std::unordered_map<std::string, std::string> system2cs = {
+        {"System.Void",    "void"},
         {"System.Boolean", "bool"},
         {"System.Byte",    "byte"},
         {"System.SByte",   "sbyte"},

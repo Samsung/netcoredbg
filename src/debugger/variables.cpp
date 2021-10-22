@@ -570,9 +570,4 @@ HRESULT Variables::SetVariable(
     return S_OK;
 }
 
-HRESULT Variables::FindPredefinedTypes(ICorDebugModule *pModule)
-{
-    return m_sharedEvalStackMachine->FindPredefinedTypes(pModule);
-}
-
 } // namespace netcoredbg

@@ -184,8 +184,6 @@ public:
         ICorDebugThread *pThread,
         Variable &variable);
 
-    HRESULT FindPredefinedTypes(ICorDebugModule *pModule);
-
     void Clear()
     {
         m_referencesMutex.lock();

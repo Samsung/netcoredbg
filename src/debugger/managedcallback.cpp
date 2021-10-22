@@ -20,7 +20,7 @@
 #include "debugger/stepper_simple.h"
 #include "debugger/stepper_async.h"
 #include "debugger/steppers.h"
-#include "debugger/variables.h"
+#include "debugger/evalstackmachine.h"
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
 #include "interfaces/iprotocol.h"
@@ -578,7 +578,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(ICorDebugAppDomain *pAppDo
     if (module.name == "System.Private.CoreLib.dll")
     {
         m_debugger.SetEnableCustomNotification(TRUE);
-        m_debugger.m_sharedVariables->FindPredefinedTypes(pModule);
+        m_debugger.m_sharedEvalStackMachine->FindPredefinedTypes(pModule);
     }
 
     return ContinueAppDomainWithCallbacksQueue(pAppDomain);

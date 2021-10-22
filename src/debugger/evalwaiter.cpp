@@ -20,10 +20,11 @@ void EvalWaiter::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEv
     DWORD threadId = 0;
     pThread->GetID(&threadId);
 
-    std::unique_ptr< ToRelease<ICorDebugValue> > ppEvalResult(new ToRelease<ICorDebugValue>());
+    std::unique_ptr<evalResultData_t> ppEvalResult(new evalResultData_t);
     if (pEval)
     {
-        pEval->GetResult(&(*ppEvalResult));
+        // CORDBG_S_FUNC_EVAL_HAS_NO_RESULT: Some Func evals will lack a return value, such as those whose return type is void.
+        (*ppEvalResult).Status = pEval->GetResult(&((*ppEvalResult).iCorEval));
     }
 
     if (!m_evalResult || m_evalResult->threadId != threadId)
@@ -39,13 +40,13 @@ bool EvalWaiter::IsEvalRunning()
     return !!m_evalResult;
 }
 
-std::future<std::unique_ptr<ToRelease<ICorDebugValue> > > EvalWaiter::RunEval(
+std::future<std::unique_ptr<EvalWaiter::evalResultData_t> > EvalWaiter::RunEval(
     ICorDebugProcess *pProcess,
     ICorDebugThread *pThread,
     ICorDebugEval *pEval,
     WaitEvalResultCallback cbSetupEval)
 {
-    std::promise<std::unique_ptr<ToRelease<ICorDebugValue> > > p;
+    std::promise<std::unique_ptr<evalResultData_t > > p;
     auto f = p.get_future();
     if (!f.valid())
     {
@@ -173,15 +174,13 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
             }
 
             auto evalResult = f.get();
+            IfFailRet(evalResult.get()->Status);
 
             if (!ppEvalResult)
                 return S_OK;
 
-            if (!evalResult->GetPtr())
-                return E_FAIL;
-
-            *ppEvalResult = evalResult->Detach();
-            return S_OK;
+            *ppEvalResult = evalResult.get()->iCorEval.Detach();
+            return evalResult.get()->Status;
         }
         catch (const std::future_error&)
         {

@@ -342,6 +342,11 @@ namespace MITestEvaluate
             return 16;
         }
 
+        void TestVoidReturn()
+        {
+            Console.WriteLine("test void return");
+        }
+
         public int this_i = 1;
         public string this_static_str = "2str";
         public static int this_static_i = 3;
@@ -377,6 +382,9 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "16", "int", "this.Calc2()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.test_this_t\\\"", "string", "ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.test_this_t\\\"", "string", "this.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "Expression has been evaluated and has no value", "void", "TestVoidReturn()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestVoidReturn() + 1", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "1 + TestVoidReturn()", "error CS0019");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

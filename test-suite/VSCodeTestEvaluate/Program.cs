@@ -459,6 +459,11 @@ namespace VSCodeTestEvaluate
             return 16;
         }
 
+        void TestVoidReturn()
+        {
+            Console.WriteLine("test void return");
+        }
+
         public int this_i = 1;
         public string this_static_str = "2str";
         public static int this_static_i = 3;
@@ -495,6 +500,9 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "16", "int", "this.Calc2()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestEvaluate.test_this_t\"", "string", "ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestEvaluate.test_this_t\"", "string", "this.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "Expression has been evaluated and has no value", "void", "TestVoidReturn()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "TestVoidReturn() + 1", "error CS0019");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "1 + TestVoidReturn()", "error CS0019");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

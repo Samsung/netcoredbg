@@ -709,6 +709,10 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
                 PrintDecimalValue(pValue, val);
                 ss << val;
             }
+            else if (typeName == "void")
+            {
+                ss << "Expression has been evaluated and has no value";
+            }
             else
             {
                 ss << '{' << typeName << '}';

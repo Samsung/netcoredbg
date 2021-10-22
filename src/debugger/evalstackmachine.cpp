@@ -190,6 +190,9 @@ namespace
                 return S_OK;
             }));
 
+        if (!ptr)
+            return S_OK;
+
         ToRelease<ICorDebugValue> pEditableValue;
         IfFailRet(DereferenceAndUnboxValue(*ppValue, &pEditableValue, nullptr));
 
@@ -1136,7 +1139,14 @@ namespace
             iCorValueArgs.emplace_back(iCorArgs[i].GetPtr());
         }
 
-        return ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, iCorValueArgs.data(), realArgsCount, &evalStack.front().iCorValue, ed.evalFlags);
+        Status = ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, iCorValueArgs.data(), realArgsCount, &evalStack.front().iCorValue, ed.evalFlags);
+
+        // CORDBG_S_FUNC_EVAL_HAS_NO_RESULT: Some Func evals will lack a return value, such as those whose return type is void.
+        if (Status == CORDBG_S_FUNC_EVAL_HAS_NO_RESULT)
+            // We can't create ELEMENT_TYPE_VOID, so, we are forced to use System.Void instead.
+            IfFailRet(CreateValueType(ed.pEvalWaiter, ed.pThread, ed.iCorVoidClass, &evalStack.front().iCorValue, nullptr));
+
+        return Status;
     }
 
     HRESULT ObjectCreationExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -1638,9 +1648,14 @@ HRESULT EvalStackMachine::FindPredefinedTypes(ICorDebugModule *pModule)
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
     mdTypeDef typeDef = mdTypeDefNil;
-    static const WCHAR strTypeDef[] = W("System.Decimal");
-    IfFailRet(pMD->FindTypeDefByName(strTypeDef, NULL, &typeDef));
+    static const WCHAR strTypeDefDecimal[] = W("System.Decimal");
+    IfFailRet(pMD->FindTypeDefByName(strTypeDefDecimal, NULL, &typeDef));
     IfFailRet(pModule->GetClassFromToken(typeDef, &m_evalData.iCorDecimalClass));
+
+    typeDef = mdTypeDefNil;
+    static const WCHAR strTypeDefVoid[] = W("System.Void");
+    IfFailRet(pMD->FindTypeDefByName(strTypeDefVoid, NULL, &typeDef));
+    IfFailRet(pModule->GetClassFromToken(typeDef, &m_evalData.iCorVoidClass));
 
     static const std::vector<std::pair<CorElementType, const WCHAR*>> corElementToValueNameMap{
         {ELEMENT_TYPE_BOOLEAN,  W("System.Boolean")},

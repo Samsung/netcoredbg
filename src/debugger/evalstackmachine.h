@@ -57,6 +57,8 @@ struct EvalData
     // In case of NumericLiteralExpression with Decimal, NewParameterizedObjectNoConstructor() are used.
     // Proper ICorDebugClass must be provided for Decimal (will be found during FindPredefinedTypes() call).
     ToRelease<ICorDebugClass> iCorDecimalClass;
+    // In case eval return void, we are forced to create System.Void value.
+    ToRelease<ICorDebugClass> iCorVoidClass;
     std::unordered_map<CorElementType, ToRelease<ICorDebugClass>> corElementToValueClassMap;
     FrameLevel frameLevel;
     int evalFlags;
