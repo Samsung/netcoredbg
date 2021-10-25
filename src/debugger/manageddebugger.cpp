@@ -852,19 +852,6 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
 {
     HRESULT Status;
 
-    ToRelease<ICorDebugFunction> iCorFunction;
-    IfFailRet(pFrame->GetFunction(&iCorFunction));
-    ToRelease<ICorDebugFunction2> iCorFunction2;
-    IfFailRet(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2));
-    BOOL JMCStatus;
-    IfFailRet(iCorFunction2->GetJMCStatus(&JMCStatus));
-
-    if (JMCStatus == FALSE)
-    {
-        stackFrame = StackFrame(threadId, level, "[External Code]");
-        return S_OK;
-    }
-
     stackFrame = StackFrame(threadId, level, "");
 
     ULONG32 ilOffset;
@@ -881,8 +868,11 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     mdMethodDef methodToken;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
 
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(iCorFunction->GetModule(&pModule));
+    IfFailRet(pFunc->GetModule(&pModule));
 
     ULONG32 nOffset = 0;
     ToRelease<ICorDebugNativeFrame> pNativeFrame;

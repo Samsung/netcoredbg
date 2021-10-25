@@ -107,7 +107,7 @@ namespace NetcoreDbgTest.Script
             Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public void WasExceptionBreakpointHitInExternalCode(string caller_trace, string excCategory, string excStage, string excName)
+        public void WasExceptionBreakpointHitInExternalCode(string caller_trace, string excCategory, string excStage, string excName, string extFrame)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
                 if (!IsStoppedEvent(record)) {
@@ -130,7 +130,7 @@ namespace NetcoreDbgTest.Script
                 var frame = (MITuple)output["frame"];
                 var func = (MIConst)(frame["func"]);
 
-                if (func.CString == "[External Code]") {
+                if (func.CString == extFrame) {
                     return true;
                 }
 
@@ -398,11 +398,11 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_2");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception");
+                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception", "MITestExceptionBreakpoint.outside_user_code.throw_Exception()");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_3");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception");
+                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception", "MITestExceptionBreakpoint.outside_user_code.throw_Exception_with_catch()");
 
                 Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "21");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "System.NullReferenceException");
@@ -429,11 +429,11 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_5");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.NullReferenceException");
+                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.NullReferenceException", "MITestExceptionBreakpoint.outside_user_code.throw_Exception_NullReferenceException_with_catch()");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_6");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.NullReferenceException");
+                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.NullReferenceException", "MITestExceptionBreakpoint.outside_user_code.throw_NullReferenceException()");
 
                 Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "22");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "user-unhandled", "*");
@@ -518,11 +518,11 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_11");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception");
+                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception", "MITestExceptionBreakpoint.outside_user_code.throw_Exception()");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_12");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception");
+                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception", "MITestExceptionBreakpoint.outside_user_code.throw_Exception_with_catch()");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_13");
                 Context.Continue(@"__FILE__:__LINE__");
@@ -532,7 +532,7 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_14");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception");
+                Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception", "MITestExceptionBreakpoint.outside_user_code.throw_Exception()");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_15");
 

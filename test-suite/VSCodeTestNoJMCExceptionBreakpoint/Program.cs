@@ -298,38 +298,6 @@ namespace NetcoreDbgTest.Script
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public void WasExceptionBreakpointHitInExternalCode(string caller_trace, string excCategory, string excMode, string excName)
-        {
-            Func<string, bool> filter = (resJSON) => {
-                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
-                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "exception")) {
-                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
-                    return true;
-                }
-                return false;
-            };
-
-            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
-
-            StackTraceRequest stackTraceRequest = new StackTraceRequest();
-            stackTraceRequest.arguments.threadId = threadId;
-            stackTraceRequest.arguments.startFrame = 0;
-            stackTraceRequest.arguments.levels = 20;
-            var ret = VSCodeDebugger.Request(stackTraceRequest);
-            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
-
-            StackTraceResponse stackTraceResponse =
-                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
-
-            if (stackTraceResponse.body.stackFrames[0].name == "[External Code]")
-            {
-                TestExceptionInfo(@"__FILE__:__LINE__"+"\n"+caller_trace, excCategory, excMode, excName);
-                return;
-            }
-
-            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
-        }
-
         public Context(ControlInfo controlInfo, NetcoreDbgTestCore.DebuggerClient debuggerClient)
         {
             ControlInfo = controlInfo;
