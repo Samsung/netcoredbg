@@ -449,10 +449,11 @@ namespace VSCodeTestExceptionBreakpoint
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "test_all", (Object context) => {
+            Label.Checkpoint("init", "test_rethrow", (Object context) => {
                 Context Context = (Context)context;
                 Context.PrepareStart(@"__FILE__:__LINE__");
 
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_test_0");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_test_1");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_test_2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_test_3");
@@ -472,12 +473,39 @@ namespace VSCodeTestExceptionBreakpoint
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_test_17");
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
 
+                Context.PrepareEnd(@"__FILE__:__LINE__");
+                Context.WasEntryPointHit(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // test rethrow without any exception breakpoints setup
+
+            try {
+                try {
+                    new System.Exception();
+                } catch {
+                    throw;
+                }
+            } catch {}
+
+            try {
+                try {
+                    new System.Exception();
+                } catch {
+                    new System.NullReferenceException();
+                }
+            } catch {}
+
+            int test_rethrow = 0;                                                                  Label.Breakpoint("bp_test_0");
+
+            Label.Checkpoint("test_rethrow", "test_all", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_0");
+
                 Context.ResetExceptionBreakpoints();
                 Context.AddExceptionBreakpointFilterAll();
                 Context.SetExceptionBreakpoints(@"__FILE__:__LINE__");
 
-                Context.PrepareEnd(@"__FILE__:__LINE__");
-                Context.WasEntryPointHit(@"__FILE__:__LINE__");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

@@ -352,11 +352,12 @@ namespace MITestExceptionBreakpoint
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "test_throw_all", (Object context) => {
+            Label.Checkpoint("init", "test_rethrow", (Object context) => {
                 Context Context = (Context)context;
                 Context.Prepare(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
 
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_test_0");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_test_1");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_test_2");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_test_3");
@@ -378,7 +379,35 @@ namespace MITestExceptionBreakpoint
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_test_19");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_test_20");
 
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // test rethrow without any exception breakpoints setup
+
+            try {
+                try {
+                    new System.Exception();
+                } catch {
+                    throw;
+                }
+            } catch {}
+
+            try {
+                try {
+                    new System.Exception();
+                } catch {
+                    new System.NullReferenceException();
+                }
+            } catch {}
+
+            int test_rethrow = 0;                                                                  Label.Breakpoint("bp_test_0");
+
+            Label.Checkpoint("test_rethrow", "test_throw_all", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_0");
+
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "*");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -404,7 +433,7 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.Exception", "MITestExceptionBreakpoint.outside_user_code.throw_Exception_with_catch()");
 
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "21");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "22");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "System.NullReferenceException");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -435,7 +464,7 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasExceptionBreakpointHitInExternalCode(@"__FILE__:__LINE__", "clr", "throw", "System.NullReferenceException", "MITestExceptionBreakpoint.outside_user_code.throw_NullReferenceException()");
 
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "22");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "23");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "user-unhandled", "*");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -476,7 +505,7 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_8");
 
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "23");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "24");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "user-unhandled", "System.NullReferenceException");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -493,7 +522,7 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasExceptionBreakpointHit(@"__FILE__:__LINE__", "bp4", "clr", "user-unhandled", "System.NullReferenceException");
 
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "24");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "25");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw+user-unhandled", "*");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -536,7 +565,7 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_15");
 
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "25");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "26");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw+user-unhandled", "System.NullReferenceException");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -564,7 +593,7 @@ namespace MITestExceptionBreakpoint
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_17");
 
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "26");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "27");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "user-unhandled", "*");
                 // Important! "unhandled" must be allowed too.
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "unhandled", "System.AppDomainUnloadedException System.Threading.ThreadAbortException");
@@ -577,11 +606,11 @@ namespace MITestExceptionBreakpoint
                 // Note, this is wrong setup for MDA that don't have "System.Exception", but in this way we test MDA/CLR category work.
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "--mda throw", "System.Exception");
                 // Delete only "System.Exception" from "throw" (previously had configured 4 breakpoints by one "throw" command).
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "31");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "32");
                 // Check for breakpoint ID (test CalculateExceptionBreakpointHash() work), if we have 43 here -
                 // all breakpoint were created in proper way, no ID was reused (all breakpoint have unique hash at creation time).
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "System.Exception");
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "43");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "44");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -607,7 +636,7 @@ namespace MITestExceptionBreakpoint
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "System.Exception");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "System.Exception");
                 Context.AddExceptionBreakpoint(@"__FILE__:__LINE__", "throw", "System.Exception");
-                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "44");
+                Context.DeleteExceptionBreakpoint(@"__FILE__:__LINE__", "45");
 
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasExceptionBreakpointHit(@"__FILE__:__LINE__", "bp3", "clr", "user-unhandled", "System.Exception");
