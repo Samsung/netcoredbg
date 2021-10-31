@@ -1,0 +1,30 @@
+name: netcoredbg Release CI
+
+on:
+  release:
+    types:
+      - created
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      - name: Build and export
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          tags: netcoredbg:latest
+          outputs: type=local,dest=/tmp
+      - name: Upload release build
+        id: upload-release-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: /tmp/netcoredbg-linux-arm64.tar.gz
+          asset_name: netcoredbg-linux-arm64.tar.gz
+          asset_content_type: application/zip
