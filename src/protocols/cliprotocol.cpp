@@ -359,10 +359,11 @@ public:
 
     virtual std::tuple<string_view, Result> get_line(const char *) override
     {
+        if (stream->eof())
+            return {string_view{}, Eof};
         std::getline(*stream, line);
-        if (!stream->good())
-            return {string_view{}, stream->eof() ? Eof : Error};
-
+        if(stream->fail())
+            return{string_view{}, Error};
         return {line, Success};
     }
 
