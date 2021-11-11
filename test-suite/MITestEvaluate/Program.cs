@@ -376,9 +376,11 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "3", "int", "MITestEvaluate.test_this_t.this_static_i");
 
                 // Test method calls.
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "Calc1()", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "Calc1()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "test_this_t.Calc1()");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "this.Calc1()", "Error");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "16", "int", "Calc2()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test_this_t.Calc2()", "Error");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "16", "int", "this.Calc2()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.test_this_t\\\"", "string", "ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.test_this_t\\\"", "string", "this.ToString()");
@@ -651,6 +653,21 @@ namespace MITestEvaluate
         int int_i = 505;
         static test_nested test_nested_static_instance;
 
+        static int stGetInt()
+        {
+            return 111;
+        }
+
+        static int stGetInt(int x)
+        {
+            return x * 2;
+        }
+
+        int getInt()
+        {
+            return 222;
+        }
+
         static void Main(string[] args)
         {
             Label.Checkpoint("init", "values_test", (Object context) => {
@@ -669,6 +686,7 @@ namespace MITestEvaluate
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK10");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK11");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK12");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK13");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -1305,7 +1323,7 @@ namespace MITestEvaluate
 
             int break_line12 = 1;                                                                        Label.Breakpoint("BREAK12");
 
-            Label.Checkpoint("unary_operators_test", "finish", (Object context) => {
+            Label.Checkpoint("unary_operators_test", "function_evaluation_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK12");
 
@@ -1362,6 +1380,18 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "3.03", "float", "+floatUnary");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "-10.5", "float", "-10.5f");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "-3.03", "float", "-floatUnary");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            int break_line_13 = 13;                                                                           Label.Breakpoint("BREAK13");
+            Label.Checkpoint("function_evaluation_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK13");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "111", "int", "stGetInt()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "666", "int", "stGetInt(333)");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "getInt()", "Error:");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

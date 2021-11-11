@@ -79,6 +79,12 @@ public:
         FrameLevel frameLevel,
         WalkStackVarsCallback cb);
 
+    HRESULT Evaluator::GetMethodClass(
+        ICorDebugThread *pThread,
+        FrameLevel frameLevel,
+        std::string &methodClass,
+        bool &thisParam);
+
     HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
     HRESULT WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb);
     HRESULT WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallback cb);

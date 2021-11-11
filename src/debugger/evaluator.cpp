@@ -1045,6 +1045,39 @@ static HRESULT HandleSpecialThisParam(
     return S_OK;
 }
 
+HRESULT Evaluator::GetMethodClass(ICorDebugThread *pThread, FrameLevel frameLevel, std::string &methodClass, bool &haveThis)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
+
+    ToRelease<ICorDebugFunction> pFunction;
+    IfFailRet(pFrame->GetFunction(&pFunction));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunction->GetModule(&pModule));
+
+    ToRelease<IUnknown> pMDUnknown;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    mdMethodDef methodDef;
+    IfFailRet(pFunction->GetToken(&methodDef));
+
+    std::string methodName;
+    TypePrinter::GetTypeAndMethod(pFrame, methodClass, methodName);
+
+    DWORD methodAttr = 0;
+    IfFailRet(pMD->GetMethodProps(methodDef, NULL, NULL, 0, NULL, &methodAttr, NULL, NULL, NULL, NULL));
+
+    haveThis = (methodAttr & mdStatic) == 0;
+
+    return S_OK;
+}
+
 HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel, WalkStackVarsCallback cb)
 {
     HRESULT Status;

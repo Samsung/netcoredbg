@@ -494,10 +494,12 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "3", "int", "VSCodeTestEvaluate.test_this_t.this_static_i");
 
                 // Test method calls.
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "Calc1()", "error:");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "Calc1()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "test_this_t.Calc1()");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "this.Calc1()", "error:");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "16", "int", "Calc2()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "16", "int", "this.Calc2()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "test_this_t.Calc2()", "error:");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestEvaluate.test_this_t\"", "string", "ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestEvaluate.test_this_t\"", "string", "this.ToString()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "Expression has been evaluated and has no value", "void", "TestVoidReturn()");
@@ -770,6 +772,21 @@ namespace VSCodeTestEvaluate
         int int_i = 505;
         static test_nested test_nested_static_instance;
 
+        static int stGetInt()
+        {
+            return 111;
+        }
+
+        static int stGetInt(int x)
+        {
+            return x * 2;
+        }
+
+        int getInt()
+        {
+            return 222;
+        }
+
         static void Main(string[] args)
         {
             Label.Checkpoint("init", "values_test", (Object context) => {
@@ -787,6 +804,7 @@ namespace VSCodeTestEvaluate
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK10");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK11");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK12");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "BREAK13");
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.PrepareEnd(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
@@ -1427,7 +1445,7 @@ namespace VSCodeTestEvaluate
 
             int break_line12 = 1;                                                                        Label.Breakpoint("BREAK12");
 
-            Label.Checkpoint("unary_operators_test", "finish", (Object context) => {
+            Label.Checkpoint("unary_operators_test", "function_evaluation_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK12");
                 Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK12");
@@ -1485,6 +1503,20 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "3.03", "float", "+floatUnary");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-10.5", "float", "-10.5f");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "-3.03", "float", "-floatUnary");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            int break_line13 = 13;                                                                        Label.Breakpoint("BREAK13");
+
+            Label.Checkpoint("function_evaluation_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK13");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "BREAK13");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "111", "int", "stGetInt()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "222", "int", "stGetInt(111)");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "getInt()", "error");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

@@ -1061,6 +1061,8 @@ namespace
             return E_INVALIDARG;
 
         HRESULT Status;
+        bool idsEmpty = false;
+        bool isInstance = true;
         std::vector<ToRelease<ICorDebugValue>> iCorArgs(Int);
         for (int32_t i = Int - 1; i >= 0; i--)
         {
@@ -1075,7 +1077,23 @@ namespace
         evalStack.front().identifiers.pop_back();
 
         if (!evalStack.front().iCorValue && evalStack.front().identifiers.empty())
-            evalStack.front().identifiers.emplace_back("this");
+        {
+            std::string methodClass;
+            idsEmpty = true;
+            IfFailRet(ed.pEvaluator->GetMethodClass(ed.pThread, ed.frameLevel, methodClass, isInstance));
+            if (isInstance)
+            {
+                evalStack.front().identifiers.emplace_back("this");
+            }
+            else
+            {
+                // here we add a full qualified "path" separated with dots (aka Class.Subclass.Subclass ..etc) 
+                // although <identifiers> usually contains a vector of components of the full name qualification
+                // Anyway, our added component will be correctly processed by Evaluator::ResolveIdentifiers() for
+                // that case as it seals all the qualification components into one with dots before using them.
+                evalStack.front().identifiers.emplace_back(methodClass);
+            }
+        }
 
         ToRelease<ICorDebugValue> iCorValue;
         ToRelease<ICorDebugType> iCorType;
@@ -1119,12 +1137,12 @@ namespace
         std::vector<Evaluator::ArgElementType> funcArgs(Int);
         for (int32_t i = 0; i < Int; ++i)
         {
-            ToRelease<ICorDebugValue> iCorValue;
-            IfFailRet(DereferenceAndUnboxValue(iCorArgs[i].GetPtr(), &iCorValue, nullptr));
-            IfFailRet(iCorValue->GetType(&funcArgs[i].corType));
+            ToRelease<ICorDebugValue> iCorValueArg;
+            IfFailRet(DereferenceAndUnboxValue(iCorArgs[i].GetPtr(), &iCorValueArg, nullptr));
+            IfFailRet(iCorValueArg->GetType(&funcArgs[i].corType));
 
             if (funcArgs[i].corType == ELEMENT_TYPE_VALUETYPE || funcArgs[i].corType == ELEMENT_TYPE_CLASS)
-                IfFailRet(TypePrinter::NameForTypeByValue(iCorValue, funcArgs[i].typeName));
+                IfFailRet(TypePrinter::NameForTypeByValue(iCorValueArg, funcArgs[i].typeName));
         }
 
         ToRelease<ICorDebugFunction> iCorFunc;
@@ -1135,7 +1153,7 @@ namespace
             std::vector<Evaluator::ArgElementType> &methodArgs,
             Evaluator::GetFunctionCallback getFunction)
         {
-            if ((searchStatic && !is_static) || (!searchStatic && is_static) ||
+            if ( (searchStatic && !is_static) || (!searchStatic && is_static && !idsEmpty) ||
                 funcArgs.size() != methodArgs.size() || funcName != methodName)
                 return S_OK;
 
@@ -1147,6 +1165,7 @@ namespace
             }
 
             IfFailRet(getFunction(&iCorFunc));
+            isInstance = !is_static;
 
             return E_ABORT; // Fast exit from cycle.
         });
@@ -1155,10 +1174,10 @@ namespace
 
         evalStack.front().ResetEntry();
 
-        ULONG32 realArgsCount = Int + (searchStatic ? 0 : 1);
+        ULONG32 realArgsCount = Int + (isInstance ? 1 : 0);
         std::vector<ICorDebugValue*> iCorValueArgs;
         iCorValueArgs.reserve(realArgsCount);
-        if (!searchStatic)
+        if (isInstance)
         {
             iCorValueArgs.emplace_back(iCorValue.GetPtr());
         }
