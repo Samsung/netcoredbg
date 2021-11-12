@@ -416,6 +416,7 @@ void VSCodeProtocol::AddCapabilitiesTo(json &capabilities)
     capabilities["supportsConditionalBreakpoints"] = true;
     capabilities["supportTerminateDebuggee"] = true;
     capabilities["supportsSetVariable"] = true;
+    capabilities["supportsSetExpression"] = true;
     capabilities["supportsTerminateRequest"] = true;
 
     capabilities["supportsExceptionInfoRequest"] = true;
@@ -699,6 +700,44 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             body["namedVariables"] = variable.namedVariables;
             // indexedVariables
         }
+        return S_OK;
+    } },
+    { "setExpression", [this](const json &arguments, json &body){
+        HRESULT Status;
+        std::string expression = arguments.at("expression");
+        std::string value = arguments.at("value");
+        FrameId frameId([&](){
+            auto frameIdIter = arguments.find("frameId");
+            if (frameIdIter == arguments.end())
+            {
+                ThreadId threadId = m_sharedDebugger->GetLastStoppedThreadId();
+                return FrameId{threadId, FrameLevel{0}};
+            }
+            else {
+                return FrameId{int(frameIdIter.value())};
+            }
+        }());
+
+        // NOTE
+        // VSCode don't support evaluation flags, we can't disable implicit function calls during evaluation.
+        // https://github.com/OmniSharp/omnisharp-vscode/issues/3173
+        std::string output;
+        Status = m_sharedDebugger->SetVariableByExpression(frameId, expression, defaultEvalFlags, value, output);
+        if (FAILED(Status))
+        {
+            if (output.empty())
+            {
+                std::stringstream stream;
+                stream << "error: 0x" << std::hex << Status;
+                body["message"] = stream.str();
+            }
+            else
+                body["message"] = output;
+
+            return Status;
+        }
+
+        body["value"] = output;
         return S_OK;
     } },
     { "attach", [this](const json &arguments, json &body){

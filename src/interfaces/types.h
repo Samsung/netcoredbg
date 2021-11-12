@@ -388,8 +388,9 @@ struct Variable
     int namedVariables;
     int indexedVariables;
     int evalFlags;
+    bool editable;
 
-    Variable(int flags = defaultEvalFlags) : variablesReference(0), namedVariables(0), indexedVariables(0), evalFlags(flags) {}
+    Variable(int flags = defaultEvalFlags) : variablesReference(0), namedVariables(0), indexedVariables(0), evalFlags(flags), editable(false) {}
 };
 
 enum VariablesFilter

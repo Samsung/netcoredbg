@@ -55,7 +55,14 @@ private:
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
-    std::unordered_map<std::string, Variable> m_vars;
+    struct MIVariable
+    {
+        Variable variable;
+        ThreadId threadId;
+        FrameLevel level;
+    };
+
+    std::unordered_map<std::string, MIVariable> m_vars;
     std::unordered_map<std::string, std::unordered_map<uint32_t, LineBreakpoint> > m_lineBreakpoints;
     std::unordered_map<uint32_t, FuncBreakpoint> m_funcBreakpoints;
     std::unordered_map<uint32_t, ExceptionBreakpoint> m_exceptionBreakpoints;
@@ -71,10 +78,10 @@ private:
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
     HRESULT CreateVar(ThreadId threadId, FrameLevel level, int evalFlags, const std::string &varobjName, const std::string &expression, std::string &output);
     HRESULT DeleteVar(const std::string &varobjName);
-    HRESULT FindVar(const std::string &varobjName, Variable &variable);
-    HRESULT PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output);
-    HRESULT PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output);
-    HRESULT ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output);
+    HRESULT FindVar(const std::string &varobjName, MIVariable &variable);
+    HRESULT PrintChildren(std::vector<Variable> &children, ThreadId threadId, FrameLevel level, int print_values, bool has_more, std::string &output);
+    HRESULT PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, FrameLevel level, int print_values, std::string &output);
+    HRESULT ListChildren(int childStart, int childEnd, const MIVariable &miVariable, int print_values, std::string &output);
     HRESULT SetLineBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFuncBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
     HRESULT SetExceptionBreakpoints(std::vector<ExceptionBreakpoint> &excBreakpoints, std::vector<Breakpoint> &breakpoints);

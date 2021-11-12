@@ -96,7 +96,7 @@ public:
     virtual int GetNamedVariables(uint32_t variablesReference) = 0;
     virtual HRESULT Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output) = 0;
     virtual HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) = 0;
-    virtual HRESULT SetVariableByExpression(FrameId frameId, const Variable &variable, const std::string &value, std::string &output) = 0;
+    virtual HRESULT SetVariableByExpression(FrameId frameId, const std::string &evaluateName, int evalFlags, const std::string &value, std::string &output) = 0;
     virtual HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) = 0;
     virtual HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) = 0;
     virtual void FreeUnmanaged(PVOID mem) = 0;

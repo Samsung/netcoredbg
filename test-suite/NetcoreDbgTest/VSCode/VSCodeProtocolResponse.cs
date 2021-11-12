@@ -156,4 +156,16 @@ namespace NetcoreDbgTest.VSCode
         public List<ExceptionDetails> innerException;
     }
 
+    public class SetExpressionResponse : Response {
+        public SetExpressionResponseBody body;
+    }
+
+    public class SetExpressionResponseBody {
+        public string value;
+        public string? type;
+        public VariablePresentationHint? presentationHint;
+        public int? variablesReference;
+        public int? namedVariables;
+        public int? indexedVariables;
+    }
 }

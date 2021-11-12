@@ -24,6 +24,12 @@ class EvalWaiter;
 
 struct EvalStackEntry
 {
+    enum class ResetLiteralStatus
+    {
+        No  = 0,
+        Yes = 1
+    };
+
     // Unresolved identifiers.
     // Note, in case we already have some resolved identifiers (iCorValue), unresolved identifiers must be resolved within iCorValue.
     std::vector<std::string> identifiers;
@@ -36,18 +42,21 @@ struct EvalStackEntry
     bool preventBinding;
     // This is literal entry (value was created from literal).
     bool literal;
+    // This entry is real variable (not literal, not result of expression calculation, not result of function call, ...).
+    bool editable;
 
-    EvalStackEntry() : preventBinding(false), literal(false)
+    EvalStackEntry() : preventBinding(false), literal(false), editable(false)
     {}
 
-    void ResetEntry(bool skipLiteral = false)
+    void ResetEntry(ResetLiteralStatus resetLiteral = ResetLiteralStatus::Yes)
     {
         identifiers.clear();
         iCorValue.Free();
         iCorValuePredefined.Free();
         preventBinding = false;
-        if (!skipLiteral)
+        if (resetLiteral == ResetLiteralStatus::Yes)
             literal = false;
+        editable = false;
     }
 };
 
@@ -93,7 +102,7 @@ public:
 
     // Run stack machine for particular expression.
     HRESULT Run(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression,
-                ICorDebugValue **ppResultValue, std::string &output);
+                ICorDebugValue **ppResultValue, bool *editable, std::string &output);
 
     // Find ICorDebugClass objects for all predefined types we need for stack machine during Private.CoreLib load.
     // See ManagedCallback::LoadModule().

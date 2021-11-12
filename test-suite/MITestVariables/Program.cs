@@ -37,10 +37,18 @@ namespace NetcoreDbgTest.Script
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void CheckAttributes(string caller_trace, string variable, string expectedAttributes)
+        {
+            var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", variable));
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(expectedAttributes, ((MIConst)res["attributes"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void CreateAndAssignVar(string caller_trace, string variable, string val, bool ignoreCheck = false)
         {
             var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", variable));
             Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal("editable", ((MIConst)res["attributes"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             string internalName = ((MIConst)res["name"]).CString;
 
@@ -82,7 +90,20 @@ namespace NetcoreDbgTest.Script
             var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", variable));
             Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
             var curValue = ((MIConst)res["value"]).CString;
-            if (((MIConst)res["type"]).CString == "char")
+            var curType = ((MIConst)res["type"]).CString;
+            if (curType == "char")
+            {
+                int foundStr = curValue.IndexOf(" ");
+                if (foundStr >= 0)
+                    curValue = curValue.Remove(foundStr);
+            }
+            Assert.Equal(val, curValue, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            string varName = ((MIConst)res["name"]).CString;
+            res = MIDebugger.Request(String.Format("-var-evaluate-expression {0}", varName));
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            curValue = ((MIConst)res["value"]).CString;
+            if (curType == "char")
             {
                 int foundStr = curValue.IndexOf(" ");
                 if (foundStr >= 0)
@@ -92,7 +113,7 @@ namespace NetcoreDbgTest.Script
         }
 
         public void GetAndCheckChildValue(string caller_trace, string ExpectedResult, string variable,
-                                          int childIndex, bool setEvalFlags, enum_EVALFLAGS evalFlags)
+                                          int childIndex, bool setEvalFlags, enum_EVALFLAGS evalFlags, string expectedAttributes = "editable")
         {
             var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", variable) +
                                          (setEvalFlags ? (" --evalFlags " + (int)evalFlags) : "" ));
@@ -105,9 +126,21 @@ namespace NetcoreDbgTest.Script
             Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             var children = (MIList)res["children"];
-            var child =  (MITuple)((MIResult)children[childIndex]).Value;
+            var child = (MITuple)((MIResult)children[childIndex]).Value;
+            Assert.Equal(expectedAttributes, ((MIConst)child["attributes"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             Assert.Equal(ExpectedResult, ((MIConst)child["value"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            string varName = ((MIConst)child["name"]).CString;
+            res = MIDebugger.Request(String.Format("-var-evaluate-expression {0}", varName));
+            if (ExpectedResult == "<error>")
+            {
+                Assert.Equal(MIResultClass.Error, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+                return;
+            }
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Assert.Equal(ExpectedResult, ((MIConst)res["value"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
         public void WasEntryPointHit(string caller_trace)
@@ -308,6 +341,22 @@ namespace MITestVariables
         }
     }
 
+    public struct TestSetVarStruct
+    {
+        public static int static_field_i;
+        public int field_i;
+
+        public static int static_prop_i
+        { get; set; }
+        public int prop_i
+        { get; set; }
+
+        public static int static_prop_i_noset
+        { get {return 5001;} }
+        public int prop_i_noset
+        { get {return 5002;} }
+    }
+
     public struct TestStruct3
     {
         public int val1
@@ -487,6 +536,8 @@ namespace MITestVariables
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK6");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK7");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_GETTER");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_func1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_func2");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -542,6 +593,14 @@ namespace MITestVariables
             bool    litBool = false;
             string  litString = "string";
             TestImplicitCast1 litClass = new TestImplicitCast1(212);
+
+            int[] array1 = new int[] { 1, 2, 3, 4, 5 };
+
+            TestSetVarStruct setVarStruct = new TestSetVarStruct();
+            TestSetVarStruct.static_field_i = 1001;
+            TestSetVarStruct.static_prop_i = 1002;
+            setVarStruct.field_i = 2001;
+            setVarStruct.prop_i = 2002;
 
             int dummy1 = 1;                                     Label.Breakpoint("BREAK1");
 
@@ -963,12 +1022,50 @@ namespace MITestVariables
                 Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varStruct3", "11m", true);
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "varStruct3.ToString()", "\\\"11\\\"");
 
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[0]", "1");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[1]", "2");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[2]", "3");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[3]", "4");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[4]", "5");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "array1[1]", "11");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "array1[3]", "33");
+
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_field_i", "1001");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "1002");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i_noset", "5001");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.field_i", "2001");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "2002");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i_noset", "5002");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_field_i", "3001");
+                // FIXME debugger must be fixed first //Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
+                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i_noset", "3003");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "setVarStruct.field_i", "4001");
+                // FIXME debugger must be fixed first //Context.CreateAndAssignVar(@"__FILE__:__LINE__",  "setVarStruct.prop_i", "4002");
+                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "setVarStruct.prop_i_noset", "4003");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_field_i", "3001");
+                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.field_i", "4001");
+                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "4002");
+                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1+1", "2");
+                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1", "1");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1.ToString()", "\"1\"");
+
+                Context.CheckAttributes(@"__FILE__:__LINE__", "array1[0]", "editable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "array1?[0]", "editable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "litClass.data", "editable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "litClass?.data", "editable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "1", "noneditable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "-1", "noneditable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "-array1[0]", "noneditable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "1+1", "noneditable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "litClass.data.ToString()", "noneditable");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
             int dummy2 = 2;                                     Label.Breakpoint("BREAK2");
 
-            Label.Checkpoint("test_var", "test_eval_flags", (Object context) => {
+            Label.Checkpoint("test_var", "bp_func_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK2");
 
@@ -1020,8 +1117,21 @@ namespace MITestVariables
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "varClass2.ToString()", "\\\"120\\\"");
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "varStruct3.ToString()", "\\\"11\\\"");
 
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[0]", "1");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[1]", "11");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[2]", "3");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[3]", "33");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[4]", "5");
+
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_field_i", "3001");
+                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.field_i", "4001");
+                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "4002");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
+
+            TestFunctionArgs(10, 5f, "test_string");
 
             TestStruct3 ts3 = new TestStruct3();
 
@@ -1086,8 +1196,8 @@ namespace MITestVariables
                     Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "<error>", "ts6", 1, false, 0);
                     Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "\\\"text_123\\\"", "ts6", 2, false, 0);
                 });
-                // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve)
-                if (!task.Wait(TimeSpan.FromSeconds(20)))
+                // we have 5 seconds evaluation timeout by default, wait 20 seconds (5 seconds eval timeout * 3 eval requests + 5 seconds reserve) * 2 (for 2 command calls)
+                if (!task.Wait(TimeSpan.FromSeconds(40)))
                     throw new DebuggerTimedOut(@"__FILE__:__LINE__");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -1113,6 +1223,39 @@ namespace MITestVariables
                 Context Context = (Context)context;
                 Context.WasExit(@"__FILE__:__LINE__");
                 Context.DebuggerExit(@"__FILE__:__LINE__");
+            });
+        }
+
+        static void TestFunctionArgs(int test_arg_i, float test_arg_f, string test_arg_string)
+        {
+            int dummy1 = 1;                                     Label.Breakpoint("bp_func1");
+
+            Label.Checkpoint("bp_func_test", "bp_func_test2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_func1");
+
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "test_arg_i", "10");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "test_arg_f", "5");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "test_arg_string", "\\\"test_string\\\"");
+
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "test_arg_i", "20");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "test_arg_f", "50");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "test_arg_string", "\"edited_string\"", true);
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            dummy1 = 2;                                         Label.Breakpoint("bp_func2");
+
+            Label.Checkpoint("bp_func_test2", "test_eval_flags", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_func2");
+
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "test_arg_i", "20");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "test_arg_f", "50");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "test_arg_string", "\\\"edited_string\\\"");
+
+                Context.Continue(@"__FILE__:__LINE__");
             });
         }
     }

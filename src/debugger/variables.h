@@ -176,7 +176,8 @@ public:
     HRESULT GetValueByExpression(
         ICorDebugProcess *pProcess,
         FrameId frameId,
-        const Variable &variable,
+        const std::string &evaluateName,
+        int evalFlags,
         ICorDebugValue **ppResult);
 
     HRESULT GetExceptionVariable(

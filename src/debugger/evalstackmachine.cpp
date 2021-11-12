@@ -981,7 +981,7 @@ namespace
         HRESULT Status;
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(GetFrontStackEntryValue(&iCorValue, evalStack, ed, output));
-        evalStack.front().ResetEntry(true); // Don't reset literal status.
+        evalStack.front().ResetEntry(EvalStackEntry::ResetLiteralStatus::No);
         ToRelease<ICorDebugValue> iCorRealValue;
         CorElementType elemType;
         IfFailRet(GetRealValueWithType(iCorValue, &iCorRealValue, &elemType));
@@ -1043,6 +1043,7 @@ namespace
 
         evalStack.emplace_front();
         evalStack.front().identifiers.emplace_back(std::move(String));
+        evalStack.front().editable = true;
         return S_OK;
     }
 
@@ -1217,7 +1218,8 @@ namespace
         ToRelease<ICorDebugValue> iCorArrayValue;
         IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, evalStack, ed, output));
 
-        evalStack.front().ResetEntry();
+        evalStack.front().iCorValue.Free();
+        evalStack.front().identifiers.clear();
         return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 
@@ -1246,7 +1248,8 @@ namespace
             return S_OK;
         }
 
-        evalStack.front().ResetEntry();
+        evalStack.front().iCorValue.Free();
+        evalStack.front().identifiers.clear();
         return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 
@@ -1647,13 +1650,14 @@ namespace
     {
         evalStack.emplace_front();
         evalStack.front().identifiers.emplace_back("this");
+        evalStack.front().editable = true;
         return S_OK;
     }
 
 } // unnamed namespace
 
 HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression,
-                              ICorDebugValue **ppResultValue, std::string &output)
+                              ICorDebugValue **ppResultValue, bool *editable, std::string &output)
 {
     static const std::vector<std::function<HRESULT(std::list<EvalStackEntry>&, PVOID, std::string&, EvalData&)>> CommandImplementation = {
         IdentifierName,
@@ -1742,6 +1746,9 @@ HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, i
             break;
 
         assert(m_evalStack.size() == 1);
+
+        if (editable)
+            *editable = m_evalStack.front().editable;
 
         if (*ppResultValue == nullptr)
         {

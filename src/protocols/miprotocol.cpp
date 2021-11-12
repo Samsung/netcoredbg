@@ -198,40 +198,31 @@ static HRESULT PrintVariables(const std::vector<Variable> &variables, std::strin
     return S_OK;
 }
 
-static bool IsEditable(const std::string &type)
-{
-    static std::unordered_set<std::string> editableTypes{
-        "int", "bool", "char", "byte", "sbyte", "short", "ushort", "uint", "long", "ulong", "decimal", "string"};
-
-    return editableTypes.find(type) != editableTypes.end();
-}
-
 static void PrintVar(const std::string &varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
 {
     std::ostringstream ss;
 
-    std::string editable;
-    if (IsEditable(v.type))
-        editable = "editable";
+    std::string attributes;
+    if (v.editable)
+        attributes = "editable";
     else
-        editable = "noneditable";
+        attributes = "noneditable";
 
     ss << "name=\"" << varobjName << "\",";
     if (print_values)
     {
         ss << "value=\"" << MIProtocol::EscapeMIValue(v.value) << "\",";
     }
-    ss << "attributes=\"" << editable << "\",";
+    ss << "attributes=\"" << attributes << "\",";
     ss << "exp=\"" << MIProtocol::EscapeMIValue(v.name.empty() ? v.evaluateName : v.name) << "\",";
     ss << "numchild=\"" << v.namedVariables << "\",";
     ss << "type=\"" << v.type << "\",";
     ss << "thread-id=\"" << int(threadId) << "\"";
-    //,has_more="0"}
 
     output = ss.str();
 }
 
-HRESULT MIProtocol::PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, int print_values, std::string &output)
+HRESULT MIProtocol::PrintNewVar(const std::string& varobjName, Variable &v, ThreadId threadId, FrameLevel level, int print_values, std::string &output)
 {
     if (m_vars.size() == std::numeric_limits<unsigned>::max())
         return E_FAIL;
@@ -246,7 +237,7 @@ HRESULT MIProtocol::PrintNewVar(const std::string& varobjName, Variable &v, Thre
         name = varobjName;
     }
 
-    m_vars[name] = v;
+    m_vars[name] = MIVariable{v, threadId, level};
 
     PrintVar(name, v, threadId, print_values, output);
 
@@ -262,7 +253,7 @@ HRESULT MIProtocol::CreateVar(ThreadId threadId, FrameLevel level, int evalFlags
     IfFailRet(m_sharedDebugger->Evaluate(frameId, expression, variable, output));
 
     int print_values = 1;
-    return PrintNewVar(varobjName, variable, threadId, print_values, output);
+    return PrintNewVar(varobjName, variable, threadId, level, print_values, output);
 }
 
 HRESULT MIProtocol::DeleteVar(const std::string &varobjName)
@@ -280,7 +271,7 @@ HRESULT MIProtocol::DeleteVar(const std::string &varobjName)
     return S_OK;
 }
 
-HRESULT MIProtocol::FindVar(const std::string &varobjName, Variable &variable)
+HRESULT MIProtocol::FindVar(const std::string &varobjName, MIVariable &variable)
 {
     auto it = m_vars.find(varobjName);
     if (it == m_vars.end())
@@ -299,7 +290,7 @@ void MIProtocol::Cleanup()
     m_exceptionBreakpoints.clear();
 }
 
-HRESULT MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadId, int print_values, bool has_more, std::string &output)
+HRESULT MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId threadId, FrameLevel level, int print_values, bool has_more, std::string &output)
 {
     HRESULT Status;
     std::ostringstream ss;
@@ -317,7 +308,7 @@ HRESULT MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId thre
     {
         std::string varout;
         std::string minus("-");
-        IfFailRet(PrintNewVar(minus, child, threadId, print_values, varout));
+        IfFailRet(PrintNewVar(minus, child, threadId, level, print_values, varout));
 
         ss << sep;
         sep = ",";
@@ -331,29 +322,24 @@ HRESULT MIProtocol::PrintChildren(std::vector<Variable> &children, ThreadId thre
     return S_OK;
 }
 
-HRESULT MIProtocol::ListChildren(ThreadId threadId, FrameLevel level, int childStart, int childEnd, const std::string &varName, int print_values, std::string &output)
+HRESULT MIProtocol::ListChildren(int childStart, int childEnd, const MIVariable &miVariable, int print_values, std::string &output)
 {
     HRESULT Status;
-
-    StackFrame stackFrame(threadId, level, "");
-
     std::vector<Variable> variables;
-
-    auto it = m_vars.find(varName);
-    if (it == m_vars.end())
-        return E_FAIL;
-
-    uint32_t variablesReference = it->second.variablesReference;
 
     bool has_more = false;
 
-    if (variablesReference > 0)
+    if (miVariable.variable.variablesReference > 0)
     {
-        IfFailRet(m_sharedDebugger->GetVariables(variablesReference, VariablesNamed, childStart, childEnd - childStart, variables));
-        has_more = childEnd < m_sharedDebugger->GetNamedVariables(variablesReference);
+        IfFailRet(m_sharedDebugger->GetVariables(miVariable.variable.variablesReference, VariablesNamed, childStart, childEnd - childStart, variables));
+        has_more = childEnd < m_sharedDebugger->GetNamedVariables(miVariable.variable.variablesReference);
+        for (auto &child : variables)
+        {
+            child.editable = miVariable.variable.editable;
+        }
     }
 
-    return PrintChildren(variables, threadId, print_values, has_more, output);
+    return PrintChildren(variables, miVariable.threadId, miVariable.level, print_values, has_more, output);
 }
 
 HRESULT MIProtocol::SetLineBreakpoint(
@@ -956,16 +942,16 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
             return E_FAIL;
         }
 
-        ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
-        FrameLevel level{ ProtocolUtils::GetIntArg(args, "--frame", 0) };
-
         int childStart = 0;
         int childEnd = INT_MAX;
         ProtocolUtils::StripArgs(args);
         ProtocolUtils::GetIndices(args, childStart, childEnd);
         std::string varName = args.at(0);
+        HRESULT Status;
+        MIVariable miVariable;
+        IfFailRet(FindVar(varName, miVariable));
 
-        return ListChildren(threadId, level, childStart, childEnd, varName, print_values, output);
+        return ListChildren(childStart, childEnd, miVariable, print_values, output);
     }},
     { "var-delete", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.size() < 1)
@@ -1048,17 +1034,17 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
     }},
     { "var-show-attributes", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
-        Variable variable;
+        MIVariable miVariable;
         std::string varName = args.at(0);
-        std::string editable;
+        std::string attributes;
 
-        IfFailRet(FindVar(varName, variable));
-        if (IsEditable(variable.type))
-            editable = "editable";
+        IfFailRet(FindVar(varName, miVariable));
+        if (miVariable.variable.editable)
+            attributes = "editable";
         else
-            editable = "noneditable";
+            attributes = "noneditable";
 
-        output = "status=\"" + editable + "\"";
+        output = "status=\"" + attributes + "\"";
         return S_OK;
     }},
     { "var-assign", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -1076,17 +1062,34 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
         if (varExpr.size() >= 2 && varExpr.front() == '"' && varExpr.back() == '"')
             varExpr = varExpr.substr(1, varExpr.size() - 2);
 
-        ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(m_sharedDebugger->GetLastStoppedThreadId())) };
-        FrameLevel level{ ProtocolUtils::GetIntArg(args, "--frame", 0) };
-        FrameId frameId(threadId, level);
+        MIVariable miVariable;
+        IfFailRet(FindVar(varName, miVariable));
 
-        Variable variable;
-        IfFailRet(FindVar(varName, variable));
-
-        IfFailRet(m_sharedDebugger->SetVariableByExpression(frameId, variable, varExpr, output));
+        FrameId frameId(miVariable.threadId, miVariable.level);
+        IfFailRet(m_sharedDebugger->SetVariableByExpression(frameId, miVariable.variable.evaluateName, miVariable.variable.evalFlags, varExpr, output));
 
         output = "value=\"" + MIProtocol::EscapeMIValue(output) + "\"";
 
+        return S_OK;
+    }},
+    { "var-evaluate-expression", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        HRESULT Status;
+
+        if (args.size() != 1)
+        {
+            output = "Command requires 1 argument";
+            return E_FAIL;
+        }
+
+        std::string varName = args.at(0);
+
+        MIVariable miVariable;
+        IfFailRet(FindVar(varName, miVariable));
+        FrameId frameId(miVariable.threadId, miVariable.level);
+        Variable variable(miVariable.variable.evalFlags);
+        IfFailRet(m_sharedDebugger->Evaluate(frameId, miVariable.variable.evaluateName, variable, output));
+
+        output = "value=\"" + MIProtocol::EscapeMIValue(variable.value) + "\"";
         return S_OK;
     }},
     };

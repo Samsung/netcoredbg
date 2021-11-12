@@ -333,6 +333,22 @@ namespace NetcoreDbgTest.Script
             Assert.False(VSCodeDebugger.Request(setVariableRequest).Success, @"__FILE__:__LINE__");
         }
 
+        public void SetExpression(string caller_trace, Int64 frameId, string Expression, string Value)
+        {
+            SetExpressionRequest setExpressionRequest = new SetExpressionRequest();
+            setExpressionRequest.arguments.expression = Expression;
+            setExpressionRequest.arguments.value = Value;
+            Assert.True(VSCodeDebugger.Request(setExpressionRequest).Success, @"__FILE__:__LINE__");
+        }
+
+        public void ErrorSetExpression(string caller_trace, Int64 frameId, string Expression, string Value)
+        {
+            SetExpressionRequest setExpressionRequest = new SetExpressionRequest();
+            setExpressionRequest.arguments.expression = Expression;
+            setExpressionRequest.arguments.value = Value;
+            Assert.False(VSCodeDebugger.Request(setExpressionRequest).Success, @"__FILE__:__LINE__");
+        }
+
         public void Continue(string caller_trace)
         {
             ContinueRequest continueRequest = new ContinueRequest();
@@ -414,6 +430,38 @@ namespace VSCodeTestVariables
         {
             return data.ToString();
         }
+    }
+
+    public struct TestSetVarStruct
+    {
+        public static int static_field_i;
+        public int field_i;
+
+        public static int static_prop_i
+        { get; set; }
+        public int prop_i
+        { get; set; }
+
+        public static int static_prop_i_noset
+        { get {return 5001;} }
+        public int prop_i_noset
+        { get {return 5002;} }
+    }
+
+    public struct TestSetExprStruct
+    {
+        public static int static_field_i;
+        public int field_i;
+
+        public static int static_prop_i
+        { get; set; }
+        public int prop_i
+        { get; set; }
+
+        public static int static_prop_i_noset
+        { get {return 5001;} }
+        public int prop_i_noset
+        { get {return 5002;} }
     }
 
     public struct TestStruct4
@@ -577,7 +625,8 @@ namespace VSCodeTestVariables
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp3");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp4");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp5");
-                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_func");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_func1");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_func2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_getter");
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.PrepareEnd(@"__FILE__:__LINE__");
@@ -636,6 +685,20 @@ namespace VSCodeTestVariables
             bool    litBool = false;
             string  litString = "string";
             TestImplicitCast1 litClass = new TestImplicitCast1(212);
+
+            int[] array1 = new int[] { 1, 2, 3, 4, 5 };
+
+            TestSetVarStruct setVarStruct = new TestSetVarStruct();
+            TestSetVarStruct.static_field_i = 1001;
+            TestSetVarStruct.static_prop_i = 1002;
+            setVarStruct.field_i = 2001;
+            setVarStruct.prop_i = 2002;
+
+            TestSetExprStruct setExprStruct = new TestSetExprStruct();
+            TestSetExprStruct.static_field_i = 1001;
+            TestSetExprStruct.static_prop_i = 1002;
+            setExprStruct.field_i = 2001;
+            setExprStruct.prop_i = 2002;
 
             int dummy1 = 1;                                     Label.Breakpoint("BREAK1");
 
@@ -1059,6 +1122,53 @@ namespace VSCodeTestVariables
                 Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varStruct3", "11m", true);
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varStruct3.ToString()", "\"11\"");
 
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[0]", "1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[1]", "2");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[2]", "3");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[3]", "4");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[4]", "5");
+                int array1Reference = Context.GetChildVariablesReference(@"__FILE__:__LINE__", variablesReference, "array1");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, array1Reference, "[1]", "11");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, array1Reference, "[3]", "33");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetVarStruct.static_field_i", "1001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetVarStruct.static_prop_i", "1002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetVarStruct.static_prop_i_noset", "5001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.field_i", "2001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.prop_i", "2002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.prop_i_noset", "5002");
+                int setVarStructReference = Context.GetChildVariablesReference(@"__FILE__:__LINE__", variablesReference, "setVarStruct");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, setVarStructReference, "static_field_i", "3001", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, setVarStructReference, "static_prop_i", "3002", true);
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", setVarStructReference, "static_prop_i_noset", "3003");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, setVarStructReference, "field_i", "4001", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, setVarStructReference, "prop_i", "4002", true);
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", setVarStructReference, "prop_i_noset", "4003");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetVarStruct.static_field_i", "3001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetVarStruct.static_prop_i", "3002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.field_i", "4001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.prop_i", "4002");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_field_i", "1001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "1002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i_noset", "5001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.field_i", "2001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "2002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i_noset", "5002");
+                Context.SetExpression(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_field_i", "3001");
+                Context.SetExpression(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
+                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i_noset", "3003");
+                Context.SetExpression(@"__FILE__:__LINE__", frameId, "setExprStruct.field_i", "4001");
+                Context.SetExpression(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
+                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i_noset", "4003");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_field_i", "3001");
+                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.field_i", "4001");
+                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
+                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1+1", "2");
+                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1", "1");
+                Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1.ToString()", "\"1\"");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -1118,10 +1228,26 @@ namespace VSCodeTestVariables
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varClass2.ToString()", "\"120\"");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "varStruct3.ToString()", "\"11\"");
 
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[0]", "1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[1]", "11");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[2]", "3");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[3]", "33");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "array1[4]", "5");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetVarStruct.static_field_i", "3001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetVarStruct.static_prop_i", "3002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.field_i", "4001");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.prop_i", "4002");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_field_i", "3001");
+                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.field_i", "4001");
+                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
-            TestFunction(10);
+            TestFunctionArgs(10, 5f, "test_string");
 
             TestStruct4 ts4 = new TestStruct4();
 
@@ -1239,18 +1365,39 @@ namespace VSCodeTestVariables
             });
         }
 
-        static void TestFunction(int t)
+        static void TestFunctionArgs(int test_arg_i, float test_arg_f, string test_arg_string)
         {
-            int f = 5;
-            Console.WriteLine("f = " + f.ToString());                     Label.Breakpoint("bp_func");
+            int dummy1 = 1;                                     Label.Breakpoint("bp_func1");
 
-            Label.Checkpoint("bp_func_test", "test_debugger_browsable_state", (Object context) => {
+            Label.Checkpoint("bp_func_test", "bp_func_test2", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_func");
-                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp_func");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_func1");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp_func1");
                 int variablesReference = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
-                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "t", "10");
-                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "f", "5");
+
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "test_arg_i", "10");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "float", "test_arg_f", "5");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "string", "test_arg_string", "\"test_string\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "test_arg_i", "20", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "test_arg_f", "50", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "test_arg_string", "\"edited_string\"", true);
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            dummy1 = 2;                                         Label.Breakpoint("bp_func2");
+
+            Label.Checkpoint("bp_func_test2", "test_debugger_browsable_state", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_func2");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp_func2");
+                int variablesReference = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
+
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "int", "test_arg_i", "20");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "float", "test_arg_f", "50");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference, "string", "test_arg_string", "\"edited_string\"");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
         }

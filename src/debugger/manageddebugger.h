@@ -155,7 +155,7 @@ public:
     int GetNamedVariables(uint32_t variablesReference) override;
     HRESULT Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output) override;
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
-    HRESULT SetVariableByExpression(FrameId frameId, const Variable &variable, const std::string &value, std::string &output) override;
+    HRESULT SetVariableByExpression(FrameId frameId, const std::string &evaluateName, int evalFlags, const std::string &value, std::string &output) override;
     HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) override;
     HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) override;
     void FreeUnmanaged(PVOID mem) override;

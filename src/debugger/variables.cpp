@@ -418,7 +418,7 @@ HRESULT Variables::Evaluate(
 
     ToRelease<ICorDebugValue> pResultValue;
     FrameLevel frameLevel = frameId.getLevel();
-    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, output));
+    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, &variable.editable, output));
 
     variable.evaluateName = expression;
     IfFailRet(PrintValue(pResultValue, variable.value));
@@ -477,7 +477,7 @@ HRESULT Variables::SetStackVariable(
 
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, ref.evalFlags));
-        IfFailRet(m_sharedEvalStackMachine->Run(pThread, ref.frameId.getLevel(), ref.evalFlags, value, iCorValue.GetRef(), output));
+        IfFailRet(m_sharedEvalStackMachine->Run(pThread, ref.frameId.getLevel(), ref.evalFlags, value, iCorValue.GetRef(), nullptr, output));
         IfFailRet(PrintValue(iCorValue, output));
         return E_ABORT; // Fast exit from cycle.
     })) && Status != E_ABORT)
@@ -524,7 +524,7 @@ HRESULT Variables::SetChild(
 }
 
 HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId frameId,
-                                        const Variable &variable, ICorDebugValue **ppResult)
+                                        const std::string &evaluateName, int evalFlags, ICorDebugValue **ppResult)
 {
     if (pProcess == nullptr)
         return E_FAIL;
@@ -542,7 +542,7 @@ HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId fram
     // All "set value" code must be refactored in order to remove dependency from Roslyn.
 
     std::string output;
-    return m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), variable.evalFlags, variable.evaluateName, ppResult, output);
+    return m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), evalFlags, evaluateName, ppResult, nullptr, output);
 }
 
 HRESULT Variables::SetVariable(
@@ -565,7 +565,7 @@ HRESULT Variables::SetVariable(
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(pProcess->GetThread(int(threadId), &pThread));
 
-    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), evalFlags, value, &pVariable, output));
+    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), evalFlags, value, &pVariable, nullptr, output));
     IfFailRet(PrintValue(pVariable, output));
     return S_OK;
 }

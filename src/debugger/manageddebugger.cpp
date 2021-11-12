@@ -1002,7 +1002,8 @@ HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string 
 
 HRESULT ManagedDebugger::SetVariableByExpression(
     FrameId frameId,
-    const Variable &variable,
+    const std::string &evaluateName,
+    int evalFlags,
     const std::string &value,
     std::string &output)
 {
@@ -1011,8 +1012,8 @@ HRESULT ManagedDebugger::SetVariableByExpression(
     HRESULT Status;
     ToRelease<ICorDebugValue> pResultValue;
 
-    IfFailRet(m_sharedVariables->GetValueByExpression(m_iCorProcess, frameId, variable, &pResultValue));
-    return m_sharedVariables->SetVariable(m_iCorProcess, pResultValue, value, frameId, variable.evalFlags, output);
+    IfFailRet(m_sharedVariables->GetValueByExpression(m_iCorProcess, frameId, evaluateName, evalFlags, &pResultValue));
+    return m_sharedVariables->SetVariable(m_iCorProcess, pResultValue, value, frameId, evalFlags, output);
 }
 
 

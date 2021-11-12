@@ -367,4 +367,19 @@ namespace NetcoreDbgTest.VSCode
     public class ExceptionInfoArguments {
         public int threadId;
     }
+
+    public class SetExpressionRequest : Request {
+        public SetExpressionRequest()
+        {
+            command = "setExpression";
+        }
+        public SetExpressionArguments arguments = new SetExpressionArguments();
+    }
+
+    public class SetExpressionArguments {
+        public string expression;
+        public string value;
+        public int? frameId;
+        public ValueFormat? format;
+    }
 }
