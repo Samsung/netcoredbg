@@ -212,12 +212,12 @@ HRESULT ExceptionBreakpoints::GetExceptionDetails(ICorDebugThread *pThread, ICor
     HRESULT Status;
     ToRelease<ICorDebugValue> iCorInnerExceptionValue;
     const bool escape = false;
-    m_sharedEvaluator->WalkMembers(pExceptionValue, pThread, FrameLevel{0}, [&](
+    m_sharedEvaluator->WalkMembers(pExceptionValue, pThread, FrameLevel{0}, false, [&](
         ICorDebugType*,
         bool,
         const std::string &memberName,
         Evaluator::GetValueCallback getValue,
-        Evaluator::SetValueCallback)
+        Evaluator::SetterData*)
     {
         auto getMemberWithName = [&](const std::string &name, std::string &result) -> HRESULT
         {
@@ -491,12 +491,12 @@ HRESULT ExceptionBreakpoints::ManagedCallbackException(ICorDebugThread *pThread,
     // Note, this is optional field in exception object that could have nulled reference.
     std::string excMessage;
     const bool escape = false;
-    m_sharedEvaluator->WalkMembers(iCorExceptionValue, pThread, FrameLevel{0}, [&](
+    m_sharedEvaluator->WalkMembers(iCorExceptionValue, pThread, FrameLevel{0}, false, [&](
         ICorDebugType*,
         bool,
         const std::string &memberName,
         Evaluator::GetValueCallback getValue,
-        Evaluator::SetValueCallback)
+        Evaluator::SetterData*)
     {
         ToRelease<ICorDebugValue> pResultValue;
 

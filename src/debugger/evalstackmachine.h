@@ -14,11 +14,11 @@
 #include <unordered_map>
 #include "interfaces/types.h"
 #include "utils/torelease.h"
+#include "debugger/evaluator.h"
 
 namespace netcoredbg
 {
 
-class Evaluator;
 class EvalHelpers;
 class EvalWaiter;
 
@@ -44,6 +44,9 @@ struct EvalStackEntry
     bool literal;
     // This entry is real variable (not literal, not result of expression calculation, not result of function call, ...).
     bool editable;
+    // In case iCorValue is editable and property, we need extra data in order to set value.
+    // Note, this data directly connected with `iCorValue` and could be available only in case `editable` is true.
+    std::unique_ptr<Evaluator::SetterData> setterData;
 
     EvalStackEntry() : preventBinding(false), literal(false), editable(false)
     {}
@@ -57,6 +60,7 @@ struct EvalStackEntry
         if (resetLiteral == ResetLiteralStatus::Yes)
             literal = false;
         editable = false;
+        setterData.reset();
     }
 };
 
@@ -85,8 +89,11 @@ class EvalStackMachine
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
-    std::list<EvalStackEntry> m_evalStack;
     EvalData m_evalData;
+
+    // Run stack machine for particular expression.
+    HRESULT Run(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression,
+                std::list<EvalStackEntry> &evalStack, std::string &output);
 
 public:
 
@@ -100,9 +107,13 @@ public:
         m_evalData.pEvalWaiter = m_sharedEvalWaiter.get();
     }
 
-    // Run stack machine for particular expression.
-    HRESULT Run(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression,
-                ICorDebugValue **ppResultValue, bool *editable, std::string &output);
+    // Evaluate expression. Optional, return `editable` state and in case result is property - setter related information.
+    HRESULT EvaluateExpression(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression, ICorDebugValue **ppResultValue,
+                               std::string &output, bool *editable = nullptr, std::unique_ptr<Evaluator::SetterData> *resultSetterData = nullptr);
+
+    // Set value in pValue by expression with implicitly cast expression result to pValue type, if need.
+    HRESULT SetValueByExpression(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, ICorDebugValue *pValue,
+                                 const std::string &expression, std::string &output);
 
     // Find ICorDebugClass objects for all predefined types we need for stack machine during Private.CoreLib load.
     // See ManagedCallback::LoadModule().

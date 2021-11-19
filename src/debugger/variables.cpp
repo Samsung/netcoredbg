@@ -37,12 +37,12 @@ void Variables::GetNumChild(
     int numStatic = 0;
     int numInstance = 0;
     // No thread and FrameLevel{0} here, since we need only count childs.
-    if (FAILED(m_sharedEvaluator->WalkMembers(pValue, nullptr, FrameLevel{0}, [&numStatic, &numInstance](
+    if (FAILED(m_sharedEvaluator->WalkMembers(pValue, nullptr, FrameLevel{0}, false, [&numStatic, &numInstance](
         ICorDebugType *,
         bool is_static,
         const std::string &,
         Evaluator::GetValueCallback,
-        Evaluator::SetValueCallback)
+        Evaluator::SetterData*)
     {
         if (is_static)
             numStatic++;
@@ -109,12 +109,12 @@ HRESULT Variables::FetchFieldsAndProperties(
 
     int currentIndex = -1;
 
-    IfFailRet(m_sharedEvaluator->WalkMembers(pInputValue, pThread, frameLevel, [&](
+    IfFailRet(m_sharedEvaluator->WalkMembers(pInputValue, pThread, frameLevel, false, [&](
         ICorDebugType *pType,
         bool is_static,
         const std::string &name,
         Evaluator::GetValueCallback getValue,
-        Evaluator::SetValueCallback)
+        Evaluator::SetterData*)
     {
         if (is_static)
             hasStaticMembers = true;
@@ -418,7 +418,7 @@ HRESULT Variables::Evaluate(
 
     ToRelease<ICorDebugValue> pResultValue;
     FrameLevel frameLevel = frameId.getLevel();
-    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, &variable.editable, output));
+    IfFailRet(m_sharedEvalStackMachine->EvaluateExpression(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, output, &variable.editable));
 
     variable.evaluateName = expression;
     IfFailRet(PrintValue(pResultValue, variable.value));
@@ -477,7 +477,7 @@ HRESULT Variables::SetStackVariable(
 
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, ref.evalFlags));
-        IfFailRet(m_sharedEvalStackMachine->Run(pThread, ref.frameId.getLevel(), ref.evalFlags, value, iCorValue.GetRef(), nullptr, output));
+        IfFailRet(m_sharedEvaluator->SetValue(pThread, ref.frameId.getLevel(), iCorValue, nullptr, value, ref.evalFlags, output));
         IfFailRet(PrintValue(iCorValue, output));
         return E_ABORT; // Fast exit from cycle.
     })) && Status != E_ABORT)
@@ -503,58 +503,35 @@ HRESULT Variables::SetChild(
 
     HRESULT Status;
 
-    IfFailRet(m_sharedEvaluator->WalkMembers(ref.iCorValue, pThread, ref.frameId.getLevel(), [&](
+    if (FAILED(Status = m_sharedEvaluator->WalkMembers(ref.iCorValue, pThread, ref.frameId.getLevel(), true, [&](
         ICorDebugType*,
         bool is_static,
         const std::string &varName,
         Evaluator::GetValueCallback getValue,
-        Evaluator::SetValueCallback setValue) -> HRESULT
+        Evaluator::SetterData *setterData) -> HRESULT
     {
-        if (varName == name)
-        {
-            IfFailRet(setValue(value, output, ref.evalFlags));
-            ToRelease<ICorDebugValue> iCorValue;
-            IfFailRet(getValue(&iCorValue, ref.evalFlags));
-            IfFailRet(PrintValue(iCorValue, output));
-        }
-        return S_OK;
-    }));
+        if (varName != name)
+            return S_OK;
+
+        if (setterData && !setterData->setterFunction)
+            return E_FAIL;
+
+        ToRelease<ICorDebugValue> iCorValue;
+        IfFailRet(getValue(&iCorValue, ref.evalFlags));
+        IfFailRet(m_sharedEvaluator->SetValue(pThread, ref.frameId.getLevel(), iCorValue, setterData, value, ref.evalFlags, output));
+        IfFailRet(PrintValue(iCorValue, output));
+        return E_ABORT; // Fast exit from cycle.
+    })) && Status != E_ABORT)
+    {
+        return Status;
+    }
 
     return S_OK;
 }
 
-HRESULT Variables::GetValueByExpression(ICorDebugProcess *pProcess, FrameId frameId,
-                                        const std::string &evaluateName, int evalFlags, ICorDebugValue **ppResult)
+HRESULT Variables::SetExpression(ICorDebugProcess *pProcess, FrameId frameId, const std::string &expression,
+                                 int evalFlags, const std::string &value, std::string &output)
 {
-    if (pProcess == nullptr)
-        return E_FAIL;
-
-    HRESULT Status;
-
-    ThreadId threadId = frameId.getThread();
-    if (!threadId)
-        return E_FAIL;
-
-    ToRelease<ICorDebugThread> pThread;
-    IfFailRet(pProcess->GetThread(int(threadId), &pThread));
-
-    // Looks like all we need here is get ICorDebugValue by field/variable name.
-    // All "set value" code must be refactored in order to remove dependency from Roslyn.
-
-    std::string output;
-    return m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), evalFlags, evaluateName, ppResult, nullptr, output);
-}
-
-HRESULT Variables::SetVariable(
-    ICorDebugProcess *pProcess,
-    ICorDebugValue *pVariable,
-    const std::string &value,
-    FrameId frameId,
-    int evalFlags,
-    std::string &output)
-{
-    HRESULT Status;
-
     if (pProcess == nullptr)
         return E_FAIL;
 
@@ -562,11 +539,23 @@ HRESULT Variables::SetVariable(
     if (!threadId)
         return E_FAIL;
 
+    HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(pProcess->GetThread(int(threadId), &pThread));
 
-    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameId.getLevel(), evalFlags, value, &pVariable, nullptr, output));
-    IfFailRet(PrintValue(pVariable, output));
+    ToRelease<ICorDebugValue> iCorValue;
+    bool editable = false;
+    std::unique_ptr<Evaluator::SetterData> setterData;
+    IfFailRet(m_sharedEvalStackMachine->EvaluateExpression(pThread, frameId.getLevel(), evalFlags, expression, &iCorValue, output, &editable, &setterData));
+    if (!editable ||
+        (editable && setterData.get() && !setterData.get()->setterFunction)) // property, that don't have setter
+    {
+        output = "'" + expression + "' cannot be assigned to";
+        return E_INVALIDARG;
+    }
+
+    IfFailRet(m_sharedEvaluator->SetValue(pThread, frameId.getLevel(), iCorValue, setterData.get(), value, evalFlags, output));
+    IfFailRet(PrintValue(iCorValue, output));
     return S_OK;
 }
 

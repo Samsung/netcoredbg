@@ -1037,23 +1037,25 @@ namespace MITestVariables
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "2002");
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i_noset", "5002");
                 Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_field_i", "3001");
-                // FIXME debugger must be fixed first //Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
-                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i_noset", "3003");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i_noset", "3003");
                 Context.CreateAndAssignVar(@"__FILE__:__LINE__", "setVarStruct.field_i", "4001");
-                // FIXME debugger must be fixed first //Context.CreateAndAssignVar(@"__FILE__:__LINE__",  "setVarStruct.prop_i", "4002");
-                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "setVarStruct.prop_i_noset", "4003");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__",  "setVarStruct.prop_i", "4002");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "setVarStruct.prop_i_noset", "4003");
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_field_i", "3001");
-                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.field_i", "4001");
-                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "4002");
-                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1+1", "2");
-                // FIXME debugger must be fixed first //Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1", "1");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "4002");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1+1", "2");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1", "1");
                 Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "1.ToString()", "\"1\"");
 
                 Context.CheckAttributes(@"__FILE__:__LINE__", "array1[0]", "editable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "array1?[0]", "editable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "litClass.data", "editable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "litClass?.data", "editable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "editable");
+                Context.CheckAttributes(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i_noset", "noneditable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "1", "noneditable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "-1", "noneditable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "-array1[0]", "noneditable");
@@ -1124,9 +1126,9 @@ namespace MITestVariables
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "array1[4]", "5");
 
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_field_i", "3001");
-                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestSetVarStruct.static_prop_i", "3002");
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.field_i", "4001");
-                // FIXME debugger must be fixed first //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "4002");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "setVarStruct.prop_i", "4002");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

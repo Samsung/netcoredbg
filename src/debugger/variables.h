@@ -153,12 +153,12 @@ public:
         uint32_t ref,
         std::string &output);
 
-    HRESULT SetVariable(
+    HRESULT SetExpression(
         ICorDebugProcess *pProcess,
-        ICorDebugValue *pVariable,
-        const std::string &value,
         FrameId frameId,
+        const std::string &expression,
         int evalFlags,
+        const std::string &value,
         std::string &output);
 
     HRESULT GetScopes(
@@ -172,13 +172,6 @@ public:
         const std::string &expression,
         Variable &variable,
         std::string &output);
-
-    HRESULT GetValueByExpression(
-        ICorDebugProcess *pProcess,
-        FrameId frameId,
-        const std::string &evaluateName,
-        int evalFlags,
-        ICorDebugValue **ppResult);
 
     HRESULT GetExceptionVariable(
         FrameId frameId,

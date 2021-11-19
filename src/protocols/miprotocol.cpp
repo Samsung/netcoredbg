@@ -1066,7 +1066,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
         IfFailRet(FindVar(varName, miVariable));
 
         FrameId frameId(miVariable.threadId, miVariable.level);
-        IfFailRet(m_sharedDebugger->SetVariableByExpression(frameId, miVariable.variable.evaluateName, miVariable.variable.evalFlags, varExpr, output));
+        IfFailRet(m_sharedDebugger->SetExpression(frameId, miVariable.variable.evaluateName, miVariable.variable.evalFlags, varExpr, output));
 
         output = "value=\"" + MIProtocol::EscapeMIValue(output) + "\"";
 

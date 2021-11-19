@@ -8,7 +8,6 @@
 #include <iterator>
 #include <arrayholder.h>
 #include "debugger/evalstackmachine.h"
-#include "debugger/evaluator.h"
 #include "debugger/evalhelpers.h"
 #include "debugger/evalwaiter.h"
 #include "debugger/valueprint.h"
@@ -291,10 +290,17 @@ namespace
         return S_OK;
     }
 
-    HRESULT GetFrontStackEntryValue(ICorDebugValue **ppResultValue, std::list<EvalStackEntry> &evalStack, EvalData &ed, std::string &output)
+    HRESULT GetFrontStackEntryValue(ICorDebugValue **ppResultValue, std::unique_ptr<Evaluator::SetterData> *resultSetterData, std::list<EvalStackEntry> &evalStack, EvalData &ed, std::string &output)
     {
         HRESULT Status;
-        if (FAILED(Status = ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, evalStack.front().identifiers, ppResultValue, nullptr, ed.evalFlags))
+        Evaluator::SetterData *inputPropertyData = nullptr;
+        if (evalStack.front().editable)
+            inputPropertyData = evalStack.front().setterData.get();
+        else
+            resultSetterData = nullptr;
+
+        if (FAILED(Status = ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, inputPropertyData,  evalStack.front().identifiers,
+                                                              ppResultValue, resultSetterData, nullptr, ed.evalFlags))
             && !evalStack.front().identifiers.empty())
         {
             std::ostringstream ss;
@@ -314,7 +320,8 @@ namespace
     {
         HRESULT Status;
         ToRelease<ICorDebugValue> iCorValue;
-        if ((FAILED(Status = ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, evalStack.front().identifiers, &iCorValue, ppResultType, ed.evalFlags))
+        if ((FAILED(Status = ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, nullptr, evalStack.front().identifiers,
+                                                               &iCorValue, nullptr, ppResultType, ed.evalFlags))
             && !evalStack.front().identifiers.empty()) || iCorValue)
         {
             std::ostringstream ss;
@@ -342,7 +349,7 @@ namespace
         for (int32_t i = 0; i < dimension; i++)
         {
             ToRelease<ICorDebugValue> iCorValue;
-            IfFailRet(GetFrontStackEntryValue(&iCorValue, evalStack, ed, output));
+            IfFailRet(GetFrontStackEntryValue(&iCorValue, nullptr, evalStack, ed, output));
             evalStack.pop_front();
 
             // TODO implicitly convert iCorValue to int, if type not int
@@ -868,14 +875,14 @@ namespace
     {
         HRESULT Status;
         ToRelease<ICorDebugValue> iCorValue2;
-        IfFailRet(GetFrontStackEntryValue(&iCorValue2, evalStack, ed, output));
+        IfFailRet(GetFrontStackEntryValue(&iCorValue2, nullptr, evalStack, ed, output));
         evalStack.pop_front();
         ToRelease<ICorDebugValue> iCorRealValue2;
         CorElementType elemType2;
         IfFailRet(GetRealValueWithType(iCorValue2, &iCorRealValue2, &elemType2));
 
         ToRelease<ICorDebugValue> iCorValue1;
-        IfFailRet(GetFrontStackEntryValue(&iCorValue1, evalStack, ed, output));
+        IfFailRet(GetFrontStackEntryValue(&iCorValue1, nullptr, evalStack, ed, output));
         evalStack.front().ResetEntry();
         ToRelease<ICorDebugValue> iCorRealValue1;
         CorElementType elemType1;
@@ -980,7 +987,7 @@ namespace
     {
         HRESULT Status;
         ToRelease<ICorDebugValue> iCorValue;
-        IfFailRet(GetFrontStackEntryValue(&iCorValue, evalStack, ed, output));
+        IfFailRet(GetFrontStackEntryValue(&iCorValue, nullptr, evalStack, ed, output));
         evalStack.front().ResetEntry(EvalStackEntry::ResetLiteralStatus::No);
         ToRelease<ICorDebugValue> iCorRealValue;
         CorElementType elemType;
@@ -1067,7 +1074,7 @@ namespace
         std::vector<ToRelease<ICorDebugValue>> iCorArgs(Int);
         for (int32_t i = Int - 1; i >= 0; i--)
         {
-            IfFailRet(GetFrontStackEntryValue(&iCorArgs[i], evalStack, ed, output));
+            IfFailRet(GetFrontStackEntryValue(&iCorArgs[i], nullptr, evalStack, ed, output));
             evalStack.pop_front();
         }
 
@@ -1098,7 +1105,7 @@ namespace
 
         ToRelease<ICorDebugValue> iCorValue;
         ToRelease<ICorDebugType> iCorType;
-        IfFailRet(ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, evalStack.front().identifiers, &iCorValue, &iCorType, ed.evalFlags));
+        IfFailRet(ed.pEvaluator->ResolveIdentifiers(ed.pThread, ed.frameLevel, evalStack.front().iCorValue, nullptr, evalStack.front().identifiers, &iCorValue, nullptr, &iCorType, ed.evalFlags));
 
         bool searchStatic = false;
         if (iCorType)
@@ -1216,10 +1223,12 @@ namespace
             return S_OK;
 
         ToRelease<ICorDebugValue> iCorArrayValue;
-        IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, evalStack, ed, output));
+        std::unique_ptr<Evaluator::SetterData> setterData;
+        IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, &setterData, evalStack, ed, output));
 
         evalStack.front().iCorValue.Free();
         evalStack.front().identifiers.clear();
+        evalStack.front().setterData = std::move(setterData);
         return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 
@@ -1235,7 +1244,8 @@ namespace
             return S_OK;
 
         ToRelease<ICorDebugValue> iCorArrayValue;
-        IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, evalStack, ed, output));
+        std::unique_ptr<Evaluator::SetterData> setterData;
+        IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, &setterData, evalStack, ed, output));
 
         ToRelease<ICorDebugReferenceValue> pReferenceValue;
         IfFailRet(iCorArrayValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue));
@@ -1250,6 +1260,7 @@ namespace
 
         evalStack.front().iCorValue.Free();
         evalStack.front().identifiers.clear();
+        evalStack.front().setterData = std::move(setterData);
         return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
     }
 
@@ -1353,9 +1364,11 @@ namespace
 
         HRESULT Status;
         ToRelease<ICorDebugValue> iCorValue;
-        IfFailRet(GetFrontStackEntryValue(&iCorValue, evalStack, ed, output));
+        std::unique_ptr<Evaluator::SetterData> setterData;
+        IfFailRet(GetFrontStackEntryValue(&iCorValue, &setterData, evalStack, ed, output));
         evalStack.front().iCorValue = iCorValue.Detach();
         evalStack.front().identifiers.clear();
+        evalStack.front().setterData = std::move(setterData);
 
         ToRelease<ICorDebugReferenceValue> pReferenceValue;
         IfFailRet(evalStack.front().iCorValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*) &pReferenceValue));
@@ -1646,7 +1659,7 @@ namespace
         ToRelease<ICorDebugValue> iCorRealValueRightOp;
         ToRelease<ICorDebugValue> iCorRightOpValue;
         CorElementType elemTypeRightOp;
-        IfFailRet(GetFrontStackEntryValue(&iCorRightOpValue, evalStack, ed, output));
+        IfFailRet(GetFrontStackEntryValue(&iCorRightOpValue, nullptr, evalStack, ed, output));
         IfFailRet(GetRealValueWithType(iCorRightOpValue, &iCorRealValueRightOp, &elemTypeRightOp));
         auto rightOperand = std::move(evalStack.front());
         evalStack.pop_front();
@@ -1654,7 +1667,7 @@ namespace
         ToRelease<ICorDebugValue> iCorRealValueLeftOp;
         ToRelease<ICorDebugValue> iCorLeftOpValue;
         CorElementType elemTypeLeftOp;
-        IfFailRet(GetFrontStackEntryValue(&iCorLeftOpValue, evalStack, ed, output));
+        IfFailRet(GetFrontStackEntryValue(&iCorLeftOpValue, nullptr, evalStack, ed, output));
         IfFailRet(GetRealValueWithType(iCorLeftOpValue, &iCorRealValueLeftOp, &elemTypeLeftOp));
         std::string typeNameLeft;
         std::string typeNameRigth;
@@ -1698,7 +1711,7 @@ namespace
 } // unnamed namespace
 
 HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression,
-                              ICorDebugValue **ppResultValue, bool *editable, std::string &output)
+                              std::list<EvalStackEntry> &evalStack, std::string &output)
 {
     static const std::vector<std::function<HRESULT(std::list<EvalStackEntry>&, PVOID, std::string&, EvalData&)>> CommandImplementation = {
         IdentifierName,
@@ -1776,38 +1789,50 @@ HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, i
     {
         if (FAILED(Status = Interop::NextStackCommand(pStackProgram, Command, pArguments, output)) ||
             Command == ProgramFinished ||
-            FAILED(Status = CommandImplementation[Command](m_evalStack, pArguments, output, m_evalData)))
+            FAILED(Status = CommandImplementation[Command](evalStack, pArguments, output, m_evalData)))
             break;
     }
     while (1);
 
-    do
-    {
-        if (FAILED(Status))
-            break;
-
-        assert(m_evalStack.size() == 1);
-
-        if (editable)
-            *editable = m_evalStack.front().editable;
-
-        if (*ppResultValue == nullptr)
-        {
-            Status = GetFrontStackEntryValue(ppResultValue, m_evalStack, m_evalData, output);
-            break;
-        }
-
-        ToRelease<ICorDebugValue> iCorValue;
-        if (FAILED(Status = GetFrontStackEntryValue(&iCorValue, m_evalStack, m_evalData, output)))
-            break;
-
-        Status = ImplicitCast(iCorValue, *ppResultValue, m_evalStack.front().literal, m_evalData);
-    }
-    while (0);
-
     Interop::ReleaseStackMachineProgram(pStackProgram);
-    m_evalStack.clear();
     return Status;
+}
+
+HRESULT EvalStackMachine::EvaluateExpression(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression, ICorDebugValue **ppResultValue,
+                                             std::string &output, bool *editable, std::unique_ptr<Evaluator::SetterData> *resultSetterData)
+{
+    HRESULT Status;
+    std::list<EvalStackEntry> evalStack;
+    IfFailRet(Run(pThread, frameLevel, evalFlags, expression, evalStack, output));
+
+    assert(evalStack.size() == 1);
+
+    std::unique_ptr<Evaluator::SetterData> setterData;
+    IfFailRet(GetFrontStackEntryValue(ppResultValue, &setterData, evalStack, m_evalData, output));
+
+    if (editable)
+        *editable = setterData.get() && !setterData.get()->setterFunction ?
+                    false /*property don't have setter*/ : evalStack.front().editable;
+
+    if (resultSetterData)
+        *resultSetterData = std::move(setterData);
+
+    return S_OK;
+}
+
+HRESULT EvalStackMachine::SetValueByExpression(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, ICorDebugValue *pValue,
+                                               const std::string &expression, std::string &output)
+{
+    HRESULT Status;
+    std::list<EvalStackEntry> evalStack;
+    IfFailRet(Run(pThread, frameLevel, evalFlags, expression, evalStack, output));
+
+    assert(evalStack.size() == 1);
+
+    ToRelease<ICorDebugValue> iCorValue;
+    IfFailRet(GetFrontStackEntryValue(&iCorValue, nullptr, evalStack, m_evalData, output));
+
+    return ImplicitCast(iCorValue, pValue, evalStack.front().literal, m_evalData);
 }
 
 HRESULT EvalStackMachine::FindPredefinedTypes(ICorDebugModule *pModule)

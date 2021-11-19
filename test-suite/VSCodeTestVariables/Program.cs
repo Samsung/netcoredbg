@@ -1157,16 +1157,16 @@ namespace VSCodeTestVariables
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i_noset", "5002");
                 Context.SetExpression(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_field_i", "3001");
                 Context.SetExpression(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
-                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i_noset", "3003");
+                Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i_noset", "3003");
                 Context.SetExpression(@"__FILE__:__LINE__", frameId, "setExprStruct.field_i", "4001");
                 Context.SetExpression(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
-                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i_noset", "4003");
+                Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i_noset", "4003");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_field_i", "3001");
-                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.field_i", "4001");
-                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
-                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1+1", "2");
-                // FIXME debugger must be fixed first //Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1", "1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
+                Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1+1", "2");
+                Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1", "1");
                 Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1.ToString()", "\"1\"");
 
                 Context.Continue(@"__FILE__:__LINE__");
@@ -1240,9 +1240,9 @@ namespace VSCodeTestVariables
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setVarStruct.prop_i", "4002");
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_field_i", "3001");
-                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "TestSetExprStruct.static_prop_i", "3002");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.field_i", "4001");
-                // FIXME debugger must be fixed first //Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "setExprStruct.prop_i", "4002");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

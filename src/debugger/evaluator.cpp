@@ -54,6 +54,7 @@ HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
                                 std::vector<std::string> &identifiers,
                                 int nextIdentifier,
                                 ICorDebugValue **ppResult,
+                                std::unique_ptr<SetterData> *resultSetterData,
                                 int evalFlags)
 {
     HRESULT Status;
@@ -71,12 +72,12 @@ HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
 
         ToRelease<ICorDebugValue> pClassValue(std::move(pResultValue));
 
-        WalkMembers(pClassValue, pThread, frameLevel, [&](
+        WalkMembers(pClassValue, pThread, frameLevel, !!resultSetterData, [&](
             ICorDebugType *pType,
             bool is_static,
             const std::string &memberName,
             GetValueCallback getValue,
-            SetValueCallback)
+            SetterData *setterData)
         {
             if (is_static && valueKind == ValueIsVariable)
                 return S_OK;
@@ -87,6 +88,8 @@ HRESULT Evaluator::FollowFields(ICorDebugThread *pThread,
                 return S_OK;
 
             IfFailRet(getValue(&pResultValue, evalFlags));
+            if (setterData && resultSetterData)
+                (*resultSetterData).reset(new SetterData(*setterData));
 
             return E_ABORT; // Fast exit from cycle with result.
         });
@@ -106,6 +109,7 @@ HRESULT Evaluator::FollowNestedFindValue(ICorDebugThread *pThread,
                                          const std::string &methodClass,
                                          std::vector<std::string> &identifiers,
                                          ICorDebugValue **ppResult,
+                                         std::unique_ptr<SetterData> *resultSetterData,
                                          int evalFlags)
 {
     HRESULT Status;
@@ -147,7 +151,7 @@ HRESULT Evaluator::FollowNestedFindValue(ICorDebugThread *pThread,
             ToRelease<ICorDebugValue> pTypeObject;
             if (S_OK == m_sharedEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject))
             {
-                if (SUCCEEDED(FollowFields(pThread, frameLevel, pTypeObject, ValueIsClass, staticName, 0, ppResult, evalFlags)))
+                if (SUCCEEDED(FollowFields(pThread, frameLevel, pTypeObject, ValueIsClass, staticName, 0, ppResult, resultSetterData, evalFlags)))
                     return S_OK;
             }
             trim = true;
@@ -157,7 +161,7 @@ HRESULT Evaluator::FollowNestedFindValue(ICorDebugThread *pThread,
         ToRelease<ICorDebugValue> pTypeObject;
         IfFailRet(m_sharedEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject));
         if (Status == S_OK && // type have static members (S_FALSE if type don't have static members)
-            SUCCEEDED(FollowFields(pThread, frameLevel, pTypeObject, ValueIsClass, fieldName, 0, ppResult, evalFlags)))
+            SUCCEEDED(FollowFields(pThread, frameLevel, pTypeObject, ValueIsClass, fieldName, 0, ppResult, resultSetterData, evalFlags)))
             return S_OK;
 
         trim = true;
@@ -212,8 +216,10 @@ static HRESULT FollowNestedFindType(ICorDebugThread *pThread,
 HRESULT Evaluator::ResolveIdentifiers(ICorDebugThread *pThread,
                                       FrameLevel frameLevel,
                                       ICorDebugValue *pInputValue,
+                                      SetterData *inputSetterData,
                                       std::vector<std::string> &identifiers,
                                       ICorDebugValue **ppResultValue,
+                                      std::unique_ptr<SetterData> *resultSetterData,
                                       ICorDebugType **ppResultType,
                                       int evalFlags)
 {
@@ -221,11 +227,13 @@ HRESULT Evaluator::ResolveIdentifiers(ICorDebugThread *pThread,
     {
         pInputValue->AddRef();
         *ppResultValue = pInputValue;
+        if (inputSetterData && resultSetterData)
+            (*resultSetterData).reset(new SetterData(*inputSetterData));
         return S_OK;
     }
     else if (pInputValue)
     {
-        return FollowFields(pThread, frameLevel, pInputValue, Evaluator::ValueIsVariable, identifiers, 0, ppResultValue, evalFlags);
+        return FollowFields(pThread, frameLevel, pInputValue, Evaluator::ValueIsVariable, identifiers, 0, ppResultValue, resultSetterData, evalFlags);
     }
 
     HRESULT Status;
@@ -273,7 +281,7 @@ HRESULT Evaluator::ResolveIdentifiers(ICorDebugThread *pThread,
         if (identifiers[nextIdentifier] == "this")
             nextIdentifier++; // skip first identifier with "this" (we have it in pThisValue), check rest
 
-        if (SUCCEEDED(FollowFields(pThread, frameLevel, pThisValue, ValueIsVariable, identifiers, nextIdentifier, &pResolvedValue, evalFlags)))
+        if (SUCCEEDED(FollowFields(pThread, frameLevel, pThisValue, ValueIsVariable, identifiers, nextIdentifier, &pResolvedValue, resultSetterData, evalFlags)))
         {
             *ppResultValue = pResolvedValue.Detach();
             return S_OK;
@@ -291,7 +299,7 @@ HRESULT Evaluator::ResolveIdentifiers(ICorDebugThread *pThread,
         std::string methodName;
         TypePrinter::GetTypeAndMethod(pFrame, methodClass, methodName);
 
-        if (SUCCEEDED(FollowNestedFindValue(pThread, frameLevel, methodClass, identifiers, &pResolvedValue, evalFlags)))
+        if (SUCCEEDED(FollowNestedFindValue(pThread, frameLevel, methodClass, identifiers, &pResolvedValue, resultSetterData, evalFlags)))
         {
             *ppResultValue = pResolvedValue.Detach();
             return S_OK;
@@ -335,7 +343,7 @@ HRESULT Evaluator::ResolveIdentifiers(ICorDebugThread *pThread,
     }
 
     ToRelease<ICorDebugValue> pValue(std::move(pResolvedValue));
-    IfFailRet(FollowFields(pThread, frameLevel, pValue, valueKind, identifiers, nextIdentifier, &pResolvedValue, evalFlags));
+    IfFailRet(FollowFields(pThread, frameLevel, pValue, valueKind, identifiers, nextIdentifier, &pResolvedValue, resultSetterData, evalFlags));
 
     *ppResultValue = pResolvedValue.Detach();
     return S_OK;
@@ -606,11 +614,56 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
     return S_OK;
 }
 
+HRESULT Evaluator::SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ICorDebugValue *pValue, SetterData *setterData,
+                            const std::string &value, int evalFlags, std::string &output)
+{
+    if (!pThread)
+        return E_FAIL;
+
+    // In case this is not property, just change value itself.
+    if (!setterData)
+        return m_sharedEvalStackMachine->SetValueByExpression(pThread, frameLevel, evalFlags, pValue, value, output);
+
+    HRESULT Status;
+    pValue->AddRef();
+    ToRelease<ICorDebugValue> iCorValue(pValue);
+    CorElementType corType;
+    IfFailRet(iCorValue->GetType(&corType));
+
+    if (corType == ELEMENT_TYPE_STRING)
+    {
+        // FIXME investigate, why in this case we can't use ICorDebugReferenceValue::SetValue() for string in iCorValue
+        iCorValue.Free();
+        IfFailRet(m_sharedEvalStackMachine->EvaluateExpression(pThread, frameLevel, evalFlags, value, &iCorValue, output));
+
+        CorElementType elemType;
+        IfFailRet(iCorValue->GetType(&elemType));
+        if (elemType != ELEMENT_TYPE_STRING)
+            return E_INVALIDARG;
+    }
+    else // Allow stack machine decide what types are supported.
+    {
+        IfFailRet(m_sharedEvalStackMachine->SetValueByExpression(pThread, frameLevel, evalFlags, iCorValue.GetPtr(), value, output));
+    }
+
+    // Call setter.
+    if (!setterData->thisValue)
+    {
+        return m_sharedEvalHelpers->EvalFunction(pThread, setterData->setterFunction, nullptr, 0, iCorValue.GetRef(), 1, nullptr, evalFlags);
+    }
+    else
+    {
+        ICorDebugValue *ppArgsValue[] = {setterData->thisValue, iCorValue};
+        return m_sharedEvalHelpers->EvalFunction(pThread, setterData->setterFunction, nullptr, 0, ppArgsValue, 2, nullptr, evalFlags);
+    }
+}
+
 HRESULT Evaluator::WalkMembers(
     ICorDebugValue *pInputValue,
     ICorDebugThread *pThread,
     FrameLevel frameLevel,
     ICorDebugType *pTypeCast,
+    bool provideSetterData,
     WalkMembersCallback cb)
 {
     HRESULT Status = S_OK;
@@ -634,17 +687,7 @@ HRESULT Evaluator::WalkMembers(
             return S_OK;
         };
 
-        auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
-        {
-            if (!pThread)
-                return E_FAIL;
-
-            ToRelease<ICorDebugValue> iCorValue;
-            IfFailRet(getValue(&iCorValue, evalFlags));
-            return m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), nullptr, output);
-        };
-
-        return cb(nullptr, false, "", getValue, setValue);
+        return cb(nullptr, false, "", getValue, nullptr);
     }
 
     ToRelease<ICorDebugArrayValue> pArrayValue;
@@ -674,17 +717,7 @@ HRESULT Evaluator::WalkMembers(
                 return S_OK;
             };
 
-            auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
-            {
-                if (!pThread)
-                    return E_FAIL;
-
-                ToRelease<ICorDebugValue> iCorValue;
-                IfFailRet(getValue(&iCorValue, evalFlags));
-                return m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), nullptr, output);
-            };
-
-            IfFailRet(cb(nullptr, false, "[" + IndiciesToStr(ind, base) + "]", getValue, setValue));
+            IfFailRet(cb(nullptr, false, "[" + IndiciesToStr(ind, base) + "]", getValue, nullptr));
             IncIndicies(ind, dims);
         }
 
@@ -783,17 +816,7 @@ HRESULT Evaluator::WalkMembers(
                 return S_OK;
             };
 
-            auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
-            {
-                if (!pThread)
-                    return E_FAIL;
-
-                ToRelease<ICorDebugValue> iCorValue;
-                IfFailRet(getValue(&iCorValue, evalFlags));
-                return m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), nullptr, output);
-            };
-
-            IfFailRet(cb(pType, is_static, name, getValue, setValue));
+            IfFailRet(cb(pType, is_static, name, getValue, nullptr));
         }
         return S_OK;
     }));
@@ -879,47 +902,20 @@ HRESULT Evaluator::WalkMembers(
                 return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, pType.GetRef(), 1, is_static ? nullptr : &pInputValue, is_static ? 0 : 1, ppResultValue, evalFlags);
             };
 
-            auto setValue = [&](const std::string &value, std::string &output, int evalFlags) -> HRESULT
+            if (provideSetterData)
             {
-                if (!pThread)
-                    return E_FAIL;
-
-                ToRelease<ICorDebugFunction> iCorFunc;
-                IfFailRet(pModule->GetFunctionFromToken(mdSetter, &iCorFunc));
-
-                ToRelease<ICorDebugValue> iCorValue;
-                IfFailRet(getValue(&iCorValue, evalFlags));
-                CorElementType corType;
-                IfFailRet(iCorValue->GetType(&corType));
-
-                if (corType == ELEMENT_TYPE_STRING)
+                ToRelease<ICorDebugFunction> iCorFuncSetter;
+                if (FAILED(pModule->GetFunctionFromToken(mdSetter, &iCorFuncSetter)))
                 {
-                    // FIXME investigate, why in this case we can't use ICorDebugReferenceValue::SetValue() for string in iCorValue
-                    iCorValue.Free();
-                    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, &iCorValue, nullptr, output));
-
-                    CorElementType elemType;
-                    IfFailRet(iCorValue->GetType(&elemType));
-                    if (elemType != ELEMENT_TYPE_STRING)
-                        return E_INVALIDARG;
+                    iCorFuncSetter.Free();
                 }
-                else // Allow stack machine decide what types are supported.
-                {
-                    IfFailRet(m_sharedEvalStackMachine->Run(pThread, frameLevel, evalFlags, value, iCorValue.GetRef(), nullptr, output));
-                }
-
-                // Call setter.
-                if (is_static)
-                {
-                    return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, nullptr, 0, iCorValue.GetRef(), 1, nullptr, evalFlags);
-                }
-                else
-                {
-                    ICorDebugValue *ppArgsValue[] = {pInputValue, iCorValue};
-                    return m_sharedEvalHelpers->EvalFunction(pThread, iCorFunc, nullptr, 0, ppArgsValue, 2, nullptr, evalFlags);
-                }
-            };
-            IfFailRet(cb(pType, is_static, name, getValue, setValue));
+                SetterData setterData(is_static ? nullptr : pInputValue, iCorFuncSetter);
+                IfFailRet(cb(pType, is_static, name, getValue, &setterData));
+            }
+            else
+            {
+                IfFailRet(cb(pType, is_static, name, getValue, nullptr));
+            }
         }
         return S_OK;
     }));
@@ -938,7 +934,7 @@ HRESULT Evaluator::WalkMembers(
                 IfFailRet(m_sharedEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pBaseType));
             }
             // Add fields of base class
-            IfFailRet(WalkMembers(pInputValue, pThread, frameLevel, pBaseType, cb));
+            IfFailRet(WalkMembers(pInputValue, pThread, frameLevel, pBaseType, provideSetterData, cb));
         }
     }
 
@@ -949,9 +945,10 @@ HRESULT Evaluator::WalkMembers(
     ICorDebugValue *pValue,
     ICorDebugThread *pThread,
     FrameLevel frameLevel,
+    bool provideSetterData,
     WalkMembersCallback cb)
 {
-    return WalkMembers(pValue, pThread, frameLevel, nullptr, cb);
+    return WalkMembers(pValue, pThread, frameLevel, nullptr, provideSetterData, cb);
 }
 
 static bool has_prefix(const std::string &s, const std::string &prefix)
@@ -975,12 +972,12 @@ static HRESULT HandleSpecialLocalVar(
         return S_FALSE;
 
     // Substitute local value with its fields
-    IfFailRet(pEvaluator->WalkMembers(pLocalValue, nullptr, FrameLevel{0}, [&](
+    IfFailRet(pEvaluator->WalkMembers(pLocalValue, nullptr, FrameLevel{0}, false, [&](
         ICorDebugType *,
         bool is_static,
         const std::string &name,
         Evaluator::GetValueCallback getValue,
-        Evaluator::SetValueCallback)
+        Evaluator::SetterData*)
     {
         if (is_static)
             return S_OK;
@@ -1020,12 +1017,12 @@ static HRESULT HandleSpecialThisParam(
         return S_FALSE;
 
     // Substitute this with its fields
-    IfFailRet(pEvaluator->WalkMembers(pThisValue, nullptr, FrameLevel{0}, [&](
+    IfFailRet(pEvaluator->WalkMembers(pThisValue, nullptr, FrameLevel{0}, false, [&](
         ICorDebugType *,
         bool is_static,
         const std::string &name,
         Evaluator::GetValueCallback getValue,
-        Evaluator::SetValueCallback)
+        Evaluator::SetterData*)
     {
         HRESULT Status;
         if (is_static)

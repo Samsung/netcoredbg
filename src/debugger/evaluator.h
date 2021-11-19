@@ -37,9 +37,35 @@ public:
     };
     typedef ArgElementType ReturnElementType;
 
+    struct SetterData
+    {
+        ToRelease<ICorDebugValue> thisValue;
+        ToRelease<ICorDebugFunction> setterFunction;
+
+        SetterData(ICorDebugValue *pValue, ICorDebugFunction *pFunction)
+        {
+            Set(pValue, pFunction);
+        };
+
+        SetterData(SetterData &setterData)
+        {
+            Set(setterData.thisValue.GetPtr(), setterData.setterFunction.GetPtr());
+        };
+
+        void Set(ICorDebugValue *pValue, ICorDebugFunction *pFunction)
+        {
+            if (pValue)
+                pValue->AddRef();
+            thisValue = pValue;
+
+            if (pFunction)
+                pFunction->AddRef();
+            setterFunction = pFunction;
+        }
+    };
+
     typedef std::function<HRESULT(ICorDebugValue**,int)> GetValueCallback;
-    typedef std::function<HRESULT(const std::string&,std::string&,int)> SetValueCallback;
-    typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetValueCallback)> WalkMembersCallback;
+    typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetterData*)> WalkMembersCallback;
     typedef std::function<HRESULT(const std::string&,GetValueCallback)> WalkStackVarsCallback;
     typedef std::function<HRESULT(ICorDebugFunction**)> GetFunctionCallback;
     typedef std::function<HRESULT(bool,const std::string&,ReturnElementType&,std::vector<ArgElementType>&,GetFunctionCallback)> WalkMethodsCallback;
@@ -63,8 +89,10 @@ public:
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
         ICorDebugValue *pInputValue,
+        SetterData *inputSetterData,
         std::vector<std::string> &identifiers,
         ICorDebugValue **ppResultValue,
+        std::unique_ptr<SetterData> *resultSetterData,
         ICorDebugType **ppResultType,
         int evalFlags);
 
@@ -72,6 +100,7 @@ public:
         ICorDebugValue *pValue,
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
+        bool provideSetterData,
         WalkMembersCallback cb);
 
     HRESULT WalkStackVars(
@@ -89,6 +118,9 @@ public:
     HRESULT WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb);
     HRESULT WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallback cb);
 
+    HRESULT SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ICorDebugValue *pValue, SetterData *setterData,
+                     const std::string &value, int evalFlags, std::string &output);
+
 private:
 
     std::shared_ptr<Modules> m_sharedModules;
@@ -101,6 +133,7 @@ private:
         const std::string &methodClass,
         std::vector<std::string> &identifiers,
         ICorDebugValue **ppResult,
+        std::unique_ptr<SetterData> *resultSetterData,
         int evalFlags);
 
     HRESULT FollowFields(
@@ -111,6 +144,7 @@ private:
         std::vector<std::string> &identifiers,
         int nextIdentifier,
         ICorDebugValue **ppResult,
+        std::unique_ptr<SetterData> *resultSetterData,
         int evalFlags);
 
     HRESULT WalkMembers(
@@ -118,6 +152,7 @@ private:
         ICorDebugThread *pThread,
         FrameLevel frameLevel,
         ICorDebugType *pTypeCast,
+        bool provideSetterData,
         WalkMembersCallback cb);
 };
 

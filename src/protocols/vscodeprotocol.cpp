@@ -722,7 +722,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         // VSCode don't support evaluation flags, we can't disable implicit function calls during evaluation.
         // https://github.com/OmniSharp/omnisharp-vscode/issues/3173
         std::string output;
-        Status = m_sharedDebugger->SetVariableByExpression(frameId, expression, defaultEvalFlags, value, output);
+        Status = m_sharedDebugger->SetExpression(frameId, expression, defaultEvalFlags, value, output);
         if (FAILED(Status))
         {
             if (output.empty())

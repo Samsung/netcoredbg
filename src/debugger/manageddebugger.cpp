@@ -997,23 +997,16 @@ HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression
 
 HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output)
 {
+    LogFuncEntry();
+
     return m_sharedVariables->SetVariable(m_iCorProcess, name, value, ref, output);
 }
 
-HRESULT ManagedDebugger::SetVariableByExpression(
-    FrameId frameId,
-    const std::string &evaluateName,
-    int evalFlags,
-    const std::string &value,
-    std::string &output)
+HRESULT ManagedDebugger::SetExpression(FrameId frameId, const std::string &expression, int evalFlags, const std::string &value, std::string &output)
 {
     LogFuncEntry();
 
-    HRESULT Status;
-    ToRelease<ICorDebugValue> pResultValue;
-
-    IfFailRet(m_sharedVariables->GetValueByExpression(m_iCorProcess, frameId, evaluateName, evalFlags, &pResultValue));
-    return m_sharedVariables->SetVariable(m_iCorProcess, pResultValue, value, frameId, evalFlags, output);
+    return m_sharedVariables->SetExpression(m_iCorProcess, frameId, expression, evalFlags, value, output);
 }
 
 
