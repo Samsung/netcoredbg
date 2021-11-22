@@ -2346,7 +2346,8 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr, bool printCommands)
 
         if (SUCCEEDED(hr))
         {
-            printf("%.*s%s\n", int(prefix.size()), prefix.data(), output.c_str());
+            if (!output.empty())
+                printf("%.*s%s\n", int(prefix.size()), prefix.data(), output.c_str());
         }
         else
         {

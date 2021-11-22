@@ -1213,7 +1213,7 @@ HRESULT Modules::GetSourceFullPathByIndex(unsigned index, std::string &fullPath)
 {
     std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
 
-    if (m_sourceIndexToPath.size() >= index)
+    if (m_sourceIndexToPath.size() <= index)
         return E_FAIL;
 
 #ifndef _WIN32
