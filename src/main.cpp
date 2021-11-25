@@ -377,6 +377,12 @@ int main(int argc, char* argv[])
         exit(EXIT_FAILURE);
     }
 
+    if (protocol_constructor == &instantiate_protocol<CLIProtocol> && serverPort)
+    {
+        fprintf(stderr, "server mode can't be used with CLI interpreter!\n");
+        exit(EXIT_FAILURE);
+    }
+
     LOGI("Netcoredbg started");
     // Note: there is no possibility to know which exception caused call to std::terminate
     std::set_terminate([]{ LOGF("Netcoredbg is terminated due to call to std::terminate: see stderr..."); });
