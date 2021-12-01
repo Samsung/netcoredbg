@@ -688,6 +688,11 @@ HRESULT CLIProtocol::StepCommand(const std::vector<std::string> &args,
             HRESULT Status;
             IfFailRet(m_sharedDebugger->StepCommand(threadId, stepType));
             output = "^running";
+            {
+                lock_guard lock(m_mutex);
+                m_processStatus = Running;
+                m_state_cv.notify_all();
+            }
             return Status;
         }
 

@@ -359,7 +359,7 @@ Class::AsyncHandle Class::async_read(const FileHandle& fh, void *buf, size_t cou
         if (!val)
         {
             // nothing to read from the console -- defer call to ReadFile
-            result.buf = nullptr, result.count = 0;
+            result.buf = buf, result.count = count;
             return result;
         }
     }
@@ -423,8 +423,10 @@ bool Class::async_wait(IOSystem::AsyncHandleIterator begin, IOSystem::AsyncHandl
     }
 
     assert(n == count);
-    DWORD result = WaitForMultipleObjects(count, events, FALSE, DWORD(timeout.count()));
-    return result != WAIT_FAILED && result != WAIT_TIMEOUT;
+    DWORD result;
+    do result = WaitForMultipleObjects(count, events, FALSE, DWORD(timeout.count()));
+    while (result == WAIT_TIMEOUT);
+    return result != WAIT_FAILED;
 }
 
 Class::IOResult Class::async_cancel(AsyncHandle& h)
