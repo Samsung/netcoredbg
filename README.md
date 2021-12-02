@@ -9,6 +9,9 @@ command line (like as GDB).
 
 You can find licensing information in file [LICENSE](LICENSE), in root directory of Netcoredbg sources.
 
+## Usage
+More details about usage of NCDB you can find in [CLI](doc/cli.md) manual.
+
 
 ## Building from source code
 
