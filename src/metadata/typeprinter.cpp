@@ -174,7 +174,8 @@ HRESULT TypePrinter::NameForTypeRef(
 
 HRESULT TypePrinter::NameForTypeByToken(mdToken mb,
                                         IMetaDataImport *pImport,
-                                        std::string &mdName)
+                                        std::string &mdName,
+                                        std::list<std::string> *args)
 {
     mdName[0] = L'\0';
     if (TypeFromToken(mb) != mdtTypeDef
@@ -186,7 +187,7 @@ HRESULT TypePrinter::NameForTypeByToken(mdToken mb,
     HRESULT hr;
     if (TypeFromToken(mb) == mdtTypeDef)
     {
-        hr = NameForTypeDef(mb, pImport, mdName, nullptr);
+        hr = NameForTypeDef(mb, pImport, mdName, args);
     }
     else if (TypeFromToken(mb) == mdtTypeRef)
     {
@@ -213,7 +214,9 @@ HRESULT TypePrinter::NameForTypeByType(ICorDebugType *pType, std::string &mdName
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
     mdToken tk;
     IfFailRet(pClass->GetToken(&tk));
-    return NameForTypeByToken(tk, pMD, mdName);
+    std::list<std::string> args;
+    AddGenericArgs(pType, args);
+    return NameForTypeByToken(tk, pMD, mdName, &args);
 }
 
 HRESULT TypePrinter::NameForTypeByValue(ICorDebugValue *pValue, std::string &mdName)

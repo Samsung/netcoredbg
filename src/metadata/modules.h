@@ -15,6 +15,7 @@
 #include "interfaces/types.h"
 #include "utils/string_view.h"
 #include "utils/torelease.h"
+#include "utils/utf.h"
 
 namespace netcoredbg
 {
@@ -103,6 +104,11 @@ struct method_data_t_hash
     }
 };
 
+
+HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
+std::string GetModuleFileName(ICorDebugModule *pModule);
+HRESULT IsModuleHaveSameName(ICorDebugModule *pModule, const std::string &Name, bool isFullPath);
+
 class Modules
 {
     struct ModuleInfo
@@ -129,15 +135,6 @@ class Modules
 
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
-
-    static HRESULT ResolveMethodInModule(
-        ICorDebugModule *pModule,
-        const std::string &funcName,
-        ResolveFuncBreakpointCallback cb);
-
-    static HRESULT ForEachMethod(ICorDebugModule *pModule, std::function<bool(const std::string&, mdMethodDef&)>);
-
-    static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName);
 
     struct FileMethodsData
     {
@@ -197,9 +194,6 @@ public:
         {}
     };
 
-    static HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
-    static std::string GetModuleFileName(ICorDebugModule *pModule);
-
     HRESULT ResolveBreakpoint(
         /*in*/ CORDB_ADDRESS modAddress,
         /*in*/ std::string filename,
@@ -222,11 +216,6 @@ public:
         ULONG32 &ilOffset,
         ULONG32 &ilCloseOffset,
         bool *noUserCodeFound);
-
-    static HRESULT IsModuleHaveSameName(
-        ICorDebugModule *pModule,
-        const std::string &Name,
-        bool isFullPath);
 
     HRESULT ResolveFuncBreakpointInAny(
         const std::string &module,
@@ -256,9 +245,15 @@ public:
         ICorDebugModule *pModule,
         mdMethodDef methodToken,
         ULONG localIndex,
-        std::string &paramName,
+        WSTRING &localName,
         ULONG32 *pIlStart,
         ULONG32 *pIlEnd);
+
+    HRESULT GetHoistedLocalScopes(
+        ICorDebugModule *pModule,
+        mdMethodDef methodToken,
+        PVOID *data,
+        int32_t &hoistedLocalScopesCount);
 
     HRESULT GetNextSequencePointInMethod(
         ICorDebugModule *pModule,

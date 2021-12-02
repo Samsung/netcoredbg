@@ -869,6 +869,78 @@ namespace NetCoreDbg
         /// </summary>
         /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
         /// <param name="methodToken">method token</param>
+        /// <param name="data">pointer to memory with histed local scopes</param>
+        /// <param name="hoistedLocalScopesCount">histed local scopes count</param>
+        /// <returns>"Ok" if information is available</returns>
+        internal static RetCode GetHoistedLocalScopes(IntPtr symbolReaderHandle, int methodToken, out IntPtr data, out int hoistedLocalScopesCount)
+        {
+            data = IntPtr.Zero;
+            hoistedLocalScopesCount = 0;
+
+            try
+            {
+                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+                MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+                Handle handle = MetadataTokens.Handle(methodToken);
+                if (handle.Kind != HandleKind.MethodDefinition)
+                    return RetCode.Fail;
+
+                MethodDebugInformationHandle methodDebugInformationHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
+                var entityHandle = MetadataTokens.EntityHandle(MetadataTokens.GetToken(methodDebugInformationHandle.ToDefinitionHandle()));
+
+                // Guid is taken from Roslyn source code:
+                // https://github.com/dotnet/roslyn/blob/afd10305a37c0ffb2cfb2c2d8446154c68cfa87a/src/Dependencies/CodeAnalysis.Debugging/PortableCustomDebugInfoKinds.cs#L14
+                Guid stateMachineHoistedLocalScopes = new Guid("6DA9A61E-F8C7-4874-BE62-68BC5630DF71");
+
+                var HoistedLocalScopes = new List<UInt32>();
+                foreach (var cdiHandle in reader.GetCustomDebugInformation(entityHandle))
+                {
+                    var cdi = reader.GetCustomDebugInformation(cdiHandle);
+
+                    if (reader.GetGuid(cdi.Kind) == stateMachineHoistedLocalScopes)
+                    {
+                        // Format of this blob is taken from Roslyn source code:
+                        // https://github.com/dotnet/roslyn/blob/afd10305a37c0ffb2cfb2c2d8446154c68cfa87a/src/Compilers/Core/Portable/PEWriter/MetadataWriter.PortablePdb.cs#L600
+
+                        var blobReader = reader.GetBlobReader(cdi.Value);
+
+                        while (blobReader.Offset < blobReader.Length)
+                        {
+                            HoistedLocalScopes.Add(blobReader.ReadUInt32()); // StartOffset
+                            HoistedLocalScopes.Add(blobReader.ReadUInt32()); // Length
+                        }
+                    }
+                }
+
+                if (HoistedLocalScopes.Count == 0)
+                    return RetCode.Fail;
+
+                data = Marshal.AllocCoTaskMem(HoistedLocalScopes.Count * 4);
+                IntPtr dataPtr = data;
+                foreach (var p in HoistedLocalScopes)
+                {
+                    Marshal.StructureToPtr(p, dataPtr, false);
+                    dataPtr = dataPtr + 4;
+                }
+                hoistedLocalScopesCount = HoistedLocalScopes.Count / 2;
+            }
+            catch
+            {
+                if (data != IntPtr.Zero)
+                    Marshal.FreeCoTaskMem(data);
+
+                return RetCode.Exception;
+            }
+
+            return RetCode.OK;
+        }
+
+        /// <summary>
+        /// Returns local variable name for given local index and IL offset.
+        /// </summary>
+        /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
+        /// <param name="methodToken">method token</param>
         /// <param name="localIndex">local variable index</param>
         /// <param name="localVarName">local variable name return</param>
         /// <returns>true if name has been found</returns>

@@ -169,7 +169,7 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
 
     if (!bp.module.empty() && pModule)
     {
-        IfFailRet(Modules::IsModuleHaveSameName(pModule, bp.module, IsFullPath(bp.module)));
+        IfFailRet(IsModuleHaveSameName(pModule, bp.module, IsFullPath(bp.module)));
         if (Status == S_FALSE)
             return E_FAIL;
     }
@@ -178,7 +178,7 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
         bool isFullPath = IsFullPath(bp.module);
         m_sharedModules->ForEachModule([&bp, &modAddress, &isFullPath, &Status](ICorDebugModule *pModule) -> HRESULT
         {
-            IfFailRet(Modules::IsModuleHaveSameName(pModule, bp.module, isFullPath));
+            IfFailRet(IsModuleHaveSameName(pModule, bp.module, isFullPath));
             if (Status == S_FALSE)
                 return S_FALSE;
 
@@ -212,8 +212,8 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
         {
             LOGW("During breakpoint resolve, multiple modules with same source file path was detected.");
             LOGW("File name: %s", fullname.c_str());
-            LOGW("Breakpoint activated in module: %s", Modules::GetModuleFileName(resolvedPoints[0].iCorModule).c_str());
-            LOGW("Ignored module: %s", Modules::GetModuleFileName(resolvedBP.iCorModule).c_str());
+            LOGW("Breakpoint activated in module: %s", GetModuleFileName(resolvedPoints[0].iCorModule).c_str());
+            LOGW("Ignored module: %s", GetModuleFileName(resolvedBP.iCorModule).c_str());
             continue;
         }
 

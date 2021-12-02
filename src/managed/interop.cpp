@@ -59,6 +59,7 @@ typedef  int (*ReadMemoryDelegate)(uint64_t, char*, int32_t);
 typedef  PVOID (*LoadSymbolsForModuleDelegate)(const WCHAR*, BOOL, uint64_t, int32_t, uint64_t, int32_t, ReadMemoryDelegate);
 typedef  void (*DisposeDelegate)(PVOID);
 typedef  RetCode (*GetLocalVariableNameAndScope)(PVOID, int32_t, int32_t, BSTR*, uint32_t*, uint32_t*);
+typedef  RetCode (*GetHoistedLocalScopes)(PVOID, int32_t, PVOID*, int32_t*);
 typedef  RetCode (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, PVOID);
 typedef  RetCode (*GetNextSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, uint32_t*, int32_t*);
 typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
@@ -80,6 +81,7 @@ typedef  void (*SysFreeStringDelegate)(PVOID);
 LoadSymbolsForModuleDelegate loadSymbolsForModuleDelegate = nullptr;
 DisposeDelegate disposeDelegate = nullptr;
 GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate = nullptr;
+GetHoistedLocalScopes getHoistedLocalScopesDelegate = nullptr;
 GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate = nullptr;
 GetNextSequencePointByILOffsetDelegate getNextSequencePointByILOffsetDelegate = nullptr;
 GetStepRangesFromIPDelegate getStepRangesFromIPDelegate = nullptr;
@@ -161,7 +163,7 @@ HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSym
     IfFailRet(pModule->GetSize(&peSize));
 
     return LoadSymbolsForPortablePDB(
-        Modules::GetModuleFileName(pModule),
+        GetModuleFileName(pModule),
         isInMemory,
         isInMemory, // isFileLayout
         peAddress,
@@ -252,6 +254,7 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "LoadSymbolsForModule", (void **)&loadSymbolsForModuleDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "Dispose", (void **)&disposeDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetHoistedLocalScopes", (void **)&getHoistedLocalScopesDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetNextSequencePointByILOffset", (void **)&getNextSequencePointByILOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate)) &&
@@ -276,6 +279,7 @@ void Init(const std::string &coreClrPath)
     bool allDelegatesInited = loadSymbolsForModuleDelegate &&
                               disposeDelegate &&
                               getLocalVariableNameAndScopeDelegate &&
+                              getHoistedLocalScopesDelegate &&
                               getSequencePointByILOffsetDelegate &&
                               getNextSequencePointByILOffsetDelegate &&
                               getStepRangesFromIPDelegate &&
@@ -314,6 +318,7 @@ void Shutdown()
     loadSymbolsForModuleDelegate = nullptr;
     disposeDelegate = nullptr;
     getLocalVariableNameAndScopeDelegate = nullptr;
+    getHoistedLocalScopesDelegate = nullptr;
     getSequencePointByILOffsetDelegate = nullptr;
     getNextSequencePointByILOffsetDelegate = nullptr;
     getStepRangesFromIPDelegate = nullptr;
@@ -370,29 +375,39 @@ HRESULT GetStepRangesFromIP(PVOID pSymbolReaderHandle, ULONG32 ip, mdMethodDef M
 }
 
 HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG localIndex,
-                                      WCHAR *paramName, ULONG paramNameLen, ULONG32 *pIlStart, ULONG32 *pIlEnd)
+                                      WCHAR *localName, ULONG localNameLen, ULONG32 *pIlStart, ULONG32 *pIlEnd)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getLocalVariableNameAndScopeDelegate || !pSymbolReaderHandle || !paramName || !pIlStart || !pIlEnd)
+    if (!getLocalVariableNameAndScopeDelegate || !pSymbolReaderHandle || !localName || !pIlStart || !pIlEnd)
         return E_FAIL;
 
-    BSTR wszParamName = Interop::SysAllocStringLen(mdNameLen);
-    if (InteropPlatform::SysStringLen(wszParamName) == 0)
+    BSTR wszLocalName = Interop::SysAllocStringLen(mdNameLen);
+    if (InteropPlatform::SysStringLen(wszLocalName) == 0)
         return E_OUTOFMEMORY;
 
-    RetCode retCode = getLocalVariableNameAndScopeDelegate(pSymbolReaderHandle, methodToken, localIndex, &wszParamName, pIlStart, pIlEnd);
+    RetCode retCode = getLocalVariableNameAndScopeDelegate(pSymbolReaderHandle, methodToken, localIndex, &wszLocalName, pIlStart, pIlEnd);
     read_lock.unlock();
 
     if (retCode != RetCode::OK)
     {
-        Interop::SysFreeString(wszParamName);
+        Interop::SysFreeString(wszLocalName);
         return E_FAIL;
     }
 
-    wcscpy_s(paramName, paramNameLen, wszParamName);
-    Interop::SysFreeString(wszParamName);
+    wcscpy_s(localName, localNameLen, wszLocalName);
+    Interop::SysFreeString(wszLocalName);
 
     return S_OK;
+}
+
+HRESULT GetHoistedLocalScopes(PVOID pSymbolReaderHandle, mdMethodDef methodToken, PVOID *data, int32_t &hoistedLocalScopesCount)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!getHoistedLocalScopesDelegate || !pSymbolReaderHandle)
+        return E_FAIL;
+
+    RetCode retCode = getHoistedLocalScopesDelegate(pSymbolReaderHandle, methodToken, data, &hoistedLocalScopesCount);
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
 HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, int32_t secondType, int32_t operationType, int32_t &resultType, PVOID *data, std::string &errorText)

@@ -30,6 +30,7 @@ ALL_TEST_NAMES=(
     "MITestNoJMCAsyncStepping"
     "MITestNoJMCExceptionBreakpoint"
     "MITestSizeof"
+    "MITestAsyncLambdaEvaluate"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -54,6 +55,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestExceptionBreakpoint"
     "VSCodeTestNoJMCExceptionBreakpoint"
     "VSCodeTestSizeof"
+    "VSCodeTestAsyncLambdaEvaluate"
 )
 
 # Skipped tests:

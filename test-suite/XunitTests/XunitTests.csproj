@@ -67,6 +67,8 @@
     <ProjectReference Include="..\VSCodeTestNoJMCExceptionBreakpoint\VSCodeTestNoJMCExceptionBreakpoint.csproj" />
     <ProjectReference Include="..\MITestSizeof\MITestSizeof.csproj" />
     <ProjectReference Include="..\VSCodeTestSizeof\VSCodeTestSizeof.csproj" />
+    <ProjectReference Include="..\MITestAsyncLambdaEvaluate\MITestAsyncLambdaEvaluate.csproj" />
+    <ProjectReference Include="..\VSCodeTestAsyncLambdaEvaluate\VSCodeTestAsyncLambdaEvaluate.csproj" />
   </ItemGroup>
 
 </Project>

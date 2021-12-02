@@ -879,7 +879,7 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugNativeFrame, (LPVOID*) &pNativeFrame));
     IfFailRet(pNativeFrame->GetIP(&nOffset));
 
-    IfFailRet(Modules::GetModuleId(pModule, stackFrame.moduleId));
+    IfFailRet(GetModuleId(pModule, stackFrame.moduleId));
 
     stackFrame.clrAddr.methodToken = methodToken;
     stackFrame.clrAddr.ilOffset = ilOffset;

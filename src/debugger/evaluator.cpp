@@ -492,7 +492,7 @@ static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Ev
         case ELEMENT_TYPE_VALUETYPE:
         case ELEMENT_TYPE_CLASS:
             *ppSig += CorSigUncompressToken(*ppSig, &tk);
-            IfFailRet(TypePrinter::NameForTypeByToken(tk, pMD, argElementType.typeName));
+            IfFailRet(TypePrinter::NameForTypeByToken(tk, pMD, argElementType.typeName, nullptr));
             break;
 
 // TODO
@@ -658,6 +658,13 @@ HRESULT Evaluator::SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ICo
     }
 }
 
+// https://github.com/dotnet/roslyn/blob/d1e617ded188343ba43d24590802dd51e68e8e32/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameParser.cs#L13
+static bool IsSynthesizedLocalName(WCHAR *mdName, ULONG nameLen)
+{
+    return (nameLen > 1 && starts_with(mdName, W("<"))) ||
+           (nameLen > 4 && starts_with(mdName, W("CS$<")));
+}
+
 HRESULT Evaluator::WalkMembers(
     ICorDebugValue *pInputValue,
     ICorDebugThread *pThread,
@@ -775,7 +782,7 @@ HRESULT Evaluator::WalkMembers(
             // More about compiler generated names in Roslyn sources:
             // https://github.com/dotnet/roslyn/blob/315c2e149ba7889b0937d872274c33fcbfe9af5f/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNames.cs
             // Note, uncontrolled access to internal compiler added field or its properties may break debugger work.
-            if (nameLen > 2 && starts_with(mdName, W("<")))
+            if (IsSynthesizedLocalName(mdName, nameLen))
                 return S_OK;
 
             bool is_static = (fieldAttr & fdStatic);
@@ -951,97 +958,139 @@ HRESULT Evaluator::WalkMembers(
     return WalkMembers(pValue, pThread, frameLevel, nullptr, provideSetterData, cb);
 }
 
-static bool has_prefix(const std::string &s, const std::string &prefix)
+enum class GeneratedCodeKind
 {
-    return prefix.length() <= s.length() && std::equal(prefix.begin(), prefix.end(), s.begin());
-}
+    Normal,
+    Async,
+    Lambda
+};
 
-static HRESULT HandleSpecialLocalVar(
-    Evaluator *pEvaluator,
-    const std::string &localName,
-    ICorDebugValue *pLocalValue,
-    std::unordered_set<std::string> &locals,
-    Evaluator::WalkStackVarsCallback cb)
+static HRESULT GetGeneratedCodeKind(IMetaDataImport *pMD, const WSTRING methodName, mdTypeDef typeDef, GeneratedCodeKind &result)
 {
-    // https://github.com/dotnet/roslyn/blob/315c2e149ba7889b0937d872274c33fcbfe9af5f/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNames.cs#L415
-    static const std::string captureName = "CS$<>8__locals";
-
     HRESULT Status;
+    WCHAR name[mdNameLen];
+    ULONG nameLen;
+    IfFailRet(pMD->GetTypeDefProps(typeDef, name, _countof(name), &nameLen, NULL, NULL));
+    WSTRING typeName(name);
 
-    if (!has_prefix(localName, captureName))
-        return S_FALSE;
+    // https://github.com/dotnet/roslyn/blob/d1e617ded188343ba43d24590802dd51e68e8e32/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameParser.cs#L20-L24
+    //  Parse the generated name. Returns true for names of the form
+    //  [CS$]<[middle]>c[__[suffix]] where [CS$] is included for certain
+    //  generated names, where [middle] and [__[suffix]] are optional,
+    //  and where c is a single character in [1-9a-z]
+    //  (csharp\LanguageAnalysis\LIB\SpecialName.cpp).
 
-    // Substitute local value with its fields
-    IfFailRet(pEvaluator->WalkMembers(pLocalValue, nullptr, FrameLevel{0}, false, [&](
-        ICorDebugType *,
-        bool is_static,
-        const std::string &name,
-        Evaluator::GetValueCallback getValue,
-        Evaluator::SetterData*)
-    {
-        if (is_static)
-            return S_OK;
+    // https://github.com/dotnet/roslyn/blob/d1e617ded188343ba43d24590802dd51e68e8e32/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameKind.cs#L13-L20
+    //  LambdaMethod = 'b',
+    //  LambdaDisplayClass = 'c',
+    //  StateMachineType = 'd',
 
-        if (has_prefix(name, captureName))
-            return S_OK;
+    // https://github.com/dotnet/roslyn/blob/21055e1858548dbd8f4c1fd5d25a9c9617873806/src/Compilers/Core/Portable/PublicAPI.Shipped.txt#L252
+    //  const Microsoft.CodeAnalysis.WellKnownMemberNames.MoveNextMethodName = "MoveNext" -> string!
+    //  ... used in SynthesizedStateMachineMoveNextMethod class constructor.
 
-        if (!locals.insert(name).second)
-            return S_OK; // already in the list
-
-        return cb(name.empty() ? "this" : name, getValue);
-    }));
+    if (methodName.rfind(W("MoveNext"), 0) != WSTRING::npos && typeName.find(W(">d")) != WSTRING::npos)
+        result = GeneratedCodeKind::Async;
+    else if (methodName.find(W(">b")) != WSTRING::npos && typeName.find(W(">c")) != WSTRING::npos)
+        result = GeneratedCodeKind::Lambda;
+    else
+        result = GeneratedCodeKind::Normal;
 
     return S_OK;
 }
 
-static HRESULT HandleSpecialThisParam(
-    Evaluator *pEvaluator,
-    ICorDebugValue *pThisValue,
-    std::unordered_set<std::string> &locals,
-    Evaluator::WalkStackVarsCallback cb)
+enum class GeneratedNameKind
 {
-    static const std::string displayClass = "<>c__DisplayClass";
+    None,
+    ThisProxyField,
+    HoistedLocalField,
+    DisplayClassLocalOrField
+};
 
+static GeneratedNameKind GetLocalOrFieldNameKind(const WSTRING &localOrFieldName)
+{
+    // https://github.com/dotnet/roslyn/blob/d1e617ded188343ba43d24590802dd51e68e8e32/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameParser.cs#L20-L24
+    //  Parse the generated name. Returns true for names of the form
+    //  [CS$]<[middle]>c[__[suffix]] where [CS$] is included for certain
+    //  generated names, where [middle] and [__[suffix]] are optional,
+    //  and where c is a single character in [1-9a-z]
+    //  (csharp\LanguageAnalysis\LIB\SpecialName.cpp).
+
+    // https://github.com/dotnet/roslyn/blob/d1e617ded188343ba43d24590802dd51e68e8e32/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameKind.cs#L13-L20
+    //  ThisProxyField = '4',
+    //  HoistedLocalField = '5',
+    //  DisplayClassLocalOrField = '8',
+
+    if (localOrFieldName.find(W(">4")) != WSTRING::npos)
+        return GeneratedNameKind::ThisProxyField;
+    else if (localOrFieldName.find(W(">5")) != WSTRING::npos)
+        return GeneratedNameKind::HoistedLocalField;
+    else if (localOrFieldName.find(W(">8")) != WSTRING::npos)
+        return GeneratedNameKind::DisplayClassLocalOrField;
+
+    return GeneratedNameKind::None;
+}
+
+static HRESULT GetClassAndTypeDefByValue(ICorDebugValue *pValue, ICorDebugClass **ppClass, mdTypeDef &typeDef)
+{
     HRESULT Status;
-
-    std::string typeName;
-    TypePrinter::GetTypeOfValue(pThisValue, typeName);
-
-    std::size_t start = typeName.find_last_of('.');
-    if (start == std::string::npos)
-        return S_FALSE;
-
-    typeName = typeName.substr(start + 1);
-
-    if (!has_prefix(typeName, displayClass))
-        return S_FALSE;
-
-    // Substitute this with its fields
-    IfFailRet(pEvaluator->WalkMembers(pThisValue, nullptr, FrameLevel{0}, false, [&](
-        ICorDebugType *,
-        bool is_static,
-        const std::string &name,
-        Evaluator::GetValueCallback getValue,
-        Evaluator::SetterData*)
-    {
-        HRESULT Status;
-        if (is_static)
-            return S_OK;
-
-        ToRelease<ICorDebugValue> iCorResultValue;
-        // We don't have properties here (even don't provide thread in WalkMembers), eval flag not in use.
-        IfFailRet(getValue(&iCorResultValue, defaultEvalFlags));
-
-        IfFailRet(HandleSpecialLocalVar(pEvaluator, name, iCorResultValue, locals, cb));
-        if (Status == S_OK)
-            return S_OK;
-
-        locals.insert(name);
-        return cb(name.empty() ? "this" : name, getValue);
-    }));
+    ToRelease<ICorDebugValue2> iCorValue2;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+    ToRelease<ICorDebugType> iCorType;
+    IfFailRet(iCorValue2->GetExactType(&iCorType));
+    IfFailRet(iCorType->GetClass(ppClass));
+    IfFailRet((*ppClass)->GetToken(&typeDef));
     return S_OK;
 }
 
+static HRESULT FindThisProxyFieldValue(IMetaDataImport *pMD, ICorDebugClass *pClass, mdTypeDef typeDef, ICorDebugValue *pInputValue, ICorDebugValue **ppResultValue)
+{
+    HRESULT Status;
+    BOOL isNull = FALSE;
+    ToRelease<ICorDebugValue> pValue;
+    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+    if (isNull == TRUE)
+        return E_INVALIDARG;
+
+    Status = ForEachFields(pMD, typeDef, [&](mdFieldDef fieldDef) -> HRESULT
+    {
+        WCHAR mdName[mdNameLen] = {0};
+        ULONG nameLen = 0;
+        if (SUCCEEDED(pMD->GetFieldProps(fieldDef, nullptr, mdName, _countof(mdName), &nameLen, NULL, NULL, NULL, NULL, NULL, NULL)))
+        {
+            auto getValue = [&](ICorDebugValue **ppResultValue) -> HRESULT
+            {
+                ToRelease<ICorDebugObjectValue> pObjValue;
+                IfFailRet(pValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue));
+                IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, ppResultValue));
+                return S_OK;
+            };
+
+            GeneratedNameKind generatedNameKind = GetLocalOrFieldNameKind(mdName);
+            if (generatedNameKind == GeneratedNameKind::ThisProxyField)
+            {
+                IfFailRet(getValue(ppResultValue));
+                return E_ABORT; // Fast exit from cycle
+            }
+            else if (generatedNameKind == GeneratedNameKind::DisplayClassLocalOrField)
+            {
+                ToRelease<ICorDebugValue> iCorDisplayClassValue;
+                IfFailRet(getValue(&iCorDisplayClassValue));
+                ToRelease<ICorDebugClass> iCorDisplayClass;
+                mdTypeDef displayClassTypeDef;
+                IfFailRet(GetClassAndTypeDefByValue(iCorDisplayClassValue, &iCorDisplayClass, displayClassTypeDef));
+                IfFailRet(FindThisProxyFieldValue(pMD, iCorDisplayClass, displayClassTypeDef, iCorDisplayClassValue, ppResultValue));
+                if (ppResultValue)
+                    return E_ABORT; // Fast exit from cycle
+            }
+        }
+        return S_OK; // Return with success to continue walk.
+    });
+
+    return Status == E_ABORT ? S_OK : Status;
+}
+
+// Note, this method return Class name, not Type name (will not provide generic initialization types if any).
 HRESULT Evaluator::GetMethodClass(ICorDebugThread *pThread, FrameLevel frameLevel, std::string &methodClass, bool &haveThis)
 {
     HRESULT Status;
@@ -1064,13 +1113,204 @@ HRESULT Evaluator::GetMethodClass(ICorDebugThread *pThread, FrameLevel frameLeve
     mdMethodDef methodDef;
     IfFailRet(pFunction->GetToken(&methodDef));
 
-    std::string methodName;
-    TypePrinter::GetTypeAndMethod(pFrame, methodClass, methodName);
-
     DWORD methodAttr = 0;
-    IfFailRet(pMD->GetMethodProps(methodDef, NULL, NULL, 0, NULL, &methodAttr, NULL, NULL, NULL, NULL));
+    WCHAR szMethod[mdNameLen];
+    ULONG szMethodLen;
+    IfFailRet(pMD->GetMethodProps(methodDef, NULL, szMethod, _countof(szMethod), &szMethodLen, &methodAttr, NULL, NULL, NULL, NULL));
+
+    ToRelease<ICorDebugClass> pClass;
+    IfFailRet(pFunction->GetClass(&pClass));
+    mdTypeDef typeDef;
+    IfFailRet(pClass->GetToken(&typeDef));
+    // We are inside method of this class, if typeDef is not TypeDef token - something definitely going wrong.
+    if (TypeFromToken(typeDef) != mdtTypeDef)
+        return E_FAIL;
 
     haveThis = (methodAttr & mdStatic) == 0;
+    // In case this is static method, this is not async/lambda case for sure.
+    if (!haveThis)
+        return TypePrinter::NameForTypeDef(typeDef, pMD, methodClass, nullptr);
+
+    GeneratedCodeKind generatedCodeKind;
+    IfFailRet(GetGeneratedCodeKind(pMD, szMethod, typeDef, generatedCodeKind));
+    if (generatedCodeKind == GeneratedCodeKind::Normal)
+        return TypePrinter::NameForTypeDef(typeDef, pMD, methodClass, nullptr);
+
+    ToRelease<ICorDebugILFrame> pILFrame;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+    ToRelease<ICorDebugValue> currentThis;
+    IfFailRet(pILFrame->GetArgument(0, &currentThis));
+
+    // Check do we have real This value (that should be stored in ThisProxyField).
+    ToRelease<ICorDebugValue> userThis;
+    IfFailRet(FindThisProxyFieldValue(pMD, pClass, typeDef, currentThis, &userThis));
+    haveThis = !!userThis;
+
+    // Find first user code enclosing class, since compiler add async/lambda as nested class.
+    do {
+        ULONG nameLen;
+        WCHAR mdName[mdNameLen];
+        IfFailRet(pMD->GetTypeDefProps(typeDef, mdName, _countof(mdName), &nameLen, NULL, NULL));
+
+        if (!IsSynthesizedLocalName(mdName, nameLen))
+            break;
+
+        mdTypeDef enclosingClass;
+        if (SUCCEEDED(Status = pMD->GetNestedClassProps(typeDef, &enclosingClass)))
+            typeDef = enclosingClass;
+        else
+            return Status;
+    } while(1);
+
+    return TypePrinter::NameForTypeDef(typeDef, pMD, methodClass, nullptr);
+}
+
+// https://github.com/dotnet/roslyn/blob/3fdd28bc26238f717ec1124efc7e1f9c2158bce2/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameParser.cs#L139-L159
+static HRESULT TryParseSlotIndex(const WSTRING &mdName, int32_t &index)
+{
+    // https://github.com/dotnet/roslyn/blob/d1e617ded188343ba43d24590802dd51e68e8e32/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameConstants.cs#L11
+    const WSTRING suffixSeparator(W("__"));
+    WSTRING::size_type suffixSeparatorOffset = mdName.rfind(suffixSeparator);
+    if (suffixSeparatorOffset == WSTRING::npos)
+        return E_FAIL;
+
+    WSTRING slotIndexString = mdName.substr(suffixSeparatorOffset + 2 /* suffixSeparator size */);
+    if (slotIndexString.empty() ||
+        // Slot index is positive 4 byte int, that mean max is 10 characters (2147483647).
+        slotIndexString.size() > 10)
+        return E_FAIL;
+
+    int32_t slotIndex = 0;
+    for (WSTRING::size_type i = 0; i < slotIndexString.size(); i++)
+    {
+        if (slotIndexString[i] < W('0') && slotIndexString[i] > W('9'))
+            return E_FAIL;
+
+        slotIndex = slotIndex * 10 + (int32_t)(slotIndexString[i] -  W('0'));
+    }
+
+    if (slotIndex < 1) // Slot index start from 1.
+        return E_FAIL;
+
+    index = slotIndex - 1;
+    return S_OK;
+}
+
+// https://github.com/dotnet/roslyn/blob/3fdd28bc26238f717ec1124efc7e1f9c2158bce2/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameParser.cs#L20-L59
+static HRESULT TryParseHoistedLocalName(const WSTRING &mdName, WSTRING &wLocalName)
+{
+    WSTRING::size_type nameStartOffset;
+    if (mdName.length() > 1 && starts_with(mdName.data(), W("<")))
+        nameStartOffset = 1;
+    else if (mdName.length() > 4 && starts_with(mdName.data(), W("CS$<")))
+        nameStartOffset = 4;
+    else
+        return E_FAIL;
+
+    WSTRING::size_type closeBracketOffset = mdName.find('>', nameStartOffset);
+    if (closeBracketOffset == WSTRING::npos)
+        return E_FAIL;
+
+    wLocalName = mdName.substr(nameStartOffset, closeBracketOffset - nameStartOffset);
+    return S_OK;
+}
+
+static HRESULT WalkGeneratedClassFields(IMetaDataImport *pMD, ICorDebugValue *pInputValue, ULONG32 currentIlOffset, std::unordered_set<WSTRING> &usedNames, 
+                                        mdMethodDef methodDef, Modules *pModules, ICorDebugModule *pModule, Evaluator::WalkStackVarsCallback cb)
+{
+    HRESULT Status;
+    BOOL isNull = FALSE;
+    ToRelease<ICorDebugValue> pValue;
+    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+    if (isNull == TRUE)
+        return S_OK;
+
+    ToRelease<ICorDebugClass> pClass;
+    mdTypeDef currentTypeDef;
+    IfFailRet(GetClassAndTypeDefByValue(pValue, &pClass, currentTypeDef));
+
+    struct hoisted_local_scope_t
+    {
+        uint32_t startOffset;
+        uint32_t length;
+    };
+    struct hoisted_local_scope_t_deleter
+    {
+        void operator()(hoisted_local_scope_t *p) const
+        {
+            Interop::CoTaskMemFree(p);
+        }
+    };
+
+    int32_t hoistedLocalScopesCount = -1;
+    std::unique_ptr<hoisted_local_scope_t, hoisted_local_scope_t_deleter> hoistedLocalScopes;
+
+    IfFailRet(ForEachFields(pMD, currentTypeDef, [&](mdFieldDef fieldDef) -> HRESULT
+    {
+        WCHAR mdName[mdNameLen] = {0};
+        ULONG nameLen = 0;
+        DWORD fieldAttr = 0;
+        if (FAILED(pMD->GetFieldProps(fieldDef, nullptr, mdName, _countof(mdName), &nameLen, &fieldAttr, NULL, NULL, NULL, NULL, NULL)))
+            return S_OK; // Return with success to continue walk.
+
+        if ((fieldAttr & fdStatic) != 0 || (fieldAttr & fdLiteral) != 0 ||
+            usedNames.find(mdName) != usedNames.end())
+            return S_OK; // Return with success to continue walk.
+
+        auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
+        {
+            // Get pValue again, since it could be neutered at eval call in `cb` on previous cycle.
+            pValue.Free();
+            IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+            ToRelease<ICorDebugObjectValue> pObjValue;
+            IfFailRet(pValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue));
+            IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, ppResultValue));
+            return S_OK;
+        };
+
+        GeneratedNameKind generatedNameKind = GetLocalOrFieldNameKind(mdName);
+        if (generatedNameKind == GeneratedNameKind::DisplayClassLocalOrField)
+        {
+            ToRelease<ICorDebugValue> iCorDisplayClassValue;
+            IfFailRet(getValue(&iCorDisplayClassValue, defaultEvalFlags));
+            IfFailRet(WalkGeneratedClassFields(pMD, iCorDisplayClassValue, currentIlOffset, usedNames, methodDef, pModules, pModule, cb));
+        }
+        else if (generatedNameKind == GeneratedNameKind::HoistedLocalField)
+        {
+            if (hoistedLocalScopesCount == -1)
+            {
+                PVOID data = nullptr;
+                if (SUCCEEDED(pModules->GetHoistedLocalScopes(pModule, methodDef, &data, hoistedLocalScopesCount)) && data)
+                    hoistedLocalScopes.reset((hoisted_local_scope_t*)data);
+                else
+                    hoistedLocalScopesCount = 0;
+            }
+
+            // Check, that hoisted local is in scope.
+            // Note, in case we have any issue - ignore this check and show variable, since this is not fatal error.
+            int32_t index;
+            if (hoistedLocalScopesCount > 0 &&
+                SUCCEEDED(TryParseSlotIndex(mdName, index)) &&
+                hoistedLocalScopesCount > index &&
+                (currentIlOffset < hoistedLocalScopes.get()[index].startOffset ||
+                 currentIlOffset >= hoistedLocalScopes.get()[index].startOffset + hoistedLocalScopes.get()[index].length))
+                return S_OK; // Return with success to continue walk.
+
+            WSTRING wLocalName;
+            if (FAILED(TryParseHoistedLocalName(mdName, wLocalName)))
+                return S_OK; // Return with success to continue walk.
+
+            IfFailRet(cb(to_utf8(wLocalName.data()), getValue));
+            usedNames.insert(wLocalName);
+        }
+        // Ignore any other compiler generated fields, show only normal fields.
+        else if (!IsSynthesizedLocalName(mdName, nameLen))
+        {
+            IfFailRet(cb(to_utf8(mdName), getValue));
+            usedNames.insert(mdName);
+        }
+        return S_OK; // Return with success to continue walk.
+    }));
 
     return S_OK;
 }
@@ -1110,90 +1350,81 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
     ULONG cLocals = 0;
     IfFailRet(pLocalsEnum->GetCount(&cLocals));
 
-    ULONG cParams = 0;
-    ToRelease<ICorDebugValueEnum> pParamEnum;
-    IfFailRet(pILFrame->EnumerateArguments(&pParamEnum));
-    IfFailRet(pParamEnum->GetCount(&cParams));
+    ULONG cArguments = 0;
+    ToRelease<ICorDebugValueEnum> iCorArgumentEnum;
+    IfFailRet(pILFrame->EnumerateArguments(&iCorArgumentEnum));
+    IfFailRet(iCorArgumentEnum->GetCount(&cArguments));
 
-    std::unordered_set<std::string> locals;
+    // Note, we use same order as vsdbg use:
+    // 1. "this" (real or "this" proxy field in case async method and lambda).
+    // 2. "real" argumens.
+    // 3. "real" local variables.
+    // 4. async/lambda object fields.
 
-    if (cParams > 0)
+    DWORD methodAttr = 0;
+    WCHAR szMethod[mdNameLen];
+    ULONG szMethodLen;
+    IfFailRet(pMD->GetMethodProps(methodDef, NULL, szMethod, _countof(szMethod), &szMethodLen, &methodAttr, NULL, NULL, NULL, NULL));
+
+    GeneratedCodeKind generatedCodeKind = GeneratedCodeKind::Normal;
+    ToRelease<ICorDebugValue> currentThis; // Current This. Note, in case async method or lambda - this is special object (not user's "this").
+    // In case this is static method, this is not async/lambda case for sure.
+    if ((methodAttr & mdStatic) == 0)
     {
-        DWORD methodAttr = 0;
-        IfFailRet(pMD->GetMethodProps(methodDef, NULL, NULL, 0, NULL, &methodAttr, NULL, NULL, NULL, NULL));
+        ToRelease<ICorDebugClass> pClass;
+        IfFailRet(pFunction->GetClass(&pClass));
+        mdTypeDef typeDef;
+        IfFailRet(pClass->GetToken(&typeDef));
+        IfFailRet(GetGeneratedCodeKind(pMD, szMethod, typeDef, generatedCodeKind));
+        IfFailRet(pILFrame->GetArgument(0, &currentThis));
 
-        for (ULONG i = 0; i < cParams; i++)
+        ToRelease<ICorDebugValue> userThis;
+        if (generatedCodeKind == GeneratedCodeKind::Normal)
         {
-            ULONG paramNameLen = 0;
-            mdParamDef paramDef;
-            std::string paramName;
+            currentThis->AddRef();
+            userThis = currentThis.GetPtr();
+        }
+        else
+        {
+            // Check do we have real This value (that should be stored in ThisProxyField).
+            IfFailRet(FindThisProxyFieldValue(pMD, pClass, typeDef, currentThis, &userThis));
+        }
 
-            bool thisParam = i == 0 && (methodAttr & mdStatic) == 0;
-            if (thisParam)
-                paramName = "this";
-            else
+        if (userThis)
+        {
+            auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
             {
-                int idx = ((methodAttr & mdStatic) == 0)? i : (i + 1);
-                if(SUCCEEDED(pMD->GetParamForMethodIndex(methodDef, idx, &paramDef)))
-                {
-                    WCHAR wParamName[mdNameLen] = W("\0");
-                    pMD->GetParamProps(paramDef, NULL, NULL, wParamName, mdNameLen, &paramNameLen, NULL, NULL, NULL, NULL);
-                    paramName = to_utf8(wParamName);
-                }
-            }
-            if(paramName.empty())
-            {
-                std::ostringstream ss;
-                ss << "param_" << i;
-                paramName = ss.str();
-            }
-
-            ToRelease<ICorDebugValue> pValue;
-            ULONG cArgsFetched;
-            if (FAILED(pParamEnum->Next(1, &pValue, &cArgsFetched)))
-                continue;
-
-            if (thisParam)
-            {
-                // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
-                pFrame.Free();
-                pILFrame.Free();
-
-                IfFailRet(HandleSpecialThisParam(this, pValue, locals, cb));
-                if (Status == S_OK)
-                    continue;
-            }
-
-            locals.insert(paramName);
-
+                userThis->AddRef();
+                *ppResultValue = userThis;
+                return S_OK;
+            };
+            IfFailRet(cb("this", getValue));
             // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
             pFrame.Free();
             pILFrame.Free();
-
-            auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
-            {
-                pValue->AddRef();
-                *ppResultValue = pValue;
-                return S_OK;
-            };
-
-            IfFailRet(cb(paramName, getValue));
         }
     }
 
-    if (cLocals > 0)
+    // Lambda could duplicate arguments into display class local object. Make sure we call "cb" only once for unique name.
+    // Note, we don't use usedNames with 'this' related code above, since it have logic "find first and return".
+    // In the same time, all code below ignore 'this' argument/field check.
+    std::unordered_set<WSTRING> usedNames;
+
+    for (ULONG i = (methodAttr & mdStatic) == 0 ? 1 : 0; i < cArguments; i++)
     {
-        for (ULONG i = 0; i < cLocals; i++)
+        // https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/metadata/imetadataimport-getparamformethodindex-method
+        // The ordinal position in the parameter list where the requested parameter occurs. Parameters are numbered starting from one, with the method's return value in position zero.
+        // Note, IMetaDataImport::GetParamForMethodIndex() don't include "this", but ICorDebugILFrame::GetArgument() do. This is why we have different logic here.
+        int idx = ((methodAttr & mdStatic) == 0) ? i : (i + 1);
+        WCHAR wParamName[mdNameLen] = W("\0");
+        ULONG paramNameLen = 0;
+        mdParamDef paramDef;
+        if(FAILED(pMD->GetParamForMethodIndex(methodDef, idx, &paramDef)) ||
+           FAILED(pMD->GetParamProps(paramDef, NULL, NULL, wParamName, mdNameLen, &paramNameLen, NULL, NULL, NULL, NULL)))
+           continue;
+
+        auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
         {
-            std::string paramName;
-            ULONG32 ilStart;
-            ULONG32 ilEnd;
-            if (FAILED(m_sharedModules->GetFrameNamedLocalVariable(pModule, methodDef, i, paramName, &ilStart, &ilEnd)))
-                continue;
-
-            if (currentIlOffset < ilStart || currentIlOffset >= ilEnd)
-                continue;
-
             if (!pFrame) // Forced to update pFrame/pILFrame.
             {
                 IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
@@ -1201,29 +1432,58 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
                     return E_FAIL;
                 IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
             }
-            ToRelease<ICorDebugValue> pValue;
-            if (FAILED(pILFrame->GetLocalVariable(i, &pValue)) || !pValue)
-                continue;
+            return pILFrame->GetArgument(i, ppResultValue);
+        };
 
-            // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
-            pFrame.Free();
-            pILFrame.Free();
-
-            IfFailRet(HandleSpecialLocalVar(this, paramName, pValue, locals, cb));
-            if (Status == S_OK)
-                continue;
-
-            auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
-            {
-                pValue->AddRef();
-                *ppResultValue = pValue;
-                return S_OK;
-            };
-
-            locals.insert(paramName);
-            IfFailRet(cb(paramName, getValue));
-        }
+        IfFailRet(cb(to_utf8(wParamName), getValue));
+        usedNames.insert(wParamName);
+        // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
+        pFrame.Free();
+        pILFrame.Free();
     }
+
+    for (ULONG i = 0; i < cLocals; i++)
+    {
+        WSTRING wLocalName;
+        ULONG32 ilStart;
+        ULONG32 ilEnd;
+        if (FAILED(m_sharedModules->GetFrameNamedLocalVariable(pModule, methodDef, i, wLocalName, &ilStart, &ilEnd)))
+            continue;
+
+        if (currentIlOffset < ilStart || currentIlOffset >= ilEnd)
+            continue;
+
+        auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
+        {
+            if (!pFrame) // Forced to update pFrame/pILFrame.
+            {
+                IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
+                if (pFrame == nullptr)
+                    return E_FAIL;
+                IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+            }
+            return pILFrame->GetLocalVariable(i, ppResultValue);
+        };
+
+        // Note, this method could have lambdas inside, display class local objects must be also checked,
+        // since this objects could hold current method local variables too.
+        if (GetLocalOrFieldNameKind(wLocalName) == GeneratedNameKind::DisplayClassLocalOrField)
+        {
+            ToRelease<ICorDebugValue> iCorDisplayClassValue;
+            IfFailRet(getValue(&iCorDisplayClassValue, defaultEvalFlags));
+            IfFailRet(WalkGeneratedClassFields(pMD, iCorDisplayClassValue, currentIlOffset, usedNames, methodDef, m_sharedModules.get(), pModule, cb));
+            continue;
+        }
+
+        IfFailRet(cb(to_utf8(wLocalName.data()), getValue));
+        usedNames.insert(wLocalName);
+        // Reset pFrame/pILFrame, since it could be neutered at `cb` call, we need track this case.
+        pFrame.Free();
+        pILFrame.Free();
+    }
+
+    if (generatedCodeKind != GeneratedCodeKind::Normal)
+        return WalkGeneratedClassFields(pMD, currentThis, currentIlOffset, usedNames, methodDef, m_sharedModules.get(), pModule, cb);
 
     return S_OK;
 }

@@ -236,7 +236,7 @@ Modules::ModuleInfo::~ModuleInfo() noexcept
         Interop::DisposeSymbols(m_symbolReaderHandle);
 }
 
-bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)
+static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)
 {
     // Function should be matched by substring, i.e. received target function name should fully or partly equal with the
     // real function name. For example:
@@ -262,31 +262,7 @@ bool Modules::IsTargetFunction(const std::vector<std::string> &fullName, const s
     return true;
 }
 
-
-HRESULT Modules::ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName,
-                                       ResolveFuncBreakpointCallback cb)
-{
-    std::vector<std::string> splittedName = split_on_tokens(funcName, '.');
-
-    auto functor = [&](const std::string& fullName, mdMethodDef& mdMethod) -> bool
-    {
-        std::vector<std::string> splittedFullName = split_on_tokens(fullName, '.');
-
-        // If we've found the target function
-        if (IsTargetFunction(splittedFullName, splittedName))
-        {
-            if (FAILED(cb(pModule, mdMethod)))
-                return false; // abort operation
-        }
-
-        return true;  // continue for other functions with matching name
-    };
-
-    return ForEachMethod(pModule, functor);
-}
-
-
-HRESULT Modules::ForEachMethod(ICorDebugModule *pModule, std::function<bool(const std::string&, mdMethodDef&)> functor)
+static HRESULT ForEachMethod(ICorDebugModule *pModule, std::function<bool(const std::string&, mdMethodDef&)> functor)
 {
     HRESULT Status;
     ToRelease<IUnknown> pMDUnknown;
@@ -368,13 +344,34 @@ HRESULT Modules::ForEachMethod(ICorDebugModule *pModule, std::function<bool(cons
     return S_OK;
 }
 
+static HRESULT ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName, ResolveFuncBreakpointCallback cb)
+{
+    std::vector<std::string> splittedName = split_on_tokens(funcName, '.');
+
+    auto functor = [&](const std::string& fullName, mdMethodDef& mdMethod) -> bool
+    {
+        std::vector<std::string> splittedFullName = split_on_tokens(fullName, '.');
+
+        // If we've found the target function
+        if (IsTargetFunction(splittedFullName, splittedName))
+        {
+            if (FAILED(cb(pModule, mdMethod)))
+                return false; // abort operation
+        }
+
+        return true;  // continue for other functions with matching name
+    };
+
+    return ForEachMethod(pModule, functor);
+}
+
 void Modules::CleanupAllModules()
 {
     std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
     m_modulesInfo.clear();
 }
 
-std::string Modules::GetModuleFileName(ICorDebugModule *pModule)
+std::string GetModuleFileName(ICorDebugModule *pModule)
 {
     WCHAR name[mdNameLen];
     ULONG32 name_len = 0;
@@ -411,7 +408,7 @@ static std::string GetFileName(const std::string &path)
     return i == std::string::npos ? path : path.substr(i + 1);
 }
 
-HRESULT Modules::IsModuleHaveSameName(ICorDebugModule *pModule, const std::string &Name, bool isFullPath)
+HRESULT IsModuleHaveSameName(ICorDebugModule *pModule, const std::string &Name, bool isFullPath)
 {
     HRESULT Status;
     ULONG32 len;
@@ -604,7 +601,7 @@ HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_S
     return S_OK;
 }
 
-HRESULT Modules::GetModuleId(ICorDebugModule *pModule, std::string &id)
+HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
 {
     HRESULT Status;
 
@@ -785,7 +782,7 @@ HRESULT Modules::GetFrameNamedLocalVariable(
     ICorDebugModule *pModule,
     mdMethodDef methodToken,
     ULONG localIndex,
-    std::string &paramName,
+    WSTRING &localName,
     ULONG32 *pIlStart,
     ULONG32 *pIlEnd)
 {
@@ -794,7 +791,7 @@ HRESULT Modules::GetFrameNamedLocalVariable(
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    WCHAR wParamName[mdNameLen] = W("\0");
+    WCHAR wLocalName[mdNameLen] = W("\0");
 
     {
         std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
@@ -805,11 +802,33 @@ HRESULT Modules::GetFrameNamedLocalVariable(
         }
 
         ModuleInfo &mdInfo = info_pair->second;
-        IfFailRet(Interop::GetNamedLocalVariableAndScope(mdInfo.m_symbolReaderHandle, methodToken, localIndex, wParamName, _countof(wParamName), pIlStart, pIlEnd));
+        IfFailRet(Interop::GetNamedLocalVariableAndScope(mdInfo.m_symbolReaderHandle, methodToken, localIndex, wLocalName, _countof(wLocalName), pIlStart, pIlEnd));
     }
 
-    paramName = to_utf8(wParamName);
+    localName = wLocalName;
 
+    return S_OK;
+}
+
+HRESULT Modules::GetHoistedLocalScopes(
+    ICorDebugModule *pModule,
+    mdMethodDef methodToken,
+    PVOID *data,
+    int32_t &hoistedLocalScopesCount)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+    {
+        return E_FAIL;
+    }
+
+    ModuleInfo &mdInfo = info_pair->second;
+    IfFailRet(Interop::GetHoistedLocalScopes(mdInfo.m_symbolReaderHandle, methodToken, data, hoistedLocalScopesCount));
     return S_OK;
 }
 
