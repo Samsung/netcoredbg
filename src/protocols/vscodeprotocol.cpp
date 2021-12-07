@@ -614,6 +614,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         return m_sharedDebugger->Continue(threadId);
     } },
     { "pause", [this](const json &arguments, json &body){
+        // Ignore `threadId` argument, since only pause for all threads are supported now.
         return m_sharedDebugger->Pause();
     } },
     { "next", [this](const json &arguments, json &body){

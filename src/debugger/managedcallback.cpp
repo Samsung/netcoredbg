@@ -346,7 +346,10 @@ HRESULT ManagedCallback::Pause(ICorDebugProcess *pProcess)
         }
     }
 
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, ThreadId::Invalid));
+    assert(threads.size() > 0);
+    // Event must provide thread (VSCode and MI/GDB protocols count on this), even if this thread don't have user code.
+    // Note, provide thread without user code also legit for this event.
+    m_debugger.m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, threads[0].id));
     m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }

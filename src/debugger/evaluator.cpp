@@ -1323,6 +1323,14 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
     if (pFrame == nullptr)
         return E_FAIL;
 
+    ULONG32 currentIlOffset;
+    Modules::SequencePoint sp;
+    // GetFrameILAndSequencePoint() return "success" code only in case it found sequence point
+    // for current IP, that mean we stop inside user code.
+    // Note, we could have request for not user code, we ignore it and this is OK.
+    if (FAILED(m_sharedModules->GetFrameILAndSequencePoint(pFrame, currentIlOffset, sp)))
+        return S_OK;
+
     ToRelease<ICorDebugFunction> pFunction;
     IfFailRet(pFrame->GetFunction(&pFunction));
 
@@ -1339,10 +1347,6 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
 
     ToRelease<ICorDebugILFrame> pILFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
-
-    ULONG32 currentIlOffset;
-    CorDebugMappingResult mappingResult;
-    IfFailRet(pILFrame->GetIP(&currentIlOffset, &mappingResult));
 
     ToRelease<ICorDebugValueEnum> pLocalsEnum;
     IfFailRet(pILFrame->EnumerateLocalVariables(&pLocalsEnum));
