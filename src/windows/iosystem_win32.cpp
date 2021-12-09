@@ -423,10 +423,8 @@ bool Class::async_wait(IOSystem::AsyncHandleIterator begin, IOSystem::AsyncHandl
     }
 
     assert(n == count);
-    DWORD result;
-    do result = WaitForMultipleObjects(count, events, FALSE, DWORD(timeout.count()));
-    while (result == WAIT_TIMEOUT);
-    return result != WAIT_FAILED;
+    DWORD result = WaitForMultipleObjects(count, events, FALSE, DWORD(timeout.count()));
+    return result != WAIT_FAILED && result != WAIT_TIMEOUT;
 }
 
 Class::IOResult Class::async_cancel(AsyncHandle& h)
