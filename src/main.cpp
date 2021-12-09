@@ -161,7 +161,7 @@ Streams open_streams(Holder& holder, unsigned server_port, ProtocolConstructor c
 
 using namespace netcoredbg;
 
-void FindAndParseArgs(char **argv, std::vector<std::pair<std::string, std::function<void(int& i)>>> &partialArguments, int i)
+static void FindAndParseArgs(char **argv, std::vector<std::pair<std::string, std::function<void(int& i)>>> &partialArguments, int i)
 {
     for(auto argument:partialArguments)
     {
@@ -173,6 +173,54 @@ void FindAndParseArgs(char **argv, std::vector<std::pair<std::string, std::funct
     }
     fprintf(stderr, "Error: Unknown option %s\n", argv[i]);
     exit(EXIT_FAILURE);
+}
+
+static void CheckStartOptions(ProtocolConstructor &protocol_constructor, std::vector<string_view> &initCommands,
+                              char* argv[], std::string &execFile, bool run, uint16_t serverPort)
+{
+    if (protocol_constructor != &instantiate_protocol<CLIProtocol> && !initCommands.empty())
+    {
+        fprintf(stderr, "%s: options -ex and --command can be used only with CLI interpreter!\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    if (run && execFile.empty())
+    {
+        fprintf(stderr, "--run option was given, but no executable file specified!\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (protocol_constructor == &instantiate_protocol<CLIProtocol> && serverPort)
+    {
+        fprintf(stderr, "server mode can't be used with CLI interpreter!\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+static HRESULT AttachToExistingProcess(IDebugger *pDebugger, DWORD pidDebuggee)
+{
+    HRESULT Status;
+    IfFailRet(pDebugger->Initialize());
+    IfFailRet(pDebugger->Attach(pidDebuggee));
+    return pDebugger->ConfigurationDone();
+}
+
+static HRESULT LaunchNewProcess(IDebugger *pDebugger, std::string &execFile, std::vector<std::string> &execArgs)
+{
+    HRESULT Status;
+    IfFailRet(pDebugger->Initialize());
+
+    try
+    {
+        IfFailRet(pDebugger->Launch(execFile, execArgs, {}, {}, false));
+    }
+    catch (const std::exception &e)
+    {
+        fprintf(stderr, "%s\n", e.what());
+        exit(EXIT_FAILURE);
+    }
+
+    return pDebugger->ConfigurationDone();
 }
 
 int main(int argc, char* argv[])
@@ -365,23 +413,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    if (protocol_constructor != &instantiate_protocol<CLIProtocol> && !initCommands.empty())
-    {
-        fprintf(stderr, "%s: options -ex and --command can be used only with CLI interpreter!\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    if (run && execFile.empty())
-    {
-        fprintf(stderr, "--run option was given, but no executable file specified!\n");
-        exit(EXIT_FAILURE);
-    }
-
-    if (protocol_constructor == &instantiate_protocol<CLIProtocol> && serverPort)
-    {
-        fprintf(stderr, "server mode can't be used with CLI interpreter!\n");
-        exit(EXIT_FAILURE);
-    }
+    CheckStartOptions(protocol_constructor, initCommands, argv, execFile, run, serverPort);
 
     LOGI("Netcoredbg started");
     // Note: there is no possibility to know which exception caused call to std::terminate
@@ -421,48 +453,18 @@ int main(int argc, char* argv[])
         protocol->SetLaunchCommand(execFile, execArgs);
 
     LOGI("pidDebugee %d", pidDebuggee);
-    if (pidDebuggee != 0)
+    HRESULT Status;
+    if (pidDebuggee != 0 && FAILED(Status = AttachToExistingProcess(debugger.get(), pidDebuggee)))
     {
-        // try to attach to existing process
-        debugger->Initialize();
-        debugger->Attach(pidDebuggee);
-        HRESULT Status = debugger->ConfigurationDone();
-        if (FAILED(Status))
-        {
-            fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
-            Interop::Shutdown();
-            return EXIT_FAILURE;
-        }
+        fprintf(stderr, "Error: 0x%x Failed to attach to %i\n", Status, pidDebuggee);
+        Interop::Shutdown();
+        return EXIT_FAILURE;
     }
-    else if (run)
+    else if (run && FAILED(Status = LaunchNewProcess(debugger.get(), execFile, execArgs)))
     {
-        // launch new process to debug
-        HRESULT hr;
-        do {
-            hr = debugger->Initialize();
-            if (FAILED(hr)) break;
-
-            try
-            {
-                hr = debugger->Launch(execFile, execArgs, {}, {}, false);
-            }
-            catch (const std::exception &e)
-            {
-                fprintf(stderr, "%s\n", e.what());
-                exit(EXIT_FAILURE);
-            }
-
-            if (FAILED(hr)) break;
-
-            hr = debugger->ConfigurationDone();
-        } while(0);
-
-        if (FAILED(hr))
-        {
-            fprintf(stderr, "Error: %#x %s\n", hr, errormessage(hr));
-            Interop::Shutdown();
-            exit(EXIT_FAILURE);
-        }
+        fprintf(stderr, "Error: %#x %s\n", Status, errormessage(Status));
+        Interop::Shutdown();
+        return EXIT_FAILURE;
     }
 
     // switch CLIProtocol to asynchronous mode when attaching

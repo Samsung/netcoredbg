@@ -170,39 +170,7 @@ void IORedirectHelper::worker()
     {
         // start new write requests if possible
         if (!out_handle)
-        {
-            assert(!read_lock);
-            read_lock.lock();
-
-            assert(out_stream->pbase() <= m_sent && m_sent <= m_unsent
-                    && m_unsent <= out_stream->pptr() && out_stream->pptr() <= out_stream->epptr());
-
-            size_t bytes = out_stream->pptr() - m_unsent;
-            if (bytes)
-            {
-                LOGD("have %u bytes unsent", int(bytes));
-                out_handle =
-                    IOSystem::async_write(out_stream->get_file_handle(), m_unsent, bytes);
-
-                if (LOGE_IF(!out_handle, "can't issue async write request!"))
-                    return;
-
-                m_unsent = out_stream->pptr();
-            }
-            else 
-            {
-                // close writing end of debugee's stdin pipe if
-                // we reached EOF on reading input from user and
-                // if all previously received data is completely sent.
-                if (m_eof)
-                {
-                    LOGD("closing writing end of stdin's pipe");
-                    auto forgetme = std::move(dynamic_cast<OutStream&>(std::get<IOSystem::Stdin>(m_streams)));
-                }
-
-                read_lock.unlock();
-            }
-        }
+            StartNewWriteRequests(read_lock, out_stream, out_handle);
 
         // process data available in buffer for input in_streams
         for (unsigned n = 0; n < Utility::Size(stream_types); n++)
@@ -253,81 +221,130 @@ void IORedirectHelper::worker()
         }
 
         // process finished write requests
-        if (out_handle)
-        {
-            IOSystem::IOResult result = IOSystem::async_result(out_handle);
-            if (result.status == IOSystem::IOResult::Success)
-            {
-                // update buffer
-                assert(read_lock);
-                assert(out_stream->pbase() <= m_sent && m_sent <= m_unsent
-                        && m_unsent <= out_stream->pptr() && out_stream->pptr() <= out_stream->epptr());
-
-                LOGD("sent %u bytes", int(result.size));
-                assert(result.size <= size_t(m_unsent - m_sent));
-                m_sent += result.size;
-
-                out_handle = {};  // can issue next read request
-
-                read_lock.unlock();
-
-                // process situation, when end of buffer reached.
-                if (m_rwlock.writer.try_lock())
-                {
-                    bool updated = false;
-
-                    // can move tail to beginning of the buffer
-                    size_t bytes = out_stream->pptr() - m_unsent; // num of unsent bytes
-                    if (m_unsent == m_sent && bytes == 0)
-                    {
-                        memmove(out_stream->pbase(), m_unsent, bytes);
-                        m_sent = m_unsent = out_stream->pbase();
-                        out_stream->clear();
-                        out_stream->pbump(int(bytes));
-                        
-                        updated = true;
-                    }
-
-                    m_rwlock.writer.unlock();
-
-                    // wake reader to read more data
-                    if (updated)
-                        wake_reader();
-                }
-            }
-            else if (result.status != IOSystem::IOResult::Pending)
-            {   // fatal error
-                out_handle = {};
-                LOGE("child process stdin writing error");
-                return;
-            }
-        }
+        if (out_handle &&
+            !ProcessFinishedWriteRequests(read_lock, out_stream, out_handle))
+            return;
 
         // process finished read requests
-        for (unsigned n = 0; n < Utility::Size(stream_types); n++)
+        if (!ProcessFinishedReadRequests(in_streams, Utility::Size(stream_types), async_handles))
+            return;
+    }
+}
+
+void IORedirectHelper::StartNewWriteRequests(std::unique_lock<Utility::RWLock::Reader> &read_lock, OutStreamBuf* const out_stream, IOSystem::AsyncHandle &out_handle)
+{
+    assert(!read_lock);
+    read_lock.lock();
+
+    assert(out_stream->pbase() <= m_sent && m_sent <= m_unsent
+            && m_unsent <= out_stream->pptr() && out_stream->pptr() <= out_stream->epptr());
+
+    size_t bytes = out_stream->pptr() - m_unsent;
+    if (bytes)
+    {
+        LOGD("have %u bytes unsent", int(bytes));
+        out_handle =
+            IOSystem::async_write(out_stream->get_file_handle(), m_unsent, bytes);
+
+        if (LOGE_IF(!out_handle, "can't issue async write request!"))
+            return;
+
+        m_unsent = out_stream->pptr();
+    }
+    else 
+    {
+        // close writing end of debugee's stdin pipe if
+        // we reached EOF on reading input from user and
+        // if all previously received data is completely sent.
+        if (m_eof)
         {
-            InStreamBuf* const stream = in_streams[n];
-            if (stream == nullptr)
-                continue;
+            LOGD("closing writing end of stdin's pipe");
+            auto forgetme = std::move(dynamic_cast<OutStream&>(std::get<IOSystem::Stdin>(m_streams)));
+        }
 
-            IOSystem::IOResult result = IOSystem::async_result(async_handles[n]);
-            if (result.status == IOSystem::IOResult::Success)
+        read_lock.unlock();
+    }
+}
+
+bool IORedirectHelper::ProcessFinishedWriteRequests(std::unique_lock<Utility::RWLock::Reader> &read_lock, OutStreamBuf* const out_stream, IOSystem::AsyncHandle &out_handle)
+{
+    IOSystem::IOResult result = IOSystem::async_result(out_handle);
+    if (result.status == IOSystem::IOResult::Success)
+    {
+        // update buffer
+        assert(read_lock);
+        assert(out_stream->pbase() <= m_sent && m_sent <= m_unsent
+                && m_unsent <= out_stream->pptr() && out_stream->pptr() <= out_stream->epptr());
+
+        LOGD("sent %u bytes", int(result.size));
+        assert(result.size <= size_t(m_unsent - m_sent));
+        m_sent += result.size;
+
+        out_handle = {};  // can issue next read request
+
+        read_lock.unlock();
+
+        // process situation, when end of buffer reached.
+        if (m_rwlock.writer.try_lock())
+        {
+            bool updated = false;
+
+            // can move tail to beginning of the buffer
+            size_t bytes = out_stream->pptr() - m_unsent; // num of unsent bytes
+            if (m_unsent == m_sent && bytes == 0)
             {
-                // update buffer
-                LOGD("read %u bytes", int(result.size));
-                assert(result.size <= size_t(stream->endp() - stream->gptr()));
-                stream->setegptr(stream->egptr() + result.size);
+                memmove(out_stream->pbase(), m_unsent, bytes);
+                m_sent = m_unsent = out_stream->pbase();
+                out_stream->clear();
+                out_stream->pbump(int(bytes));
+                
+                updated = true;
+            }
 
-                async_handles[n] = {};  // can issue next read request
-            }
-            else if (result.status != IOSystem::IOResult::Pending)
-            {   // fatal error
-                async_handles[n] = {};
-                LOGE("child process stdout/stderr reading error");
-                return;
-            }
+            m_rwlock.writer.unlock();
+
+            // wake reader to read more data
+            if (updated)
+                wake_reader();
         }
     }
+    else if (result.status != IOSystem::IOResult::Pending)
+    {   // fatal error
+        out_handle = {};
+        LOGE("child process stdin writing error");
+        return false;
+    }
+
+    return true;
+}
+
+bool IORedirectHelper::ProcessFinishedReadRequests(InStreamBuf* const in_streams[], size_t stream_types_cout, IOSystem::AsyncHandle async_handles[])
+{
+    for (size_t n = 0; n < stream_types_cout; n++)
+    {
+        InStreamBuf* const stream = in_streams[n];
+        if (stream == nullptr)
+            continue;
+
+        IOSystem::IOResult result = IOSystem::async_result(async_handles[n]);
+        if (result.status == IOSystem::IOResult::Success)
+        {
+            // update buffer
+            LOGD("read %u bytes", int(result.size));
+            assert(result.size <= size_t(stream->endp() - stream->gptr()));
+            stream->setegptr(stream->egptr() + result.size);
+
+            async_handles[n] = {};  // can issue next read request
+        }
+        else if (result.status != IOSystem::IOResult::Pending)
+        {   // fatal error
+            async_handles[n] = {};
+            LOGE("child process stdout/stderr reading error");
+            return false;
+        }
+    }
+
+    return true;
 }
 
 
