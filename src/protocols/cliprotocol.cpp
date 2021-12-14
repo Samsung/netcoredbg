@@ -1007,10 +1007,22 @@ void CLIProtocol::EmitExitedEvent(const ExitedEvent &event)
     m_state_cv.notify_all();
 
     printf("\nstopped, reason: exited, exit-code: %i\n", event.exitCode);
+    m_exit = true;
 
     repaint();
 }
 
+void CLIProtocol::EmitTerminatedEvent()
+{
+    LogFuncEntry();
+    lock_guard lock(m_mutex);
+
+    m_processStatus = Exited;
+    m_state_cv.notify_all();
+
+    resetConsole();
+    m_exit = true;
+}
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
@@ -2249,8 +2261,6 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr, bool printCommands)
             m_sharedDebugger->Disconnect();
 
             lock.lock();
-            m_processStatus = NotStarted;
-            m_state_cv.notify_all();
             exited = 1;
         }
 
@@ -2457,6 +2467,7 @@ void CLIProtocol::CommandLoop()
 
     linenoiseHistorySave(HistoryFileName);
     linenoiseHistoryFree();
+    cleanupConsoleInputBuffer();
 
     // At this point we assume, that no EmitStoppedEvent and
     // no EmitExitEvent can occur anymore.
@@ -2537,6 +2548,42 @@ void CLIProtocol::setupInterruptHandler()
     SetConsoleCtrlHandler(event_handler, TRUE);
 #else
     signal(SIGINT, [](int){ CLIProtocol::interruptHandler(); });
+#endif
+}
+
+void CLIProtocol::resetConsole()
+{
+#ifdef _WIN32
+    INPUT_RECORD rec;
+    DWORD count;
+    rec.EventType = KEY_EVENT;
+    rec.Event.KeyEvent.bKeyDown = 1;
+    rec.Event.KeyEvent.dwControlKeyState = 0x8; // CONTROL_KEY_STATE_PRESSED;
+    rec.Event.KeyEvent.uChar.AsciiChar = 0xd;   // SYMBOL_CTRL_D;
+    rec.Event.KeyEvent.uChar.UnicodeChar = 0xd; // SYMBOL_CTRL_D;
+    rec.Event.KeyEvent.wRepeatCount = 1;
+    rec.Event.KeyEvent.wVirtualKeyCode = 0xd;   // KEYCODE_CTRL_D;
+    rec.Event.KeyEvent.wVirtualScanCode = 0x1c; // SCANCODE_CTRL_D;
+    WriteConsoleInput(GetStdHandle(STD_INPUT_HANDLE), &rec, 1, &count);
+#else
+    freopen(static_cast<char*>(nullptr), "wr", stdin);
+#endif
+}
+
+void CLIProtocol::cleanupConsoleInputBuffer()
+{
+// No need to do something for linux
+#ifdef _WIN32
+    DWORD bytesRead;
+    HANDLE fh = GetStdHandle(STD_INPUT_HANDLE);
+    if (!fh)
+        return;
+    while (GetNumberOfConsoleInputEvents(fh, &bytesRead) && bytesRead)
+    {
+        INPUT_RECORD event;
+        if (!ReadConsoleInput(fh, &event, 1, &bytesRead))
+            return;
+    }
 #endif
 }
 

@@ -91,7 +91,7 @@ public:
     void EmitExecEvent(PID, const std::string& argv) override {}
     void EmitStoppedEvent(const StoppedEvent &event) override;
     void EmitExitedEvent(const ExitedEvent &event) override;
-    void EmitTerminatedEvent() override {}
+    void EmitTerminatedEvent() override;
     void EmitContinuedEvent(ThreadId threadId) override;
     void EmitThreadEvent(const ThreadEvent &event) override;
     void EmitModuleEvent(const ModuleEvent &event) override;
@@ -246,6 +246,9 @@ private:
     // remove/set Ctrl-C handlers
     void removeInterruptHandler();
     void setupInterruptHandler();
+
+    void resetConsole();
+    void cleanupConsoleInputBuffer();
 };
 
 } // namespace netcoredbg
