@@ -3,7 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include "debugger/breakpointutils.h"
-#include "interfaces/idebugger.h"
+#include "debugger/variables.h"
 #include "metadata/modules.h"
 #include "utils/torelease.h"
 
@@ -57,7 +57,7 @@ HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICor
     return S_OK;
 }
 
-HRESULT IsEnableByCondition(const std::string &condition, IDebugger *debugger, ICorDebugThread *pThread)
+HRESULT IsEnableByCondition(const std::string &condition, Variables *pVariables, ICorDebugThread *pThread)
 {
     HRESULT Status;
 
@@ -67,9 +67,12 @@ HRESULT IsEnableByCondition(const std::string &condition, IDebugger *debugger, I
         IfFailRet(pThread->GetID(&threadId));
         FrameId frameId(ThreadId{threadId}, FrameLevel{0});
 
+        ToRelease<ICorDebugProcess> iCorProcess;
+        IfFailRet(pThread->GetProcess(&iCorProcess));
+
         Variable variable;
         std::string output;
-        IfFailRet(debugger->Evaluate(frameId, condition, variable, output));
+        IfFailRet(pVariables->Evaluate(iCorProcess, frameId, condition, variable, output));
 
         if (variable.type != "bool" || variable.value != "true")
             return E_FAIL;

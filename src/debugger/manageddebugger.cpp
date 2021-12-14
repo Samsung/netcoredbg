@@ -76,29 +76,45 @@ namespace
 
         return 0;
     }
+
+    // Caller must care about m_debugProcessRWLock.
+    HRESULT CheckDebugProcess(ICorDebugProcess *pProcess, std::mutex &processAttachedMutex, ProcessAttachedState processAttachedState)
+    {
+        if (!pProcess)
+            return E_FAIL;
+
+        // We might have case, when process was exited/detached, but m_iCorProcess still not free and hold invalid object.
+        // Note, we can't hold this lock, since this could deadlock execution at ICorDebugManagedCallback::ExitProcess call.
+        std::unique_lock<std::mutex> lockAttachedMutex(processAttachedMutex);
+        if (processAttachedState == ProcessAttachedState::Unattached)
+            return E_FAIL;
+        lockAttachedMutex.unlock();
+
+        return S_OK;
+    }
+
+    bool HaveDebugProcess(Utility::RWLock &debugProcessRWLock, ICorDebugProcess *pProcess, std::mutex &processAttachedMutex, ProcessAttachedState processAttachedState)
+    {
+        std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(debugProcessRWLock.reader);
+        return SUCCEEDED(CheckDebugProcess(pProcess, processAttachedMutex, processAttachedState));
+    }
 }
 
 void ManagedDebugger::NotifyProcessCreated()
 {
     std::lock_guard<std::mutex> lock(m_processAttachedMutex);
-    m_processAttachedState = ProcessAttached;
+    m_processAttachedState = ProcessAttachedState::Attached;
 }
 
 void ManagedDebugger::NotifyProcessExited()
 {
     std::unique_lock<std::mutex> lock(m_processAttachedMutex);
-    m_processAttachedState = ProcessUnattached;
+    m_processAttachedState = ProcessAttachedState::Unattached;
     lock.unlock();
     m_processAttachedCV.notify_one();
 }
 
-void ManagedDebugger::WaitProcessExited()
-{
-    std::unique_lock<std::mutex> lock(m_processAttachedMutex);
-    if (m_processAttachedState != ProcessUnattached)
-        m_processAttachedCV.wait(lock, [this]{return m_processAttachedState == ProcessUnattached;});
-}
-
+// Caller must care about m_debugProcessRWLock.
 void ManagedDebugger::DisableAllBreakpointsAndSteppers()
 {
     m_uniqueSteppers->DisableAllSteppers(m_iCorProcess); // Async stepper could have breakpoints active, disable them first.
@@ -115,6 +131,8 @@ void ManagedDebugger::SetLastStoppedThreadId(ThreadId threadId)
 {
     std::lock_guard<std::mutex> lock(m_lastStoppedMutex);
     m_lastStoppedThreadId = threadId;
+
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
 
     m_uniqueBreakpoints->SetLastStoppedIlOffset(m_iCorProcess, m_lastStoppedThreadId);
 }
@@ -133,7 +151,7 @@ ThreadId ManagedDebugger::GetLastStoppedThreadId()
 }
 
 ManagedDebugger::ManagedDebugger() :
-    m_processAttachedState(ProcessUnattached),
+    m_processAttachedState(ProcessAttachedState::Unattached),
     m_lastStoppedThreadId(ThreadId::AllThreads),
     m_startMethod(StartNone),
     m_isConfigurationDone(false),
@@ -145,7 +163,7 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers, m_sharedEvalStackMachine)),
     m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator, m_sharedEvalStackMachine)),
     m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
-    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator)),
+    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator, m_sharedVariables)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_stepFiltering(true),
@@ -275,8 +293,9 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
 {
     LogFuncEntry();
 
-    if (!m_iCorProcess)
-        return E_FAIL;
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     if (m_sharedEvalWaiter->IsEvalRunning())
     {
@@ -291,7 +310,6 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
         return E_FAIL;
     }
 
-    HRESULT Status;
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
     IfFailRet(m_uniqueSteppers->SetupStep(pThread, stepType));
@@ -311,8 +329,9 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
 {
     LogFuncEntry();
 
-    if (!m_iCorProcess)
-        return E_FAIL;
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     if (m_sharedEvalWaiter->IsEvalRunning())
     {
@@ -331,7 +350,6 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     FrameId::invalidate(); // Clear all created during break frames.
     m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
 
-    HRESULT Status;
     // Note, process continue must be after event emitted, since we could get new stop event from queue here.
     if (FAILED(Status = m_managedCallback->Continue(m_iCorProcess)))
         LOGE("Continue failed: %s", errormessage(Status));
@@ -343,8 +361,9 @@ HRESULT ManagedDebugger::Pause()
 {
     LogFuncEntry();
 
-    if (!m_iCorProcess)
-        return E_FAIL;
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     return m_managedCallback->Pause(m_iCorProcess);
 }
@@ -353,8 +372,9 @@ HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
 {
     LogFuncEntry();
 
-    if (!m_iCorProcess)
-        return E_FAIL;
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     return m_sharedThreads->GetThreadsWithState(m_iCorProcess, threads);
 }
@@ -363,9 +383,10 @@ HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame
 {
     LogFuncEntry();
 
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    if (!m_iCorProcess)
-        return E_FAIL;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
     return GetStackTrace(pThread, startFrame, maxFrames, stackFrames, totalFrames);
@@ -513,8 +534,12 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
         return Status;
     }
 
+    std::unique_lock<Utility::RWLock::Writer> lockProcessRWLock(m_debugProcessRWLock.writer);
+
     m_iCorProcess = iCorProcess.Detach();
     m_iCorDebug = iCorDebug.Detach();
+
+    lockProcessRWLock.unlock();
 
     m_processId = pid;
 
@@ -666,72 +691,77 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
 
 HRESULT ManagedDebugger::CheckNoProcess()
 {
-    if (m_iCorProcess || m_iCorDebug)
-    {
-        std::unique_lock<std::mutex> lock(m_processAttachedMutex);
-        if (m_processAttachedState == ProcessAttached)
-            return E_FAIL; // Already attached
-        lock.unlock();
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
 
-        TerminateProcess();
-    }
+    if (!m_iCorProcess)
+        return S_OK;
+
+    std::unique_lock<std::mutex> lockAttachedMutex(m_processAttachedMutex);
+    if (m_processAttachedState == ProcessAttachedState::Attached)
+        return E_FAIL; // Already attached
+    lockAttachedMutex.unlock();
+
+    Cleanup();
     return S_OK;
 }
 
 HRESULT ManagedDebugger::DetachFromProcess()
 {
-    if (!m_iCorProcess || !m_iCorDebug)
-        return E_FAIL;
+    do {
+        std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+        std::lock_guard<std::mutex> guardAttachedMutex(m_processAttachedMutex);
+        if (m_processAttachedState == ProcessAttachedState::Unattached)
+            break;
 
-    if (SUCCEEDED(m_iCorProcess->Stop(0)))
-    {
+        if (!m_iCorProcess)
+            return E_FAIL;
+
+        BOOL procRunning = FALSE;
+        if (SUCCEEDED(m_iCorProcess->IsRunning(&procRunning)) && procRunning == TRUE)
+            m_iCorProcess->Stop(0);
+
         DisableAllBreakpointsAndSteppers();
-        m_iCorProcess->Detach();
-    }
+
+        HRESULT Status;
+        if (FAILED(Status = m_iCorProcess->Detach()))
+            LOGE("Process terminate failed: %s", errormessage(Status));
+
+        m_processAttachedState = ProcessAttachedState::Unattached; // Since we free process object anyway, reset process attached state.
+    } while(0);
 
     Cleanup();
-
-    m_iCorProcess.Free();
-
-    m_iCorDebug->Terminate();
-    m_iCorDebug.Free();
-
-    if (m_managedCallback->GetRefCount() > 0)
-    {
-        LOGW("ManagedCallback was not properly released by ICorDebug");
-    }
-    m_managedCallback.reset(nullptr);
-
     return S_OK;
 }
 
 HRESULT ManagedDebugger::TerminateProcess()
 {
-    if (!m_iCorProcess || !m_iCorDebug)
-        return E_FAIL;
+    do {
+        std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+        std::unique_lock<std::mutex> lockAttachedMutex(m_processAttachedMutex);
+        if (m_processAttachedState == ProcessAttachedState::Unattached)
+            break;
 
-    if (SUCCEEDED(m_iCorProcess->Stop(0)))
-    {
+        if (!m_iCorProcess)
+            return E_FAIL;
+
+        BOOL procRunning = FALSE;
+        if (SUCCEEDED(m_iCorProcess->IsRunning(&procRunning)) && procRunning == TRUE)
+            m_iCorProcess->Stop(0);
+
         DisableAllBreakpointsAndSteppers();
-        //pProcess->Detach();
-    }
+
+        HRESULT Status;
+        if (SUCCEEDED(Status = m_iCorProcess->Terminate(0)))
+        {
+            m_processAttachedCV.wait(lockAttachedMutex, [this]{return m_processAttachedState == ProcessAttachedState::Unattached;});
+            break;
+        }
+
+        LOGE("Process terminate failed: %s", errormessage(Status));
+        m_processAttachedState = ProcessAttachedState::Unattached; // Since we free process object anyway, reset process attached state.
+    } while(0);
 
     Cleanup();
-
-    m_iCorProcess->Terminate(0);
-    WaitProcessExited();
-
-    m_iCorProcess.Free();
-
-    m_iCorDebug->Terminate();
-    m_iCorDebug.Free();
-
-    if (m_managedCallback->GetRefCount() > 0)
-    {
-        LOGW("ManagedCallback was not properly released by ICorDebug");
-    }
-    m_managedCallback.reset(nullptr);
-
     return S_OK;
 }
 
@@ -741,6 +771,25 @@ void ManagedDebugger::Cleanup()
     m_sharedEvalHelpers->Cleanup();
     m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
     m_sharedProtocol->Cleanup();
+
+    std::lock_guard<Utility::RWLock::Writer> guardProcessRWLock(m_debugProcessRWLock.writer);
+
+    assert((m_iCorProcess && m_iCorDebug && m_managedCallback) ||
+           (!m_iCorProcess && !m_iCorDebug && !m_managedCallback));
+
+    if (!m_iCorProcess)
+        return;
+
+    m_iCorProcess.Free();
+
+    m_iCorDebug->Terminate();
+    m_iCorDebug.Free();
+
+    if (m_managedCallback->GetRefCount() > 0)
+    {
+        LOGW("ManagedCallback was not properly released by ICorDebug");
+    }
+    m_managedCallback.reset(nullptr);
 }
 
 HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
@@ -774,9 +823,10 @@ HRESULT ManagedDebugger::GetExceptionInfo(ThreadId threadId, ExceptionInfo &exce
 {
     LogFuncEntry();
 
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    if (!m_iCorProcess)
-        return E_FAIL;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+
     ToRelease<ICorDebugThread> iCorThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &iCorThread));
     return m_uniqueBreakpoints->GetExceptionInfo(iCorThread, exceptionInfo);
@@ -828,14 +878,16 @@ HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
 {
     LogFuncEntry();
 
-    return m_uniqueBreakpoints->SetLineBreakpoints(m_iCorProcess, filename, lineBreakpoints, breakpoints);
+    bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
+    return m_uniqueBreakpoints->SetLineBreakpoints(haveProcess, filename, lineBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints)
 {
     LogFuncEntry();
 
-    return m_uniqueBreakpoints->SetFuncBreakpoints(m_iCorProcess, funcBreakpoints, breakpoints);
+    bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
+    return m_uniqueBreakpoints->SetFuncBreakpoints(haveProcess, funcBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::BreakpointActivate(int id, bool act)
@@ -978,12 +1030,20 @@ HRESULT ManagedDebugger::GetVariables(
 {
     LogFuncEntry();
 
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+
     return m_sharedVariables->GetVariables(m_iCorProcess, variablesReference, filter, start, count, variables);
 }
 
 HRESULT ManagedDebugger::GetScopes(FrameId frameId, std::vector<Scope> &scopes)
 {
     LogFuncEntry();
+
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     return m_sharedVariables->GetScopes(m_iCorProcess, frameId, scopes);
 }
@@ -992,6 +1052,10 @@ HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression
 {
     LogFuncEntry();
 
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+
     return m_sharedVariables->Evaluate(m_iCorProcess, frameId, expression, variable, output);
 }
 
@@ -999,12 +1063,20 @@ HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string 
 {
     LogFuncEntry();
 
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+
     return m_sharedVariables->SetVariable(m_iCorProcess, name, value, ref, output);
 }
 
 HRESULT ManagedDebugger::SetExpression(FrameId frameId, const std::string &expression, int evalFlags, const std::string &value, std::string &output)
 {
     LogFuncEntry();
+
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     return m_sharedVariables->SetExpression(m_iCorProcess, frameId, expression, evalFlags, value, output);
 }
@@ -1080,10 +1152,9 @@ void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointI
 
 HRESULT ManagedDebugger::GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen)
 {
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-
-    if (!m_iCorProcess)
-        return E_FAIL;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_iCorProcess->GetThread(int(GetLastStoppedThreadId()), &pThread));

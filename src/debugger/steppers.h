@@ -43,6 +43,7 @@ public:
     HRESULT ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebugStepReason reason);
 
     HRESULT DisableAllSteppers(ICorDebugProcess *pProcess);
+    HRESULT DisableAllSteppers(ICorDebugAppDomain *pAppDomain);
     HRESULT DisableAllSimpleSteppers(ICorDebugProcess *pProcess);
 
     void SetJustMyCode(bool enable);

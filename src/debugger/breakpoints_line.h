@@ -19,21 +19,22 @@
 namespace netcoredbg
 {
 
-class IDebugger;
+class Variables;
 class Modules;
 
 class LineBreakpoints
 {
 public:
 
-    LineBreakpoints(std::shared_ptr<Modules> &sharedModules) :
+    LineBreakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Variables> &sharedVariables) :
         m_sharedModules(sharedModules),
+        m_sharedVariables(sharedVariables),
         m_justMyCode(true)
     {}
 
     void SetJustMyCode(bool enable) { m_justMyCode = enable; };
     void DeleteAll();
-    HRESULT SetLineBreakpoints(ICorDebugProcess *pProcess, const std::string &filename, const std::vector<LineBreakpoint> &lineBreakpoints,
+    HRESULT SetLineBreakpoints(bool haveProcess, const std::string &filename, const std::vector<LineBreakpoint> &lineBreakpoints,
                                std::vector<Breakpoint> &breakpoints, std::function<uint32_t()> getId);
     HRESULT AllBreakpointsActivate(bool act);
     HRESULT BreakpointActivate(uint32_t id, bool act);
@@ -42,7 +43,7 @@ public:
     // Important! Must provide succeeded return code:
     // S_OK - breakpoint hit
     // S_FALSE - no breakpoint hit
-    HRESULT CheckBreakpointHit(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint);
+    HRESULT CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint);
 
     // Important! Callbacks related methods must control return for succeeded return code.
     // Do not allow debugger API return succeeded (uncontrolled) return code.
@@ -56,6 +57,7 @@ public:
 private:
 
     std::shared_ptr<Modules> m_sharedModules;
+    std::shared_ptr<Variables> m_sharedVariables;
     bool m_justMyCode;
 
     struct ManagedLineBreakpoint

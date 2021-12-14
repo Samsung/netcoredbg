@@ -15,6 +15,7 @@
 #include "utils/span.h"
 #include "utils/ioredirect.h"
 #include "utils/torelease.h"
+#include "utils/rwlock.h"
 
 namespace netcoredbg
 {
@@ -33,22 +34,23 @@ class ManagedCallback;
 class Breakpoints;
 class Modules;
 
+enum class ProcessAttachedState
+{
+    Attached,
+    Unattached
+};
+
 class ManagedDebugger : public IDebugger
 {
 private:
     friend class ManagedCallback;
-    enum ProcessAttachedState
-    {
-        ProcessAttached,
-        ProcessUnattached
-    };
-    std::mutex m_processAttachedMutex;
+
+    std::mutex m_processAttachedMutex; // Note, in case m_debugProcessRWLock+m_processAttachedMutex, m_debugProcessRWLock must be locked first.
     std::condition_variable m_processAttachedCV;
     ProcessAttachedState m_processAttachedState;
 
     void NotifyProcessCreated();
     void NotifyProcessExited();
-    void WaitProcessExited();
     HRESULT CheckNoProcess();
 
     std::mutex m_lastStoppedMutex;
@@ -80,6 +82,8 @@ private:
     std::unique_ptr<Steppers> m_uniqueSteppers;
     std::unique_ptr<Breakpoints> m_uniqueBreakpoints;
     std::unique_ptr<ManagedCallback> m_managedCallback;
+
+    Utility::RWLock m_debugProcessRWLock;
     ToRelease<ICorDebug> m_iCorDebug;
     ToRelease<ICorDebugProcess> m_iCorProcess;
 

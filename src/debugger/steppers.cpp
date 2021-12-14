@@ -215,6 +215,14 @@ HRESULT Steppers::DisableAllSteppers(ICorDebugProcess *pProcess)
     return m_asyncStepper->DisableAllSteppers();
 }
 
+HRESULT Steppers::DisableAllSteppers(ICorDebugAppDomain *pAppDomain)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugProcess> iCorProcess;
+    IfFailRet(pAppDomain->GetProcess(&iCorProcess));
+    return DisableAllSteppers(iCorProcess);
+}
+
 HRESULT Steppers::DisableAllSimpleSteppers(ICorDebugProcess *pProcess)
 {
     return m_simpleStepper->DisableAllSteppers(pProcess);

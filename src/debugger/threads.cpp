@@ -33,11 +33,9 @@ void Threads::Remove(const ThreadId &threadId)
     m_userThreads.erase(it);
 }
 
+// Caller should guarantee, that pProcess is not null.
 HRESULT Threads::GetThreadsWithState(ICorDebugProcess *pProcess, std::vector<Thread> &threads)
 {
-    if (!pProcess)
-        return E_FAIL;
-
     std::lock_guard<std::mutex> lock(m_userThreadsMutex);
 
     HRESULT Status;

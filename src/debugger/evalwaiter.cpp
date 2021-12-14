@@ -99,6 +99,8 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
     HRESULT Status;
     ToRelease<ICorDebugProcess> iCorProcess;
     IfFailRet(pThread->GetProcess(&iCorProcess));
+    if (!iCorProcess)
+        return E_FAIL;
     std::vector<Thread> userThreads;
     IfFailRet(m_sharedThreads->GetThreadsWithState(iCorProcess, userThreads));
     ThreadId threadId(getThreadId(pThread));

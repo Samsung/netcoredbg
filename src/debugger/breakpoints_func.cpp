@@ -29,7 +29,7 @@ void FuncBreakpoints::DeleteAll()
     m_breakpointsMutex.unlock();
 }
 
-HRESULT FuncBreakpoints::CheckBreakpointHit(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
+HRESULT FuncBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
 {
     if (m_funcBreakpoints.empty())
         return S_FALSE; // Stopped at break, but no breakpoints.
@@ -85,7 +85,7 @@ HRESULT FuncBreakpoints::CheckBreakpointHit(IDebugger *debugger, ICorDebugThread
         for (auto &iCorFuncBreakpoint : fbp.iCorFuncBreakpoints)
         {
             if (FAILED(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, iCorFuncBreakpoint)) ||
-                FAILED(BreakpointUtils::IsEnableByCondition(fbp.condition, debugger, pThread)))
+                FAILED(BreakpointUtils::IsEnableByCondition(fbp.condition, m_sharedVariables.get(), pThread)))
                 continue;
             
             ++fbp.times;
@@ -117,7 +117,7 @@ HRESULT FuncBreakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std
     return S_OK;
 }
 
-HRESULT FuncBreakpoints::SetFuncBreakpoints(ICorDebugProcess *pProcess, const std::vector<FuncBreakpoint> &funcBreakpoints,
+HRESULT FuncBreakpoints::SetFuncBreakpoints(bool haveProcess, const std::vector<FuncBreakpoint> &funcBreakpoints,
                                             std::vector<Breakpoint> &breakpoints, std::function<uint32_t()> getId)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
@@ -171,7 +171,7 @@ HRESULT FuncBreakpoints::SetFuncBreakpoints(ICorDebugProcess *pProcess, const st
             fbp.params = fb.params;
             fbp.condition = fb.condition;
 
-            if (pProcess)
+            if (haveProcess)
                 ResolveFuncBreakpoint(fbp);
 
             fbp.ToBreakpoint(breakpoint);

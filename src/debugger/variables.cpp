@@ -153,6 +153,7 @@ int Variables::GetNamedVariables(uint32_t variablesReference)
     return it->second.namedVariables;
 }
 
+// Caller should guarantee, that pProcess is not null.
 HRESULT Variables::GetVariables(
     ICorDebugProcess *pProcess,
     uint32_t variablesReference,
@@ -161,9 +162,6 @@ HRESULT Variables::GetVariables(
     int count,
     std::vector<Variable> &variables)
 {
-    if (pProcess == nullptr)
-        return E_FAIL;
-
     std::lock_guard<std::recursive_mutex> lock(m_referencesMutex);
 
     auto it = m_references.find(variablesReference);
@@ -279,9 +277,6 @@ HRESULT Variables::GetStackVariables(
 
 HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::vector<Scope> &scopes)
 {
-    if (pProcess == nullptr)
-        return E_FAIL;
-
     ThreadId threadId = frameId.getThread();
     if (!threadId)
         return E_FAIL;
@@ -405,9 +400,6 @@ HRESULT Variables::Evaluate(
     Variable &variable,
     std::string &output)
 {
-    if (pProcess == nullptr)
-        return E_FAIL;
-
     ThreadId threadId = frameId.getThread();
     if (!threadId)
         return E_FAIL;
@@ -433,9 +425,6 @@ HRESULT Variables::SetVariable(
     uint32_t ref,
     std::string &output)
 {
-    if (pProcess == nullptr)
-        return E_FAIL;
-
     std::lock_guard<std::recursive_mutex> lock(m_referencesMutex);
 
     auto it = m_references.find(ref);
@@ -532,9 +521,6 @@ HRESULT Variables::SetChild(
 HRESULT Variables::SetExpression(ICorDebugProcess *pProcess, FrameId frameId, const std::string &expression,
                                  int evalFlags, const std::string &value, std::string &output)
 {
-    if (pProcess == nullptr)
-        return E_FAIL;
-
     ThreadId threadId = frameId.getThread();
     if (!threadId)
         return E_FAIL;

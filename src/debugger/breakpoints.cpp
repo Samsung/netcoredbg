@@ -85,19 +85,18 @@ HRESULT Breakpoints::DisableAll(ICorDebugProcess *pProcess)
     return S_OK;
 }
 
-HRESULT Breakpoints::SetFuncBreakpoints(ICorDebugProcess *pProcess, const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints)
+HRESULT Breakpoints::SetFuncBreakpoints(bool haveProcess, const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints)
 {
-    return m_uniqueFuncBreakpoints->SetFuncBreakpoints(pProcess, funcBreakpoints, breakpoints, [&]() -> uint32_t
+    return m_uniqueFuncBreakpoints->SetFuncBreakpoints(haveProcess, funcBreakpoints, breakpoints, [&]() -> uint32_t
     {
         std::lock_guard<std::mutex> lock(m_nextBreakpointIdMutex);
         return m_nextBreakpointId++;
     });
 }
 
-HRESULT Breakpoints::SetLineBreakpoints(ICorDebugProcess *pProcess, const std::string& filename,
-                                        const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints)
+HRESULT Breakpoints::SetLineBreakpoints(bool haveProcess, const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints)
 {
-    return m_uniqueLineBreakpoints->SetLineBreakpoints(pProcess, filename, lineBreakpoints, breakpoints, [&]() -> uint32_t
+    return m_uniqueLineBreakpoints->SetLineBreakpoints(haveProcess, filename, lineBreakpoints, breakpoints, [&]() -> uint32_t
     {
         std::lock_guard<std::mutex> lock(m_nextBreakpointIdMutex);
         return m_nextBreakpointId++;
@@ -118,7 +117,7 @@ HRESULT Breakpoints::GetExceptionInfo(ICorDebugThread *pThread, ExceptionInfo &e
     return m_uniqueExceptionBreakpoints->GetExceptionInfo(pThread, exceptionInfo);
 }
 
-HRESULT Breakpoints::ManagedCallbackBreakpoint(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, bool &atEntry)
+HRESULT Breakpoints::ManagedCallbackBreakpoint(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, bool &atEntry)
 {
     // CheckBreakpointHit return:
     //     S_OK - breakpoint hit
@@ -136,13 +135,13 @@ HRESULT Breakpoints::ManagedCallbackBreakpoint(IDebugger *debugger, ICorDebugThr
         return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)
     }
 
-    if (SUCCEEDED(Status = m_uniqueLineBreakpoints->CheckBreakpointHit(debugger, pThread, pBreakpoint, breakpoint)) &&
+    if (SUCCEEDED(Status = m_uniqueLineBreakpoints->CheckBreakpointHit(pThread, pBreakpoint, breakpoint)) &&
         Status == S_OK) // S_FALSE - no breakpoint hit
     {
         return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)
     }
 
-    if (SUCCEEDED(Status = m_uniqueFuncBreakpoints->CheckBreakpointHit(debugger, pThread, pBreakpoint, breakpoint)) &&
+    if (SUCCEEDED(Status = m_uniqueFuncBreakpoints->CheckBreakpointHit(pThread, pBreakpoint, breakpoint)) &&
         Status == S_OK) // S_FALSE - no breakpoint hit
     {
         return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)

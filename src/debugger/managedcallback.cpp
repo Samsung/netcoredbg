@@ -41,14 +41,14 @@ bool ManagedCallback::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, 
     bool atEntry = false;
     ThreadId threadId(getThreadId(pThread));
     StoppedEvent event(StopBreakpoint, threadId);
-    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreakpoint(&m_debugger, pThread, pBreakpoint, event.breakpoint, atEntry)) &&
+    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreakpoint(pThread, pBreakpoint, event.breakpoint, atEntry)) &&
         Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
     {
         return false;
     }
 
     // Disable all steppers if we stop at breakpoint during step.
-    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(pAppDomain);
 
     if (atEntry)
         event.reason = StopEntry;
@@ -97,7 +97,7 @@ bool ManagedCallback::CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorD
     }
 
     // Disable all steppers if we stop at break during step.
-    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(pAppDomain);
 
     m_debugger.SetLastStoppedThread(pThread);
     ThreadId threadId(getThreadId(pThread));
@@ -131,7 +131,7 @@ bool ManagedCallback::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, I
         m_debugger.GetFrameLocation(pActiveFrame, threadId, FrameLevel(0), event.frame);
 
     // Disable all steppers if we stop during step.
-    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(pAppDomain);
 
     m_debugger.SetLastStoppedThread(pThread);
 
@@ -304,7 +304,7 @@ HRESULT ManagedCallback::Pause(ICorDebugProcess *pProcess)
     m_stopEventInProcess = true;
 
     // Same logic as provide vsdbg in case of pause during stepping.
-    m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+    m_debugger.m_uniqueSteppers->DisableAllSteppers(pProcess);
 
     // For Visual Studio, we have to report a thread ID in async stop event.
     // We have to find a thread which has a stack frame with valid location in its stack trace.
@@ -489,6 +489,8 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::EvalException(ICorDebugAppDomain *pAp
     return S_OK; // Eval-related routine - no callbacks queue related code here.
 }
 
+// https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback-createprocess-method
+// Notifies the debugger when a process has been attached or started for the first time.
 HRESULT STDMETHODCALLTYPE ManagedCallback::CreateProcess(ICorDebugProcess *pProcess)
 {
     LogFuncEntry();

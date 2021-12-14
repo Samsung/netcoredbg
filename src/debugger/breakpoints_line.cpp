@@ -31,7 +31,7 @@ void LineBreakpoints::DeleteAll()
     m_breakpointsMutex.unlock();
 }
 
-HRESULT LineBreakpoints::CheckBreakpointHit(IDebugger *debugger, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
+HRESULT LineBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
 {
     HRESULT Status;
     ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
@@ -74,7 +74,7 @@ HRESULT LineBreakpoints::CheckBreakpointHit(IDebugger *debugger, ICorDebugThread
         for (const auto &iCorFuncBreakpoint : b.iCorFuncBreakpoints)
         {
             if (FAILED(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, iCorFuncBreakpoint)) ||
-                FAILED(BreakpointUtils::IsEnableByCondition(b.condition, debugger, pThread)))
+                FAILED(BreakpointUtils::IsEnableByCondition(b.condition, m_sharedVariables.get(), pThread)))
                 continue;
 
             ++b.times;
@@ -249,7 +249,7 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
     return S_OK;
 }
 
-HRESULT LineBreakpoints::SetLineBreakpoints(ICorDebugProcess *pProcess, const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints,
+HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints,
                                             std::vector<Breakpoint> &breakpoints, std::function<uint32_t()> getId)
 {
     std::lock_guard<std::mutex> lock(m_breakpointsMutex);
@@ -348,7 +348,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(ICorDebugProcess *pProcess, const st
             bp.condition = initialBreakpoint.breakpoint.condition;
             unsigned resolved_fullname_index = 0;
 
-            if (pProcess && SUCCEEDED(ResolveLineBreakpoint(nullptr, bp, filename, resolved_fullname_index)))
+            if (haveProcess && SUCCEEDED(ResolveLineBreakpoint(nullptr, bp, filename, resolved_fullname_index)))
             {
                 initialBreakpoint.resolved_fullname_index = resolved_fullname_index;
                 initialBreakpoint.resolved_linenum = bp.linenum;
@@ -361,7 +361,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(ICorDebugProcess *pProcess, const st
             else
             {
                 bp.ToBreakpoint(breakpoint, filename);
-                if (!pProcess)
+                if (!haveProcess)
                     breakpoint.message = "The breakpoint is pending and will be resolved when debugging starts.";
                 else
                     breakpoint.message = "The breakpoint will not currently be hit. No symbols have been loaded for this document.";
@@ -407,7 +407,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(ICorDebugProcess *pProcess, const st
                 bp.endLine = line;
                 bp.condition = initialBreakpoint.breakpoint.condition;
                 bp.ToBreakpoint(breakpoint, filename);
-                if (!pProcess)
+                if (!haveProcess)
                     breakpoint.message = "The breakpoint is pending and will be resolved when debugging starts.";
                 else
                     breakpoint.message = "The breakpoint will not currently be hit. No symbols have been loaded for this document.";
