@@ -165,7 +165,11 @@ namespace VSCodeTestExitCode
                 //Console.WriteLine("Test SIGABRT, process Id = " + PID);
                 //kill(PID, 6); // SIGABRT
             }
-
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                Console.WriteLine("Test _exit()");
+                _exit(3);
+            }
             //Console.WriteLine("Test return 3");
             //return 3;
 

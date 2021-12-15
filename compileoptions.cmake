@@ -1,6 +1,9 @@
 if (CLR_CMAKE_PLATFORM_UNIX)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-
+  if(CLR_CMAKE_PLATFORM_DARWIN)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -force_flat_namespace -std=c++14")
+  else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+  endif(CLR_CMAKE_PLATFORM_DARWIN)
   # this allows pretty-printers in gdb to work with clang
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_GLIBCXX_DEBUG")
 

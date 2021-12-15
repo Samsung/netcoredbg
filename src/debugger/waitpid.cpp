@@ -68,7 +68,7 @@ hook::waitpid_t &GetWaitpid()
 }
 
 // Note, we guaranty waitpid hook works only during debuggee process execution, it aimed to work only for PAL's waitpid calls interception.
-extern "C" pid_t waitpid(pid_t pid, int *status, int options) noexcept
+extern "C" pid_t waitpid(pid_t pid, int *status, int options)
 {
     pid_t pidWaitRetval = netcoredbg::hook::waitpid(pid, status, options);
 

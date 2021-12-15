@@ -107,7 +107,7 @@ constexpr char UtilsClassName[] = "NetCoreDbg.Utils";
 
 // Pass to managed helper code to read in-memory PEs/PDBs
 // Returns the number of bytes read.
-int ReadMemoryForSymbols(ULONG64 address, char *buffer, int cb)
+int ReadMemoryForSymbols(uint64_t address, char *buffer, int cb)
 {
     // TODO: In-memory PDB?
     // OSPageSize() for Linux/Windows already implemented in code.
