@@ -90,7 +90,7 @@ HRESULT EvalHelpers::EvalFunction(
             HRESULT Status;
             ToRelease<ICorDebugEval2> pEval2;
             IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
-            IfFailRet(Status = pEval2->CallParameterizedFunction(
+            IfFailRet(pEval2->CallParameterizedFunction(
                 pFunc,
                 static_cast<uint32_t>(typeParams.size()),
                 (ICorDebugType **)typeParams.data(),

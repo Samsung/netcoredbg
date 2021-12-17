@@ -191,7 +191,8 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
     };
     HRESULT ret = WaitResult();
 
-    // TODO Let user know we have timed out evaluation, provide "Evaluation timed out." message.
+    if (ret == CORDBG_S_FUNC_EVAL_ABORTED)
+        ret = COR_E_TIMEOUT;
 
     ChangeThreadsState(THREAD_RUN);
     return ret;
