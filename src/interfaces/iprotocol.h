@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <atomic>
 #include "interfaces/types.h"
 #include "utils/string_view.h"
 #include "utils/streams.h"
@@ -20,7 +21,7 @@ class IDebugger;
 class IProtocol
 {
 protected:
-    bool m_exit;
+    std::atomic<bool> m_exit;
     std::shared_ptr<IDebugger> m_sharedDebugger;
 
     // File streams used to read commands and write responses.

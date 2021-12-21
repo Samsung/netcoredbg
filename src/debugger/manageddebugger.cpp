@@ -1059,6 +1059,13 @@ HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression
     return m_sharedVariables->Evaluate(m_iCorProcess, frameId, expression, variable, output);
 }
 
+void ManagedDebugger::CancelEvalRunning()
+{
+    LogFuncEntry();
+
+    m_sharedEvalWaiter->CancelEvalRunning();
+}
+
 HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output)
 {
     LogFuncEntry();

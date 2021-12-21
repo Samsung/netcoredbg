@@ -40,6 +40,20 @@ bool EvalWaiter::IsEvalRunning()
     return !!m_evalResult;
 }
 
+void EvalWaiter::CancelEvalRunning()
+{
+    std::lock_guard<std::mutex> lock(m_evalResultMutex);
+
+    if (!m_evalResult)
+        return;
+
+    ToRelease<ICorDebugEval2> iCorEval2;
+    if (SUCCEEDED(m_evalResult->pEval->Abort()) ||
+        (SUCCEEDED(m_evalResult->pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &iCorEval2)) &&
+         SUCCEEDED(iCorEval2->RudeAbort())))
+        m_evalCanceled = true;
+}
+
 std::future<std::unique_ptr<EvalWaiter::evalResultData_t> > EvalWaiter::RunEval(
     ICorDebugProcess *pProcess,
     ICorDebugThread *pThread,
@@ -189,10 +203,12 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
             return E_FAIL;
         }
     };
+
+    m_evalCanceled = false;
     HRESULT ret = WaitResult();
 
     if (ret == CORDBG_S_FUNC_EVAL_ABORTED)
-        ret = COR_E_TIMEOUT;
+        ret = m_evalCanceled ? COR_E_OPERATIONCANCELED : COR_E_TIMEOUT;
 
     ChangeThreadsState(THREAD_RUN);
     return ret;
@@ -215,9 +231,9 @@ HRESULT EvalWaiter::ManagedCallbackCustomNotification(ICorDebugThread *pThread)
 
     HRESULT Status;
     ToRelease<ICorDebugEval2> iCorEval2;
-    if (FAILED(Status = pEval->Abort()) ||
-        FAILED(Status = pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &iCorEval2)) ||
-        FAILED(Status = iCorEval2->RudeAbort()))
+    if (FAILED(Status = pEval->Abort()) &&
+        (FAILED(Status = pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &iCorEval2)) ||
+         FAILED(Status = iCorEval2->RudeAbort())))
     {
         LOGE("Can't abort evaluation in custom notification callback, %0x", Status);
         return Status;

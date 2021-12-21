@@ -129,8 +129,10 @@ HRESULT Variables::FetchFieldsAndProperties(
         if (currentIndex >= childEnd)
             return S_OK;
 
+        // Note, in this case error is not fatal, but if protocol side need cancel command execution, stop walk and return error to caller.
         ToRelease<ICorDebugValue> iCorResultValue;
-        getValue(&iCorResultValue, evalFlags); // no result check here, since error is result too
+        if (getValue(&iCorResultValue, evalFlags) == COR_E_OPERATIONCANCELED)
+            return COR_E_OPERATIONCANCELED;
 
         std::string className;
         if (pType)

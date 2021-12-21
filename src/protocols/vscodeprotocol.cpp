@@ -7,9 +7,12 @@
 #include <vector>
 #include <unordered_map>
 #include <map>
+#include <unordered_set>
 #include <iomanip>
 #include <sstream>
 #include <algorithm>
+#include <thread>
+#include <future>
 
 // note: order matters, vscodeprotocol.h should be included before winerror.h
 #include "protocols/vscodeprotocol.h"
@@ -34,6 +37,23 @@ namespace
         {"all",            ExceptionBreakpointFilter::THROW},
         {"user-unhandled", ExceptionBreakpointFilter::USER_UNHANDLED}};
 
+    const std::string TWO_CRLF("\r\n\r\n");
+    const std::string CONTENT_LENGTH("Content-Length: ");
+
+    const std::string LOG_COMMAND("-> (C) ");
+    const std::string LOG_RESPONSE("<- (R) ");
+    const std::string LOG_EVENT("<- (E) ");
+
+    // Make sure we continue add new commands into queue only after current command execution is finished.
+    // Note, configurationDone: prevent deadlock in _dup() call during std::getline() from stdin in main thread.
+    const std::unordered_set<std::string> g_syncCommandExecutionSet{
+        "configurationDone", "disconnect", "terminate"};
+    // Commands, that trigger command queue canceling routine.
+    const std::unordered_set<std::string> g_cancelCommandQueueSet{
+        "disconnect", "terminate", "continue", "next", "stepIn", "stepOut"};
+    // Don't cancel commands related to debugger configuration. For example, breakpoint setup could be done in any time (even if process don't attached at all).
+    const std::unordered_set<std::string> g_debuggerSetupCommandSet{
+        "initialize", "setExceptionBreakpoints", "configurationDone", "setBreakpoints", "launch", "disconnect", "terminate", "attach", "setFunctionBreakpoints"};
 } // unnamed namespace
 
 void to_json(json &j, const Source &s) {
@@ -365,6 +385,30 @@ void VSCodeProtocol::EmitExecEvent(PID pid, const std::string& argv0)
     EmitEvent("process", body);
 }
 
+static void AddCapabilitiesTo(json &capabilities)
+{
+    capabilities["supportsConfigurationDoneRequest"] = true;
+    capabilities["supportsFunctionBreakpoints"] = true;
+    capabilities["supportsConditionalBreakpoints"] = true;
+    capabilities["supportTerminateDebuggee"] = true;
+    capabilities["supportsSetVariable"] = true;
+    capabilities["supportsSetExpression"] = true;
+    capabilities["supportsTerminateRequest"] = true;
+    capabilities["supportsCancelRequest"] = true;
+
+    capabilities["supportsExceptionInfoRequest"] = true;
+    capabilities["supportsExceptionFilterOptions"] = true;
+    json excFilters = json::array();
+    for (const auto &entry : g_VSCodeFilters)
+    {
+        json filter{{"filter", entry.first},
+                    {"label",  entry.first}};
+        excFilters.push_back(filter);
+    }
+    capabilities["exceptionBreakpointFilters"] = excFilters;
+    capabilities["supportsExceptionOptions"] = false; // TODO add implementation
+}
+
 void VSCodeProtocol::EmitCapabilitiesEvent()
 {
     LogFuncEntry();
@@ -384,68 +428,46 @@ void VSCodeProtocol::Cleanup()
 
 }
 
-static std::string VSCodeSeq(uint64_t id)
+// Caller must care about m_outMutex.
+void VSCodeProtocol::EmitMessage(nlohmann::json &message, std::string &output)
 {
-    return std::string("{\"seq\":" + std::to_string(id) + ",");
+    message["seq"] = std::to_string(m_seqCounter);
+    ++m_seqCounter;
+    output = message.dump();
+    cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
+    cout.flush();
+}
+
+void VSCodeProtocol::EmitMessageWithLog(const std::string &message_prefix, nlohmann::json &message)
+{
+    std::lock_guard<std::mutex> lock(m_outMutex);
+    std::string output;
+    EmitMessage(message, output);
+    Log(message_prefix, output);
 }
 
 void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &body)
 {
-    std::lock_guard<std::mutex> lock(m_outMutex);
-    json response;
-    response["type"] = "event";
-    response["event"] = name;
-    response["body"] = body;
-    std::string output = response.dump();
-    output = VSCodeSeq(m_seqCounter) + output.substr(1);
-    ++m_seqCounter;
-
-    cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
-    cout.flush();
-    Log(LOG_EVENT, output);
+    json message;
+    message["type"] = "event";
+    message["event"] = name;
+    message["body"] = body;
+    EmitMessageWithLog(LOG_EVENT, message);
 }
 
-typedef std::function<HRESULT(
-    const json &arguments,
-    json &body)> CommandCallback;
-
-void VSCodeProtocol::AddCapabilitiesTo(json &capabilities)
+static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::string &fileExec, std::vector<std::string> &execArgs,
+                             const std::string &command, const json &arguments, json &body)
 {
-    capabilities["supportsConfigurationDoneRequest"] = true;
-    capabilities["supportsFunctionBreakpoints"] = true;
-    capabilities["supportsConditionalBreakpoints"] = true;
-    capabilities["supportTerminateDebuggee"] = true;
-    capabilities["supportsSetVariable"] = true;
-    capabilities["supportsSetExpression"] = true;
-    capabilities["supportsTerminateRequest"] = true;
-
-    capabilities["supportsExceptionInfoRequest"] = true;
-    capabilities["supportsExceptionFilterOptions"] = true;
-    json excFilters = json::array();
-    for (const auto &entry : g_VSCodeFilters)
-    {
-        json filter{{"filter", entry.first},
-                    {"label",  entry.first}};
-        excFilters.push_back(filter);
-    }
-    capabilities["exceptionBreakpointFilters"] = excFilters;
-    capabilities["supportsExceptionOptions"] = false; // TODO add implementation
-}
-
-HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &arguments, json &body)
-{
+    typedef std::function<HRESULT(const json &arguments, json &body)> CommandCallback;
     static std::unordered_map<std::string, CommandCallback> commands {
-    { "initialize", [this](const json &arguments, json &body){
-
-        EmitCapabilitiesEvent();
-
-        m_sharedDebugger->Initialize();
+    { "initialize", [&](const json &arguments, json &body){
+        sharedDebugger->Initialize();
 
         AddCapabilitiesTo(body);
 
         return S_OK;
     } },
-    { "setExceptionBreakpoints", [this](const json &arguments, json &body) {
+    { "setExceptionBreakpoints", [&](const json &arguments, json &body) {
         std::vector<std::string> filters = arguments.value("filters", std::vector<std::string>());
         std::vector<std::map<std::string, std::string>> filterOptions = arguments.value("filterOptions", std::vector<std::map<std::string, std::string>>());
 
@@ -498,21 +520,21 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         HRESULT Status;
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_sharedDebugger->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints));
+        IfFailRet(sharedDebugger->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints));
 
         // TODO form body with breakpoints (optional output, MS vsdbg don't provide it for VSCode IDE now)
         // body["breakpoints"] = breakpoints;
 
         return S_OK;
     } },
-    { "configurationDone", [this](const json &arguments, json &body){
-        return m_sharedDebugger->ConfigurationDone();
+    { "configurationDone", [&](const json &arguments, json &body){
+        return sharedDebugger->ConfigurationDone();
     } },
-    { "exceptionInfo", [this](const json &arguments, json &body) {
+    { "exceptionInfo", [&](const json &arguments, json &body) {
         HRESULT Status;
         ThreadId threadId{int(arguments.at("threadId"))};
         ExceptionInfo exceptionInfo;
-        IfFailRet(m_sharedDebugger->GetExceptionInfo(threadId, exceptionInfo));
+        IfFailRet(sharedDebugger->GetExceptionInfo(threadId, exceptionInfo));
 
         body["exceptionId"] = exceptionInfo.exceptionId;
         body["description"] = exceptionInfo.description;
@@ -520,7 +542,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         body["details"] = FormJsonForExceptionDetails(exceptionInfo.details);
         return S_OK;
     } },
-    { "setBreakpoints", [this](const json &arguments, json &body){
+    { "setBreakpoints", [&](const json &arguments, json &body){
         HRESULT Status;
 
         std::vector<LineBreakpoint> lineBreakpoints;
@@ -528,13 +550,13 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             lineBreakpoints.emplace_back(std::string(), b.at("line"), b.value("condition", std::string()));
 
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_sharedDebugger->SetLineBreakpoints(arguments.at("source").at("path"), lineBreakpoints, breakpoints));
+        IfFailRet(sharedDebugger->SetLineBreakpoints(arguments.at("source").at("path"), lineBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;
 
         return S_OK;
     } },
-    {"launch", [this](const json &arguments, json &body) {
+    { "launch", [&](const json &arguments, json &body){
         auto cwdIt = arguments.find("cwd");
         const std::string cwd(cwdIt != arguments.end() ? cwdIt.value().get<std::string>() : std::string{});
         std::map<std::string, std::string> env;
@@ -549,27 +571,27 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             env.clear();
         }
 
-        m_sharedDebugger->SetJustMyCode(arguments.value("justMyCode", true)); // MS vsdbg have "justMyCode" enabled by default.
-        m_sharedDebugger->SetStepFiltering(arguments.value("enableStepFiltering", true)); // MS vsdbg have "enableStepFiltering" enabled by default.
+        sharedDebugger->SetJustMyCode(arguments.value("justMyCode", true)); // MS vsdbg have "justMyCode" enabled by default.
+        sharedDebugger->SetStepFiltering(arguments.value("enableStepFiltering", true)); // MS vsdbg have "enableStepFiltering" enabled by default.
 
-        if (!m_fileExec.empty())
-            return m_sharedDebugger->Launch(m_fileExec, m_execArgs, env, cwd, arguments.value("stopAtEntry", false));
+        if (!fileExec.empty())
+            return sharedDebugger->Launch(fileExec, execArgs, env, cwd, arguments.value("stopAtEntry", false));
 
         std::vector<std::string> args = arguments.value("args", std::vector<std::string>());
         args.insert(args.begin(), arguments.at("program").get<std::string>());
 
-        return m_sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
+        return sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
     } },
-    { "threads", [this](const json &arguments, json &body){
+    { "threads", [&](const json &arguments, json &body){
         HRESULT Status;
         std::vector<Thread> threads;
-        IfFailRet(m_sharedDebugger->GetThreads(threads));
+        IfFailRet(sharedDebugger->GetThreads(threads));
 
         body["threads"] = threads;
 
         return S_OK;
     } },
-    { "disconnect", [this](const json &arguments, json &body){
+    { "disconnect", [&](const json &arguments, json &body){
         auto terminateArgIter = arguments.find("terminateDebuggee");
         IDebugger::DisconnectAction action;
         if (terminateArgIter == arguments.end())
@@ -577,23 +599,22 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         else
             action = terminateArgIter.value().get<bool>() ? IDebugger::DisconnectAction::DisconnectTerminate : IDebugger::DisconnectAction::DisconnectDetach;
 
-        m_sharedDebugger->Disconnect(action);
+        sharedDebugger->Disconnect(action);
 
-        m_exit = true;
         return S_OK;
     } },
-    { "terminate", [this](const json &arguments, json &body){
-        m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
+    { "terminate", [&](const json &arguments, json &body){
+        sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
         return S_OK;
     } },
-    { "stackTrace", [this](const json &arguments, json &body){
+    { "stackTrace", [&](const json &arguments, json &body){
         HRESULT Status;
 
         int totalFrames = 0;
         ThreadId threadId{int(arguments.at("threadId"))};
 
         std::vector<StackFrame> stackFrames;
-        IfFailRet(m_sharedDebugger->GetStackTrace(
+        IfFailRet(sharedDebugger->GetStackTrace(
             threadId,
             FrameLevel{arguments.value("startFrame", 0)},
             unsigned(arguments.value("levels", 0)),
@@ -606,40 +627,39 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         return S_OK;
     } },
-    { "continue", [this](const json &arguments, json &body){
+    { "continue", [&](const json &arguments, json &body){
         body["allThreadsContinued"] = true;
 
         ThreadId threadId{int(arguments.at("threadId"))};
         body["threadId"] = int(threadId);
-        return m_sharedDebugger->Continue(threadId);
+        return sharedDebugger->Continue(threadId);
     } },
-    { "pause", [this](const json &arguments, json &body){
+    { "pause", [&](const json &arguments, json &body){
         // Ignore `threadId` argument, since only pause for all threads are supported now.
-        return m_sharedDebugger->Pause();
+        return sharedDebugger->Pause();
     } },
-    { "next", [this](const json &arguments, json &body){
-        return m_sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_OVER);
+    { "next", [&](const json &arguments, json &body){
+        return sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_OVER);
     } },
-    { "stepIn", [this](const json &arguments, json &body){
-        return m_sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_IN);
+    { "stepIn", [&](const json &arguments, json &body){
+        return sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_IN);
     } },
-    { "stepOut", [this](const json &arguments, json &body){
-        return m_sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_OUT);
+    { "stepOut", [&](const json &arguments, json &body){
+        return sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_OUT);
     } },
-    { "scopes", [this](const json &arguments, json &body){
+    { "scopes", [&](const json &arguments, json &body){
         HRESULT Status;
         std::vector<Scope> scopes;
         FrameId frameId{int(arguments.at("frameId"))};
-        IfFailRet(m_sharedDebugger->GetScopes(frameId, scopes));
+        IfFailRet(sharedDebugger->GetScopes(frameId, scopes));
 
         body["scopes"] = scopes;
 
         return S_OK;
     } },
-    { "variables", [this](const json &arguments, json &body){
+    { "variables", [&](const json &arguments, json &body){
         HRESULT Status;
-
-       std::string filterName = arguments.value("filter", "");
+        std::string filterName = arguments.value("filter", "");
         VariablesFilter filter = VariablesBoth;
         if (filterName == "named")
             filter = VariablesNamed;
@@ -647,7 +667,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             filter = VariablesIndexed;
 
         std::vector<Variable> variables;
-        IfFailRet(m_sharedDebugger->GetVariables(
+        IfFailRet(sharedDebugger->GetVariables(
             arguments.at("variablesReference"),
             filter,
             arguments.value("start", 0),
@@ -658,14 +678,14 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         return S_OK;
     } },
-    { "evaluate", [this](const json &arguments, json &body){
+    { "evaluate", [&](const json &arguments, json &body){
         HRESULT Status;
         std::string expression = arguments.at("expression");
         FrameId frameId([&](){
             auto frameIdIter = arguments.find("frameId");
             if (frameIdIter == arguments.end())
             {
-                ThreadId threadId = m_sharedDebugger->GetLastStoppedThreadId();
+                ThreadId threadId = sharedDebugger->GetLastStoppedThreadId();
                 return FrameId{threadId, FrameLevel{0}};
             }
             else {
@@ -678,7 +698,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         // https://github.com/OmniSharp/omnisharp-vscode/issues/3173
         Variable variable;
         std::string output;
-        Status = m_sharedDebugger->Evaluate(frameId, expression, variable, output);
+        Status = sharedDebugger->Evaluate(frameId, expression, variable, output);
         if (FAILED(Status))
         {
             if (output.empty())
@@ -703,7 +723,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         }
         return S_OK;
     } },
-    { "setExpression", [this](const json &arguments, json &body){
+    { "setExpression", [&](const json &arguments, json &body){
         HRESULT Status;
         std::string expression = arguments.at("expression");
         std::string value = arguments.at("value");
@@ -711,7 +731,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
             auto frameIdIter = arguments.find("frameId");
             if (frameIdIter == arguments.end())
             {
-                ThreadId threadId = m_sharedDebugger->GetLastStoppedThreadId();
+                ThreadId threadId = sharedDebugger->GetLastStoppedThreadId();
                 return FrameId{threadId, FrameLevel{0}};
             }
             else {
@@ -723,7 +743,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         // VSCode don't support evaluation flags, we can't disable implicit function calls during evaluation.
         // https://github.com/OmniSharp/omnisharp-vscode/issues/3173
         std::string output;
-        Status = m_sharedDebugger->SetExpression(frameId, expression, defaultEvalFlags, value, output);
+        Status = sharedDebugger->SetExpression(frameId, expression, defaultEvalFlags, value, output);
         if (FAILED(Status))
         {
             if (output.empty())
@@ -741,7 +761,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         body["value"] = output;
         return S_OK;
     } },
-    { "attach", [this](const json &arguments, json &body){
+    { "attach", [&](const json &arguments, json &body){
         int processId;
 
         const json &processIdArg = arguments.at("processId");
@@ -752,9 +772,9 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         else
             return E_INVALIDARG;
 
-        return m_sharedDebugger->Attach(processId);
+        return sharedDebugger->Attach(processId);
     } },
-    { "setVariable", [this](const json &arguments, json &body) {
+    { "setVariable", [&](const json &arguments, json &body) {
         HRESULT Status;
 
         std::string name = arguments.at("name");
@@ -762,7 +782,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         int ref = arguments.at("variablesReference");
 
         std::string output;
-        Status = m_sharedDebugger->SetVariable(name, value, ref, output);
+        Status = sharedDebugger->SetVariable(name, value, ref, output);
         if (FAILED(Status))
         {
             body["message"] = output;
@@ -773,7 +793,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
 
         return S_OK;
     } },
-    { "setFunctionBreakpoints", [this](const json &arguments, json &body) {
+    { "setFunctionBreakpoints", [&](const json &arguments, json &body) {
         HRESULT Status = S_OK;
 
         std::vector<FuncBreakpoint> funcBreakpoints;
@@ -804,7 +824,7 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
         }
 
         std::vector<Breakpoint> breakpoints;
-        IfFailRet(m_sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
+        IfFailRet(sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
 
         body["breakpoints"] = breakpoints;
 
@@ -821,10 +841,23 @@ HRESULT VSCodeProtocol::HandleCommand(const std::string &command, const json &ar
     return command_it->second(arguments, body);
 }
 
-const std::string VSCodeProtocol::TWO_CRLF("\r\n\r\n");
-const std::string VSCodeProtocol::CONTENT_LENGTH("Content-Length: ");
+static HRESULT HandleCommandJSON(std::shared_ptr<IDebugger> &sharedDebugger, std::string &fileExec, std::vector<std::string> &execArgs,
+                                 const std::string &command, const json &arguments, json &body)
+{
+    try
+    {
+        return HandleCommand(sharedDebugger, fileExec, execArgs, command, arguments, body);
+    }
+    catch (nlohmann::detail::exception& ex)
+    {
+        LOGE("JSON error: %s", ex.what());
+        body["message"] = std::string("can't parse: ") + ex.what();
+    }
 
-std::string VSCodeProtocol::ReadData()
+    return E_FAIL;
+}
+
+static std::string ReadData(std::istream& cin)
 {
     // parse header (only content len) until empty line
     long content_len = -1;
@@ -882,14 +915,121 @@ std::string VSCodeProtocol::ReadData()
     return result;
 }
 
+void VSCodeProtocol::CommandsWorker()
+{
+    std::unique_lock<std::mutex> lockCommandsMutex(m_commandsMutex);
+
+    while (true)
+    {
+        while (m_commandsQueue.empty())
+        {
+            // Note, during m_commandsCV.wait() (waiting for notify_one call with entry added into queue),
+            // m_commandsMutex will be unlocked (see std::condition_variable for more info).
+            m_commandsCV.wait(lockCommandsMutex);
+        }
+
+        CommandQueueEntry c = std::move(m_commandsQueue.front());
+        m_commandsQueue.pop_front();
+        lockCommandsMutex.unlock();
+
+        // Check for ncdbg internal commands.
+        if (c.command == "ncdbg_disconnect")
+        {
+            m_sharedDebugger->Disconnect();
+            break;
+        }
+
+        json body = json::object();
+        std::future<HRESULT> future = std::async(std::launch::async, [&](){
+            return HandleCommandJSON(m_sharedDebugger, m_fileExec, m_execArgs, c.command, c.arguments, body);
+        });
+        HRESULT Status;
+        // Note, CommandsWorker() loop should never hangs, but even in case some command execution is timed out,
+        // this could be not critical issue. Let IDE decide.
+
+        // MSVS debugger use config file, for Visual Studio 2022 Community Edition located at
+        // C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\Profiles\CSharp.vssettings
+        // Visual Studio have timeout setup for each type of requests, for example:
+        // LocalsTimeout = 1000
+        // LongEvalTimeout = 10000
+        // NormalEvalTimeout = 5000
+        // QuickwatchTimeout = 15000
+        // SetValueTimeout = 10000
+        // ...
+        // we use max default timeout (15000), one timeout for all requests.
+
+        // TODO add timeout configuration feature
+        std::future_status timeoutStatus = future.wait_for(std::chrono::milliseconds(15000));
+        if (timeoutStatus == std::future_status::timeout)
+        {
+            body["message"] = "Command execution timed out.";
+            Status = COR_E_TIMEOUT;
+        }
+        else
+            Status = future.get();
+
+        if (SUCCEEDED(Status))
+        {
+            c.response["success"] = true;
+            c.response["body"] = body;
+        }
+        else
+        {
+            if (body.find("message") == body.end())
+            {
+                std::ostringstream ss;
+                ss << "Failed command '" << c.command << "' : "
+                << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status;
+                c.response["message"] = ss.str();
+            }
+            else
+                c.response["message"] = body["message"];
+
+            c.response["success"] = false;
+        }
+
+        EmitMessageWithLog(LOG_RESPONSE, c.response);
+
+        // Post command action.
+        if (g_syncCommandExecutionSet.find(c.command) != g_syncCommandExecutionSet.end())
+            m_commandSyncCV.notify_one();
+        if (c.command == "disconnect")
+            break;
+
+        lockCommandsMutex.lock();
+    }
+
+    m_exit = true;
+}
+
+// Caller must care about m_commandsMutex.
+std::list<VSCodeProtocol::CommandQueueEntry>::iterator VSCodeProtocol::CancelCommand(const std::list<VSCodeProtocol::CommandQueueEntry>::iterator &iter)
+{
+    iter->response["success"] = false;
+    iter->response["message"] = std::string("Error processing '") + iter->command + std::string("' request. The operation was canceled.");
+    EmitMessageWithLog(LOG_RESPONSE, iter->response);
+    return m_commandsQueue.erase(iter);
+}
+
 void VSCodeProtocol::CommandLoop()
 {
+    std::thread commandsWorker{&VSCodeProtocol::CommandsWorker, this};
+
+    m_exit = false;
+
     while (!m_exit)
     {
-
-        std::string requestText = ReadData();
+        std::string requestText = ReadData(cin);
         if (requestText.empty())
+        {
+            CommandQueueEntry queueEntry;
+            queueEntry.command = "ncdbg_disconnect";
+            std::lock_guard<std::mutex> guardCommandsMutex(m_commandsMutex);
+            m_commandsQueue.clear();
+            m_commandsQueue.emplace_back(std::move(queueEntry));
+            m_commandsCV.notify_one(); // notify_one with lock
             break;
+        }
 
         {
             std::lock_guard<std::mutex> lock(m_outMutex);
@@ -901,8 +1041,9 @@ void VSCodeProtocol::CommandLoop()
             bad_format(const char *s) : invalid_argument(s) {}
         };
 
-        json response;
-        try {
+        CommandQueueEntry queueEntry;
+        try
+        {
             json request = json::parse(requestText);
 
             // Variable `resp' is used to construct response and assign it to `response'
@@ -913,77 +1054,92 @@ void VSCodeProtocol::CommandLoop()
             json resp;
             resp["type"] = "response";
             resp["request_seq"] = request.at("seq");
-            response = resp;
+            queueEntry.response = resp;
 
-            std::string command = request.at("command");
-            resp["command"] = command;
-            response = resp;
+            queueEntry.command = request.at("command");
+            resp["command"] = queueEntry.command;
+            queueEntry.response = resp;
 
             if (request["type"] != "request")
                 throw bad_format("wrong request type!");
 
             auto argIter = request.find("arguments");
-            json arguments = (argIter == request.end() ? json::object() : argIter.value());
+            queueEntry.arguments = (argIter == request.end() ? json::object() : argIter.value());
 
-            json body = json::object();
-            HRESULT Status = HandleCommand(command, arguments, body);
+            // Pre command action.
+            if (queueEntry.command == "initialize")
+                EmitCapabilitiesEvent();
+            else if (g_cancelCommandQueueSet.find(queueEntry.command) != g_cancelCommandQueueSet.end())
+            {
+                std::lock_guard<std::mutex> guardCommandsMutex(m_commandsMutex);
+                m_sharedDebugger->CancelEvalRunning();
 
-            if (SUCCEEDED(Status))
-            {
-                resp["success"] = true;
-                resp["body"] = body;
-            }
-            else
-            {
-                if (body.find("message") == body.end())
+                for (auto iter = m_commandsQueue.begin(); iter != m_commandsQueue.end();)
                 {
-                    std::ostringstream ss;
-                    ss << "Failed command '" << command << "' : "
-                    << "0x" << std::setw(8) << std::setfill('0') << std::hex << Status;
-                    resp["message"] = ss.str();
+                    if (g_debuggerSetupCommandSet.find(iter->command) != g_debuggerSetupCommandSet.end())
+                        ++iter;
+                    else
+                        iter = CancelCommand(iter);
                 }
-                else
-                    resp["message"] = body["message"];
-
-                resp["success"] = false;
             }
-            response = resp;
+            // Note, in case "cancel" this is command implementation itself.
+            else if (queueEntry.command == "cancel")
+            {
+                auto requestId = queueEntry.arguments.at("requestId");
+                std::unique_lock<std::mutex> lockCommandsMutex(m_commandsMutex);
+                queueEntry.response["success"] = false;
+                for (auto iter = m_commandsQueue.begin(); iter != m_commandsQueue.end(); ++iter)
+                {
+                    if (requestId != iter->response["request_seq"])
+                        continue;
+
+                    if (g_debuggerSetupCommandSet.find(iter->command) != g_debuggerSetupCommandSet.end())
+                        break;
+
+                    CancelCommand(iter);
+
+                    queueEntry.response["success"] = true;
+                    break;
+                }
+                lockCommandsMutex.unlock();
+
+                if (!queueEntry.response["success"])
+                    queueEntry.response["message"] = "CancelRequest is not supported for requestId.";
+
+                EmitMessageWithLog(LOG_RESPONSE, queueEntry.response);
+                continue;
+            }
+
+            std::unique_lock<std::mutex> lockCommandsMutex(m_commandsMutex);
+            bool isCommandNeedSync = g_syncCommandExecutionSet.find(queueEntry.command) != g_syncCommandExecutionSet.end();
+            m_commandsQueue.emplace_back(std::move(queueEntry));
+            m_commandsCV.notify_one(); // notify_one with lock
+
+            if (isCommandNeedSync)
+                m_commandSyncCV.wait(lockCommandsMutex);
+
+            continue;
         }
         catch (nlohmann::detail::exception& ex)
         {
             LOGE("JSON error: %s", ex.what());
-            response["type"] = "response";
-            response["success"] = false;
-            response["message"] = std::string("can't parse: ") + ex.what();
+            queueEntry.response["type"] = "response";
+            queueEntry.response["success"] = false;
+            queueEntry.response["message"] = std::string("can't parse: ") + ex.what();
         }
         catch (bad_format& ex)
         {
             LOGE("JSON error: %s", ex.what());
-            response["type"] = "response";
-            response["success"] = false;
-            response["message"] = std::string("can't parse: ") + ex.what();
+            queueEntry.response["type"] = "response";
+            queueEntry.response["success"] = false;
+            queueEntry.response["message"] = std::string("can't parse: ") + ex.what();
         }
 
-        std::string output = response.dump();
-
-        std::lock_guard<std::mutex> lock(m_outMutex);
-
-        output = VSCodeSeq(m_seqCounter) + output.substr(1);
-        ++m_seqCounter;
-
-        cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
-        cout.flush();
-        Log(LOG_RESPONSE, output);
+        EmitMessageWithLog(LOG_RESPONSE, queueEntry.response);
     }
 
-    if (!m_exit)
-        m_sharedDebugger->Disconnect();
-
+    commandsWorker.join();
 }
-
-const std::string VSCodeProtocol::LOG_COMMAND("-> (C) ");
-const std::string VSCodeProtocol::LOG_RESPONSE("<- (R) ");
-const std::string VSCodeProtocol::LOG_EVENT("<- (E) ");
 
 void VSCodeProtocol::EngineLogging(const std::string &path)
 {
@@ -1018,11 +1174,8 @@ void VSCodeProtocol::Log(const std::string &prefix, const std::string &text)
                 {"category", "console"},
                 {"output", prefix + text + "\n"}
             };
-            std::string output = response.dump();
-            output = VSCodeSeq(m_seqCounter) + output.substr(1);
-            ++m_seqCounter;
-            cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
-            cout.flush();
+            std::string output;
+            EmitMessage(response, output);
             return;
         }
     }

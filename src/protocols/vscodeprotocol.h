@@ -6,6 +6,8 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <list>
+#include <condition_variable>
 
 #pragma warning (disable:4068)  // Visual Studio should ignore GCC pragmas
 #pragma GCC diagnostic push
@@ -20,13 +22,6 @@ namespace netcoredbg
 
 class VSCodeProtocol : public IProtocol
 {
-    static const std::string TWO_CRLF;
-    static const std::string CONTENT_LENGTH;
-
-    static const std::string LOG_COMMAND;
-    static const std::string LOG_RESPONSE;
-    static const std::string LOG_EVENT;
-
     std::mutex m_outMutex;
     enum {
         LogNone,
@@ -39,17 +34,31 @@ class VSCodeProtocol : public IProtocol
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
-    std::string ReadData();
-
-    void AddCapabilitiesTo(nlohmann::json &capabilities);
+    void EmitMessage(nlohmann::json &message, std::string &output);
+    void EmitMessageWithLog(const std::string &message_prefix, nlohmann::json &message);
     void EmitEvent(const std::string &name, const nlohmann::json &body);
-    HRESULT HandleCommand(const std::string &command, const nlohmann::json &arguments, nlohmann::json &body);
 
     void Log(const std::string &prefix, const std::string &text);
 
+    struct CommandQueueEntry
+    {
+        std::string command;
+        nlohmann::json arguments;
+        nlohmann::json response;
+    };
+
+    std::mutex m_commandsMutex;
+    std::condition_variable m_commandsCV;
+    std::condition_variable m_commandSyncCV;
+    std::list<CommandQueueEntry> m_commandsQueue;
+
+    void CommandsWorker();
+    std::list<CommandQueueEntry>::iterator CancelCommand(const std::list<CommandQueueEntry>::iterator &iter);
+
 public:
 
-    VSCodeProtocol(std::istream& input, std::ostream& output) : IProtocol(input, output), m_engineLogOutput(LogNone), m_seqCounter(1) {}
+    VSCodeProtocol(std::istream& input, std::ostream& output) :
+        IProtocol(input, output), m_engineLogOutput(LogNone), m_seqCounter(1) {}
     void EngineLogging(const std::string &path);
     void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) override
     {

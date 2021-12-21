@@ -158,6 +158,7 @@ public:
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;
     int GetNamedVariables(uint32_t variablesReference) override;
     HRESULT Evaluate(FrameId frameId, const std::string &expression, Variable &variable, std::string &output) override;
+    void CancelEvalRunning() override;
     HRESULT SetVariable(const std::string &name, const std::string &value, uint32_t ref, std::string &output) override;
     HRESULT SetExpression(FrameId frameId, const std::string &expression, int evalFlags, const std::string &value, std::string &output) override;
     HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) override;
