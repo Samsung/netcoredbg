@@ -65,6 +65,7 @@ class CLIProtocol : public IProtocol
     std::string m_sourceFile;
     int m_sourceLine;
     int m_listSize;
+    int m_stoppedAt;
     std::unique_ptr<SourceStorage> m_sources;
 
     // Functor which is called when UI repaint required.

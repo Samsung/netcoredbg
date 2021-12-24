@@ -548,6 +548,7 @@ CLIProtocol::CLIProtocol(InStream& input, OutStream& output) :
   m_processStatus(NotStarted),
   m_sourceLine(0),
   m_listSize(10),
+  m_stoppedAt(0),
   m_sources(nullptr),
   m_term_settings(*this), 
   line_reader(),
@@ -952,6 +953,7 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
     m_sourceFile = event.frame.source.name; 
     m_sourcePath = event.frame.source.path;
     m_sourceLine = event.frame.line - m_listSize / 2;
+    m_stoppedAt = event.frame.line;
     m_frameId = event.frame.id;
 
     switch(event.reason)
@@ -1645,7 +1647,12 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
         {
             char* toPrint = m_sources->getLine(m_sourcePath, line);
             if (toPrint)
-                printf("%d\t%s\n", line,  toPrint);
+            {
+                if(line == m_stoppedAt)
+                    printf(" > %d\t%s\n", line,  toPrint);
+                else
+                    printf("   %d\t%s\n", line,  toPrint);
+            }
         }
         m_sourceLine = line;
     }
