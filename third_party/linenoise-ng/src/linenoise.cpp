@@ -1761,6 +1761,9 @@ static char32_t linenoiseReadChar(void) {
             }
         }
 #endif
+    if (rec.EventType == WINDOW_BUFFER_SIZE_EVENT) {
+      return 0;
+    }
     if (rec.EventType != KEY_EVENT) {
       continue;
     }

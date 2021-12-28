@@ -425,7 +425,7 @@ IDebugger::AsyncResult IORedirectHelper::async_input(InStream& in)
         // NOTE: using here polling, but not waiting, on Win32,
         // to avoid issue with blocking console read operation...
 #ifdef _WIN32
-        const std::chrono::milliseconds PollPeriod{1000};
+        const std::chrono::milliseconds PollPeriod{100};
 #else
         auto& PollPeriod = WaitForever;
 #endif
