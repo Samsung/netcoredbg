@@ -53,9 +53,9 @@ To load the debugging program file command with the name of an executable used t
 ncdb> file dotnet
 ```
 
-The name of the assembly for debugging and all the required parameters could be set with "set-args" command, for example:
+The name of the assembly for debugging and all the required parameters could be set with "set args" command, for example:
 ```
-ncdb> set-args hello.dll param1 param2
+ncdb> set args hello.dll param1 param2
 ```
 
 ### Running debugging program
