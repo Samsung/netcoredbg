@@ -12,7 +12,7 @@ set(DOTNET_DIR "" CACHE FILEPATH "Path to .NET SDK directory")
 set(CORECLR_BRANCH "release/3.1" CACHE STRING "CoreCLR source branch")
 # Note, we must use latest runtime, since we need copy latest dbgshim in order to work with all runtime versions.
 # https://github.com/dotnet/runtime/pull/44748#issuecomment-729268650
-set(DOTNET_CHANNEL "5.0" CACHE STRING ".NET SDK channel")
+set(DOTNET_CHANNEL "6.0" CACHE STRING ".NET SDK channel")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
 set(DBGSHIM_RUNTIME_DIR "" CACHE FILEPATH "Path to dbgshim library directory (at runtime)")
 
