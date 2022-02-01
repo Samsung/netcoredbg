@@ -108,6 +108,8 @@ enum class CLIProtocol::CommandTag
     // set subcommands
     Set,
     SetArgs,
+    SetJustMyCode,
+    SetStepFiltering,
     SetHelp,
 
     // info subcommand
@@ -187,6 +189,14 @@ constexpr static const CLIParams::CommandInfo set_commands[] =
     {CommandTag::SetArgs, {}, {}, {{"args"}},
             {{"[args...]"}, "Set argument list to give program being debugged\n"
                             "when it is started (via 'run' command)."}},
+
+    {CommandTag::SetJustMyCode, {}, {}, {{"just-my-code"}},
+            {{"1 or 0"},  "Enable or disable Just My Code feature that automatically\n"
+                          "steps over calls to system, framework, and other non-user code."}},
+
+    {CommandTag::SetStepFiltering, {}, {}, {{"step-filtering"}},
+            {{"1 or 0"},  "Prevent or allow stepping into properties and operators\n"
+                          "in managed code."}},
 
     {CommandTag::SetHelp, {}, {}, {{"help"}}, {{}, {}}},
 
@@ -443,7 +453,7 @@ private:
     static void signal_handler(int)
     {
         // errno might be corrupted by following functions
-        int saved_errno = errno;    
+        int saved_errno = errno;
 
         // save currently set terminal settings (raw mode)
         struct termios ts;
@@ -1388,7 +1398,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::File>(const std::vector<std::string> 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Finish>(const std::vector<std::string> &args, std::string &output)
 {
-    return StepCommand(args, output, IDebugger::StepType::STEP_OUT);    
+    return StepCommand(args, output, IDebugger::StepType::STEP_OUT);
 }
 
 template <>
@@ -1663,7 +1673,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Next>(const std::vector<std::string> &args, std::string &output)
 {
-    return StepCommand(args, output, IDebugger::StepType::STEP_OVER);    
+    return StepCommand(args, output, IDebugger::StepType::STEP_OVER);
 }
 
 HRESULT CLIProtocol::PrintVariable(const Variable &v, std::ostringstream &ss, bool expand, bool is_static)
@@ -1827,7 +1837,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::vector<std::string
 template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Step>(const std::vector<std::string> &args, std::string &output)
 {
-    return StepCommand(args, output, IDebugger::StepType::STEP_IN);    
+    return StepCommand(args, output, IDebugger::StepType::STEP_IN);
 }
 
 
@@ -1985,6 +1995,26 @@ HRESULT CLIProtocol::doCommand<CommandTag::SetArgs>(const std::vector<std::strin
 {
     lock_guard lock(m_mutex);
     m_execArgs = args;
+    return S_OK;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::SetJustMyCode>(const std::vector<std::string> &args, std::string &output)
+{
+    if (args.empty() || (args[0] != "0" && args[0] != "1"))
+        return E_INVALIDARG;
+
+    m_sharedDebugger->SetJustMyCode(args[0] == "1");
+    return S_OK;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::SetStepFiltering>(const std::vector<std::string> &args, std::string &output)
+{
+    if (args.empty() || (args[0] != "0" && args[0] != "1"))
+        return E_INVALIDARG;
+
+    m_sharedDebugger->SetStepFiltering(args[0] == "1");
     return S_OK;
 }
 

@@ -88,11 +88,11 @@ HRESULT SkipBreakpoint(ICorDebugModule *pModule, mdMethodDef methodToken, bool j
     // Skip breakpoints outside of code with loaded PDB (see JMC setup during module load).
     ToRelease<ICorDebugFunction> iCorFunction;
     IfFailRet(pModule->GetFunctionFromToken(methodToken, &iCorFunction));
-    BOOL JMCStatus;
     ToRelease<ICorDebugFunction2> iCorFunction2;
-    if (SUCCEEDED(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2)) &&
-        SUCCEEDED(iCorFunction2->GetJMCStatus(&JMCStatus)) &&
-        JMCStatus == FALSE)
+    IfFailRet(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2));
+    BOOL JMCStatus;
+    IfFailRet(iCorFunction2->GetJMCStatus(&JMCStatus));
+    if (JMCStatus == FALSE)
     {
         return S_OK; // need skip breakpoint
     }

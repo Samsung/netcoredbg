@@ -116,9 +116,7 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
     ToRelease<IMetaDataImport> iMD;
     IfFailRet(iUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &iMD));
 
-    // https://docs.microsoft.com/en-us/visualstudio/debugger/navigating-through-code-with-the-debugger?view=vs-2019#BKMK_Step_into_properties_and_operators_in_managed_code
-    // The debugger steps over properties and operators in managed code by default. In most cases, this provides a better debugging experience.
-    if (m_stepFiltering)
+    auto methodShouldBeFltered = [&]() -> bool
     {
         ULONG nameLen;
         WCHAR szFunctionName[mdNameLen] = {0};
@@ -126,11 +124,7 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
                                           &nameLen, nullptr, nullptr, nullptr, nullptr, nullptr)))
         {
             if (g_operatorMethodNames.find(szFunctionName) != g_operatorMethodNames.end())
-            {
-                IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
-                m_filteredPrevStep = true;
-                return S_OK;
-            }
+                return true;
         }
 
         mdProperty propertyDef;
@@ -147,12 +141,21 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
                     continue;
 
                 iMD->CloseEnum(propEnum);
-                IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
-                m_filteredPrevStep = true;
-                return S_OK;
+                return true;
             }
         }
         iMD->CloseEnum(propEnum);
+
+        return false;
+    };
+
+    // https://docs.microsoft.com/en-us/visualstudio/debugger/navigating-through-code-with-the-debugger?view=vs-2019#BKMK_Step_into_properties_and_operators_in_managed_code
+    // The debugger steps over properties and operators in managed code by default. In most cases, this provides a better debugging experience.
+    if (m_stepFiltering && methodShouldBeFltered())
+    {
+        IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT));
+        m_filteredPrevStep = true;
+        return S_OK;
     }
 
     bool filteredPrevStep = m_filteredPrevStep;
@@ -180,11 +183,11 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
     else if (noUserCodeFound)
     {
         IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
-        // In case step-in will return from method (no user code was called), step-in again.
+        // In case step-in will return from method and no user code was called in user module, step-in again.
         m_filteredPrevStep = true;
         return S_OK;
     }
-    else // Note, in case JMC enabled ManagedCallbackStepComplete() called only for user code.
+    else // Note, in case JMC enabled step, ManagedCallbackStepComplete() called only for user module code.
         return Status;
 
     // Care about attributes for "JMC disabled" case.
@@ -195,8 +198,10 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
         if (HasAttribute(iMD, typeDef, DebuggerAttribute::StepThrough) || HasAttribute(iMD, methodDef, attrNames))
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
-            // In case step-in will return from method (no other user code was called), step-in again.
-            m_filteredPrevStep = true;
+            // In case step-in will return from filtered method and no user code was called, step-in again.
+            if (!m_stepFiltering && methodShouldBeFltered())
+                 m_filteredPrevStep = true;
+
             return S_OK;
         }
     }

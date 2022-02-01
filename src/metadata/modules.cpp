@@ -717,7 +717,7 @@ bool Modules::FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef me
     return true;
 }
 
-HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, bool needJMC)
+HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, bool needJMC, std::string &outputText)
 {
     HRESULT Status;
 
@@ -736,22 +736,34 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
     if (module.symbolStatus == SymbolsLoaded)
     {
         ToRelease<ICorDebugModule2> pModule2;
-        if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)) &&
-            SUCCEEDED(pModule2->SetJMCStatus(TRUE, 0, nullptr))) // If we can't enable JMC for module, no reason disable JMC on module's types/methods.
+        if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
         {
-            // Note, we use JMC in runtime all the time (same behaviour as MS vsdbg and MSVS debugger have),
-            // since this is the only way provide good speed for stepping in case "JMC disabled".
-            // But in case "JMC disabled", debugger must care about different logic for exceptions/stepping/breakpoints.
+            if (!needJMC)
+                pModule2->SetJITCompilerFlags(CORDEBUG_JIT_DISABLE_OPTIMIZATION);
 
-            // https://docs.microsoft.com/en-us/visualstudio/debugger/just-my-code
-            // The .NET debugger considers optimized binaries and non-loaded .pdb files to be non-user code.
-            // Three compiler attributes also affect what the .NET debugger considers to be user code:
-            // * DebuggerNonUserCodeAttribute tells the debugger that the code it's applied to isn't user code.
-            // * DebuggerHiddenAttribute hides the code from the debugger, even if Just My Code is turned off.
-            // * DebuggerStepThroughAttribute tells the debugger to step through the code it's applied to, rather than step into the code.
-            // The .NET debugger considers all other code to be user code.
-            if (needJMC)
-                DisableJMCByAttributes(pModule, pSymbolReaderHandle);
+            if (SUCCEEDED(Status = pModule2->SetJMCStatus(TRUE, 0, nullptr))) // If we can't enable JMC for module, no reason disable JMC on module's types/methods.
+            {
+                // Note, we use JMC in runtime all the time (same behaviour as MS vsdbg and MSVS debugger have),
+                // since this is the only way provide good speed for stepping in case "JMC disabled".
+                // But in case "JMC disabled", debugger must care about different logic for exceptions/stepping/breakpoints.
+
+                // https://docs.microsoft.com/en-us/visualstudio/debugger/just-my-code
+                // The .NET debugger considers optimized binaries and non-loaded .pdb files to be non-user code.
+                // Three compiler attributes also affect what the .NET debugger considers to be user code:
+                // * DebuggerNonUserCodeAttribute tells the debugger that the code it's applied to isn't user code.
+                // * DebuggerHiddenAttribute hides the code from the debugger, even if Just My Code is turned off.
+                // * DebuggerStepThroughAttribute tells the debugger to step through the code it's applied to, rather than step into the code.
+                // The .NET debugger considers all other code to be user code.
+                if (needJMC)
+                    DisableJMCByAttributes(pModule, pSymbolReaderHandle);
+            }
+            else if (Status == CORDBG_E_CANT_SET_TO_JMC)
+            {
+                if (needJMC)
+                    outputText = "You are debugging a Release build of " + module.name + ". Using Just My Code with Release builds using compiler optimizations results in a degraded debugging experience (e.g. breakpoints will not be hit).";
+                else
+                    outputText = "You are debugging a Release build of " + module.name + ". Without Just My Code Release builds try not to use compiler optimizations, but in some cases (e.g. attach) this still results in a degraded debugging experience (e.g. breakpoints will not be hit).";
+            }
         }
 
         if (FAILED(FillSourcesCodeLinesForModule(pModule, pMDImport, pSymbolReaderHandle)))

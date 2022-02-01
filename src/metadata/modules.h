@@ -237,7 +237,8 @@ public:
     HRESULT TryLoadModuleSymbols(
         ICorDebugModule *pModule,
         Module &module,
-        bool needJMC);
+        bool needJMC,
+        std::string &outputText);
 
     void CleanupAllModules();
 

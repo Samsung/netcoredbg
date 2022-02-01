@@ -568,7 +568,10 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(ICorDebugAppDomain *pAppDo
     LogFuncEntry();
 
     Module module;
-    m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode());
+    std::string outputText;
+    m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode(), outputText);
+    if (!outputText.empty())
+        m_debugger.m_sharedProtocol->EmitOutputEvent(OutputStdErr, outputText);
     m_debugger.m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
 
     if (module.symbolStatus == SymbolsLoaded)
