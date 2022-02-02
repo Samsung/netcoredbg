@@ -83,7 +83,8 @@ namespace Interop
     // WARNING! Due to CoreCLR limitations, Shutdown() can't be called out of the Main() scope, for example, from global object destructor.
     void Shutdown();
 
-    HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle);
+    HRESULT LoadSymbolsForPortablePDB(const std::string &modulePath, BOOL isInMemory, BOOL isFileLayout, ULONG64 peAddress, ULONG64 peSize,
+                                      ULONG64 inMemoryPdbAddress, ULONG64 inMemoryPdbSize, VOID **ppSymbolReaderHandle);
     void DisposeSymbols(PVOID pSymbolReaderHandle);
     HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG32 IlOffset, SequencePoint *sequencePoint);
     HRESULT GetNextSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG32 IlOffset, ULONG32 &ilCloseOffset, bool *noUserCodeFound);

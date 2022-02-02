@@ -109,6 +109,7 @@ set(netcoredbg_SRC
     metadata/modules.cpp
     metadata/typeprinter.cpp
     protocols/cliprotocol.cpp
+    protocols/escaped_string.cpp
     protocols/protocol_utils.cpp
     protocols/miprotocol.cpp
     protocols/tokenizer.cpp
@@ -118,20 +119,19 @@ set(netcoredbg_SRC
     errormessage.cpp
     main.cpp
     buildinfo.cpp
-    utils/escaped_string.cpp
+    utils/dynlibs_unix.cpp
+    utils/dynlibs_win32.cpp
     utils/filesystem.cpp
+    utils/filesystem_unix.cpp
+    utils/filesystem_win32.cpp
     utils/ioredirect.cpp
+    utils/iosystem_unix.cpp
+    utils/iosystem_win32.cpp
+    utils/interop_unix.cpp
+    utils/interop_win32.cpp
+    utils/platform_unix.cpp
+    utils/platform_win32.cpp
     utils/streams.cpp
-    unix/interop_unix.cpp
-    unix/dynlibs_unix.cpp
-    unix/filesystem_unix.cpp
-    unix/iosystem_unix.cpp
-    unix/platform_unix.cpp
-    windows/interop_win32.cpp
-    windows/dynlibs_win32.cpp
-    windows/filesystem_win32.cpp
-    windows/iosystem_win32.cpp
-    windows/platform_win32.cpp
     )
 
 set(CMAKE_INCLUDE_CURRENT_DIR OFF)

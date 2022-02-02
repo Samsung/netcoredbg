@@ -29,26 +29,26 @@ find_package (Threads)
 # currently defined unit tests
 deftest(string_view string_view_test.cpp)
 deftest(span span_test.cpp)
-deftest(escaped_string ../utils/escaped_string.cpp escaped_string_test.cpp)
+deftest(escaped_string ../protocols/escaped_string.cpp escaped_string_test.cpp)
 
 deftest(iosystem
     iosystem_test.cpp
-    ${PROJECT_SOURCE_DIR}/src/windows/iosystem_win32.cpp
-    ${PROJECT_SOURCE_DIR}/src/unix/iosystem_unix.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/iosystem_win32.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/iosystem_unix.cpp
 )
 
 deftest(streams
     streams_test.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/streams.cpp
-    ${PROJECT_SOURCE_DIR}/src/windows/iosystem_win32.cpp
-    ${PROJECT_SOURCE_DIR}/src/unix/iosystem_unix.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/iosystem_win32.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/iosystem_unix.cpp
 )
 
 deftest(ioredirect
     ioredirect_test.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/ioredirect.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/streams.cpp
-    ${PROJECT_SOURCE_DIR}/src/windows/iosystem_win32.cpp
-    ${PROJECT_SOURCE_DIR}/src/unix/iosystem_unix.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/iosystem_win32.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/iosystem_unix.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/logger.cpp
 )

@@ -717,6 +717,34 @@ bool Modules::FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef me
     return true;
 }
 
+static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle)
+{
+    HRESULT Status = S_OK;
+    BOOL isDynamic = FALSE;
+    BOOL isInMemory = FALSE;
+    IfFailRet(pModule->IsDynamic(&isDynamic));
+    IfFailRet(pModule->IsInMemory(&isInMemory));
+
+    if (isDynamic)
+        return E_FAIL; // Dynamic and in memory assemblies are a special case which we will ignore for now
+
+    ULONG64 peAddress = 0;
+    ULONG32 peSize = 0;
+    IfFailRet(pModule->GetBaseAddress(&peAddress));
+    IfFailRet(pModule->GetSize(&peSize));
+
+    return Interop::LoadSymbolsForPortablePDB(
+        GetModuleFileName(pModule),
+        isInMemory,
+        isInMemory, // isFileLayout
+        peAddress,
+        peSize,
+        0,          // inMemoryPdbAddress
+        0,          // inMemoryPdbSize
+        ppSymbolReaderHandle
+    );
+}
+
 HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, bool needJMC, std::string &outputText)
 {
     HRESULT Status;
@@ -730,7 +758,7 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
     module.name = GetFileName(module.path);
 
     PVOID pSymbolReaderHandle = nullptr;
-    Interop::LoadSymbols(pMDImport, pModule, &pSymbolReaderHandle);
+    LoadSymbols(pMDImport, pModule, &pSymbolReaderHandle);
     module.symbolStatus = pSymbolReaderHandle != nullptr ? SymbolsLoaded : SymbolsNotFound;
 
     if (module.symbolStatus == SymbolsLoaded)

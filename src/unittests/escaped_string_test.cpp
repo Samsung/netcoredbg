@@ -4,7 +4,7 @@
 #include <catch2/catch.hpp>
 #include <string>
 #include "utils/string_view.h"
-#include "utils/escaped_string.h"
+#include "protocols/escaped_string.h"
 #include "compile_test.h"
 
 using namespace netcoredbg;

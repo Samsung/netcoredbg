@@ -114,6 +114,8 @@ int ReadMemoryForSymbols(uint64_t address, char *buffer, int cb)
     return 0;
 }
 
+} // unnamed namespace
+
 HRESULT LoadSymbolsForPortablePDB(const std::string &modulePath, BOOL isInMemory, BOOL isFileLayout, ULONG64 peAddress, ULONG64 peSize,
                                   ULONG64 inMemoryPdbAddress, ULONG64 inMemoryPdbSize, VOID **ppSymbolReaderHandle)
 {
@@ -138,40 +140,9 @@ HRESULT LoadSymbolsForPortablePDB(const std::string &modulePath, BOOL isInMemory
     return S_OK;
 }
 
-} // unnamed namespace
-
-
 SequencePoint::~SequencePoint() noexcept
 {
     Interop::SysFreeString(document);
-}
-
-HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle)
-{
-    HRESULT Status = S_OK;
-    BOOL isDynamic = FALSE;
-    BOOL isInMemory = FALSE;
-    IfFailRet(pModule->IsDynamic(&isDynamic));
-    IfFailRet(pModule->IsInMemory(&isInMemory));
-
-    if (isDynamic)
-        return E_FAIL; // Dynamic and in memory assemblies are a special case which we will ignore for now
-
-    ULONG64 peAddress = 0;
-    ULONG32 peSize = 0;
-    IfFailRet(pModule->GetBaseAddress(&peAddress));
-    IfFailRet(pModule->GetSize(&peSize));
-
-    return LoadSymbolsForPortablePDB(
-        GetModuleFileName(pModule),
-        isInMemory,
-        isInMemory, // isFileLayout
-        peAddress,
-        peSize,
-        0,          // inMemoryPdbAddress
-        0,          // inMemoryPdbSize
-        ppSymbolReaderHandle
-    );
 }
 
 void DisposeSymbols(PVOID pSymbolReaderHandle)

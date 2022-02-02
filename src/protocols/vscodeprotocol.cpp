@@ -23,7 +23,7 @@
 #include "utils/torelease.h"
 #include "utils/utf.h"
 #include "utils/logger.h"
-#include "utils/escaped_string.h"
+#include "protocols/escaped_string.h"
 
 // for convenience
 using json = nlohmann::json;
