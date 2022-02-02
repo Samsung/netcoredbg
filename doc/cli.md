@@ -1,4 +1,14 @@
 # Using NetCoreDbg with CLI (Command Line Interface)
+
+## Fast start
+
+To start debugger and run program with one command just type
+```
+$ netcoredbg --interpreter=cli -- dotnet hello.dll param1 param2
+```
+
+Note: to debug Release build of dlls with pdbs Just-My-Code should be disabled, see below.
+
 ## Command reference
 ```
 command    alias  args   
@@ -56,6 +66,13 @@ ncdb> file dotnet
 The name of the assembly for debugging and all the required parameters could be set with "set args" command, for example:
 ```
 ncdb> set args hello.dll param1 param2
+```
+
+### Debugging Release build of dlls
+
+To debug Release build of dlls with pdbs Just-My-Code should be disabled:
+```
+ncdb> set just-my-code 0
 ```
 
 ### Running debugging program
