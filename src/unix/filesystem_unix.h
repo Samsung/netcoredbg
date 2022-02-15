@@ -6,7 +6,7 @@
 #if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #pragma once
 #include <cstddef>
-#include <climits>
+#include "utils/limits.h"
 #include "utils/platform.h"
 
 namespace netcoredbg
