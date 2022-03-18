@@ -4,6 +4,7 @@
 
 #include <sstream>
 #include <algorithm>
+#include <limits>
 #include "debugger/frames.h"
 #include "metadata/typeprinter.h"
 #include "utils/platform.h"
