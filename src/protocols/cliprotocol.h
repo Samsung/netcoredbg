@@ -60,9 +60,7 @@ class CLIProtocol : public IProtocol
     std::unordered_map<uint32_t, FuncBreakpoint> m_funcBreakpoints;
     std::unordered_map<uint32_t, ExceptionBreakpoint> m_exceptionBreakpoints;
 
-    FrameId m_frameId;
     std::string m_sourcePath;
-    std::string m_sourceFile;
     int m_sourceLine;
     int m_listSize;
     int m_stoppedAt;

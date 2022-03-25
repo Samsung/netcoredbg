@@ -960,11 +960,9 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
 
     std::string frameLocation;
     PrintFrameLocation(event.frame, frameLocation);
-    m_sourceFile = event.frame.source.name; 
     m_sourcePath = event.frame.source.path;
     m_sourceLine = event.frame.line - m_listSize / 2;
     m_stoppedAt = event.frame.line;
-    m_frameId = event.frame.id;
 
     switch(event.reason)
     {

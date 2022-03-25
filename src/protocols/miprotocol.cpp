@@ -132,7 +132,7 @@ static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &out
     }
 
     ss << "func=\"" << stackFrame.name << "\"";
-    if (stackFrame.id != 0)
+    if (stackFrame.id)
         ss << ",addr=\"" << ProtocolUtils::AddrToString(stackFrame.addr) << "\"";
 
     output = ss.str();
