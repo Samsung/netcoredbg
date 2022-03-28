@@ -344,45 +344,6 @@ namespace NetCoreDbg
             }
         }
 
-        /// <summary>
-        /// Find and return last method's offset for user code.
-        /// </summary>
-        /// <param name="assemblyPath">file path of the assembly or null if the module is in-memory or dynamic</param>
-        /// <param name="methodToken">method token</param>
-        /// <param name="LastIlOffset">return last found IL offset in user code</param>
-        /// <returns>"Ok" if last IL offset was found</returns>
-        internal static RetCode GetMethodLastIlOffset(IntPtr symbolReaderHandle, int methodToken, out uint LastIlOffset)
-        {
-            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
-
-            LastIlOffset = 0;
-            bool foundOffset = false;
-
-            try
-            {
-                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
-                MetadataReader reader = ((OpenedReader)gch.Target).Reader;
-
-                // We don't use LINQ in order to reduce memory consumption for managed part, so, Reverse() usage not an option here.
-                // Note, SequencePointCollection is IEnumerable based collections.
-                foreach (SequencePoint p in GetSequencePointCollection(methodToken, reader))
-                {
-                    if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine || p.Offset < 0)
-                        continue;
-
-                    // Method's IL start only from 0, use uint for IL offset.
-                    LastIlOffset = (uint)p.Offset;
-                    foundOffset = true;
-                }
-            }
-            catch
-            {
-                return RetCode.Exception;
-            }
-
-            return foundOffset ? RetCode.OK : RetCode.Fail;
-        }
-
         [StructLayout(LayoutKind.Sequential)]
         internal struct method_data_t
         {
@@ -1264,17 +1225,22 @@ namespace NetCoreDbg
         }
 
         /// <summary>
-        /// Helper method to return all async methods stepping information.
+        /// Helper method to return async method stepping information and return last method's offset for user code.
         /// </summary>
         /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
-        /// <param name="asyncInfo">array with all async methods stepping information</param>
+        /// <param name="methodToken">method token</param>
+        /// <param name="asyncInfo">array with all async method stepping information</param>
         /// <param name="asyncInfoCount">entry's count in asyncInfo</param>
-        internal static RetCode GetAsyncMethodsSteppingInfo(IntPtr symbolReaderHandle, out IntPtr asyncInfo, out int asyncInfoCount)
+        /// <param name="LastIlOffset">return last found IL offset in user code</param>
+        /// <returns>"Ok" if method have at least one await block and last IL offset was found</returns>
+        internal static RetCode GetAsyncMethodSteppingInfo(IntPtr symbolReaderHandle, int methodToken, out IntPtr asyncInfo, out int asyncInfoCount, out uint LastIlOffset)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
 
             asyncInfo = IntPtr.Zero;
             asyncInfoCount = 0;
+            LastIlOffset = 0;
+            bool foundOffset = false;
             var list = new List<AsyncAwaitInfoBlock>();
 
             try
@@ -1282,42 +1248,44 @@ namespace NetCoreDbg
                 GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
                 MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
+                Handle handle = MetadataTokens.Handle(methodToken);
+                if (handle.Kind != HandleKind.MethodDefinition)
+                    return RetCode.Fail;
+
+                MethodDebugInformationHandle methodDebugInformationHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
+                var entityHandle = MetadataTokens.EntityHandle(MetadataTokens.GetToken(methodDebugInformationHandle.ToDefinitionHandle()));
+
                 // Guid is taken from Roslyn source code:
                 // https://github.com/dotnet/roslyn/blob/afd10305a37c0ffb2cfb2c2d8446154c68cfa87a/src/Dependencies/CodeAnalysis.Debugging/PortableCustomDebugInfoKinds.cs#L13
                 Guid asyncMethodSteppingInformationBlob = new Guid("54FD2AC5-E925-401A-9C2A-F94F171072F8");
 
-                foreach (MethodDebugInformationHandle methodDebugInformationHandle in reader.MethodDebugInformation)
+                foreach (var cdiHandle in reader.GetCustomDebugInformation(entityHandle))
                 {
-                    var entityHandle = MetadataTokens.EntityHandle(MetadataTokens.GetToken(methodDebugInformationHandle.ToDefinitionHandle()));
+                    var cdi = reader.GetCustomDebugInformation(cdiHandle);
 
-                    foreach (var cdiHandle in reader.GetCustomDebugInformation(entityHandle))
+                    if (reader.GetGuid(cdi.Kind) == asyncMethodSteppingInformationBlob)
                     {
-                        var cdi = reader.GetCustomDebugInformation(cdiHandle);
+                        // Format of this blob is taken from Roslyn source code:
+                        // https://github.com/dotnet/roslyn/blob/afd10305a37c0ffb2cfb2c2d8446154c68cfa87a/src/Compilers/Core/Portable/PEWriter/MetadataWriter.PortablePdb.cs#L575
 
-                        if (reader.GetGuid(cdi.Kind) == asyncMethodSteppingInformationBlob)
+                        var blobReader = reader.GetBlobReader(cdi.Value);
+                        blobReader.ReadUInt32(); // skip catch_handler_offset
+
+                        while (blobReader.Offset < blobReader.Length)
                         {
-                            // Format of this blob is taken from Roslyn source code:
-                            // https://github.com/dotnet/roslyn/blob/afd10305a37c0ffb2cfb2c2d8446154c68cfa87a/src/Compilers/Core/Portable/PEWriter/MetadataWriter.PortablePdb.cs#L575
-
-                            var blobReader = reader.GetBlobReader(cdi.Value);
-                            blobReader.ReadUInt32(); // skip catch_handler_offset
-
-                            while (blobReader.Offset < blobReader.Length)
-                            {
-                                list.Add(new AsyncAwaitInfoBlock() {
-                                    yield_offset = blobReader.ReadUInt32(),
-                                    resume_offset = blobReader.ReadUInt32(),
-                                    // explicit conversion from int into uint here, see:
-                                    // https://docs.microsoft.com/en-us/dotnet/api/system.reflection.metadata.blobreader.readcompressedinteger
-                                    token = (uint)blobReader.ReadCompressedInteger()
-                                });
-                            }
+                            list.Add(new AsyncAwaitInfoBlock() {
+                                yield_offset = blobReader.ReadUInt32(),
+                                resume_offset = blobReader.ReadUInt32(),
+                                // explicit conversion from int into uint here, see:
+                                // https://docs.microsoft.com/en-us/dotnet/api/system.reflection.metadata.blobreader.readcompressedinteger
+                                token = (uint)blobReader.ReadCompressedInteger()
+                            });
                         }
                     }
                 }
 
                 if (list.Count == 0)
-                    return RetCode.OK;
+                    return RetCode.Fail;
 
                 int structSize = Marshal.SizeOf<AsyncAwaitInfoBlock>();
                 asyncInfo = Marshal.AllocCoTaskMem(list.Count * structSize);
@@ -1330,6 +1298,27 @@ namespace NetCoreDbg
                 }
 
                 asyncInfoCount = list.Count;
+
+                // We don't use LINQ in order to reduce memory consumption for managed part, so, Reverse() usage not an option here.
+                // Note, SequencePointCollection is IEnumerable based collections.
+                foreach (SequencePoint p in GetSequencePointCollection(methodToken, reader))
+                {
+                    if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine || p.Offset < 0)
+                        continue;
+
+                    // Method's IL start only from 0, use uint for IL offset.
+                    LastIlOffset = (uint)p.Offset;
+                    foundOffset = true;
+                }
+
+                if (!foundOffset)
+                {
+                    if (asyncInfo != IntPtr.Zero)
+                        Marshal.FreeCoTaskMem(asyncInfo);
+
+                    asyncInfo = IntPtr.Zero;
+                    return RetCode.Fail;
+                }
             }
             catch
             {

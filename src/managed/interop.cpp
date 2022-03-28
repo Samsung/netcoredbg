@@ -65,8 +65,7 @@ typedef  RetCode (*GetNextSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, u
 typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
 typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, int32_t, PVOID, int32_t, PVOID, PVOID*);
 typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID, int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*);
-typedef  RetCode (*GetMethodLastIlOffsetDelegate)(PVOID, mdMethodDef, uint32_t*);
-typedef  RetCode (*GetAsyncMethodsSteppingInfoDelegate)(PVOID, PVOID*, int32_t*);
+typedef  RetCode (*GetAsyncMethodSteppingInfoDelegate)(PVOID, mdMethodDef, PVOID*, int32_t*, uint32_t*);
 typedef  RetCode (*GetSourceDelegate)(PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  RetCode (*CalculationDelegate)(PVOID, int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*, BSTR*);
 typedef  int (*GenerateStackMachineProgramDelegate)(const WCHAR*, PVOID*, BSTR*);
@@ -87,8 +86,7 @@ GetNextSequencePointByILOffsetDelegate getNextSequencePointByILOffsetDelegate = 
 GetStepRangesFromIPDelegate getStepRangesFromIPDelegate = nullptr;
 GetModuleMethodsRangesDelegate getModuleMethodsRangesDelegate = nullptr;
 ResolveBreakPointsDelegate resolveBreakPointsDelegate = nullptr;
-GetMethodLastIlOffsetDelegate getMethodLastIlOffsetDelegate = nullptr;
-GetAsyncMethodsSteppingInfoDelegate getAsyncMethodsSteppingInfoDelegate = nullptr;
+GetAsyncMethodSteppingInfoDelegate getAsyncMethodSteppingInfoDelegate = nullptr;
 GetSourceDelegate getSourceDelegate = nullptr;
 GenerateStackMachineProgramDelegate generateStackMachineProgramDelegate = nullptr;
 ReleaseStackMachineProgramDelegate releaseStackMachineProgramDelegate = nullptr;
@@ -231,8 +229,7 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetModuleMethodsRanges", (void **)&getModuleMethodsRangesDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "ResolveBreakPoints", (void **)&resolveBreakPointsDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetMethodLastIlOffset", (void **)&getMethodLastIlOffsetDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodsSteppingInfo", (void **)&getAsyncMethodsSteppingInfoDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetAsyncMethodSteppingInfo", (void **)&getAsyncMethodSteppingInfoDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSource", (void **)&getSourceDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "CalculationDelegate", (void **)&calculationDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, EvaluationClassName, "GenerateStackMachineProgram", (void **)&generateStackMachineProgramDelegate)) &&
@@ -256,8 +253,7 @@ void Init(const std::string &coreClrPath)
                               getStepRangesFromIPDelegate &&
                               getModuleMethodsRangesDelegate &&
                               resolveBreakPointsDelegate &&
-                              getMethodLastIlOffsetDelegate &&
-                              getAsyncMethodsSteppingInfoDelegate &&
+                              getAsyncMethodSteppingInfoDelegate &&
                               getSourceDelegate &&
                               generateStackMachineProgramDelegate &&
                               releaseStackMachineProgramDelegate &&
@@ -295,8 +291,7 @@ void Shutdown()
     getStepRangesFromIPDelegate = nullptr;
     getModuleMethodsRangesDelegate = nullptr;
     resolveBreakPointsDelegate = nullptr;
-    getMethodLastIlOffsetDelegate = nullptr;
-    getAsyncMethodsSteppingInfoDelegate = nullptr;
+    getAsyncMethodSteppingInfoDelegate = nullptr;
     getSourceDelegate = nullptr;
     stringToUpperDelegate = nullptr;
     coTaskMemAllocDelegate = nullptr;
@@ -401,16 +396,6 @@ HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, in
     return S_OK;
 }
 
-HRESULT GetMethodLastIlOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 *ilOffset)
-{
-    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getMethodLastIlOffsetDelegate || !pSymbolReaderHandle || !ilOffset)
-        return E_FAIL;
-
-    RetCode retCode = getMethodLastIlOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset);
-    return retCode == RetCode::OK ? S_OK : E_FAIL;
-}
-
 HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, int32_t constrTokensNum, PVOID constrTokens, int32_t normalTokensNum, PVOID normalTokens, PVOID *data)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
@@ -431,16 +416,16 @@ HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandle, int32_t tokenNum, PVOID To
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
-HRESULT GetAsyncMethodsSteppingInfo(PVOID pSymbolReaderHandle, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo)
+HRESULT GetAsyncMethodSteppingInfo(PVOID pSymbolReaderHandle, mdMethodDef methodToken, std::vector<AsyncAwaitInfoBlock> &AsyncAwaitInfo, ULONG32 *ilOffset)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getAsyncMethodsSteppingInfoDelegate || !pSymbolReaderHandle)
+    if (!getAsyncMethodSteppingInfoDelegate || !pSymbolReaderHandle || !ilOffset)
         return E_FAIL;
 
     AsyncAwaitInfoBlock *allocatedAsyncInfo = nullptr;
     int32_t asyncInfoCount = 0;
 
-    RetCode retCode = getAsyncMethodsSteppingInfoDelegate(pSymbolReaderHandle, (PVOID*)&allocatedAsyncInfo, &asyncInfoCount);
+    RetCode retCode = getAsyncMethodSteppingInfoDelegate(pSymbolReaderHandle, methodToken, (PVOID*)&allocatedAsyncInfo, &asyncInfoCount, ilOffset);
     read_lock.unlock();
 
     if (retCode != RetCode::OK)

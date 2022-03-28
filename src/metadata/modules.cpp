@@ -630,28 +630,36 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
     return S_OK;
 }
 
-// Fill m_asyncMethodsSteppingInfo by data from module. Called on callback during module load.
-// [in] pModule - object that represents the CLR module;
-// [in] pSymbolReaderHandle - pointer to managed part GCHandle with preloaded PDB.
-HRESULT Modules::FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, PVOID pSymbolReaderHandle)
+// Caller must care about m_asyncMethodSteppingInfoMutex.
+HRESULT Modules::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken)
 {
+    if (asyncMethodSteppingInfo.modAddress == modAddress &&
+        asyncMethodSteppingInfo.methodToken == methodToken)
+        return S_OK;
+
+    if (!asyncMethodSteppingInfo.awaits.empty())
+        asyncMethodSteppingInfo.awaits.clear();
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+    {
+        return E_FAIL;
+    }
+
+    ModuleInfo &mdInfo = info_pair->second;
+
     HRESULT Status;
-    CORDB_ADDRESS modAddress;
-    IfFailRet(pModule->GetBaseAddress(&modAddress));
-
     std::vector<Interop::AsyncAwaitInfoBlock> AsyncAwaitInfo;
-    IfFailRet(Interop::GetAsyncMethodsSteppingInfo(pSymbolReaderHandle, AsyncAwaitInfo));
-
-    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+    IfFailRet(Interop::GetAsyncMethodSteppingInfo(mdInfo.m_symbolReaderHandle, methodToken, AsyncAwaitInfo, &asyncMethodSteppingInfo.lastIlOffset));
 
     for (const auto &entry : AsyncAwaitInfo)
     {
-        mdMethodDef realToken = mdMethodDefNil + entry.token;
-        std::pair<CORDB_ADDRESS, mdMethodDef> newKey = std::make_pair(modAddress, realToken);
-        m_asyncMethodsSteppingInfo[newKey].awaits.emplace_back(entry.yield_offset, entry.resume_offset);
-
-        IfFailRet(Interop::GetMethodLastIlOffset(pSymbolReaderHandle, realToken, &m_asyncMethodsSteppingInfo[newKey].lastIlOffset));
+        asyncMethodSteppingInfo.awaits.emplace_back(entry.yield_offset, entry.resume_offset);
     }
+
+    asyncMethodSteppingInfo.modAddress = modAddress;
+    asyncMethodSteppingInfo.methodToken = methodToken;
 
     return S_OK;
 }
@@ -661,10 +669,9 @@ HRESULT Modules::FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, PVOID pS
 // [in] methodToken - method token (from module with address modAddress).
 bool Modules::IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken)
 {
-    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+    const std::lock_guard<std::mutex> lock(m_asyncMethodSteppingInfoMutex);
 
-    auto searchAsyncInfo = m_asyncMethodsSteppingInfo.find(std::make_pair(modAddress, methodToken));
-    return searchAsyncInfo != m_asyncMethodsSteppingInfo.end();
+    return SUCCEEDED(GetAsyncMethodSteppingInfo(modAddress, methodToken));
 }
 
 // Find await block after IL offset in particular async method and return await info, if present.
@@ -675,13 +682,12 @@ bool Modules::IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToke
 // [out] awaitInfo - result, next await info.
 bool Modules::FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 ipOffset, AwaitInfo **awaitInfo)
 {
-    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+    const std::lock_guard<std::mutex> lock(m_asyncMethodSteppingInfoMutex);
 
-    auto searchAsyncInfo = m_asyncMethodsSteppingInfo.find(std::make_pair(modAddress, methodToken));
-    if (searchAsyncInfo == m_asyncMethodsSteppingInfo.end())
+    if (FAILED(GetAsyncMethodSteppingInfo(modAddress, methodToken)))
         return false;
 
-    for (auto &await : searchAsyncInfo->second.awaits)
+    for (auto &await : asyncMethodSteppingInfo.awaits)
     {
         if (ipOffset <= await.yield_offset)
         {
@@ -707,13 +713,12 @@ bool Modules::FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToke
 // [out] lastIlOffset - result, IL offset for last user code line in async method.
 bool Modules::FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 &lastIlOffset)
 {
-    const std::lock_guard<std::mutex> lock(m_asyncMethodsSteppingInfoMutex);
+    const std::lock_guard<std::mutex> lock(m_asyncMethodSteppingInfoMutex);
 
-    auto searchAsyncInfo = m_asyncMethodsSteppingInfo.find(std::make_pair(modAddress, methodToken));
-    if (searchAsyncInfo == m_asyncMethodsSteppingInfo.end())
+    if (FAILED(GetAsyncMethodSteppingInfo(modAddress, methodToken)))
         return false;
 
-    lastIlOffset = searchAsyncInfo->second.lastIlOffset;
+    lastIlOffset = asyncMethodSteppingInfo.lastIlOffset;
     return true;
 }
 
@@ -796,9 +801,6 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
 
         if (FAILED(FillSourcesCodeLinesForModule(pModule, pMDImport, pSymbolReaderHandle)))
             LOGE("Could not load source lines related info from PDB file. Could produce failures during breakpoint's source path resolve in future.");
-
-        if (FAILED(FillAsyncMethodsSteppingInfo(pModule, pSymbolReaderHandle)))
-            LOGE("Could not load async methods related info from PDB file. Could produce failures during stepping in async methods in future.");
     }
 
     IfFailRet(GetModuleId(pModule, module.id));

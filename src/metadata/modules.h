@@ -294,35 +294,30 @@ public:
         {};
     };
 
-    struct AsyncMethodInfo
-    {
-        std::vector<AwaitInfo> awaits;
-        // Part of NotifyDebuggerOfWaitCompletion magic, see ManagedDebugger::SetupAsyncStep().
-        ULONG32 lastIlOffset;
-
-        AsyncMethodInfo() :
-            awaits(), lastIlOffset(0)
-        {};
-    };
-
     bool IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken);
     bool FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 ipOffset, AwaitInfo **awaitInfo);
     bool FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 &lastIlOffset);
 
 private:
 
-    struct PairHash
+    struct AsyncMethodInfo
     {
-        template <class T1, class T2>
-        size_t operator()(const std::pair<T1, T2> &pair) const
-        {
-            return std::hash<T1>{}(pair.first) ^ std::hash<T2>{}(pair.second);
-        }
+        CORDB_ADDRESS modAddress;
+        mdMethodDef methodToken;
+
+        std::vector<AwaitInfo> awaits;
+        // Part of NotifyDebuggerOfWaitCompletion magic, see ManagedDebugger::SetupAsyncStep().
+        ULONG32 lastIlOffset;
+
+        AsyncMethodInfo() :
+            modAddress(0), methodToken(mdMethodDefNil), awaits(), lastIlOffset(0)
+        {};
     };
-    // All async methods stepping information for all loaded (with symbols) modules.
-    std::unordered_map<std::pair<CORDB_ADDRESS, mdMethodDef>, AsyncMethodInfo, PairHash> m_asyncMethodsSteppingInfo;
-    std::mutex m_asyncMethodsSteppingInfoMutex;
-    HRESULT FillAsyncMethodsSteppingInfo(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
+
+    AsyncMethodInfo asyncMethodSteppingInfo;
+    std::mutex m_asyncMethodSteppingInfoMutex;
+    // Note, result stored into asyncMethodSteppingInfo.
+    HRESULT GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken);
 };
 
 } // namespace netcoredbg
