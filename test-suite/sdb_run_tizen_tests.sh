@@ -149,7 +149,7 @@ for i in $(eval echo {1..$REPEAT}); do
 for TEST_NAME in ${ALL_TEST_NAMES[@]}; do
     HOSTTESTDIR=$SCRIPTDIR/$TEST_NAME
     $DOTNET build $HOSTTESTDIR
-    $SDB install $HOSTTESTDIR/bin/Debug/netcoreapp3.1/org.tizen.example.$TEST_NAME-1.0.0.tpk
+    $SDB install skip $HOSTTESTDIR/bin/Debug/netcoreapp3.1/org.tizen.example.$TEST_NAME-1.0.0.tpk
  
     $SDB shell launch_app org.tizen.example.$TEST_NAME  __AUL_SDK__ NETCOREDBG __DLP_DEBUG_ARG__ --server=4711,--
 
