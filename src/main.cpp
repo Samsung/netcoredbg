@@ -56,6 +56,7 @@ static void print_help()
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
         "--command=<file>                      Interpret commands file at the start.\n"
         "-ex \"<command>\"                       Execute command at the start\n"
+        "--hot-reload                          Enable Hot Reload feature.\n"
         "--run                                 Run program without waiting commands\n"
         "--engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.\n"
         "                                      Only supported by the VsCode interpreter.\n"
@@ -248,6 +249,7 @@ int main(int argc, char* argv[])
     std::string execFile;
     std::vector<std::string> execArgs;
 
+    bool needHotReload = false;
     bool run = false;
 
     std::unordered_map<std::string, std::function<void(int& i)>> entireArguments
@@ -282,6 +284,11 @@ int main(int argc, char* argv[])
         { "--interpreter=cli", [&](int& i){
 
             protocol_constructor = &instantiate_protocol<CLIProtocol>;
+
+        } },
+        { "--hot-reload", [&](int& i){
+
+            needHotReload = true;
 
         } },
         { "--run", [&](int& i){
@@ -448,6 +455,13 @@ int main(int argc, char* argv[])
 
     protocol->SetDebugger(debugger);
     debugger->SetProtocol(protocol);
+    if (needHotReload)
+    {
+        if (pidDebuggee == 0)
+            debugger->SetHotReload(needHotReload);
+        else
+            fprintf(stderr, "Warning: Hot Reload can't be be enabled for attached process.\n");
+    }
 
     if (!execFile.empty())
         protocol->SetLaunchCommand(execFile, execArgs);

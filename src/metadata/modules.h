@@ -204,7 +204,7 @@ public:
     HRESULT GetSourceFullPathByIndex(unsigned index, std::string &fullPath);
     HRESULT GetIndexBySourceFullPath(std::string fullPath, unsigned &index);
 
-    HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule);
+    HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule, bool onlyWithPDB = false);
 
     HRESULT GetFrameILAndSequencePoint(
         ICorDebugFrame *pFrame,
@@ -238,6 +238,7 @@ public:
         ICorDebugModule *pModule,
         Module &module,
         bool needJMC,
+        bool needHotReload,
         std::string &outputText);
 
     void CleanupAllModules();

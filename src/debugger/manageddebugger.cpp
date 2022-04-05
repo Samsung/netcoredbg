@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <vector>
 #include <map>
+#include <fstream>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -167,6 +168,7 @@ ManagedDebugger::ManagedDebugger() :
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_stepFiltering(true),
+    m_hotReload(false),
     m_startupReady(false),
     m_startupResult(S_OK),
     m_unregisterToken(nullptr),
@@ -1203,6 +1205,68 @@ void ManagedDebugger::SetStepFiltering(bool enable)
 {
     m_stepFiltering = enable;
     m_uniqueSteppers->SetStepFiltering(enable);
+}
+
+HRESULT ManagedDebugger::SetHotReload(bool enable)
+{
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+
+    if (m_iCorProcess && m_startMethod == StartAttach)
+        return CORDBG_E_CANNOT_BE_ON_ATTACH;
+
+    m_hotReload = enable;
+
+    return S_OK;
+}
+
+static HRESULT ApplyMetadataAndILDeltas(Modules *pModules, const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL)
+{
+    HRESULT Status = S_OK;
+
+    std::ifstream deltaILFileStream(deltaIL, std::ios::in | std::ios::binary | std::ios::ate);
+    std::ifstream deltaMDFileStream(deltaMD, std::ios::in | std::ios::binary | std::ios::ate);
+
+    if (deltaILFileStream.is_open() && deltaMDFileStream.is_open())
+    {
+        auto deltaILSize = deltaILFileStream.tellg();
+        BYTE *deltaILMemBlock = new BYTE[deltaILSize];
+        deltaILFileStream.seekg(0, std::ios::beg);
+        deltaILFileStream.read((char*)deltaILMemBlock, deltaILSize);
+
+        auto deltaMDSize = deltaMDFileStream.tellg();
+        BYTE *deltaMDMemBlock = new BYTE[deltaMDSize];
+        deltaMDFileStream.seekg(0, std::ios::beg);
+        deltaMDFileStream.read((char*)deltaMDMemBlock, deltaMDSize);
+
+        ToRelease<ICorDebugModule> pModule;
+        IfFailRet(pModules->GetModuleWithName(dllFileName, &pModule, true));
+        ToRelease<ICorDebugModule2> pModule2;
+        IfFailRet(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2));
+        IfFailRet(pModule2->ApplyChanges((ULONG)deltaMDSize, deltaMDMemBlock, (ULONG)deltaILSize, deltaILMemBlock));
+    }
+    else
+    {
+        Status = COR_E_FILENOTFOUND;
+    }
+
+    if (deltaILFileStream.is_open())
+        deltaILFileStream.close();
+    if (deltaMDFileStream.is_open())
+        deltaMDFileStream.close();
+
+    return Status;
+}
+
+HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL, const std::string &deltaPDB)
+{
+    LogFuncEntry();
+
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+
+    if (!m_iCorProcess)
+        return E_FAIL;
+
+    return ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL);
 }
 
 } // namespace netcoredbg

@@ -89,6 +89,7 @@ private:
 
     bool m_justMyCode;
     bool m_stepFiltering;
+    bool m_hotReload;
 
     std::mutex m_startupMutex;
     std::condition_variable m_startupCV;
@@ -132,6 +133,8 @@ public:
     void SetJustMyCode(bool enable) override;
     bool IsStepFiltering() const override { return m_stepFiltering; }
     void SetStepFiltering(bool enable) override;
+    bool IsHotReload() const override { return m_hotReload; }
+    HRESULT SetHotReload(bool enable) override;
 
     HRESULT Initialize() override;
     HRESULT Attach(int pid) override;
@@ -164,6 +167,7 @@ public:
     HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) override;
     HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) override;
     void FreeUnmanaged(PVOID mem) override;
+    HRESULT HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL, const std::string &deltaPDB) override;
 
     void FindFileNames(string_view pattern, unsigned limit, SearchCallback) override;
     void FindFunctions(string_view pattern, unsigned limit, SearchCallback) override;

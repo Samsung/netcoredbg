@@ -1008,6 +1008,8 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
             m_sharedDebugger->SetJustMyCode(args.at(1) == "1");
         else if (args.at(0) == "enable-step-filtering")
             m_sharedDebugger->SetStepFiltering(args.at(1) == "1");
+        else if (args.at(0) == "enable-hot-reload")
+            return m_sharedDebugger->SetHotReload(args.at(1) == "1");
         else
             return E_FAIL;
 
@@ -1090,6 +1092,24 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
         IfFailRet(m_sharedDebugger->Evaluate(frameId, miVariable.variable.evaluateName, variable, output));
 
         output = "value=\"" + MIProtocol::EscapeMIValue(variable.value) + "\"";
+        return S_OK;
+    }},
+    { "apply-deltas", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        HRESULT Status;
+
+        if (args.size() != 4)
+        {
+            output = "Command requires 4 arguments";
+            return E_FAIL;
+        }
+
+        std::string dllFileName = args.at(0);
+        std::string deltaMD = args.at(1);
+        std::string deltaIL = args.at(2);
+        std::string deltaPDB = args.at(3);
+
+        IfFailRet(m_sharedDebugger->HotReloadApplyDeltas(dllFileName, deltaMD, deltaIL, deltaPDB));
+
         return S_OK;
     }},
     };

@@ -569,7 +569,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(ICorDebugAppDomain *pAppDo
 
     Module module;
     std::string outputText;
-    m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode(), outputText);
+    m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode(), m_debugger.IsHotReload(), outputText);
     if (!outputText.empty())
         m_debugger.m_sharedProtocol->EmitOutputEvent(OutputStdErr, outputText);
     m_debugger.m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));

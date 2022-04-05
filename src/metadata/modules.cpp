@@ -750,7 +750,7 @@ static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID 
     );
 }
 
-HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, bool needJMC, std::string &outputText)
+HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, bool needJMC, bool needHotReload, std::string &outputText)
 {
     HRESULT Status;
 
@@ -771,7 +771,9 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
         ToRelease<ICorDebugModule2> pModule2;
         if (SUCCEEDED(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2)))
         {
-            if (!needJMC)
+            if (needHotReload)
+                pModule2->SetJITCompilerFlags(CORDEBUG_JIT_ENABLE_ENC);
+            else if (!needJMC) // Note, CORDEBUG_JIT_DISABLE_OPTIMIZATION is part of CORDEBUG_JIT_ENABLE_ENC.
                 pModule2->SetJITCompilerFlags(CORDEBUG_JIT_DISABLE_OPTIMIZATION);
 
             if (SUCCEEDED(Status = pModule2->SetJMCStatus(TRUE, 0, nullptr))) // If we can't enable JMC for module, no reason disable JMC on module's types/methods.
@@ -874,7 +876,7 @@ HRESULT Modules::GetHoistedLocalScopes(
     return S_OK;
 }
 
-HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **ppModule)
+HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **ppModule, bool onlyWithPDB)
 {
     std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
 
@@ -883,6 +885,9 @@ HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **pp
         ModuleInfo &mdInfo = info_pair.second;
 
         std::string path = GetModuleFileName(mdInfo.m_iCorModule);
+
+        if (onlyWithPDB && !mdInfo.m_symbolReaderHandle)
+            continue;
 
         if (GetFileName(path) == name)
         {

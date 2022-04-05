@@ -73,6 +73,8 @@ public:
     virtual void SetJustMyCode(bool enable) = 0;
     virtual bool IsStepFiltering() const = 0;
     virtual void SetStepFiltering(bool enable) = 0;
+    virtual bool IsHotReload() const = 0;
+    virtual HRESULT SetHotReload(bool enable) = 0;
     virtual HRESULT Initialize() = 0;
     virtual HRESULT Attach(int pid) = 0;
     virtual HRESULT Launch(const std::string &fileExec, const std::vector<std::string> &execArgs, const std::map<std::string, std::string> &env,
@@ -101,6 +103,7 @@ public:
     virtual HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) = 0;
     virtual HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) = 0;
     virtual void FreeUnmanaged(PVOID mem) = 0;
+    virtual HRESULT HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL, const std::string &deltaPDB) = 0;
     typedef std::function<void(const char *)> SearchCallback;
     virtual void FindFileNames(string_view pattern, unsigned limit, SearchCallback) = 0;
     virtual void FindFunctions(string_view pattern, unsigned limit, SearchCallback) = 0;
