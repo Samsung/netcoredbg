@@ -31,6 +31,9 @@ const char DebuggerAttribute::StepThrough[] = "System.Diagnostics.DebuggerStepTh
 // Apply the attribute directly to the 'Get' and 'Set' procedures as appropriate.
 const char DebuggerAttribute::Hidden[] = "System.Diagnostics.DebuggerHiddenAttribute..ctor";
 
+static std::vector<std::string> typeAttrNames{DebuggerAttribute::NonUserCode, DebuggerAttribute::StepThrough};
+static std::vector<std::string> methodAttrNames{DebuggerAttribute::NonUserCode, DebuggerAttribute::StepThrough, DebuggerAttribute::Hidden};
+
 bool ForEachAttribute(IMetaDataImport *pMD, mdToken tok, std::function<HRESULT(const std::string &AttrName)> cb)
 {
     bool found = false;
@@ -72,12 +75,9 @@ bool HasAttribute(IMetaDataImport *pMD, mdToken tok, std::vector<std::string> &a
 
 static HRESULT GetNonJMCMethodsForTypeDef(
     IMetaDataImport *pMD,
-    PVOID pSymbolReaderHandle,
     mdTypeDef typeDef,
     std::vector<mdToken> &excludeMethods)
 {
-    static std::vector<std::string> attrNames{DebuggerAttribute::NonUserCode, DebuggerAttribute::StepThrough, DebuggerAttribute::Hidden};
-
     ULONG numMethods = 0;
     HCORENUM fEnum = NULL;
     mdMethodDef methodDef;
@@ -92,7 +92,7 @@ static HRESULT GetNonJMCMethodsForTypeDef(
                                        nullptr, nullptr, nullptr, nullptr, nullptr)))
             continue;
 
-        if (HasAttribute(pMD, methodDef, attrNames))
+        if (HasAttribute(pMD, methodDef, methodAttrNames))
             excludeMethods.push_back(methodDef);
     }
     pMD->CloseEnum(fEnum);
@@ -100,7 +100,7 @@ static HRESULT GetNonJMCMethodsForTypeDef(
     return S_OK;
 }
 
-static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, PVOID pSymbolReaderHandle, std::vector<mdToken> &excludeTokens)
+static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, std::vector<mdToken> &excludeTokens)
 {
     HRESULT Status;
 
@@ -109,29 +109,23 @@ static HRESULT GetNonJMCClassesAndMethods(ICorDebugModule *pModule, PVOID pSymbo
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
-    static std::vector<std::string> attrNames{DebuggerAttribute::NonUserCode, DebuggerAttribute::StepThrough};
-
     ULONG numTypedefs = 0;
     HCORENUM fEnum = NULL;
     mdTypeDef typeDef;
     while(SUCCEEDED(pMD->EnumTypeDefs(&fEnum, &typeDef, 1, &numTypedefs)) && numTypedefs != 0)
     {
-        if (HasAttribute(pMD, typeDef, attrNames))
+        if (HasAttribute(pMD, typeDef, typeAttrNames))
             excludeTokens.push_back(typeDef);
         else
-            GetNonJMCMethodsForTypeDef(pMD, pSymbolReaderHandle, typeDef, excludeTokens);
+            GetNonJMCMethodsForTypeDef(pMD, typeDef, excludeTokens);
     }
     pMD->CloseEnum(fEnum);
 
     return S_OK;
 }
 
-HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHandle)
+void DisableJMCForTokenList(ICorDebugModule *pModule, const std::vector<mdToken> &excludeTokens)
 {
-    std::vector<mdToken> excludeTokens;
-
-    GetNonJMCClassesAndMethods(pModule, pSymbolReaderHandle, excludeTokens);
-
     for (mdToken token : excludeTokens)
     {
         if (TypeFromToken(token) == mdtMethodDef)
@@ -155,7 +149,52 @@ HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHand
             pClass2->SetJMCStatus(FALSE);
         }
     }
+}
 
+HRESULT DisableJMCByAttributes(ICorDebugModule *pModule)
+{
+    HRESULT Status;
+    std::vector<mdToken> excludeTokens;
+    IfFailRet(GetNonJMCClassesAndMethods(pModule, excludeTokens));
+
+    DisableJMCForTokenList(pModule, excludeTokens);
+    return S_OK;
+}
+
+HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, const std::unordered_set<mdMethodDef> &methodTokens)
+{
+    HRESULT Status;
+    std::vector<mdToken> excludeTokens;
+    std::unordered_set<mdToken> excludeTypeTokens;
+
+    ToRelease<IUnknown> pMDUnknown;
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    for (mdMethodDef methodToken : methodTokens)
+    {
+        // Note, in case of method we need check class attributes first, since class also could have it.
+        ToRelease<ICorDebugFunction> pFunction;
+        IfFailRet(pModule->GetFunctionFromToken(methodToken, &pFunction));
+        ToRelease<ICorDebugClass> pClass;
+        IfFailRet(pFunction->GetClass(&pClass));
+        mdToken typeToken;
+        IfFailRet(pClass->GetToken(&typeToken));
+
+        // In case class have "not user code" related attribute, no reason set JMC to false for each method, set it to class will be enough.
+        if (HasAttribute(pMD, typeToken, typeAttrNames))
+        {
+            excludeTypeTokens.emplace(typeToken);
+        }
+        else if (HasAttribute(pMD, methodToken, methodAttrNames))
+        {
+            excludeTokens.push_back(methodToken);
+        }
+    }
+    std::copy(excludeTypeTokens.begin(), excludeTypeTokens.end(), std::back_inserter(excludeTokens));
+
+    DisableJMCForTokenList(pModule, excludeTokens);
     return S_OK;
 }
 

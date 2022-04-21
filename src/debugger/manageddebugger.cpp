@@ -902,15 +902,56 @@ HRESULT ManagedDebugger::AllBreakpointsActivate(bool act)
     return m_uniqueBreakpoints->AllBreakpointsActivate(act);
 }
 
-HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
+static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModules, bool hotReload, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
 {
     HRESULT Status;
+
+    ToRelease<ICorDebugFunction> pFunc;
+    IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pFunc->GetModule(&pModule));
+
+    if (hotReload)
+    {
+        // In case current (top) code version is 1, executed in this frame method version can't be not 1.
+        ULONG32 currentVersion = 1;
+        ULONG32 methodVersion = 1;
+        if (SUCCEEDED(pFunc->GetCurrentVersionNumber(&currentVersion)) && currentVersion != 1)
+        {
+            ToRelease<ICorDebugCode> pCode;
+            IfFailRet(pFunc->GetILCode(&pCode));
+            IfFailRet(pCode->GetVersionNumber(&methodVersion));
+        }
+
+        if (methodVersion != currentVersion)
+        {
+            std::string moduleNamePrefix;
+            WCHAR name[mdNameLen];
+            ULONG32 name_len = 0;
+            if (SUCCEEDED(pModule->GetName(_countof(name), &name_len, name)))
+            {
+                moduleNamePrefix = to_utf8(name);
+                std::size_t i = moduleNamePrefix.find_last_of("/\\");
+                if (i != std::string::npos)
+                    moduleNamePrefix = moduleNamePrefix.substr(i + 1);
+                moduleNamePrefix += "!";
+            }
+
+            std::string methodName;
+            TypePrinter::GetMethodName(pFrame, methodName);
+            // [Outdated Code] module.dll!MethodName()
+            stackFrame = StackFrame(threadId, level, "[Outdated Code] " + moduleNamePrefix + methodName);
+
+            return S_OK;
+        }
+    }
 
     stackFrame = StackFrame(threadId, level, "");
 
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
-    if (SUCCEEDED(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
+    if (SUCCEEDED(pModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
     {
         stackFrame.source = Source(sp.document);
         stackFrame.line = sp.startLine;
@@ -921,12 +962,6 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
 
     mdMethodDef methodToken;
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
-
-    ToRelease<ICorDebugFunction> pFunc;
-    IfFailRet(pFrame->GetFunction(&pFunc));
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
 
     ULONG32 nOffset = 0;
     ToRelease<ICorDebugNativeFrame> pNativeFrame;
@@ -944,6 +979,11 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
     return S_OK;
+}
+
+HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
+{
+    return InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, level, stackFrame);
 }
 
 HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
@@ -1003,7 +1043,7 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel star
             case FrameCLRManaged:
                 {
                     StackFrame stackFrame;
-                    GetFrameLocation(pFrame, threadId, FrameLevel{currentFrame}, stackFrame);
+                    InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, FrameLevel{currentFrame}, stackFrame);
                     stackFrames.push_back(stackFrame);
                 }
                 break;
@@ -1257,6 +1297,19 @@ static HRESULT ApplyMetadataAndILDeltas(Modules *pModules, const std::string &dl
     return Status;
 }
 
+HRESULT ManagedDebugger::ApplyPdbDelta(const std::string &dllFileName, const std::string &deltaPDB)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(m_sharedModules->GetModuleWithName(dllFileName, &pModule, true));
+
+    IfFailRet(m_sharedModules->ApplyPdbDelta(pModule, m_justMyCode, deltaPDB));
+
+    // TODO add check resolved breakpoints and added constructors.
+
+    return S_OK;
+}
+
 HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL, const std::string &deltaPDB)
 {
     LogFuncEntry();
@@ -1266,7 +1319,10 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
     if (!m_iCorProcess)
         return E_FAIL;
 
-    return ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL);
+    HRESULT Status;
+    IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
+
+    return ApplyPdbDelta(dllFileName, deltaPDB);
 }
 
 } // namespace netcoredbg

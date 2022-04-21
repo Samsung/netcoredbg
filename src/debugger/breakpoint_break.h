@@ -43,12 +43,14 @@ private:
     {
         CORDB_ADDRESS modAddress = 0;
         mdMethodDef methodToken = 0;
+        ULONG32 methodVersion = 0;
         ULONG32 ilOffset = 0;
 
         void Reset()
         {
             modAddress = 0;
             methodToken = 0;
+            methodVersion = 0;
             ilOffset = 0;
         }
     };

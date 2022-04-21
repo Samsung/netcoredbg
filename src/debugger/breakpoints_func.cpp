@@ -201,12 +201,15 @@ HRESULT FuncBreakpoints::AddFuncBreakpoint(ManagedFuncBreakpoint &fbp, ResolvedF
         if (Status == S_OK) // S_FALSE - don't skip breakpoint
             return S_OK;
 
-        ULONG32 ilCloseOffset;
-        if (FAILED(m_sharedModules->GetNextSequencePointInMethod(entry.first, entry.second, 0, ilCloseOffset)))
-            return S_OK;
-
         ToRelease<ICorDebugFunction> pFunc;
         IfFailRet(entry.first->GetFunctionFromToken(entry.second, &pFunc));
+        ULONG32 currentVersion; // Note, new breakpoints could be setup for last code version only, since protocols (MI, VSCode, ...) provide method name (sig) only.
+        IfFailRet(pFunc->GetCurrentVersionNumber(&currentVersion));
+
+        ULONG32 ilCloseOffset;
+        if (FAILED(m_sharedModules->GetNextSequencePointInMethod(entry.first, entry.second, currentVersion, 0, ilCloseOffset)))
+            return S_OK;
+
         ToRelease<ICorDebugCode> pCode;
         IfFailRet(pFunc->GetILCode(&pCode));
 

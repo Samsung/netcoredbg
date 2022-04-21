@@ -154,7 +154,8 @@ static HRESULT TrySetupAsyncEntryBreakpoint(ICorDebugModule *pModule, IMetaDataI
 
     // Note, in case of async `MoveNext` method, user code don't start from 0 IL offset.
     ULONG32 ilCloseOffset;
-    IfFailRet(pModules->GetNextSequencePointInMethod(pModule, resultToken, 0, ilCloseOffset));
+    const ULONG32 currentVersion = 1; // In case entry breakpoint, this can be only base PDB, not delta PDB for sure.
+    IfFailRet(pModules->GetNextSequencePointInMethod(pModule, resultToken, currentVersion, 0, ilCloseOffset));
 
     entryPointToken = resultToken;
     entryPointOffset = ilCloseOffset;

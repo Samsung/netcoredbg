@@ -32,7 +32,8 @@ struct DebuggerAttribute
 
 bool HasAttribute(IMetaDataImport *pMD, mdToken tok, const char *attrName);
 bool HasAttribute(IMetaDataImport *pMD, mdToken tok, std::vector<std::string> &attrNames);
-HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, PVOID pSymbolReaderHandle);
+HRESULT DisableJMCByAttributes(ICorDebugModule *pModule);
+HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, const std::unordered_set<mdMethodDef> &methodTokens);
 
 struct method_input_data_t
 {
@@ -113,19 +114,23 @@ class Modules
 {
     struct ModuleInfo
     {
-        PVOID m_symbolReaderHandle = nullptr;
+        std::vector<PVOID> m_symbolReaderHandles;
         ToRelease<ICorDebugModule> m_iCorModule;
 
         ModuleInfo(PVOID Handle, ICorDebugModule *Module) :
-            m_symbolReaderHandle(Handle),
             m_iCorModule(Module)
-        {}
+        {
+            if (Handle == nullptr)
+                return;
+
+            m_symbolReaderHandles.reserve(1);
+            m_symbolReaderHandles.emplace_back(Handle);
+        }
 
         ModuleInfo(ModuleInfo&& other) noexcept :
-            m_symbolReaderHandle(other.m_symbolReaderHandle),
+            m_symbolReaderHandles(std::move(other.m_symbolReaderHandles)),
             m_iCorModule(std::move(other.m_iCorModule))
         {
-            other.m_symbolReaderHandle = nullptr;
         }
         ModuleInfo(const ModuleInfo&) = delete;
         ModuleInfo& operator=(ModuleInfo&&) = delete;
@@ -203,6 +208,7 @@ public:
 
     HRESULT GetSourceFullPathByIndex(unsigned index, std::string &fullPath);
     HRESULT GetIndexBySourceFullPath(std::string fullPath, unsigned &index);
+    HRESULT ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule, bool onlyWithPDB = false);
 
@@ -246,6 +252,7 @@ public:
     HRESULT GetFrameNamedLocalVariable(
         ICorDebugModule *pModule,
         mdMethodDef methodToken,
+        ULONG32 methodVersion,
         ULONG localIndex,
         WSTRING &localName,
         ULONG32 *pIlStart,
@@ -254,25 +261,22 @@ public:
     HRESULT GetHoistedLocalScopes(
         ICorDebugModule *pModule,
         mdMethodDef methodToken,
+        ULONG32 methodVersion,
         PVOID *data,
         int32_t &hoistedLocalScopesCount);
 
     HRESULT GetNextSequencePointInMethod(
         ICorDebugModule *pModule,
         mdMethodDef methodToken,
+        ULONG32 methodVersion,
         ULONG32 ilOffset,
         ULONG32 &ilCloseOffset,
         bool *noUserCodeFound = nullptr);
 
     HRESULT GetSequencePointByILOffset(
-        PVOID pSymbolReaderHandle,
-        mdMethodDef methodToken,
-        ULONG32 ilOffset,
-        SequencePoint *sequencePoint);
-
-    HRESULT GetSequencePointByILOffset(
         CORDB_ADDRESS modAddress,
         mdMethodDef methodToken,
+        ULONG32 methodVersion,
         ULONG32 ilOffset,
         SequencePoint &sequencePoint);
 
@@ -295,30 +299,37 @@ public:
         {};
     };
 
-    bool IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken);
-    bool FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 ipOffset, AwaitInfo **awaitInfo);
-    bool FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 &lastIlOffset);
+    bool IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion);
+    bool FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion, ULONG32 ipOffset, AwaitInfo **awaitInfo);
+    bool FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion, ULONG32 &lastIlOffset);
 
 private:
+
+    HRESULT GetSequencePointByILOffset(
+        PVOID pSymbolReaderHandle,
+        mdMethodDef methodToken,
+        ULONG32 ilOffset,
+        SequencePoint *sequencePoint);
 
     struct AsyncMethodInfo
     {
         CORDB_ADDRESS modAddress;
         mdMethodDef methodToken;
+        ULONG32 methodVersion;
 
         std::vector<AwaitInfo> awaits;
         // Part of NotifyDebuggerOfWaitCompletion magic, see ManagedDebugger::SetupAsyncStep().
         ULONG32 lastIlOffset;
 
         AsyncMethodInfo() :
-            modAddress(0), methodToken(mdMethodDefNil), awaits(), lastIlOffset(0)
+            modAddress(0), methodToken(mdMethodDefNil), methodVersion(0), awaits(), lastIlOffset(0)
         {};
     };
 
     AsyncMethodInfo asyncMethodSteppingInfo;
     std::mutex m_asyncMethodSteppingInfoMutex;
     // Note, result stored into asyncMethodSteppingInfo.
-    HRESULT GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken);
+    HRESULT GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion);
 };
 
 } // namespace netcoredbg

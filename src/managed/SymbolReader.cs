@@ -210,6 +210,96 @@ namespace NetCoreDbg
         }
 
         /// <summary>
+        /// Maps global method token to a handle local to the current delta PDB. 
+        /// Debug tables referring to methods currently use local handles, not global handles. 
+        /// See https://github.com/dotnet/roslyn/issues/16286
+        /// </summary>
+        private static MethodDefinitionHandle GetDeltaRelativeMethodDefinitionHandle(MetadataReader reader, int methodToken)
+        {
+            var globalHandle = (MethodDefinitionHandle)MetadataTokens.EntityHandle(methodToken);
+
+            if (reader.GetTableRowCount(TableIndex.EncMap) == 0)
+            {
+                return globalHandle;
+            }
+
+            var globalDebugHandle = globalHandle.ToDebugInformationHandle();
+
+            int rowId = 1;
+            foreach (var handle in reader.GetEditAndContinueMapEntries())
+            {
+                if (handle.Kind == HandleKind.MethodDebugInformation)
+                {
+                    if (handle == globalDebugHandle)
+                    {
+                        return MetadataTokens.MethodDefinitionHandle(rowId);
+                    }
+
+                    rowId++;
+                }
+            }
+
+            // compiler generated invalid EncMap table:
+            throw new BadImageFormatException();
+        }
+
+        /// <summary>
+        /// Load delta PDB file.
+        /// </summary>
+        /// <param name="isFileLayout">Delta PDB file path</param>
+        /// <returns>Symbol reader handle or zero if error</returns>
+        internal static IntPtr LoadDeltaPdb([MarshalAs(UnmanagedType.LPWStr)] string pdbPath, out IntPtr data, out int count)
+        {
+            data = IntPtr.Zero;
+            count = 0;
+
+            try
+            {
+                var pdbStream = TryOpenFile(pdbPath);
+                if (pdbStream == null)
+                    return IntPtr.Zero;
+
+                var provider = MetadataReaderProvider.FromPortablePdbStream(pdbStream);
+                var reader = provider.GetMetadataReader();
+
+                OpenedReader openedReader = new OpenedReader(provider, reader);
+                if (openedReader == null)
+                    return IntPtr.Zero;
+
+                var list = new List<int>();
+                foreach (var handle in reader.GetEditAndContinueMapEntries())
+                {
+                    if (handle.Kind == HandleKind.MethodDebugInformation)
+                    {
+                        var methodToken = MetadataTokens.GetToken(((MethodDebugInformationHandle)handle).ToDefinitionHandle());
+                        list.Add(methodToken);
+                    }
+                }
+                if (list.Count > 0)
+                {
+                    var methodsArray = list.ToArray();
+
+                    data = Marshal.AllocCoTaskMem(list.Count * 4);
+                    IntPtr dataPtr = data;
+                    foreach (var p in list)
+                    {
+                        Marshal.WriteInt32(dataPtr, p);
+                        dataPtr = dataPtr + 4;
+                    }
+                    count = list.Count;
+                }
+
+                GCHandle gch = GCHandle.Alloc(openedReader);
+                return GCHandle.ToIntPtr(gch);
+            }
+            catch
+            {
+            }
+
+            return IntPtr.Zero;
+        }
+
+        /// <summary>
         /// Cleanup and dispose of symbol reader handle
         /// </summary>
         /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
@@ -229,13 +319,13 @@ namespace NetCoreDbg
 
         internal static SequencePointCollection GetSequencePointCollection(int methodToken, MetadataReader reader)
         {
-            Handle handle = MetadataTokens.Handle(methodToken);
+            Handle handle = GetDeltaRelativeMethodDefinitionHandle(reader, methodToken);
             if (handle.Kind != HandleKind.MethodDefinition)
-                throw new System.ArgumentException();
+                return new SequencePointCollection();
 
             MethodDebugInformationHandle methodDebugHandle = ((MethodDefinitionHandle)handle).ToDebugInformationHandle();
             if (methodDebugHandle.IsNil)
-                throw new System.ArgumentException();
+                return new SequencePointCollection();
 
             MethodDebugInformation methodDebugInfo = reader.GetMethodDebugInformation(methodDebugHandle);
             return methodDebugInfo.GetSequencePoints();
@@ -512,6 +602,9 @@ namespace NetCoreDbg
                     }
                 }
 
+                if (ModuleData.Count == 0)
+                    return RetCode.Fail;
+
                 int structModuleMethodsDataSize = Marshal.SizeOf<file_methods_data_t>();
                 module_methods_data_t managedData;
                 managedData.fileNum = ModuleData.Count;
@@ -588,19 +681,15 @@ namespace NetCoreDbg
         /// <param name="Count">entry's count in data</param>
         /// <param name="data">pointer to memory with result</param>
         /// <returns>"Ok" if information is available</returns>
-        internal static RetCode ResolveBreakPoints(IntPtr symbolReaderHandle, int tokenNum, IntPtr Tokens, int sourceLine, int nestedToken, out int Count, out IntPtr data)
+        internal static RetCode ResolveBreakPoints(IntPtr symbolReaderHandles, int tokenNum, IntPtr Tokens, int sourceLine, int nestedToken, out int Count, out IntPtr data)
         {
-            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            Debug.Assert(symbolReaderHandles != IntPtr.Zero);
             Count = 0;
             data = IntPtr.Zero;
             var list = new List<resolved_bp_t>();
 
             try
             {
-
-                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
-                MetadataReader reader = ((OpenedReader)gch.Target).Reader;
-
                 // In case nestedToken + sourceLine is part of constructor (tokenNum > 1) we could have cases:
                 // 1. type FieldName1 = new Type();
                 //    void MethodName() {}; type FieldName2 = new Type(); ...  <-- sourceLine
@@ -615,7 +704,7 @@ namespace NetCoreDbg
                 // We need check if nestedToken's method code closer to sourceLine than code from methodToken's method.
                 // If sourceLine closer to nestedToken's method code - setup breakpoint in nestedToken's method.
 
-                SequencePoint FirstSequencePointForSourceLine(int methodToken)
+                SequencePoint FirstSequencePointForSourceLine(ref MetadataReader reader, int methodToken)
                 {
                     // Note, SequencePoints ordered by IL offsets, not by line numbers.
                     // For example, infinite loop `while(true)` will have IL offset after cycle body's code.
@@ -649,16 +738,20 @@ namespace NetCoreDbg
                 }
 
                 int elementSize = 4;
-                for (int i = 0; i < tokenNum * elementSize; i += elementSize)
+                for (int i = 0; i < tokenNum; i++)
                 {
-                    int methodToken = Marshal.ReadInt32(Tokens, i);
-                    SequencePoint current_p = FirstSequencePointForSourceLine(methodToken);
+                    IntPtr symbolReaderHandle = Marshal.ReadIntPtr(symbolReaderHandles, i * IntPtr.Size);
+                    GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+                    MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+                    int methodToken = Marshal.ReadInt32(Tokens, i * elementSize);
+                    SequencePoint current_p = FirstSequencePointForSourceLine(ref reader, methodToken);
                     // Note, we don't check that current_p was found or not, since we know for sure, that sourceLine could be resolved in method.
                     // Same idea for nested_p below, if we have nestedToken - it will be resolved for sure.
 
                     if (nestedToken != 0)
                     {
-                        SequencePoint nested_p = FirstSequencePointForSourceLine(nestedToken);
+                        SequencePoint nested_p = FirstSequencePointForSourceLine(ref reader, nestedToken);
                         if (current_p.EndLine > nested_p.EndLine || (current_p.EndLine == nested_p.EndLine && current_p.EndColumn > nested_p.EndColumn))
                         {
                             list.Add(new resolved_bp_t(nested_p.StartLine, nested_p.EndLine, nested_p.Offset, nestedToken));
@@ -796,7 +889,7 @@ namespace NetCoreDbg
             GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
             MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
-            Handle handle = MetadataTokens.Handle(methodToken);
+            Handle handle = GetDeltaRelativeMethodDefinitionHandle(reader, methodToken);
             if (handle.Kind != HandleKind.MethodDefinition)
                 return false;
 
@@ -843,7 +936,7 @@ namespace NetCoreDbg
                 GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
                 MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
-                Handle handle = MetadataTokens.Handle(methodToken);
+                Handle handle = GetDeltaRelativeMethodDefinitionHandle(reader, methodToken);
                 if (handle.Kind != HandleKind.MethodDefinition)
                     return RetCode.Fail;
 
@@ -936,7 +1029,7 @@ namespace NetCoreDbg
                 GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
                 MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
-                Handle handle = MetadataTokens.Handle(methodToken);
+                Handle handle = GetDeltaRelativeMethodDefinitionHandle(reader, methodToken);
                 if (handle.Kind != HandleKind.MethodDefinition)
                     return false;
 
@@ -1248,7 +1341,7 @@ namespace NetCoreDbg
                 GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
                 MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
-                Handle handle = MetadataTokens.Handle(methodToken);
+                Handle handle = GetDeltaRelativeMethodDefinitionHandle(reader, methodToken);
                 if (handle.Kind != HandleKind.MethodDefinition)
                     return RetCode.Fail;
 

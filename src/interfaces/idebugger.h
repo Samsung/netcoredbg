@@ -104,6 +104,7 @@ public:
     virtual HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) = 0;
     virtual void FreeUnmanaged(PVOID mem) = 0;
     virtual HRESULT HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL, const std::string &deltaPDB) = 0;
+    virtual HRESULT ApplyPdbDelta(const std::string &dllFileName, const std::string &deltaPDB) = 0;
     typedef std::function<void(const char *)> SearchCallback;
     virtual void FindFileNames(string_view pattern, unsigned limit, SearchCallback) = 0;
     virtual void FindFunctions(string_view pattern, unsigned limit, SearchCallback) = 0;

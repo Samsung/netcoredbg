@@ -133,7 +133,7 @@ namespace
     }
 
 
-    bool GetMethodTokensByLinuNumber(const std::vector<std::vector<method_data_t>> &methodBpData,
+    bool GetMethodTokensByLineNumber(const std::vector<std::vector<method_data_t>> &methodBpData,
                                      const std::unordered_map<method_data_t, std::vector<mdMethodDef>, method_data_t_hash> &multiMethodBpData,
                                      /*in,out*/ uint32_t &lineNum,
                                      /*out*/ std::vector<mdMethodDef> &Tokens,
@@ -232,8 +232,11 @@ namespace
 
 Modules::ModuleInfo::~ModuleInfo() noexcept
 {
-    if (m_symbolReaderHandle)
-        Interop::DisposeSymbols(m_symbolReaderHandle);
+    for (auto symbolReaderHandle : m_symbolReaderHandles)
+    {
+        if (symbolReaderHandle != nullptr)
+            Interop::DisposeSymbols(symbolReaderHandle);
+    }
 }
 
 static bool IsTargetFunction(const std::vector<std::string> &fullName, const std::vector<std::string> &targetName)
@@ -497,6 +500,11 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));
 
+    ToRelease<ICorDebugCode> pCode;
+    IfFailRet(pFunc->GetILCode(&pCode));
+    ULONG32 methodVersion;
+    IfFailRet(pCode->GetVersionNumber(&methodVersion));
+
     ToRelease<ICorDebugILFrame> pILFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
@@ -517,7 +525,10 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    return GetSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, &sequencePoint);
+    if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
+        return E_FAIL;
+
+    return GetSequencePointByILOffset(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, ilOffset, &sequencePoint);
 }
 
 HRESULT Modules::GetFrameILAndNextUserCodeILOffset(
@@ -534,6 +545,11 @@ HRESULT Modules::GetFrameILAndNextUserCodeILOffset(
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));
 
+    ToRelease<ICorDebugCode> pCode;
+    IfFailRet(pFunc->GetILCode(&pCode));
+    ULONG32 methodVersion;
+    IfFailRet(pCode->GetVersionNumber(&methodVersion));
+
     ToRelease<ICorDebugILFrame> pILFrame;
     IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
 
@@ -543,7 +559,7 @@ HRESULT Modules::GetFrameILAndNextUserCodeILOffset(
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pFunc->GetModule(&pModule));
 
-    return GetNextSequencePointInMethod(pModule, methodToken, ilOffset, ilCloseOffset, noUserCodeFound);
+    return GetNextSequencePointInMethod(pModule, methodToken, methodVersion, ilOffset, ilCloseOffset, noUserCodeFound);
 }
 
 HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)
@@ -559,6 +575,11 @@ HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_S
 
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));
+
+    ToRelease<ICorDebugCode> pCode;
+    IfFailRet(pFunc->GetILCode(&pCode));
+    ULONG32 methodVersion;
+    IfFailRet(pCode->GetVersionNumber(&methodVersion));
 
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pFunc->GetModule(&pModule));
@@ -585,7 +606,10 @@ HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_S
         }
 
         ModuleInfo &mdInfo = info_pair->second;
-        IfFailRet(Interop::GetStepRangesFromIP(mdInfo.m_symbolReaderHandle, nOffset, methodToken, &ilStartOffset, &ilEndOffset));
+        if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
+            return E_FAIL;
+
+        IfFailRet(Interop::GetStepRangesFromIP(mdInfo.m_symbolReaderHandles[methodVersion - 1], nOffset, methodToken, &ilStartOffset, &ilEndOffset));
     }
 
     if (ilStartOffset == ilEndOffset)
@@ -631,10 +655,11 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
 }
 
 // Caller must care about m_asyncMethodSteppingInfoMutex.
-HRESULT Modules::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken)
+HRESULT Modules::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion)
 {
     if (asyncMethodSteppingInfo.modAddress == modAddress &&
-        asyncMethodSteppingInfo.methodToken == methodToken)
+        asyncMethodSteppingInfo.methodToken == methodToken &&
+        asyncMethodSteppingInfo.methodVersion == methodVersion)
         return S_OK;
 
     if (!asyncMethodSteppingInfo.awaits.empty())
@@ -648,10 +673,12 @@ HRESULT Modules::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDe
     }
 
     ModuleInfo &mdInfo = info_pair->second;
+    if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
+        return E_FAIL;
 
     HRESULT Status;
     std::vector<Interop::AsyncAwaitInfoBlock> AsyncAwaitInfo;
-    IfFailRet(Interop::GetAsyncMethodSteppingInfo(mdInfo.m_symbolReaderHandle, methodToken, AsyncAwaitInfo, &asyncMethodSteppingInfo.lastIlOffset));
+    IfFailRet(Interop::GetAsyncMethodSteppingInfo(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, AsyncAwaitInfo, &asyncMethodSteppingInfo.lastIlOffset));
 
     for (const auto &entry : AsyncAwaitInfo)
     {
@@ -660,6 +687,7 @@ HRESULT Modules::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDe
 
     asyncMethodSteppingInfo.modAddress = modAddress;
     asyncMethodSteppingInfo.methodToken = methodToken;
+    asyncMethodSteppingInfo.methodVersion = methodVersion;
 
     return S_OK;
 }
@@ -667,11 +695,11 @@ HRESULT Modules::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDe
 // Check if method have await block. In this way we detect async method with awaits.
 // [in] modAddress - module address;
 // [in] methodToken - method token (from module with address modAddress).
-bool Modules::IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken)
+bool Modules::IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion)
 {
     const std::lock_guard<std::mutex> lock(m_asyncMethodSteppingInfoMutex);
 
-    return SUCCEEDED(GetAsyncMethodSteppingInfo(modAddress, methodToken));
+    return SUCCEEDED(GetAsyncMethodSteppingInfo(modAddress, methodToken, methodVersion));
 }
 
 // Find await block after IL offset in particular async method and return await info, if present.
@@ -680,11 +708,11 @@ bool Modules::IsMethodHaveAwait(CORDB_ADDRESS modAddress, mdMethodDef methodToke
 // [in] methodToken - method token (from module with address modAddress).
 // [in] ipOffset - IL offset;
 // [out] awaitInfo - result, next await info.
-bool Modules::FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 ipOffset, AwaitInfo **awaitInfo)
+bool Modules::FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion, ULONG32 ipOffset, AwaitInfo **awaitInfo)
 {
     const std::lock_guard<std::mutex> lock(m_asyncMethodSteppingInfoMutex);
 
-    if (FAILED(GetAsyncMethodSteppingInfo(modAddress, methodToken)))
+    if (FAILED(GetAsyncMethodSteppingInfo(modAddress, methodToken, methodVersion)))
         return false;
 
     for (auto &await : asyncMethodSteppingInfo.awaits)
@@ -711,11 +739,11 @@ bool Modules::FindNextAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToke
 // [in] modAddress - module address;
 // [in] methodToken - method token (from module with address modAddress).
 // [out] lastIlOffset - result, IL offset for last user code line in async method.
-bool Modules::FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 &lastIlOffset)
+bool Modules::FindLastIlOffsetAwaitInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion, ULONG32 &lastIlOffset)
 {
     const std::lock_guard<std::mutex> lock(m_asyncMethodSteppingInfoMutex);
 
-    if (FAILED(GetAsyncMethodSteppingInfo(modAddress, methodToken)))
+    if (FAILED(GetAsyncMethodSteppingInfo(modAddress, methodToken, methodVersion)))
         return false;
 
     lastIlOffset = asyncMethodSteppingInfo.lastIlOffset;
@@ -790,7 +818,7 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
                 // * DebuggerStepThroughAttribute tells the debugger to step through the code it's applied to, rather than step into the code.
                 // The .NET debugger considers all other code to be user code.
                 if (needJMC)
-                    DisableJMCByAttributes(pModule, pSymbolReaderHandle);
+                    DisableJMCByAttributes(pModule);
             }
             else if (Status == CORDBG_E_CANT_SET_TO_JMC)
             {
@@ -825,6 +853,7 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
 HRESULT Modules::GetFrameNamedLocalVariable(
     ICorDebugModule *pModule,
     mdMethodDef methodToken,
+    ULONG32 methodVersion,
     ULONG localIndex,
     WSTRING &localName,
     ULONG32 *pIlStart,
@@ -846,7 +875,10 @@ HRESULT Modules::GetFrameNamedLocalVariable(
         }
 
         ModuleInfo &mdInfo = info_pair->second;
-        IfFailRet(Interop::GetNamedLocalVariableAndScope(mdInfo.m_symbolReaderHandle, methodToken, localIndex, wLocalName, _countof(wLocalName), pIlStart, pIlEnd));
+        if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
+            return E_FAIL;
+
+        IfFailRet(Interop::GetNamedLocalVariableAndScope(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, localIndex, wLocalName, _countof(wLocalName), pIlStart, pIlEnd));
     }
 
     localName = wLocalName;
@@ -857,6 +889,7 @@ HRESULT Modules::GetFrameNamedLocalVariable(
 HRESULT Modules::GetHoistedLocalScopes(
     ICorDebugModule *pModule,
     mdMethodDef methodToken,
+    ULONG32 methodVersion,
     PVOID *data,
     int32_t &hoistedLocalScopesCount)
 {
@@ -872,7 +905,10 @@ HRESULT Modules::GetHoistedLocalScopes(
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    IfFailRet(Interop::GetHoistedLocalScopes(mdInfo.m_symbolReaderHandle, methodToken, data, hoistedLocalScopesCount));
+    if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
+        return E_FAIL;
+
+    IfFailRet(Interop::GetHoistedLocalScopes(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, data, hoistedLocalScopesCount));
     return S_OK;
 }
 
@@ -886,7 +922,7 @@ HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **pp
 
         std::string path = GetModuleFileName(mdInfo.m_iCorModule);
 
-        if (onlyWithPDB && !mdInfo.m_symbolReaderHandle)
+        if (onlyWithPDB && mdInfo.m_symbolReaderHandles.empty())
             continue;
 
         if (GetFileName(path) == name)
@@ -902,6 +938,7 @@ HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **pp
 HRESULT Modules::GetNextSequencePointInMethod(
     ICorDebugModule *pModule,
     mdMethodDef methodToken,
+    ULONG32 methodVersion,
     ULONG32 ilOffset,
     ULONG32 &ilCloseOffset,
     bool *noUserCodeFound)
@@ -918,7 +955,10 @@ HRESULT Modules::GetNextSequencePointInMethod(
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    return Interop::GetNextSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, ilCloseOffset, noUserCodeFound);
+    if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
+        return E_FAIL;
+
+    return Interop::GetNextSequencePointByILOffset(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, ilOffset, ilCloseOffset, noUserCodeFound);
 }
 
 HRESULT Modules::GetSequencePointByILOffset(
@@ -946,6 +986,7 @@ HRESULT Modules::GetSequencePointByILOffset(
 HRESULT Modules::GetSequencePointByILOffset(
     CORDB_ADDRESS modAddress,
     mdMethodDef methodToken,
+    ULONG32 methodVersion,
     ULONG32 ilOffset,
     Modules::SequencePoint &sequencePoint)
 {
@@ -957,7 +998,10 @@ HRESULT Modules::GetSequencePointByILOffset(
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    return GetSequencePointByILOffset(mdInfo.m_symbolReaderHandle, methodToken, ilOffset, &sequencePoint);
+    if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
+        return E_FAIL;
+
+    return GetSequencePointByILOffset(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, ilOffset, &sequencePoint);
 }
 
 HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> cb)
@@ -1240,7 +1284,7 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
         std::vector<mdMethodDef> Tokens;
         uint32_t correctedStartLine = sourceLine;
         mdMethodDef closestNestedToken = 0;
-        if (!GetMethodTokensByLinuNumber(sourceData.methodsData, sourceData.multiMethodsData, correctedStartLine, Tokens, closestNestedToken))
+        if (!GetMethodTokensByLineNumber(sourceData.methodsData, sourceData.multiMethodsData, correctedStartLine, Tokens, closestNestedToken))
             continue;
         // correctedStartLine - in case line not belong any methods, if possible, will be "moved" to first line of method below sourceLine.
 
@@ -1254,9 +1298,33 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
             return E_FAIL;
         }
 
+        ModuleInfo &mdInfo = info_pair->second;
+        if (mdInfo.m_symbolReaderHandles.empty())
+            continue;
+
+        // In case one source line (field/property initialization) compiled into all constructors, after Hot Reload, constructors may have different
+        // code version numbers, that mean debug info located in different symbol readers.
+        std::vector<PVOID> symbolReaderHandles;
+        symbolReaderHandles.reserve(Tokens.size());
+        for (auto methodToken : Tokens)
+        {
+            // Note, new breakpoints could be setup for last code version only, since protocols (MI, VSCode, ...) provide source:line data only.
+            ULONG32 currentVersion;
+            ToRelease<ICorDebugFunction> pFunction;
+            if (FAILED(info_pair->second.m_iCorModule->GetFunctionFromToken(methodToken, &pFunction)) ||
+                FAILED(pFunction->GetCurrentVersionNumber(&currentVersion)))
+            {
+                symbolReaderHandles.emplace_back(mdInfo.m_symbolReaderHandles[0]);
+                continue;
+            }
+
+            assert(mdInfo.m_symbolReaderHandles.size() >= currentVersion);
+            symbolReaderHandles.emplace_back(mdInfo.m_symbolReaderHandles[currentVersion - 1]);
+        }
+
         PVOID data = nullptr;
         int32_t Count = 0;
-        if (FAILED(Interop::ResolveBreakPoints(info_pair->second.m_symbolReaderHandle, (int32_t)Tokens.size(), Tokens.data(),
+        if (FAILED(Interop::ResolveBreakPoints(symbolReaderHandles.data(), (int32_t)Tokens.size(), Tokens.data(),
                                                correctedStartLine, closestNestedToken, Count, &data))
             || data == nullptr)
         {
@@ -1273,6 +1341,40 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
     }
 
     return S_OK;
+}
+
+HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+
+    auto info_pair = m_modulesInfo.find(modAddress);
+    if (info_pair == m_modulesInfo.end())
+    {
+        return E_FAIL; // Deltas could be applied for already loaded modules with PDB only.
+    }
+
+    ModuleInfo &mdInfo = info_pair->second;
+    if (mdInfo.m_symbolReaderHandles.empty())
+        return E_FAIL; // Deltas could be applied for already loaded modules with PDB only.
+
+    PVOID pSymbolReaderHandle =  nullptr;
+    std::unordered_set<mdMethodDef> methodTokens;
+    IfFailRet(Interop::LoadDeltaPdb(deltaPDB, &pSymbolReaderHandle, methodTokens));
+    mdInfo.m_symbolReaderHandles.emplace_back(pSymbolReaderHandle);
+
+    if (needJMC)
+        DisableJMCByAttributes(pModule, methodTokens);
+
+
+    // TODO update line breakpoints resolve data.
+    // TODO check line and functional breakpoints (new lines and new methods could be added).
+
+
+   return S_OK;
 }
 
 HRESULT Modules::GetSourceFullPathByIndex(unsigned index, std::string &fullPath)
@@ -1393,7 +1495,15 @@ HRESULT Modules::GetSource(ICorDebugModule *pModule, const std::string &sourcePa
     }
 
     ModuleInfo &mdInfo = info_pair->second;
-    return Interop::GetSource(mdInfo.m_symbolReaderHandle, sourcePath, (PVOID*)fileBuf, fileLen);
+    if (mdInfo.m_symbolReaderHandles.size() > 1)
+    {
+        LOGE("This feature not support simultaneous work with Hot Reload.");
+        return E_FAIL;
+    }
+
+    return mdInfo.m_symbolReaderHandles.empty() ?
+           E_FAIL :
+           Interop::GetSource(mdInfo.m_symbolReaderHandles[0], sourcePath, (PVOID*)fileBuf, fileLen);
 }
 
 } // namespace netcoredbg
