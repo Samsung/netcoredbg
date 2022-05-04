@@ -31,21 +31,16 @@ namespace netcoredbg
 
 bool ManagedCallback::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
 {
-    HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackBreakpoint(pAppDomain, pThread)) &&
-        Status == S_OK) // S_FALSE - no error, but steppers not affect on callback
-    {
+    // S_FALSE - not error and steppers not affect on callback
+    if (S_FALSE != m_debugger.m_uniqueSteppers->ManagedCallbackBreakpoint(pAppDomain, pThread))
         return false;
-    }
 
     bool atEntry = false;
     ThreadId threadId(getThreadId(pThread));
     StoppedEvent event(StopBreakpoint, threadId);
-    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreakpoint(pThread, pBreakpoint, event.breakpoint, atEntry)) &&
-        Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
-    {
+    // S_FALSE - not error and not affect on callback (callback will emit stop event)
+    if (S_FALSE != m_debugger.m_uniqueBreakpoints->ManagedCallbackBreakpoint(pThread, pBreakpoint, event.breakpoint, atEntry))
         return false;
-    }
 
     // Disable all steppers if we stop at breakpoint during step.
     m_debugger.m_uniqueSteppers->DisableAllSteppers(pAppDomain);
@@ -65,12 +60,9 @@ bool ManagedCallback::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, 
 
 bool ManagedCallback::CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason)
 {
-    HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pThread, reason)) &&
-        Status == S_OK) // S_FALSE - no error, but steppers not affect on callback
-    {
+    // S_FALSE - not error and steppers not affect on callback (callback will emit stop event)
+    if (S_FALSE != m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pThread, reason))
         return false;
-    }
 
     StackFrame stackFrame;
     ToRelease<ICorDebugFrame> iCorFrame;
@@ -89,12 +81,9 @@ bool ManagedCallback::CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain
 
 bool ManagedCallback::CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
 {
-    HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackBreak(pThread, m_debugger.GetLastStoppedThreadId())) &&
-        Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
-    {
+    // S_FALSE - not error and not affect on callback (callback will emit stop event)
+    if (S_FALSE != m_debugger.m_uniqueBreakpoints->ManagedCallbackBreak(pThread, m_debugger.GetLastStoppedThreadId()))
         return false;
-    }
 
     // Disable all steppers if we stop at break during step.
     m_debugger.m_uniqueSteppers->DisableAllSteppers(pAppDomain);
@@ -119,12 +108,9 @@ bool ManagedCallback::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, I
     ThreadId threadId(getThreadId(pThread));
     StoppedEvent event(StopException, threadId);
 
-    HRESULT Status;
-    if (SUCCEEDED(Status = m_debugger.m_uniqueBreakpoints->ManagedCallbackException(pThread, eventType, excModule, event)) &&
-        Status == S_OK) // S_FALSE - no error, not affect on callback (callback will emit stop event)
-    {
+    // S_FALSE - not error and not affect on callback (callback will emit stop event)
+    if (S_FALSE != m_debugger.m_uniqueBreakpoints->ManagedCallbackException(pThread, eventType, excModule, event))
         return false;
-    }
 
     ToRelease<ICorDebugFrame> pActiveFrame;
     if (SUCCEEDED(pThread->GetActiveFrame(&pActiveFrame)) && pActiveFrame != nullptr)
@@ -736,6 +722,13 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::DestroyConnection(ICorDebugProcess *p
 
 static HRESULT GetExceptionModuleName(ICorDebugFrame *pFrame, std::string &excModule)
 {
+    // Exception was thrown outside of managed code (for example, by runtime).
+    if (pFrame == nullptr)
+    {
+        excModule = "<unknown module>";
+        return S_OK;
+    }
+
     HRESULT Status;
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));

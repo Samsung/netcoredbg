@@ -377,11 +377,6 @@ HRESULT TypePrinter::AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::strin
 
 HRESULT TypePrinter::GetTypeOfValue(ICorDebugValue *pValue, std::string &output)
 {
-    HRESULT Status = S_OK;
-
-    CorElementType corElemType;
-    IfFailRet(pValue->GetType(&corElemType));
-
     ToRelease<ICorDebugType> pType;
     ToRelease<ICorDebugValue2> pValue2;
     if(SUCCEEDED(pValue->QueryInterface(IID_ICorDebugValue2, (void**) &pValue2)) && SUCCEEDED(pValue2->GetExactType(&pType)))
@@ -396,6 +391,9 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugValue *pValue, std::string &output)
 
 HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType)
 {
+    if (pType == nullptr)
+        return E_INVALIDARG;
+
     HRESULT Status = S_OK;
 
     CorElementType corElemType;

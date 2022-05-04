@@ -389,8 +389,6 @@ HRESULT ExceptionBreakpoints::ManagedCallbackException(ICorDebugThread *pThread,
     {
         case ExceptionCallbackType::FIRST_CHANCE:
         {
-            assert(m_threadsExceptionStatus.find(tid) == m_threadsExceptionStatus.end());
-
             // Important, reset previous stage for this thread.
             m_threadsExceptionBreakMode[tid] = ExceptionBreakMode::NEVER;
 
