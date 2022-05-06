@@ -203,8 +203,14 @@ if (BUILD_MANAGED)
 
     find_program(DOTNETCLI dotnet PATHS "${DOTNET_DIR}" ENV PATH NO_DEFAULT_PATH)
 
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(MANAGEDPART_BUILD_TYPE "Debug")
+    else() # CMAKE_BUILD_TYPE not set or Release, RelWithDebInfo, MinSizeRel, ...
+        set(MANAGEDPART_BUILD_TYPE "Release")
+    endif()
+
     add_custom_command(OUTPUT ${DOTNET_BUILD_RESULT}
-      COMMAND ${DOTNETCLI} publish ${MANAGEDPART_PROJECT} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/ /p:BaseOutputPath=${CMAKE_CURRENT_BINARY_DIR}/bin/
+      COMMAND ${DOTNETCLI} publish ${MANAGEDPART_PROJECT} -c ${MANAGEDPART_BUILD_TYPE} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/ /p:BaseOutputPath=${CMAKE_CURRENT_BINARY_DIR}/bin/
       WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
       DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/managed/*.cs" "${MANAGEDPART_PROJECT}"
       COMMENT "Compiling ${MANAGEDPART_DLL_NAME}"

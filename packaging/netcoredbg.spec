@@ -104,6 +104,7 @@ cmake .. \
 
 make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 
+%define _dotnet_build_conf %{build_type}
 %dotnet_build -s ../packaging/pkgs ../src/managed
 
 %install
