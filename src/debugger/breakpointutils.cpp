@@ -54,6 +54,18 @@ HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICor
     if (modAddress1 != modAddress2)
         return E_FAIL;
 
+    ToRelease<ICorDebugCode> pCode1;
+    IfFailRet(pFunction1->GetILCode(&pCode1));
+    ULONG32 methodVersion1;
+    IfFailRet(pCode1->GetVersionNumber(&methodVersion1));
+    ToRelease<ICorDebugCode> pCode2;
+    IfFailRet(pFunction2->GetILCode(&pCode2));
+    ULONG32 methodVersion2;
+    IfFailRet(pCode2->GetVersionNumber(&methodVersion2));
+
+    if (methodVersion1 != methodVersion2)
+        return E_FAIL;
+
     return S_OK;
 }
 

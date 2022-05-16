@@ -90,8 +90,17 @@ public:
     }
 
     ToRelease(ToRelease&& that) noexcept : m_ptr(that.m_ptr) { that.m_ptr = nullptr; }
+    ToRelease& operator=(ToRelease&& that)
+    {
+        if (m_ptr != nullptr)
+            m_ptr->Release();
+
+        m_ptr = that.m_ptr;
+        that.m_ptr = nullptr;
+    }
 private:
     ToRelease(const ToRelease& that) = delete;
+    ToRelease& operator=(const ToRelease& that) = delete;
     T* m_ptr;
 };
 

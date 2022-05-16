@@ -50,6 +50,7 @@ namespace NetcoreDbgTestCore
 using System.IO;
 using System.Diagnostics;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using NetcoreDbgTest;
 using NetcoreDbgTest.Script;
 using Newtonsoft.Json;

@@ -16,7 +16,7 @@ print_help()
     echo "  -g, --gbsroot     path to GBS root folder, \"\$HOME/GBS-ROOT\" by default"
     echo "  -r, --rpm         path to netcordbg rmp file"
     echo "  -x, --xml_path    path to test-results-tizen xml xunit format file,"
-    echo "                    \"/home/owner/share/tmp/\" by default"
+    echo "                    \"/tmp\" by default"
     echo "      --help        display this help and exit"
 }
 
@@ -30,7 +30,7 @@ generate_xml()
             <testsuite name=\"Tests-tizen-app\" tests=\"\" failures=\"\" errors=\"\" time=\"\">
                 ${testnames}
             </testsuite>
-        </testsuites>" > "${XML_ABS_PATH}/test-results-tizen.xml"
+        </testsuites>" > "${xml_path}/test-results-tizen.xml"
 }
 # DO NOT CHANGE
 # we use first test control program for both tests, since we need NI generation in second test
@@ -48,7 +48,7 @@ GBSROOT=${GBSROOT:-$HOME/GBS-ROOT}
 # launch_app have hardcoded path
 TOOLS_ABS_PATH=/home/owner/share/tmp/sdk_tools
 SCRIPTDIR=$(dirname $(readlink -f $0))
-XML_ABS_PATH=${XML_ABS_PATH:-/home/owner/share/tmp/}
+XML_ABS_PATH=${XML_ABS_PATH:-/tmp}
 
 for i in "$@"
 do

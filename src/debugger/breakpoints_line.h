@@ -36,6 +36,7 @@ public:
     void DeleteAll();
     HRESULT SetLineBreakpoints(bool haveProcess, const std::string &filename, const std::vector<LineBreakpoint> &lineBreakpoints,
                                std::vector<Breakpoint> &breakpoints, std::function<uint32_t()> getId);
+    HRESULT UpdateBreakpointsOnHotReload(ICorDebugModule *pModule, std::unordered_set<mdMethodDef> &methodTokens, std::vector<BreakpointEvent> &events);
     HRESULT AllBreakpointsActivate(bool act);
     HRESULT BreakpointActivate(uint32_t id, bool act);
     void AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInfo> &list);
@@ -64,18 +65,20 @@ private:
     {
         uint32_t id;
         std::string module;
+        CORDB_ADDRESS modAddress;
         int linenum;
         int endLine;
         bool enabled;
         ULONG32 times;
         std::string condition;
         // In case of code line in constructor, we could resolve multiple methods for breakpoints.
+        // For example, `MyType obj = new MyType(1);` code will be added to all class constructors).
         std::vector<ToRelease<ICorDebugFunctionBreakpoint> > iCorFuncBreakpoints;
 
         bool IsVerified() const { return !iCorFuncBreakpoints.empty(); }
 
         ManagedLineBreakpoint() :
-            id(0), linenum(0), endLine(0), enabled(true), times(0)
+            id(0), modAddress(0), linenum(0), endLine(0), enabled(true), times(0)
         {}
 
         ~ManagedLineBreakpoint()
@@ -91,6 +94,8 @@ private:
 
         ManagedLineBreakpoint(ManagedLineBreakpoint &&that) = default;
         ManagedLineBreakpoint(const ManagedLineBreakpoint &that) = delete;
+        ManagedLineBreakpoint& operator=(ManagedLineBreakpoint &&that) = default;
+        ManagedLineBreakpoint& operator=(const ManagedLineBreakpoint &that) = delete;
     };
 
     struct ManagedLineBreakpointMapping

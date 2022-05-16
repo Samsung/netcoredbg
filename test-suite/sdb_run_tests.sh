@@ -11,7 +11,7 @@ print_help()
     echo "      --repeat      repeat tests, \"1\" by default"
     echo "  -g, --gbsroot     path to GBS root folder, \"\$HOME/GBS-ROOT\" by default"
     echo "  -p, --tools_path  path to tools dir on target,"
-    echo "                    \"/home/owner/share/tmp/sdk_tools\" by default"
+    echo "                    \"/tmp\" by default"
     echo "  -r, --rpm         path to netcordbg rmp file"
     echo "  -x, --xml_path    path to test-results xml xunit format file,"
     echo "                    \"/home/owner/share/tmp/\" by default"
@@ -27,7 +27,7 @@ generate_xml()
             <testsuite name=\"Tests\" tests=\"\" failures=\"\" errors=\"\" time=\"\">
                 ${testnames}
             </testsuite>
-        </testsuites>" > "${XML_ABS_PATH}/test-results.xml"
+        </testsuites>" > "${xml_path}/test-results.xml"
 }
 
 ALL_TEST_NAMES=(
@@ -57,6 +57,7 @@ ALL_TEST_NAMES=(
     "MITestNoJMCExceptionBreakpoint"
     "MITestSizeof"
     "MITestAsyncLambdaEvaluate"
+    "MITestHotReloadBreakpoint"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -91,7 +92,7 @@ REPEAT=${REPEAT:-1}
 GBSROOT=${GBSROOT:-$HOME/GBS-ROOT}
 TOOLS_ABS_PATH=${TOOLS_ABS_PATH:-/home/owner/share/tmp/sdk_tools}
 SCRIPTDIR=$(dirname $(readlink -f $0))
-XML_ABS_PATH=${XML_ABS_PATH:-/home/owner/share/tmp/}
+XML_ABS_PATH=${XML_ABS_PATH:-/tmp}
 
 for i in "$@"
 do
@@ -200,10 +201,16 @@ test_xml=""
 for i in $(eval echo {1..$REPEAT}); do
 # Build, push and run tests
 for TEST_NAME in $TEST_NAMES; do
-    HOSTTESTDIR=$SCRIPTDIR/$TEST_NAME
-    $DOTNET build $HOSTTESTDIR
-    $SDB push $HOSTTESTDIR/bin/Debug/netcoreapp3.1/$TEST_NAME.{dll,pdb} $REMOTETESTDIR
+    TEST_PROJ_NAME=$TEST_NAME;
+    if  [[ $TEST_NAME == MITestHotReload* ]] ;
+    then
+        TEST_PROJ_NAME="TestAppHotReload"
+    fi
 
+    $DOTNET build $SCRIPTDIR/$TEST_PROJ_NAME
+    $SDB push $SCRIPTDIR/$TEST_PROJ_NAME/bin/Debug/netcoreapp3.1/$TEST_PROJ_NAME.{dll,pdb} $REMOTETESTDIR
+
+    HOSTTESTDIR=$SCRIPTDIR/$TEST_NAME
     SOURCE_FILES=$(find $HOSTTESTDIR \! -path "$HOSTTESTDIR/obj/*" -type f -name "*.cs" -printf '%p;')
 
     if  [[ $TEST_NAME == VSCode* ]] ;
@@ -213,7 +220,7 @@ for TEST_NAME in $TEST_NAMES; do
         # change $HOME to $REMOTETESTDIR in order to prevent /root/nohup.out creation
         $SDB root on
         $SDB shell HOME=$REMOTETESTDIR nohup $NETCOREDBG --server --interpreter=$PROTO -- \
-             /usr/bin/dotnet $REMOTETESTDIR/$TEST_NAME.dll
+             /usr/bin/dotnet $REMOTETESTDIR/$TEST_PROJ_NAME.dll
         $SDB root off
 
         $DOTNET run --project TestRunner -- \
@@ -221,7 +228,7 @@ for TEST_NAME in $TEST_NAMES; do
             --proto $PROTO \
             --test $TEST_NAME \
             --sources $SOURCE_FILES \
-            --assembly $REMOTETESTDIR/$TEST_NAME.dll
+            --assembly $REMOTETESTDIR/$TEST_PROJ_NAME.dll
     else
         PROTO="mi"
 
@@ -236,7 +243,7 @@ for TEST_NAME in $TEST_NAMES; do
             --proto $PROTO \
             --test $TEST_NAME \
             --sources "$SOURCE_FILES" \
-            --assembly $REMOTETESTDIR/$TEST_NAME.dll
+            --assembly $REMOTETESTDIR/$TEST_PROJ_NAME.dll
     fi
 
     if [ "$?" -ne "0" ]; then

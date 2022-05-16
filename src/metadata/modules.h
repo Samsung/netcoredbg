@@ -35,7 +35,7 @@ bool HasAttribute(IMetaDataImport *pMD, mdToken tok, std::vector<std::string> &a
 HRESULT DisableJMCByAttributes(ICorDebugModule *pModule);
 HRESULT DisableJMCByAttributes(ICorDebugModule *pModule, const std::unordered_set<mdMethodDef> &methodTokens);
 
-struct method_input_data_t
+struct method_data_t
 {
     mdMethodDef methodDef;
     int32_t startLine; // first segment/method SequencePoint's startLine
@@ -43,7 +43,15 @@ struct method_input_data_t
     int32_t startColumn; // first segment/method SequencePoint's startColumn
     int32_t endColumn; // last segment/method SequencePoint's endColumn
 
-    method_input_data_t(mdMethodDef methodDef_, int32_t startLine_, int32_t endLine_, int32_t startColumn_, int32_t endColumn_) :
+    method_data_t() :
+        methodDef(0),
+        startLine(0),
+        endLine(0),
+        startColumn(0),
+        endColumn(0)
+    {}
+
+    method_data_t(mdMethodDef methodDef_, int32_t startLine_, int32_t endLine_, int32_t startColumn_, int32_t endColumn_) :
         methodDef(methodDef_),
         startLine(startLine_),
         endLine(endLine_),
@@ -51,11 +59,24 @@ struct method_input_data_t
         endColumn(endColumn_)
     {}
 
-    bool operator < (const method_input_data_t &other) const
+    bool operator < (const method_data_t &other) const
     {
         return endLine < other.endLine || (endLine == other.endLine && endColumn < other.endColumn);
     }
-    bool NestedInto(const method_input_data_t &other) const
+
+    bool operator < (const int32_t lineNum) const
+    {
+        return endLine < lineNum;
+    }
+
+    bool operator == (const method_data_t &other) const
+    {
+        return methodDef == other.methodDef &&
+               startLine == other.startLine && endLine == other.endLine &&
+               startColumn == other.startColumn && endColumn == other.endColumn;
+    }
+
+    bool NestedInto(const method_data_t &other) const
     {
         assert(startLine != other.startLine || startColumn != other.startColumn);
         assert(endLine != other.endLine || endColumn != other.endColumn);
@@ -65,43 +86,11 @@ struct method_input_data_t
     }
 };
 
-struct method_data_t
-{
-    mdMethodDef methodDef;
-    uint32_t startLine; // first segment/method SequencePoint's startLine
-    uint32_t endLine; // last segment/method SequencePoint's endLine
-
-    method_data_t() = default;
-    method_data_t(mdMethodDef methodDef_, uint32_t startLine_, uint32_t endLine_) :
-        methodDef(methodDef_),
-        startLine(startLine_),
-        endLine(endLine_)
-    {}
-    method_data_t(const method_input_data_t &other) :
-        methodDef(other.methodDef),
-        startLine(other.startLine),
-        endLine(other.endLine)
-    {
-        assert(other.startLine >= 0);
-        assert(other.endLine >= 0);
-    }
-
-    bool operator < (const uint32_t lineNum) const
-    {
-        return endLine < lineNum;
-    }
-
-    bool operator == (const method_data_t &other) const
-    {
-        return methodDef == other.methodDef &&  startLine == other.startLine &&  endLine == other.endLine;
-    }
-};
-
 struct method_data_t_hash
 {
     size_t operator()(const method_data_t &p) const
     {
-        return p.methodDef + p.startLine * 100 + p.endLine * 1000;
+        return p.methodDef + (uint32_t)p.startLine * 100 + (uint32_t)p.endLine * 1000;
     }
 };
 
@@ -164,7 +153,10 @@ class Modules
     //                        since we may have modules with same source full path
     std::vector<std::vector<FileMethodsData>> m_sourcesMethodsData;
 
+    HRESULT GetFullPathIndex(BSTR document, unsigned &fullPathIndex);
     HRESULT FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle);
+    HRESULT UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport,
+                                            std::unordered_set<mdMethodDef> methodTokens, PVOID pSymbolReaderHandle);
     HRESULT ResolveRelativeSourceFileName(std::string &filename);
 
 #ifdef WIN32
@@ -208,7 +200,7 @@ public:
 
     HRESULT GetSourceFullPathByIndex(unsigned index, std::string &fullPath);
     HRESULT GetIndexBySourceFullPath(std::string fullPath, unsigned &index);
-    HRESULT ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB);
+    HRESULT ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB, std::unordered_set<mdMethodDef> &methodTokens);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule, bool onlyWithPDB = false);
 

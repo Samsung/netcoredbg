@@ -1307,9 +1307,14 @@ HRESULT ManagedDebugger::ApplyPdbDelta(const std::string &dllFileName, const std
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(m_sharedModules->GetModuleWithName(dllFileName, &pModule, true));
 
-    IfFailRet(m_sharedModules->ApplyPdbDelta(pModule, m_justMyCode, deltaPDB));
+    std::unordered_set<mdMethodDef> pdbMethodTokens;
+    IfFailRet(m_sharedModules->ApplyPdbDelta(pModule, m_justMyCode, deltaPDB, pdbMethodTokens));
 
-    // TODO add check resolved breakpoints and added constructors.
+    // Since we could have new code lines and new methods added, check all breakpoints again.
+    std::vector<BreakpointEvent> events;
+    m_uniqueBreakpoints->UpdateBreakpointsOnHotReload(pModule, pdbMethodTokens, events);
+    for (const BreakpointEvent &event : events)
+        m_sharedProtocol->EmitBreakpointEvent(event);
 
     return S_OK;
 }

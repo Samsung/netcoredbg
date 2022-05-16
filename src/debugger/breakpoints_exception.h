@@ -86,6 +86,8 @@ private:
 
         ManagedExceptionBreakpoint(ManagedExceptionBreakpoint &&that) = default;
         ManagedExceptionBreakpoint(const ManagedExceptionBreakpoint &that) = delete;
+        ManagedExceptionBreakpoint& operator=(ManagedExceptionBreakpoint &&that) = default;
+        ManagedExceptionBreakpoint& operator=(const ManagedExceptionBreakpoint &that) = delete;
     };
 
     std::mutex m_breakpointsMutex;

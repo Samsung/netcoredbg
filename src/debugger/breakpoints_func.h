@@ -11,6 +11,7 @@
 #include <memory>
 #include <functional>
 #include <vector>
+#include <list>
 #include <string>
 #include <unordered_map>
 #include "interfaces/idebugger.h"
@@ -36,6 +37,7 @@ public:
     void DeleteAll();
     HRESULT SetFuncBreakpoints(bool haveProcess, const std::vector<FuncBreakpoint> &funcBreakpoints,
                                std::vector<Breakpoint> &breakpoints, std::function<uint32_t()> getId);
+    HRESULT UpdateBreakpointsOnHotReload(ICorDebugModule *pModule, std::unordered_set<mdMethodDef> &methodTokens, std::vector<BreakpointEvent> &events);
     HRESULT AllBreakpointsActivate(bool act);
     HRESULT BreakpointActivate(uint32_t id, bool act);
     void AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInfo> &list);
@@ -62,6 +64,22 @@ private:
 
     struct ManagedFuncBreakpoint
     {
+        struct internalFuncBreakpoint
+        {
+            mdMethodDef methodToken;
+            ULONG32 methodVersion;
+            ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
+
+            internalFuncBreakpoint(mdMethodDef methodToken_, ULONG32 methodVersion_, ICorDebugFunctionBreakpoint *pCorDebugFunctionBreakpoint) : 
+                methodToken(methodToken_), methodVersion(methodVersion_), iCorFuncBreakpoint(pCorDebugFunctionBreakpoint)
+            {}
+
+            internalFuncBreakpoint(internalFuncBreakpoint &&that) = default;
+            internalFuncBreakpoint(const internalFuncBreakpoint &that) = delete;
+            internalFuncBreakpoint& operator=(internalFuncBreakpoint &&that) = default;
+            internalFuncBreakpoint& operator=(const internalFuncBreakpoint &that) = delete;
+        };
+
         uint32_t id;
         std::string module;
         bool module_checked; // in case "module" provided, we need mark that module was checked or not (since function could be not found by name)
@@ -70,10 +88,10 @@ private:
         ULONG32 times;
         bool enabled;
         std::string condition;
-        std::vector<ToRelease<ICorDebugFunctionBreakpoint> > iCorFuncBreakpoints;
+        std::list<internalFuncBreakpoint> funcBreakpoints;
 
         bool IsResolved() const { return module_checked; }
-        bool IsVerified() const { return !iCorFuncBreakpoints.empty(); }
+        bool IsVerified() const { return !funcBreakpoints.empty(); }
 
         ManagedFuncBreakpoint() :
             id(0), module_checked(false), times(0), enabled(true)
@@ -81,10 +99,10 @@ private:
 
         ~ManagedFuncBreakpoint()
         {
-            for (auto &iCorFuncBreakpoint : iCorFuncBreakpoints)
+            for (auto &funcBreakpoint : funcBreakpoints)
             {
-                if (iCorFuncBreakpoint)
-                    iCorFuncBreakpoint->Activate(FALSE);
+                if (funcBreakpoint.iCorFuncBreakpoint)
+                    funcBreakpoint.iCorFuncBreakpoint->Activate(FALSE);
             }
         }
 
@@ -92,6 +110,8 @@ private:
 
         ManagedFuncBreakpoint(ManagedFuncBreakpoint &&that) = default;
         ManagedFuncBreakpoint(const ManagedFuncBreakpoint &that) = delete;
+        ManagedFuncBreakpoint& operator=(ManagedFuncBreakpoint &&that) = default;
+        ManagedFuncBreakpoint& operator=(const ManagedFuncBreakpoint &that) = delete;
     };
 
     std::mutex m_breakpointsMutex;

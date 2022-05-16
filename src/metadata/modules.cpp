@@ -26,7 +26,7 @@ namespace
     {
         BSTR document;
         int32_t methodNum;
-        method_input_data_t *methodsData;
+        method_data_t *methodsData;
 
         file_methods_data_t() = delete;
         file_methods_data_t(const file_methods_data_t&) = delete;
@@ -67,21 +67,21 @@ namespace
     };
 
     // Note, we use std::map since we need container that will not invalidate iterators on add new elements.
-    void AddMethodData(/*in,out*/ std::map<size_t, std::set<method_input_data_t>> &methodData,
+    void AddMethodData(/*in,out*/ std::map<size_t, std::set<method_data_t>> &methodData,
                        /*in,out*/ std::unordered_map<method_data_t, std::vector<mdMethodDef>, method_data_t_hash> &multiMethodBpData,
-                       const method_input_data_t &entry,
+                       const method_data_t &entry,
                        const size_t nestedLevel)
     {
         // if we here, we need at least one nested level for sure
         if (methodData.empty())
         {
-            methodData.emplace(std::make_pair(0, std::set<method_input_data_t>{entry}));
+            methodData.emplace(std::make_pair(0, std::set<method_data_t>{entry}));
             return;
         }
         assert(nestedLevel <= methodData.size()); // could be increased only at 1 per recursive call
         if (nestedLevel == methodData.size())
         {
-            methodData.emplace(std::make_pair(nestedLevel, std::set<method_input_data_t>{entry}));
+            methodData.emplace(std::make_pair(nestedLevel, std::set<method_data_t>{entry}));
             return;
         }
 
@@ -89,7 +89,7 @@ namespace
         auto find = methodData[nestedLevel].find(entry);
         if (find != methodData[nestedLevel].end())
         {
-            method_data_t key(find->methodDef, entry.startLine, entry.endLine);
+            method_data_t key(find->methodDef, entry.startLine, entry.endLine, entry.startColumn, entry.endColumn);
             auto find_multi = multiMethodBpData.find(key);
             if (find_multi == multiMethodBpData.end())
                 multiMethodBpData.emplace(std::make_pair(key, std::vector<mdMethodDef>{entry.methodDef}));
@@ -120,7 +120,7 @@ namespace
 
             if ((*it).NestedInto(entry))
             {
-                method_input_data_t tmp = *it;
+                method_data_t tmp = *it;
                 it = methodData[nestedLevel].erase(it);
                 AddMethodData(methodData, multiMethodBpData, tmp, nestedLevel + 1);
             }
@@ -135,7 +135,7 @@ namespace
 
     bool GetMethodTokensByLineNumber(const std::vector<std::vector<method_data_t>> &methodBpData,
                                      const std::unordered_map<method_data_t, std::vector<mdMethodDef>, method_data_t_hash> &multiMethodBpData,
-                                     /*in,out*/ uint32_t &lineNum,
+                                     /*in,out*/ int32_t &lineNum,
                                      /*out*/ std::vector<mdMethodDef> &Tokens,
                                      /*out*/ mdMethodDef &closestNestedToken)
     {
@@ -1017,10 +1017,9 @@ HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> 
     return S_OK;
 }
 
-HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle)
+static HRESULT GetPdbMethodsRanges(IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle, std::unordered_set<mdMethodDef> *methodTokens,
+                                   std::unique_ptr<module_methods_data_t, module_methods_data_t_deleter> &inputData)
 {
-    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
-
     HRESULT Status;
     // Note, we need 2 arrays of tokens - for normal methods and constructors (.ctor/.cctor, that could have segmented code).
     std::vector<int32_t> constrTokens;
@@ -1036,6 +1035,9 @@ HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDa
         mdMethodDef methodDef;
         while(SUCCEEDED(pMDImport->EnumMethods(&fEnum, typeDef, &methodDef, 1, &numMethods)) && numMethods != 0)
         {
+            if (methodTokens && methodTokens->find(methodDef) == methodTokens->end())
+                continue;
+
             WCHAR funcName[mdNameLen];
             ULONG funcNameLen;
             if (FAILED(pMDImport->GetMethodProps(methodDef, nullptr, funcName, _countof(funcName), &funcNameLen,
@@ -1065,9 +1067,46 @@ HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDa
     if (data == nullptr)
         return S_OK;
 
-    std::unique_ptr<module_methods_data_t, module_methods_data_t_deleter> inputData((module_methods_data_t*)data);
-    constrTokens.clear();
-    normalTokens.clear();
+    inputData.reset((module_methods_data_t*)data);
+    return S_OK;
+}
+
+// Caller must care about m_sourcesInfoMutex.
+HRESULT Modules::GetFullPathIndex(BSTR document, unsigned &fullPathIndex)
+{
+    std::string fullPath = to_utf8(document);
+#ifdef WIN32
+    HRESULT Status;
+    std::string initialFullPath = fullPath;
+    IfFailRet(Interop::StringToUpper(fullPath));
+#endif
+    auto findPathIndex = m_sourcePathToIndex.find(fullPath);
+    if (findPathIndex == m_sourcePathToIndex.end())
+    {
+        fullPathIndex = (unsigned)m_sourceIndexToPath.size();
+        m_sourcePathToIndex.emplace(std::make_pair(fullPath, fullPathIndex));
+        m_sourceIndexToPath.emplace_back(fullPath);
+#ifdef WIN32
+        m_sourceIndexToInitialFullPath.emplace_back(initialFullPath);
+#endif
+        m_sourceNameToFullPathsIndexes[GetFileName(fullPath)].emplace(fullPathIndex);
+        m_sourcesMethodsData.emplace_back(std::vector<FileMethodsData>{});
+    }
+    else
+        fullPathIndex = findPathIndex->second;
+
+    return S_OK;
+}
+
+HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle)
+{
+    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
+
+    HRESULT Status;
+    std::unique_ptr<module_methods_data_t, module_methods_data_t_deleter> inputData;
+    IfFailRet(GetPdbMethodsRanges(pMDImport, pSymbolReaderHandle, nullptr, inputData));
+    if (inputData == nullptr)
+        return S_OK;
 
     // Usually, modules provide files with unique full paths for sources.
     m_sourceIndexToPath.reserve(m_sourceIndexToPath.size() + inputData->fileNum);
@@ -1076,43 +1115,28 @@ HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDa
     m_sourceIndexToInitialFullPath.reserve(m_sourceIndexToInitialFullPath.size() + inputData->fileNum);
 #endif
 
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
     for (int i = 0; i < inputData->fileNum; i++)
     {
-        std::string fullPath = to_utf8(inputData->moduleMethodsData[i].document);
-#ifdef WIN32
-        std::string initialFullPath = fullPath;
-        IfFailRet(Interop::StringToUpper(fullPath));
-#endif
-        auto findPathIndex = m_sourcePathToIndex.find(fullPath);
         unsigned fullPathIndex;
-        if (findPathIndex == m_sourcePathToIndex.end())
-        {
-            fullPathIndex = (unsigned)m_sourceIndexToPath.size();
-            m_sourcePathToIndex.emplace(std::make_pair(fullPath, fullPathIndex));
-            m_sourceIndexToPath.emplace_back(fullPath);
-#ifdef WIN32
-            m_sourceIndexToInitialFullPath.emplace_back(initialFullPath);
-#endif
-            m_sourceNameToFullPathsIndexes[GetFileName(fullPath)].emplace(fullPathIndex);
-            m_sourcesMethodsData.emplace_back(std::vector<FileMethodsData>{});
-        }
-        else
-            fullPathIndex = findPathIndex->second;
+        IfFailRet(GetFullPathIndex(inputData->moduleMethodsData[i].document, fullPathIndex));
 
         m_sourcesMethodsData[fullPathIndex].emplace_back(FileMethodsData{});
         auto &fileMethodsData = m_sourcesMethodsData[fullPathIndex].back();
-        IfFailRet(pModule->GetBaseAddress(&fileMethodsData.modAddress));
+        fileMethodsData.modAddress = modAddress;
 
         // Note, don't reorder input data, since it have almost ideal order for us.
         // For example, for Private.CoreLib (about 22000 methods) only 8 relocations were made.
         // In case default methods ordering will be dramatically changed, we could use data reordering,
         // for example based on this solution:
         //    struct compare {
-        //        bool operator()(const method_input_data_t &lhs, const method_input_data_t &rhs) const
+        //        bool operator()(const method_data_t &lhs, const method_data_t &rhs) const
         //        { return lhs.endLine > rhs.endLine || (lhs.endLine == rhs.endLine && lhs.endColumn > rhs.endColumn); }
         //    };
-        //    std::multiset<method_input_data_t, compare> orderedInputData;
-        std::map<size_t, std::set<method_input_data_t>> inputMethodsData;
+        //    std::multiset<method_data_t, compare> orderedInputData;
+        std::map<size_t, std::set<method_data_t>> inputMethodsData;
         for (int j = 0; j < inputData->moduleMethodsData[i].methodNum; j++)
         {
             AddMethodData(inputMethodsData, fileMethodsData.multiMethodsData, inputData->moduleMethodsData[i].methodsData[j], 0);
@@ -1135,6 +1159,105 @@ HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDa
 #ifdef WIN32
     m_sourceIndexToInitialFullPath.shrink_to_fit();
 #endif
+
+    return S_OK;
+}
+
+HRESULT Modules::UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, std::unordered_set<mdMethodDef> methodTokens, PVOID pSymbolReaderHandle)
+{
+    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
+
+    HRESULT Status;
+    std::unique_ptr<module_methods_data_t, module_methods_data_t_deleter> inputData;
+    IfFailRet(GetPdbMethodsRanges(pMDImport, pSymbolReaderHandle, &methodTokens, inputData));
+    if (inputData == nullptr)
+        return S_OK;
+
+    CORDB_ADDRESS modAddress;
+    IfFailRet(pModule->GetBaseAddress(&modAddress));
+
+    for (int i = 0; i < inputData->fileNum; i++)
+    {
+        unsigned fullPathIndex;
+        IfFailRet(GetFullPathIndex(inputData->moduleMethodsData[i].document, fullPathIndex));
+
+        std::map<size_t, std::set<method_data_t>> inputMethodsData;
+        if (m_sourcesMethodsData[fullPathIndex].empty())
+        { // New source file added.
+            m_sourcesMethodsData[fullPathIndex].emplace_back(FileMethodsData{});
+            auto &tmpFileMethodsData = m_sourcesMethodsData[fullPathIndex].back();
+            tmpFileMethodsData.modAddress = modAddress;
+
+            for (int j = 0; j < inputData->moduleMethodsData[i].methodNum; j++)
+            {
+                AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, inputData->moduleMethodsData[i].methodsData[j], 0);
+            }
+        }
+        else
+        {
+            // Move multiMethodsData first (since this is constructors and all will be on level 0 for sure).
+            // Use std::unordered_set here instead array for fast search.
+            std::unordered_set<mdMethodDef> inputMetodDefSet;
+            for (int j = 0; j < inputData->moduleMethodsData[i].methodNum; j++)
+            {
+                inputMetodDefSet.insert(inputData->moduleMethodsData[i].methodsData[j].methodDef);
+            }
+
+            auto &tmpFileMethodsData = m_sourcesMethodsData[fullPathIndex].back();
+            std::vector<method_data_t> tmpMultiMethodsData;
+
+            for (auto entryData : tmpFileMethodsData.multiMethodsData)
+            {
+                auto findData = inputMetodDefSet.find(entryData.first.methodDef);
+                if (findData == inputMetodDefSet.end())
+                    tmpMultiMethodsData.emplace_back(entryData.first);
+
+                for (auto entryMethodDef : entryData.second)
+                {
+                    findData = inputMetodDefSet.find(entryMethodDef);
+                    if (findData == inputMetodDefSet.end())
+                        tmpMultiMethodsData.emplace_back(entryMethodDef, entryData.first.startLine, entryData.first.endLine,
+                                                         entryData.first.startColumn, entryData.first.endColumn);
+                }
+            }
+
+            tmpFileMethodsData.multiMethodsData.clear();
+            for (auto methodData : tmpMultiMethodsData)
+            {
+                AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, methodData, 0);
+            }
+
+            // Move normal methods.
+            for (auto methodsData : tmpFileMethodsData.methodsData)
+            {
+                for (auto methodData : methodsData)
+                {
+                    auto findData = inputMetodDefSet.find(methodData.methodDef);
+                    if (findData == inputMetodDefSet.end())
+                        AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, methodData, 0);
+                }
+            }
+            tmpFileMethodsData.methodsData.clear();
+
+            // Move new and modified methods.
+            for (int j = 0; j < inputData->moduleMethodsData[i].methodNum; j++)
+            {
+                AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, inputData->moduleMethodsData[i].methodsData[j], 0);
+            }
+        }
+
+        auto &fileMethodsData = m_sourcesMethodsData[fullPathIndex].back();
+        fileMethodsData.methodsData.resize(inputMethodsData.size());
+        for (size_t i =  0; i < inputMethodsData.size(); i++)
+        {
+            fileMethodsData.methodsData[i].resize(inputMethodsData[i].size());
+            std::copy(inputMethodsData[i].begin(), inputMethodsData[i].end(), fileMethodsData.methodsData[i].begin());
+        }
+        for (auto &data : fileMethodsData.multiMethodsData)
+        {
+            data.second.shrink_to_fit();
+        }
+    }
 
     return S_OK;
 }
@@ -1283,7 +1406,7 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
             continue;
 
         std::vector<mdMethodDef> Tokens;
-        uint32_t correctedStartLine = sourceLine;
+        int32_t correctedStartLine = sourceLine;
         mdMethodDef closestNestedToken = 0;
         if (!GetMethodTokensByLineNumber(sourceData.methodsData, sourceData.multiMethodsData, correctedStartLine, Tokens, closestNestedToken))
             continue;
@@ -1344,7 +1467,7 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
     return S_OK;
 }
 
-HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB)
+HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB, std::unordered_set<mdMethodDef> &methodTokens)
 {
     HRESULT Status;
     CORDB_ADDRESS modAddress;
@@ -1362,20 +1485,19 @@ HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std
     if (mdInfo.m_symbolReaderHandles.empty())
         return E_FAIL; // Deltas could be applied for already loaded modules with PDB only.
 
-    PVOID pSymbolReaderHandle =  nullptr;
-    std::unordered_set<mdMethodDef> methodTokens;
+    PVOID pSymbolReaderHandle = nullptr;
     IfFailRet(Interop::LoadDeltaPdb(deltaPDB, &pSymbolReaderHandle, methodTokens));
     mdInfo.m_symbolReaderHandles.emplace_back(pSymbolReaderHandle);
 
     if (needJMC)
         DisableJMCByAttributes(pModule, methodTokens);
 
+    ToRelease<IUnknown> pMDUnknown;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMDImport;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
 
-    // TODO update line breakpoints resolve data.
-    // TODO check line and functional breakpoints (new lines and new methods could be added).
-
-
-   return S_OK;
+    return UpdateSourcesCodeLinesForModule(pModule, pMDImport, methodTokens, pSymbolReaderHandle);
 }
 
 HRESULT Modules::GetSourceFullPathByIndex(unsigned index, std::string &fullPath)
