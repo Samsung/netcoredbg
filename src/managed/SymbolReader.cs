@@ -512,7 +512,7 @@ namespace NetCoreDbg
         /// <param name="normalTokens">array of normal methods tokens</param>
         /// <param name="data">pointer to memory with result</param>
         /// <returns>"Ok" if information is available</returns>
-        internal static RetCode GetModuleMethodsRanges(IntPtr symbolReaderHandle, int constrNum, IntPtr constrTokens, int normalNum, IntPtr normalTokens, out IntPtr data)
+        internal static RetCode GetModuleMethodsRanges(IntPtr symbolReaderHandle, uint constrNum, IntPtr constrTokens, uint normalNum, IntPtr normalTokens, out IntPtr data)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
             data = IntPtr.Zero;

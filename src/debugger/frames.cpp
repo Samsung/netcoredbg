@@ -32,7 +32,7 @@ static uint64_t GetSP(CONTEXT *context)
     return (uint64_t)(size_t)context->Sp;
 #elif defined(_TARGET_ARM64_)
     return (uint64_t)(size_t)context->Sp;
-#elif
+#else
 #error "Unsupported platform"
 #endif
 }

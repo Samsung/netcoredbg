@@ -18,7 +18,11 @@ void completionHook (char const* prefix, linenoiseCompletions* lc) {
   }
 }
 
-int main (int argc, char** argv) {
+int
+#if defined(WIN32) && defined(_TARGET_X86_)
+    __cdecl
+#endif
+            main (int argc, char** argv) {
   linenoiseInstallWindowChangeHandler();
 
   while(argc > 1) {

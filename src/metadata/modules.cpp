@@ -1053,14 +1053,15 @@ HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDa
     }
     pMDImport->CloseEnum(fEnum);
 
-    if (constrTokens.size() > std::numeric_limits<int32_t>::max() || normalTokens.size() > std::numeric_limits<int32_t>::max())
+    if (sizeof(std::size_t) > sizeof(std::uint32_t) &&
+        (constrTokens.size() > std::numeric_limits<uint32_t>::max() || normalTokens.size() > std::numeric_limits<uint32_t>::max()))
     {
         LOGE("Too big token arrays.");
         return E_FAIL;
     }
 
     PVOID data = nullptr;
-    IfFailRet(Interop::GetModuleMethodsRanges(pSymbolReaderHandle, (int32_t)constrTokens.size(), constrTokens.data(), (int32_t)normalTokens.size(), normalTokens.data(), &data));
+    IfFailRet(Interop::GetModuleMethodsRanges(pSymbolReaderHandle, (uint32_t)constrTokens.size(), constrTokens.data(), (uint32_t)normalTokens.size(), normalTokens.data(), &data));
     if (data == nullptr)
         return S_OK;
 
@@ -1292,7 +1293,7 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
         if (info_pair == m_modulesInfo.end())
             return E_FAIL; // we must have it, since we loaded data from it
 
-        if (Tokens.size() > std::numeric_limits<int32_t>::max())
+        if ((int32_t)Tokens.size() > std::numeric_limits<int32_t>::max())
         {
             LOGE("Too big token arrays.");
             return E_FAIL;

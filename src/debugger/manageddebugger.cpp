@@ -1269,12 +1269,16 @@ static HRESULT ApplyMetadataAndILDeltas(Modules *pModules, const std::string &dl
     if (deltaILFileStream.is_open() && deltaMDFileStream.is_open())
     {
         auto deltaILSize = deltaILFileStream.tellg();
-        BYTE *deltaILMemBlock = new BYTE[deltaILSize];
+        if (deltaILSize < 0)
+            return E_FAIL;
+        BYTE *deltaILMemBlock = new BYTE[(size_t)deltaILSize];
         deltaILFileStream.seekg(0, std::ios::beg);
         deltaILFileStream.read((char*)deltaILMemBlock, deltaILSize);
 
         auto deltaMDSize = deltaMDFileStream.tellg();
-        BYTE *deltaMDMemBlock = new BYTE[deltaMDSize];
+        if (deltaMDSize < 0)
+            return E_FAIL;
+        BYTE *deltaMDMemBlock = new BYTE[(size_t)deltaMDSize];
         deltaMDFileStream.seekg(0, std::ios::beg);
         deltaMDFileStream.read((char*)deltaMDMemBlock, deltaMDSize);
 

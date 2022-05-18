@@ -517,7 +517,17 @@ Class::IOResult Class::close(const FileHandle& fh)
 Class::IOSystem::StdFiles Class::get_std_files()
 {
     using Handles = std::tuple<IOSystem::FileHandle, IOSystem::FileHandle, IOSystem::FileHandle>;
-    /*thread_local*/ static alignas(alignof(Handles)) char mem[sizeof(Handles)];  // TODO
+
+    // Note, we can't use `alignas(alignof(std::max_align_t))` here, since at least MSVC 32bit (VS2019) compiler can't
+    // generate proper code and ASAN detect "ERROR: AddressSanitizer: stack - buffer - underflow on address...".
+    union mem_align_t
+    {
+        std::max_align_t align_field;
+        char mem[sizeof(Handles)];
+    };
+    mem_align_t mem_align_tmp;
+    char * const mem = mem_align_tmp.mem;
+
     Handles& handles = *new (mem) Handles {
         FileHandle(GetStdHandle(STD_INPUT_HANDLE)),
         FileHandle(GetStdHandle(STD_OUTPUT_HANDLE)),

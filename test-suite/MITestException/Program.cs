@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 
 using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
@@ -204,10 +205,14 @@ namespace MITestException
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
             });
 
+            bool win32detect = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && IntPtr.Size == 4; Label.Breakpoint("STEP0");
+
             P p = new P();                                      Label.Breakpoint("STEP1");
 
             Label.Checkpoint("test_steps", "try_catch", (Object context) => {
                 Context Context = (Context)context;
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "STEP0");
                 Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "STEP1");
                 Context.StepOver(@"__FILE__:__LINE__");
@@ -236,16 +241,29 @@ namespace MITestException
 
                 Label.Checkpoint("try_catch", "finish", (Object context) => {
                     Context Context = (Context)context;
+
+                    var resWin32Detect = Context.MIDebugger.Request(String.Format("-var-create - * \"win32detect\""));
+                    Assert.Equal(MIResultClass.Done, resWin32Detect.Class, @"__FILE__:__LINE__");
+                    Assert.Equal("bool", ((MIConst)resWin32Detect["type"]).CString, @"__FILE__:__LINE__");
+                    string win32detect = ((MIConst)resWin32Detect["value"]).CString;
+
                     // Check stack frames location
                     var res = Context.MIDebugger.Request("-stack-list-frames");
                     Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__");
 
                     var stack = (MIList)res["stack"];
-
-                    Assert.Equal(3, stack.Count, @"__FILE__:__LINE__");
-                    Assert.True(Context.IsValidFrame((MIResult)stack[0], "CATCH4", 0), @"__FILE__:__LINE__");
-                    Assert.True(Context.IsValidFrame((MIResult)stack[1], "THROW1", 1), @"__FILE__:__LINE__");
-                    Assert.True(Context.IsValidFrame((MIResult)stack[2], "TRY3", 2), @"__FILE__:__LINE__");
+                    if (win32detect == "true")
+                    {
+                        Assert.Equal(1, stack.Count, @"__FILE__:__LINE__");
+                        Assert.True(Context.IsValidFrame((MIResult)stack[0], "CATCH4", 0), @"__FILE__:__LINE__");
+                    }
+                    else
+                    {
+                        Assert.Equal(3, stack.Count, @"__FILE__:__LINE__");
+                        Assert.True(Context.IsValidFrame((MIResult)stack[0], "CATCH4", 0), @"__FILE__:__LINE__");
+                        Assert.True(Context.IsValidFrame((MIResult)stack[1], "THROW1", 1), @"__FILE__:__LINE__");
+                        Assert.True(Context.IsValidFrame((MIResult)stack[2], "TRY3", 2), @"__FILE__:__LINE__");
+                    }
 
                     //Check local variables
                     res = Context.MIDebugger.Request("-stack-list-variables");

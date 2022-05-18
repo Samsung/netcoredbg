@@ -70,7 +70,7 @@ void InStreamBuf::compactify()
     {
         if (size_t(in_avail()) <= MaxMoveSize)   // tail is not too big
         {
-            memmove(eback() + UngetChars, gptr(), in_avail());
+            memmove(eback() + UngetChars, gptr(), size_t(in_avail()));
             setg(eback(), eback() + UngetChars, eback() + UngetChars + in_avail());
         }
     }

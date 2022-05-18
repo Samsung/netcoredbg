@@ -335,7 +335,7 @@ void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output
     serialize_output(count, m_seqCounter, name, "", escaped_source);
 
     // compute total size of headers + text
-    size_t const total_size = count.size() + escaped_text.size();
+    auto const total_size = count.size() + escaped_text.size();
 
     // perform output
     cout << CONTENT_LENGTH << total_size << TWO_CRLF;

@@ -224,7 +224,11 @@ static HRESULT LaunchNewProcess(IDebugger *pDebugger, std::string &execFile, std
     return pDebugger->ConfigurationDone();
 }
 
-int main(int argc, char* argv[])
+int
+#if defined(WIN32) && defined(_TARGET_X86_)
+    __cdecl
+#endif
+            main(int argc, char* argv[])
 {
 
     DWORD pidDebuggee = 0;

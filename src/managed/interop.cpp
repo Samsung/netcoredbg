@@ -63,7 +63,7 @@ typedef  RetCode (*GetHoistedLocalScopes)(PVOID, int32_t, PVOID*, int32_t*);
 typedef  RetCode (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, PVOID);
 typedef  RetCode (*GetNextSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, uint32_t*, int32_t*);
 typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
-typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, int32_t, PVOID, int32_t, PVOID, PVOID*);
+typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, uint32_t, PVOID, uint32_t, PVOID, PVOID*);
 typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID[], int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*);
 typedef  RetCode (*GetAsyncMethodSteppingInfoDelegate)(PVOID, mdMethodDef, PVOID*, int32_t*, uint32_t*);
 typedef  RetCode (*GetSourceDelegate)(PVOID, const WCHAR*, int32_t*, PVOID*);
@@ -401,7 +401,7 @@ HRESULT CalculationDelegate(PVOID firstOp, int32_t firstType, PVOID secondOp, in
     return S_OK;
 }
 
-HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, int32_t constrTokensNum, PVOID constrTokens, int32_t normalTokensNum, PVOID normalTokens, PVOID *data)
+HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, uint32_t constrTokensNum, PVOID constrTokens, uint32_t normalTokensNum, PVOID normalTokens, PVOID *data)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
     if (!getModuleMethodsRangesDelegate || !pSymbolReaderHandle || (constrTokensNum && !constrTokens) || (normalTokensNum && !normalTokens) || !data)

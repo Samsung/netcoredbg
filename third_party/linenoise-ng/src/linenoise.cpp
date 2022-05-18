@@ -3457,7 +3457,11 @@ void linenoisePrintKeyCodes(void) {
   disableRawMode();
 }
 
-static void WindowSizeChanged(int) {
+static void
+#if defined(WIN32) && defined(_TARGET_X86_)
+            __cdecl
+#endif
+                    WindowSizeChanged(int) {
   // do nothing here but setting this flag
   gotResize = true;
 #ifdef _WIN32
