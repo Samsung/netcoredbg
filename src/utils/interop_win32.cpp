@@ -1,6 +1,10 @@
 // Copyright (C) 2020 Samsung Electronics Co., Ltd.
 // See the LICENSE file in the project root for more information.
 
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
 /// \file interop_win32.h  This file contains windows-specific functions for Interop class defined in interop.h
 
 #ifdef WIN32
