@@ -57,7 +57,13 @@ ALL_TEST_NAMES=(
     "MITestNoJMCExceptionBreakpoint"
     "MITestSizeof"
     "MITestAsyncLambdaEvaluate"
+    "MITestHotReloadAsyncStepping"
+    "MITestHotReloadBreak"
     "MITestHotReloadBreakpoint"
+    "MITestHotReloadEvaluate"
+    "MITestHotReloadStepping"
+    "MITestHotReloadJMC"
+    "MITestHotReloadWithoutBreak"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -202,7 +208,11 @@ for i in $(eval echo {1..$REPEAT}); do
 # Build, push and run tests
 for TEST_NAME in $TEST_NAMES; do
     TEST_PROJ_NAME=$TEST_NAME;
-    if  [[ $TEST_NAME == MITestHotReload* ]] ;
+
+    if  [[ $TEST_NAME == MITestHotReloadAsyncStepping ]] ;
+    then
+        TEST_PROJ_NAME="TestAppHotReloadAsync"
+    elif  [[ $TEST_NAME == MITestHotReload* ]] ;
     then
         TEST_PROJ_NAME="TestAppHotReload"
     fi

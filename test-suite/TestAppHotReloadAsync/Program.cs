@@ -1,16 +1,18 @@
-﻿using System;using System.Diagnostics;using System.Threading;
-                namespace TestAppHotReload
+﻿using System;
+using System.Threading.Tasks;
+                namespace TestAppHotReloadAsync
                 {
                     class Program
                     {
-                        static void Main(string[] args)
+                        static async Task Main(string[] args)
                         {
                             Console.WriteLine("Hello World!");
-                            HotReloadTest();
+                            await HotReloadTestAsync();
                         }
-                        static void HotReloadTest()
+                        static async Task HotReloadTestAsync()
                         {
                             Console.WriteLine("Initial string.");
+                            await Task.Delay(100);
                         }
                     }
                 }

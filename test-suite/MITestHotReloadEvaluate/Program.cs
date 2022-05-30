@@ -142,18 +142,30 @@ namespace NetcoreDbgTest.Script
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public void EnableFuncBreakpoint(string caller_trace, string funcName)
-        {
-            Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f " + funcName).Class,
-                         @"__FILE__:__LINE__"+"\n"+caller_trace);
-        }
-
         public void Continue(string caller_trace)
         {
             Assert.Equal(MIResultClass.Running,
                          MIDebugger.Request("-exec-continue").Class,
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public string GetAndCheckValue(string caller_trace, string ExpectedResult, string ExpectedType, string Expression)
+        {
+            var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", Expression));
+            Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Assert.Equal(Expression, ((MIConst)res["exp"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(ExpectedType, ((MIConst)res["type"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(ExpectedResult, ((MIConst)res["value"]).CString, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            return ((MIConst)res["name"]).CString;
+        }
+
+        public void CheckErrorAtRequest(string caller_trace, string Expression, string errMsgStart)
+        {
+            var res = MIDebugger.Request(String.Format("-var-create - * \"{0}\"", Expression));
+            Assert.Equal(MIResultClass.Error, res.Class, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.True(((MIConst)res["msg"]).CString.StartsWith(errMsgStart), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
         public void CheckHostRuntimeVersion(string caller_trace)
@@ -248,13 +260,13 @@ namespace NetcoreDbgTest.Script
     }
 }
 
-namespace MITestHotReloadBreakpoint
+namespace MITestHotReloadEvaluate
 {
     class Program
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "bp_test1", (Object context) => {
+            Label.Checkpoint("init", "eval_test1", (Object context) => {
                 Context Context = (Context)context;
                 Context.CheckHostRuntimeVersion(@"__FILE__:__LINE__");
                 Context.CheckHostOS(@"__FILE__:__LINE__");
@@ -264,57 +276,19 @@ namespace MITestHotReloadBreakpoint
                 Context.CheckTargetRuntimeVersion(@"__FILE__:__LINE__");
                 Context.StartGenDeltaSession(@"__FILE__:__LINE__");
 
-                // Debugger should remove breakpoint from old code and we never stop on it during old code execution.
-                // Note, at `Main()` update we execute `Main()` code (we stopped at entry point), so, we continue old `Main()` code execution.
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 8);
-
                 Context.GetDelta(@"__FILE__:__LINE__",
                 @"using System;
                 namespace TestAppHotReload
                 {
-                    class Program
+                    class TestClass
                     {
-                        static void Main(string[] args)
-                        {
-                            Console.WriteLine(""Hello World! Main updated."");                               // line 8
-                            HotReloadTest();
-                        }
-                        static void HotReloadTest()
-                        {
-                            Console.WriteLine(""Updated string."");
-                            HotReloadBreakpointTest1();
-                            HotReloadBreakpointTest1();                                                      // line 15
-                        }                                                                                    // line 16
-                        static void HotReloadBreakpointTest1()
-                        {
-                            Console.WriteLine(""Added string."");                                            // line 19
-                        }
+                        int i = 5;
                     }
-                }", @"Program.cs");
-                Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta1");
-                Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta1");
 
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 15);
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test1", "bp_test_old_func_resetup", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 15);
-
-                // Setup breakpoints before apply delta.
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 16);
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 19);
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 25);
-                Context.EnableFuncBreakpoint(@"__FILE__:__LINE__", "Program.HotReloadBreakpointTest1");
-                Context.EnableFuncBreakpoint(@"__FILE__:__LINE__", "Program.HotReloadBreakpointTest2");
-
-                Context.GetDelta(@"__FILE__:__LINE__",
-                @"using System;
-                namespace TestAppHotReload
-                {
                     class Program
                     {
+                        static int iStatic = 10;
+
                         static void Main(string[] args)
                         {
                             Console.WriteLine(""Hello World!"");
@@ -323,54 +297,135 @@ namespace MITestHotReloadBreakpoint
                         static void HotReloadTest()
                         {
                             Console.WriteLine(""Updated string."");
-                            HotReloadBreakpointTest1();
-                            HotReloadBreakpointTest1();                                                      // line 15
+                            HotReloadEvalTest1(555);
+                            HotReloadEvalTest1(555);
                         }
-                        static void HotReloadBreakpointTest1()
+                        static void HotReloadEvalTest1(int iArg)
                         {
-                            Console.WriteLine(""Updated added string."");                                    // line 19
-                            HotReloadBreakpointTest2();
+                            int iLocal = 22;
+                            var clLocal = new TestClass();
+                            Console.WriteLine(""iArg="" + iArg.ToString());
+                            Console.WriteLine(""iLocal="" + iLocal.ToString());
+                            Console.WriteLine(""iStatic="" + iStatic.ToString());
+                            {
+                                int iLocalScope = 33;
+                                Console.WriteLine(""iLocalScope="" + iLocalScope.ToString());                // line 33
+                            }
+                        }                                                                                    // line 35
+                    }
+                }", @"Program.cs");
+                Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta1");
+                Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta1");
+
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 33);
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 35);
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            Label.Checkpoint("eval_test1", "eval_test2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 33);
+
+                // Check argument in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "iArg");
+                // Check local variable in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "22", "int", "iLocal");
+                // Check local variable in scope in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "33", "int", "iLocalScope");
+                // Check added static field.
+                // Note, it have `0` since static constructor was called before we add this field.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "iStatic");
+                // Check field in added class.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "clLocal.i");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            Label.Checkpoint("eval_test2", "eval_test3", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 35);
+
+                // Check argument in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "iArg");
+                // Check local variable in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "22", "int", "iLocal");
+                // Check local variable out of scope in added method.
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "iLocalScope", "error");
+                // Check added static field.
+                // Note, it have `0` since static constructor was called before we add this field.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "iStatic");
+                // Check field in added class.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "clLocal.i");
+            });
+
+            Label.Checkpoint("eval_test3", "eval_test4", (Object context) => {
+                Context Context = (Context)context;
+
+                Context.GetDelta(@"__FILE__:__LINE__",
+                @"using System;
+                namespace TestAppHotReload
+                {
+                    class TestClass
+                    {
+                        int i = 5;
+                    }
+
+                    class Program
+                    {
+                        static int iStatic = 10;
+
+                        static void Main(string[] args)
+                        {
+                            Console.WriteLine(""Hello World!"");
+                            HotReloadTest();
                         }
-                        static void HotReloadBreakpointTest2()
+                        static void HotReloadTest()
                         {
-                            Console.WriteLine(""Another added string."");
-                            Console.WriteLine(""One more added string."");                                   // line 25
+                            Console.WriteLine(""Updated string."");
+                            HotReloadEvalTest1(555);
+                            HotReloadEvalTest1(555);
+                        }
+                        static void HotReloadEvalTest1(int iArg)
+                        {                                                                                    // line 25
                         }
                     }
                 }", @"Program.cs");
                 Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta2");
                 Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta2");
 
+                // Check argument in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "iArg");
+                // Check local variable in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "22", "int", "iLocal");
+                // Check local variable out of scope in added method.
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "iLocalScope", "error");
+                // Check added static field.
+                // Note, it have `0` since static constructor was called before we add this field.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "iStatic");
+                // Check field in added class.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "clLocal.i");
+
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 25);
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("bp_test_old_func_resetup", "bp_test_old_line_resetup", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 18); // Program.HotReloadBreakpointTest1
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test_old_line_resetup", "bp_test_func_added", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 19);
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test_func_added", "bp_test_line_added", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 23); // Program.HotReloadBreakpointTest2
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test_line_added", "bp_test_line_not_changed", (Object context) => {
+            Label.Checkpoint("eval_test4", "finish", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 25);
-                Context.Continue(@"__FILE__:__LINE__");
-            });
 
-            Label.Checkpoint("bp_test_line_not_changed", "finish", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 16);
+                // Check argument in added method.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "555", "int", "iArg");
+                // Check local variable in added method.
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "iLocal", "error");
+                // Check local variable out of scope in added method.
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "iLocalScope", "error");
+                // Check added static field.
+                // Note, it have `0` since static constructor was called before we add this field.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "0", "int", "iStatic");
+                // Check field in added class.
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "clLocal.i", "error");
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

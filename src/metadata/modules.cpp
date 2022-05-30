@@ -1487,7 +1487,11 @@ HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std
 
     PVOID pSymbolReaderHandle = nullptr;
     IfFailRet(Interop::LoadDeltaPdb(deltaPDB, &pSymbolReaderHandle, methodTokens));
+    // Note, even if methodTokens is empty, pSymbolReaderHandle must be added into vector (we use indexes that correspond to il/metadata apply number + will care about release it in proper way).
     mdInfo.m_symbolReaderHandles.emplace_back(pSymbolReaderHandle);
+
+    if (methodTokens.empty())
+        return S_OK;
 
     if (needJMC)
         DisableJMCByAttributes(pModule, methodTokens);

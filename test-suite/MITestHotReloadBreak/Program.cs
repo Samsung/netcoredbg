@@ -102,6 +102,91 @@ namespace NetcoreDbgTest.Script
                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void WasBreakHit(string caller_trace, string bpFileName, int bpNumLine)
+        {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+                var signal_name = (MIConst)output["signal-name"];
+
+                if (reason.CString != "signal-received" &&
+                    signal_name.CString != "SIGINT") {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
+
+                if (fileName.CString == bpFileName &&
+                    line == bpNumLine) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasBreakHitInOutdatedCode(string caller_trace)
+        {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+                var signal_name = (MIConst)output["signal-name"];
+
+                if (reason.CString != "signal-received" &&
+                    signal_name.CString != "SIGINT") {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var func =  ((MIConst)frame["func"]).CString;
+
+                if (func.StartsWith("[Outdated Code]")) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasStep(string caller_trace, int bpNumLine)
+        {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+                if (reason.CString != "end-stepping-range") {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var line = ((MIConst)frame["line"]).Int;
+                if (bpNumLine == line) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
@@ -142,17 +227,17 @@ namespace NetcoreDbgTest.Script
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
-        public void EnableFuncBreakpoint(string caller_trace, string funcName)
-        {
-            Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-break-insert -f " + funcName).Class,
-                         @"__FILE__:__LINE__"+"\n"+caller_trace);
-        }
-
         public void Continue(string caller_trace)
         {
             Assert.Equal(MIResultClass.Running,
                          MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void StepOver(string caller_trace)
+        {
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-next").Class,
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
@@ -248,13 +333,13 @@ namespace NetcoreDbgTest.Script
     }
 }
 
-namespace MITestHotReloadBreakpoint
+namespace MITestHotReloadBreak
 {
     class Program
     {
         static void Main(string[] args)
         {
-            Label.Checkpoint("init", "bp_test1", (Object context) => {
+            Label.Checkpoint("init", "break_test1", (Object context) => {
                 Context Context = (Context)context;
                 Context.CheckHostRuntimeVersion(@"__FILE__:__LINE__");
                 Context.CheckHostOS(@"__FILE__:__LINE__");
@@ -264,53 +349,11 @@ namespace MITestHotReloadBreakpoint
                 Context.CheckTargetRuntimeVersion(@"__FILE__:__LINE__");
                 Context.StartGenDeltaSession(@"__FILE__:__LINE__");
 
-                // Debugger should remove breakpoint from old code and we never stop on it during old code execution.
-                // Note, at `Main()` update we execute `Main()` code (we stopped at entry point), so, we continue old `Main()` code execution.
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 8);
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 28);
 
                 Context.GetDelta(@"__FILE__:__LINE__",
                 @"using System;
-                namespace TestAppHotReload
-                {
-                    class Program
-                    {
-                        static void Main(string[] args)
-                        {
-                            Console.WriteLine(""Hello World! Main updated."");                               // line 8
-                            HotReloadTest();
-                        }
-                        static void HotReloadTest()
-                        {
-                            Console.WriteLine(""Updated string."");
-                            HotReloadBreakpointTest1();
-                            HotReloadBreakpointTest1();                                                      // line 15
-                        }                                                                                    // line 16
-                        static void HotReloadBreakpointTest1()
-                        {
-                            Console.WriteLine(""Added string."");                                            // line 19
-                        }
-                    }
-                }", @"Program.cs");
-                Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta1");
-                Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta1");
-
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 15);
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test1", "bp_test_old_func_resetup", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 15);
-
-                // Setup breakpoints before apply delta.
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 16);
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 19);
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 25);
-                Context.EnableFuncBreakpoint(@"__FILE__:__LINE__", "Program.HotReloadBreakpointTest1");
-                Context.EnableFuncBreakpoint(@"__FILE__:__LINE__", "Program.HotReloadBreakpointTest2");
-
-                Context.GetDelta(@"__FILE__:__LINE__",
-                @"using System;
+                using System.Diagnostics;
                 namespace TestAppHotReload
                 {
                     class Program
@@ -323,18 +366,91 @@ namespace MITestHotReloadBreakpoint
                         static void HotReloadTest()
                         {
                             Console.WriteLine(""Updated string."");
-                            HotReloadBreakpointTest1();
-                            HotReloadBreakpointTest1();                                                      // line 15
+                            HotReloadBreakTest1();
+                            HotReloadBreakTest2();
+                            HotReloadBreakTest3();
+                            Debugger.Break();
                         }
-                        static void HotReloadBreakpointTest1()
+                        static void HotReloadBreakTest1()
                         {
-                            Console.WriteLine(""Updated added string."");                                    // line 19
-                            HotReloadBreakpointTest2();
+                            Console.WriteLine(""Added break."");
+                            Debugger.Break();                                                                // line 23
                         }
-                        static void HotReloadBreakpointTest2()
+                        static void HotReloadBreakTest2()
                         {
-                            Console.WriteLine(""Another added string."");
-                            Console.WriteLine(""One more added string."");                                   // line 25
+                            Console.WriteLine(""Added break + breakpoint (added before apply deltas)."");
+                            Debugger.Break();                                                                // line 28
+                            Console.WriteLine(""Added break + breakpoint (added after apply deltas)."");
+                            Debugger.Break();                                                                // line 30
+                        }
+                        static void HotReloadBreakTest3()
+                        {
+                            Console.WriteLine(""Added break + step."");                                      // line 34
+                            Debugger.Break();                                                                // line 35
+                        }                                                                                    // line 36
+                    }
+                }", @"Program.cs");
+                Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta1");
+                Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta1");
+
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 30);
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 34);
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test, that debugger stop at Debugger.Break() in managed code.
+            Label.Checkpoint("break_test1", "break_test2", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakHit(@"__FILE__:__LINE__", @"Program.cs", 23);
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test, that debugger ignore Debugger.Break() on continue in case it already stop at breakpoint at this code line.
+            Label.Checkpoint("break_test2", "break_test3", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 28);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 30);
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test, that debugger ignore Debugger.Break() on step in case it already stop at step at this code.
+            Label.Checkpoint("break_test3", "break_test4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 34);
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", 35);
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", 36);
+            });
+
+            // Stop on Break in outdated code.
+            Label.Checkpoint("break_test4", "finish", (Object context) => {
+                Context Context = (Context)context;
+
+                Context.GetDelta(@"__FILE__:__LINE__",
+                @"using System;
+                using System.Diagnostics;
+                namespace TestAppHotReload
+                {
+                    class Program
+                    {
+                        static void Main(string[] args)
+                        {
+                            Console.WriteLine(""Hello World!"");
+                            HotReloadTest();
+                        }
+                        static void HotReloadTest()
+                        {
+                        }
+                        static void HotReloadBreakTest1()
+                        {
+                        }
+                        static void HotReloadBreakTest2()
+                        {
+                        }
+                        static void HotReloadBreakTest3()
+                        {
                         }
                     }
                 }", @"Program.cs");
@@ -342,35 +458,8 @@ namespace MITestHotReloadBreakpoint
                 Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta2");
 
                 Context.Continue(@"__FILE__:__LINE__");
-            });
 
-            Label.Checkpoint("bp_test_old_func_resetup", "bp_test_old_line_resetup", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 18); // Program.HotReloadBreakpointTest1
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test_old_line_resetup", "bp_test_func_added", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 19);
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test_func_added", "bp_test_line_added", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 23); // Program.HotReloadBreakpointTest2
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test_line_added", "bp_test_line_not_changed", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 25);
-                Context.Continue(@"__FILE__:__LINE__");
-            });
-
-            Label.Checkpoint("bp_test_line_not_changed", "finish", (Object context) => {
-                Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 16);
+                Context.WasBreakHitInOutdatedCode(@"__FILE__:__LINE__");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

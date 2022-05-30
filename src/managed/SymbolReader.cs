@@ -603,7 +603,7 @@ namespace NetCoreDbg
                 }
 
                 if (ModuleData.Count == 0)
-                    return RetCode.Fail;
+                    return RetCode.OK;
 
                 int structModuleMethodsDataSize = Marshal.SizeOf<file_methods_data_t>();
                 module_methods_data_t managedData;
