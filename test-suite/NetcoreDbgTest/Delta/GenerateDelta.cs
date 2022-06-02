@@ -3,13 +3,14 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.MSBuild;
 using Microsoft.Build.Locator;
+using System.Threading.Tasks;
+using System.Collections;
 
 namespace NetcoreDbgTest.GetDeltaApi
 {
@@ -28,7 +29,7 @@ namespace NetcoreDbgTest.GetDeltaApi
         private static Solution solution;
         private static WatchHotReloadService watchHotReloadService;
         private static Update delta;
-
+        public static List<string> diagnostics = new List<string>();
         /// <summary>
         /// Check .Net runtime version on test system
         /// </summary>
@@ -59,11 +60,13 @@ namespace NetcoreDbgTest.GetDeltaApi
                 var project = workspace.OpenProjectAsync(path, cancellationToken: CancellationToken.None).Result;
 
                 solution = project.Solution;
-                watchHotReloadService = new WatchHotReloadService(solution.Workspace.Services);
-                watchHotReloadService.StartSessionAsync(solution, CancellationToken.None).Wait();
+                watchHotReloadService = new WatchHotReloadService();
+                watchHotReloadService.InitializeService(project);
+                watchHotReloadService.StartSessionAsync(solution, CancellationToken.None);
             }
             catch(Exception exception)
             {
+                diagnostics.Add(exception.ToString());
                 return false;
             }
             return true;
@@ -135,13 +138,13 @@ namespace NetcoreDbgTest.GetDeltaApi
             solution = solution.WithDocumentText(documentId, SourceText.From(source, Encoding.UTF8));
             var (updates, hotReloadDiagnostics) = watchHotReloadService.EmitSolutionUpdate(solution, CancellationToken.None);
 
-            if (!hotReloadDiagnostics.IsDefaultOrEmpty)
+            if ((IEnumerable)hotReloadDiagnostics != null)
             {
-                foreach (var diagnostic in hotReloadDiagnostics)
+                foreach (var diagnostic in (IEnumerable)hotReloadDiagnostics)
                 {
-                    Console.WriteLine(diagnostic.ToString());
+                    diagnostics.Add(diagnostic.ToString());
                 }
-                Console.WriteLine($"Changes made in project will not be applied while the application is running,\n please change the source file #{filePath} in sources");
+                diagnostics.Add($"Changes made in project will not be applied while the application is running,\n please change the source file #{filePath} in sources");
                 return false;
             }
             delta = updates;
@@ -159,7 +162,7 @@ namespace NetcoreDbgTest.GetDeltaApi
             }
             catch(Exception ex)
             {
-                Console.WriteLine(ex.ToString());
+                diagnostics.Add(ex.ToString());
                 return false;
             }
             return true;
@@ -171,11 +174,45 @@ namespace NetcoreDbgTest.GetDeltaApi
         /// <param name="fileName">Filename</param>
         public bool WriteDeltas(string fileName) 
         {
-            WriteDeltaToFile(delta.MetadataDelta.ToArray(), $"{fileName}.metadata");
-            WriteDeltaToFile(delta.ILDelta.ToArray(), $"{fileName}.il");
-            WriteDeltaToFile(delta.PdbDelta.ToArray(), $"{fileName}.pdb");
+            try
+            {
+                WriteDeltaToFile(delta.MetadataDelta.ToArray(), $"{fileName}.metadata");
+                WriteDeltaToFile(delta.ILDelta.ToArray(), $"{fileName}.il");
+                WriteDeltaToFile(delta.PdbDelta.ToArray(), $"{fileName}.pdb");
+                WriteLineUpdates(delta, $"{fileName}.bin");
+            }
+            catch(Exception ex)
+            {
+                diagnostics.Add(ex.ToString());
+                return false;
+            }
+            return true;
+        }
 
-            return File.Exists($"{fileName}.il") ? true : false;
+        private static void WriteLineUpdates(Update delta, string basename)
+        {
+            using (BinaryWriter bw = new BinaryWriter(File.Open(basename, FileMode.Create))) 
+            {
+                var sequencePointsCount = (uint)(delta.SequencePoints as ICollection).Count;
+                bw.Write(sequencePointsCount);
+                foreach (var sp in delta.SequencePoints) 
+                {
+                    var filenameLength = Convert.ToUInt32(Encoding.UTF8.GetBytes(((object)sp).GetType().GetProperty("FileName").GetValue(sp)).Length);
+                    bw.Write(filenameLength);
+                    var filename = Encoding.UTF8.GetBytes(((object)sp).GetType().GetProperty("FileName").GetValue(sp));
+                    bw.Write(filename);
+                    var lineUpdates = (object)(sp).GetType().GetProperty("LineUpdates").GetValue(sp);
+                    var lineUpdatesLength = Convert.ToUInt32(lineUpdates.GetType().GetProperty("Length").GetValue(lineUpdates));
+                    bw.Write(lineUpdatesLength);
+                    foreach (var lu in (IEnumerable)lineUpdates) 
+                    {
+                        var newline = Convert.ToUInt32((object)lu.GetType().GetProperty("NewLine").GetValue(lu));
+                        bw.Write(newline);
+                        var oldline = Convert.ToUInt32((object)lu.GetType().GetProperty("OldLine").GetValue(lu));
+                        bw.Write(oldline);
+                    }
+                }
+            }
         }
 
         /// <summary>d

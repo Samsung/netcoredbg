@@ -1,11 +1,16 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Host;
+using Microsoft.CodeAnalysis.MSBuild;
 
 namespace NetcoreDbgTest.GetDeltaApi
 {
@@ -55,56 +60,66 @@ namespace NetcoreDbgTest.GetDeltaApi
         public readonly ImmutableArray<byte> ILDelta;
         public readonly ImmutableArray<byte> MetadataDelta;
         public readonly ImmutableArray<byte> PdbDelta;
+        public readonly dynamic SequencePoints;
 
-        public Update(Guid moduleId, ImmutableArray<byte> ilDelta, ImmutableArray<byte> metadataDelta, ImmutableArray<byte> pdbDelta)
+        public Update(Guid moduleId, ImmutableArray<byte> ilDelta, ImmutableArray<byte> metadataDelta, ImmutableArray<byte> pdbDelta, dynamic sequencePoints)
         {
             ModuleId = moduleId;
             ILDelta = ilDelta;
             MetadataDelta = metadataDelta;
             PdbDelta = pdbDelta;
+            SequencePoints = sequencePoints;
         }
     }
 
     public class WatchHotReloadService
     {
-        private readonly Func<Solution, CancellationToken, Task> startSession;
-        private readonly Func<Solution, CancellationToken, ITuple> emitSolutionUpdateAsync;
-        private readonly Action endSession;
-
-        private static ImmutableArray<string> Net5RuntimeCapabilities = ImmutableArray.Create(EditAndContinueCapabilities.Baseline, EditAndContinueCapabilities.AddInstanceFieldToExistingType,
+        public object current_project = null;
+        public object editAndContinueWorkspaceServiceInstance = null;
+        private static ImmutableArray<string> s_net5RuntimeCapabilities = ImmutableArray.Create(EditAndContinueCapabilities.Baseline, EditAndContinueCapabilities.AddInstanceFieldToExistingType,
                                                                                         EditAndContinueCapabilities.AddStaticFieldToExistingType, EditAndContinueCapabilities.AddMethodToExistingType,
                                                                                         EditAndContinueCapabilities.NewTypeDefinition);
 
-        private static ImmutableArray<string> Net6RuntimeCapabilities = Net5RuntimeCapabilities.AddRange(new[] { EditAndContinueCapabilities.ChangeCustomAttributes, EditAndContinueCapabilities.UpdateParameters });
+        private static ImmutableArray<string> s_net6RuntimeCapabilities = s_net5RuntimeCapabilities.AddRange(new[] { EditAndContinueCapabilities.ChangeCustomAttributes, EditAndContinueCapabilities.UpdateParameters });
 
-
-        public WatchHotReloadService(HostWorkspaceServices services)
+        /// <summary>
+        /// Initialize WatchHotReloadService
+        /// </summary>
+        /// <param name="project">Current project</param>
+        public void InitializeService(Project project)
         {
             try
             {
-                var watchType = Type.GetType("Microsoft.CodeAnalysis.ExternalAccess.Watch.Api.WatchHotReloadService, Microsoft.CodeAnalysis.Features");
-                //We use the full set of capabilities for the latest version since it also works correctly on lower runtime versions to get deltas
-                var watchHotReloadServiceInstance = Activator.CreateInstance(watchType, services, Net6RuntimeCapabilities);
-                startSession = watchType.GetMethod("StartSessionAsync").CreateDelegate(typeof(Func<Solution, CancellationToken, Task>), watchHotReloadServiceInstance) as Func<Solution, CancellationToken, Task>;
-
-                emitSolutionUpdateAsync = (solution, token) =>
-                {
-                    var emitSolutionResult = watchType.GetMethod("EmitSolutionUpdateAsync").Invoke(watchHotReloadServiceInstance, new object[] { solution, token });
-                    var results = emitSolutionResult.GetType().GetProperty("Result").GetValue(emitSolutionResult, null) as ITuple;
-                    return results;
-                };
-
-                endSession = watchType.GetMethod("EndSession").CreateDelegate(typeof(Action), watchHotReloadServiceInstance) as Action;
+                current_project = project;
+                var encWorkspaceServiceType = Type.GetType("Microsoft.CodeAnalysis.EditAndContinue.EditAndContinueWorkspaceService, Microsoft.CodeAnalysis.Features");
+                editAndContinueWorkspaceServiceInstance = encWorkspaceServiceType.GetConstructor(Array.Empty<Type>()).Invoke(parameters: Array.Empty<object>());
             }
-            catch (Exception ex) 
+            catch (Exception ex)
             {
                 throw new Exception(ex.Message);
             }
         }
 
-        public Task StartSessionAsync(Solution currentSolution, CancellationToken cancellationToken)
+        /// <summary>
+        /// Start debugging session
+        /// </summary>
+        /// <param name="solution">Current solution</param>
+        /// <param name="cancellationToken">cancellation token</param>
+        public void StartSessionAsync(Solution solution, CancellationToken cancellationToken)
         {
-            return startSession(currentSolution, cancellationToken);
+
+            var defaultDocumentTrackingServiceType = Type.GetType("Microsoft.CodeAnalysis.SolutionCrawler.DefaultDocumentTrackingService, Microsoft.CodeAnalysis.Features");
+            var defaultDocumentTrackingServiceConstructor = defaultDocumentTrackingServiceType.GetConstructor(Array.Empty<Type>()).Invoke(parameters: Array.Empty<object>());
+            var emptyImmutableArrayofDocumentId = defaultDocumentTrackingServiceConstructor.GetType().GetMethod("GetVisibleDocuments").Invoke(obj: defaultDocumentTrackingServiceConstructor, parameters: Array.Empty<object>());
+            var debuggerService = Type.GetType("Microsoft.CodeAnalysis.ExternalAccess.Watch.Api.WatchHotReloadService, Microsoft.CodeAnalysis.Features")
+                                      .GetNestedType(name: "DebuggerService", bindingAttr: BindingFlags.NonPublic)
+                                      .GetConstructor(types: new Type[] { s_net6RuntimeCapabilities.GetType() })
+                                      .Invoke(parameters: new object[] { s_net6RuntimeCapabilities });
+            
+            var startDebuggingSessionAsync = editAndContinueWorkspaceServiceInstance.GetType()
+                                                        .GetMethod("StartDebuggingSessionAsync")
+                                                        .Invoke(obj: editAndContinueWorkspaceServiceInstance,
+                                                                parameters: new object[] { solution, debuggerService, ImmutableArray<DocumentId>.Empty, false, true, CancellationToken.None });
         }
 
         /// <summary>
@@ -116,27 +131,63 @@ namespace NetcoreDbgTest.GetDeltaApi
         /// <returns>
         /// Updates and Rude Edit diagnostics. Does not include syntax or semantic diagnostics.
         /// </returns>
-        public (Update deltas, ImmutableArray<Diagnostic> diagnostics) EmitSolutionUpdate(Solution solution, CancellationToken cancellationToken)
+        public (Update deltas, object diagnostics) EmitSolutionUpdate(Solution solution, CancellationToken cancellationToken)
         {
-            var values = emitSolutionUpdateAsync(solution, cancellationToken);
-            var moduleUpdates = (IList)values[0];
-            var diagnostics = (ImmutableArray<Diagnostic>)values[1];
             var deltas = new Update();
+            object diagnostics = default;
+            var activeStatementSpanProvider = Type.GetType("Microsoft.CodeAnalysis.ExternalAccess.Watch.Api.WatchHotReloadService, Microsoft.CodeAnalysis.Features").GetField(name: "s_solutionActiveStatementSpanProvider",
+                                                                                                                                                                              bindingAttr: BindingFlags.NonPublic | BindingFlags.Static).GetValue(default);
+            var id = editAndContinueWorkspaceServiceInstance.GetType().GetField(name: "s_debuggingSessionId", bindingAttr: BindingFlags.NonPublic | BindingFlags.Static).GetValue(editAndContinueWorkspaceServiceInstance);
+            var debuggingSessionId = Type.GetType("Microsoft.CodeAnalysis.EditAndContinue.DebuggingSessionId, Microsoft.CodeAnalysis.Features").GetConstructor(new Type[] { typeof(int) }).Invoke(new object[] { id });
+            var emitSolutionUpdateAsync = editAndContinueWorkspaceServiceInstance.GetType().GetMethod("EmitSolutionUpdateAsync").Invoke(obj: editAndContinueWorkspaceServiceInstance,
+                                                                                                                                        parameters: new object[] { debuggingSessionId, solution, activeStatementSpanProvider, CancellationToken.None });
+            var get_results = emitSolutionUpdateAsync.GetType().GetMethod("get_Result").Invoke(obj: emitSolutionUpdateAsync,
+                                                                                               parameters: Array.Empty<object>());
+            var newModuleUpdates = get_results.GetType().GetField("ModuleUpdates").GetValue(get_results);
+            var getAllDiagnostics = get_results.GetType().GetMethod("GetAllDiagnosticsAsync").Invoke(get_results, new object[] { solution, cancellationToken });
+            var updates = newModuleUpdates.GetType().GetProperty("Updates").GetValue(newModuleUpdates);
+            var defaultDocumentTrackingServiceType = Type.GetType("Microsoft.CodeAnalysis.SolutionCrawler.DefaultDocumentTrackingService, Microsoft.CodeAnalysis.Features");
+            var defaultDocumentTrackingServiceConstructor = defaultDocumentTrackingServiceType.GetConstructor(Array.Empty<Type>()).Invoke(parameters: Array.Empty<object>());
+            var emptyImmutableArrayofDocumentId = defaultDocumentTrackingServiceConstructor.GetType().GetMethod("GetVisibleDocuments").Invoke(obj: defaultDocumentTrackingServiceConstructor,
+                                                                                                                                              parameters: Array.Empty<object>());
+            var managedModuleUpdateStatusReady = Type.GetType("Microsoft.CodeAnalysis.EditAndContinue.Contracts.ManagedModuleUpdateStatus, Microsoft.CodeAnalysis.Features").GetField("Ready").GetValue(newModuleUpdates);
+
+            if (newModuleUpdates.GetType().GetProperty("Status").GetValue(newModuleUpdates).Equals(managedModuleUpdateStatusReady))
+            {
+                editAndContinueWorkspaceServiceInstance.GetType().GetMethod("CommitSolutionUpdate").Invoke(obj: editAndContinueWorkspaceServiceInstance,
+                                                                                               parameters: new object[] { debuggingSessionId, emptyImmutableArrayofDocumentId });
+            }
+            else
+            {
+                diagnostics = getAllDiagnostics.GetType().GetProperty("Result").GetValue(getAllDiagnostics);
+            }
+
+            var moduleUpdates = (IList)updates;
 
             for (int i = 0; i < moduleUpdates.Count; i++)
             {
                 object moduleUpdate = moduleUpdates[i];
                 var updateType = moduleUpdate.GetType();
 
-                deltas = new Update((Guid)updateType.GetField("ModuleId").GetValue(moduleUpdate),
-                                        (ImmutableArray<byte>)updateType.GetField("ILDelta").GetValue(moduleUpdate),
-                                        (ImmutableArray<byte>)updateType.GetField("MetadataDelta").GetValue(moduleUpdate),
-                                        (ImmutableArray<byte>)updateType.GetField("PdbDelta").GetValue(moduleUpdate));
-
+                deltas = new Update((Guid)updateType.GetProperty("Module").GetValue(moduleUpdate),
+                        (ImmutableArray<byte>)updateType.GetProperty("ILDelta").GetValue(moduleUpdate),
+                        (ImmutableArray<byte>)updateType.GetProperty("MetadataDelta").GetValue(moduleUpdate),
+                        (ImmutableArray<byte>)updateType.GetProperty("PdbDelta").GetValue(moduleUpdate),
+                        (dynamic)(updateType.GetProperty("SequencePoints").GetValue(moduleUpdate)));
             }
             return (deltas, diagnostics);
         }
 
-        public void EndSession() => endSession();
+        /// <summary>
+        /// End Debugging session
+        /// </summary>
+        public void EndSession()
+        {
+            object docs = null;
+            var id = editAndContinueWorkspaceServiceInstance.GetType().GetField(name: "s_debuggingSessionId", bindingAttr: BindingFlags.NonPublic | BindingFlags.Static).GetValue(editAndContinueWorkspaceServiceInstance);
+            var debuggingSessionId = Type.GetType("Microsoft.CodeAnalysis.EditAndContinue.DebuggingSessionId, Microsoft.CodeAnalysis.Features").GetConstructor(new Type[] { typeof(int) }).Invoke(new object[] { id });
+            var endDebuggingSession = editAndContinueWorkspaceServiceInstance.GetType().GetMethod("EndDebuggingSession").Invoke(obj: editAndContinueWorkspaceServiceInstance,
+                                                                                                                            parameters: new object[] { debuggingSessionId, docs });           
+        }
     }
 }
