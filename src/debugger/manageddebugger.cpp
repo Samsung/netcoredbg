@@ -1332,10 +1332,20 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
     if (!m_iCorProcess)
         return E_FAIL;
 
+    // Deltas can be applied only on stopped debuggee process. For Hot Reload scenario we temporary stop it and continue after deltas applied.
     HRESULT Status;
-    IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
+    BOOL procRunning = FALSE;
+    IfFailRet(m_iCorProcess->IsRunning(&procRunning));
+    if (procRunning == TRUE)
+        IfFailRet(m_iCorProcess->Stop(0));
 
-    return ApplyPdbDelta(dllFileName, deltaPDB);
+    IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
+    IfFailRet(ApplyPdbDelta(dllFileName, deltaPDB));
+
+    if (procRunning == TRUE)
+        IfFailRet(m_iCorProcess->Continue(0));
+
+    return S_OK;
 }
 
 } // namespace netcoredbg
