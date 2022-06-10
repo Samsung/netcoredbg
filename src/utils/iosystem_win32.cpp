@@ -525,7 +525,7 @@ Class::IOSystem::StdFiles Class::get_std_files()
         std::max_align_t align_field;
         char mem[sizeof(Handles)];
     };
-    mem_align_t mem_align_tmp;
+    static mem_align_t mem_align_tmp;
     char * const mem = mem_align_tmp.mem;
 
     Handles& handles = *new (mem) Handles {
