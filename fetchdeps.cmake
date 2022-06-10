@@ -49,7 +49,7 @@ if ("${DOTNET_DIR}" STREQUAL "" AND (("${DBGSHIM_RUNTIME_DIR}" STREQUAL "") OR $
         endif()
         if (CLR_CMAKE_PLATFORM_ARCH_I386)
             set(NETSDKARCH "x86")
-        elseif()
+        else()
             set(NETSDKARCH "x64")
         endif()
         execute_process(
