@@ -288,10 +288,12 @@ namespace VSCodeTestSrcBreakpointResolve
 
         public test_constructors()
         {
+            int i = 5;     // bp here! make sure you correct code (test constructor)!
         }
 
         public test_constructors(int i)
         {
+            int j = 5;
         }
     }
 
@@ -534,9 +536,12 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp23");
 
                 Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
+                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 291); // line number with "int i = 5;" code
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291); // line number with "int i = 5;" code
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
                 Context.Continue(@"__FILE__:__LINE__");

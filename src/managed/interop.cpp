@@ -61,10 +61,10 @@ typedef  void (*DisposeDelegate)(PVOID);
 typedef  RetCode (*GetLocalVariableNameAndScope)(PVOID, int32_t, int32_t, BSTR*, uint32_t*, uint32_t*);
 typedef  RetCode (*GetHoistedLocalScopes)(PVOID, int32_t, PVOID*, int32_t*);
 typedef  RetCode (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, PVOID);
-typedef  RetCode (*GetNextSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, uint32_t*, int32_t*);
+typedef  RetCode (*GetNextUserCodeILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, uint32_t*, int32_t*);
 typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
 typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, uint32_t, PVOID, uint32_t, PVOID, PVOID*);
-typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID[], int32_t, PVOID, int32_t, int32_t, int32_t*, PVOID*);
+typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID[], int32_t, PVOID, int32_t, int32_t, int32_t*, const WCHAR*, PVOID*);
 typedef  RetCode (*GetAsyncMethodSteppingInfoDelegate)(PVOID, mdMethodDef, PVOID*, int32_t*, uint32_t*);
 typedef  RetCode (*GetSourceDelegate)(PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  PVOID (*LoadDeltaPdbDelegate)(const WCHAR*, PVOID*, int32_t*);
@@ -83,7 +83,7 @@ DisposeDelegate disposeDelegate = nullptr;
 GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate = nullptr;
 GetHoistedLocalScopes getHoistedLocalScopesDelegate = nullptr;
 GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate = nullptr;
-GetNextSequencePointByILOffsetDelegate getNextSequencePointByILOffsetDelegate = nullptr;
+GetNextUserCodeILOffsetDelegate getNextUserCodeILOffsetDelegate = nullptr;
 GetStepRangesFromIPDelegate getStepRangesFromIPDelegate = nullptr;
 GetModuleMethodsRangesDelegate getModuleMethodsRangesDelegate = nullptr;
 ResolveBreakPointsDelegate resolveBreakPointsDelegate = nullptr;
@@ -227,7 +227,7 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetHoistedLocalScopes", (void **)&getHoistedLocalScopesDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate)) &&
-        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetNextSequencePointByILOffset", (void **)&getNextSequencePointByILOffsetDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetNextUserCodeILOffset", (void **)&getNextUserCodeILOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetModuleMethodsRanges", (void **)&getModuleMethodsRangesDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "ResolveBreakPoints", (void **)&resolveBreakPointsDelegate)) &&
@@ -252,7 +252,7 @@ void Init(const std::string &coreClrPath)
                               getLocalVariableNameAndScopeDelegate &&
                               getHoistedLocalScopesDelegate &&
                               getSequencePointByILOffsetDelegate &&
-                              getNextSequencePointByILOffsetDelegate &&
+                              getNextUserCodeILOffsetDelegate &&
                               getStepRangesFromIPDelegate &&
                               getModuleMethodsRangesDelegate &&
                               resolveBreakPointsDelegate &&
@@ -291,7 +291,7 @@ void Shutdown()
     getLocalVariableNameAndScopeDelegate = nullptr;
     getHoistedLocalScopesDelegate = nullptr;
     getSequencePointByILOffsetDelegate = nullptr;
-    getNextSequencePointByILOffsetDelegate = nullptr;
+    getNextUserCodeILOffsetDelegate = nullptr;
     getStepRangesFromIPDelegate = nullptr;
     getModuleMethodsRangesDelegate = nullptr;
     resolveBreakPointsDelegate = nullptr;
@@ -318,16 +318,16 @@ HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef method
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
-HRESULT GetNextSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 ilOffset, ULONG32 &ilCloseOffset, bool *noUserCodeFound)
+HRESULT GetNextUserCodeILOffset(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG32 ilOffset, ULONG32 &ilNextOffset, bool *noUserCodeFound)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
-    if (!getNextSequencePointByILOffsetDelegate || !pSymbolReaderHandle)
+    if (!getNextUserCodeILOffsetDelegate || !pSymbolReaderHandle)
         return E_FAIL;
 
     int32_t NoUserCodeFound = 0;
 
     // Sequence points with startLine equal to 0xFEEFEE marker are filtered out on the managed side.
-    RetCode retCode = getNextSequencePointByILOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset, &ilCloseOffset, &NoUserCodeFound);
+    RetCode retCode = getNextUserCodeILOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset, &ilNextOffset, &NoUserCodeFound);
 
     if (noUserCodeFound)
         *noUserCodeFound = NoUserCodeFound == 1;
@@ -411,13 +411,13 @@ HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, uint32_t constrTokensN
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
-HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandles[], int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t nestedToken, int32_t &Count, PVOID *data)
+HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandles[], int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t nestedToken, int32_t &Count, const std::string &sourcePath, PVOID *data)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
     if (!resolveBreakPointsDelegate || !pSymbolReaderHandles || !Tokens || !data)
         return E_FAIL;
 
-    RetCode retCode = resolveBreakPointsDelegate(pSymbolReaderHandles, tokenNum, Tokens, sourceLine, nestedToken, &Count, data);
+    RetCode retCode = resolveBreakPointsDelegate(pSymbolReaderHandles, tokenNum, Tokens, sourceLine, nestedToken, &Count, to_utf16(sourcePath).c_str(), data);
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 

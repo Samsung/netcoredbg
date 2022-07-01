@@ -1265,54 +1265,45 @@ HRESULT ManagedDebugger::SetHotReload(bool enable)
 
 static HRESULT ApplyMetadataAndILDeltas(Modules *pModules, const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL)
 {
-    HRESULT Status = S_OK;
+    HRESULT Status;
 
     std::ifstream deltaILFileStream(deltaIL, std::ios::in | std::ios::binary | std::ios::ate);
     std::ifstream deltaMDFileStream(deltaMD, std::ios::in | std::ios::binary | std::ios::ate);
 
-    if (deltaILFileStream.is_open() && deltaMDFileStream.is_open())
-    {
-        auto deltaILSize = deltaILFileStream.tellg();
-        if (deltaILSize < 0)
-            return E_FAIL;
-        BYTE *deltaILMemBlock = new BYTE[(size_t)deltaILSize];
-        deltaILFileStream.seekg(0, std::ios::beg);
-        deltaILFileStream.read((char*)deltaILMemBlock, deltaILSize);
+    if (!deltaILFileStream.is_open() || !deltaMDFileStream.is_open())
+        return COR_E_FILENOTFOUND;
 
-        auto deltaMDSize = deltaMDFileStream.tellg();
-        if (deltaMDSize < 0)
-            return E_FAIL;
-        BYTE *deltaMDMemBlock = new BYTE[(size_t)deltaMDSize];
-        deltaMDFileStream.seekg(0, std::ios::beg);
-        deltaMDFileStream.read((char*)deltaMDMemBlock, deltaMDSize);
+    auto deltaILSize = deltaILFileStream.tellg();
+    if (deltaILSize < 0)
+        return E_FAIL;
+    std::unique_ptr<BYTE[]> deltaILMemBlock(new BYTE[(size_t)deltaILSize]);
+    deltaILFileStream.seekg(0, std::ios::beg);
+    deltaILFileStream.read((char*)deltaILMemBlock.get(), deltaILSize);
 
-        ToRelease<ICorDebugModule> pModule;
-        IfFailRet(pModules->GetModuleWithName(dllFileName, &pModule, true));
-        ToRelease<ICorDebugModule2> pModule2;
-        IfFailRet(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2));
-        IfFailRet(pModule2->ApplyChanges((ULONG)deltaMDSize, deltaMDMemBlock, (ULONG)deltaILSize, deltaILMemBlock));
-    }
-    else
-    {
-        Status = COR_E_FILENOTFOUND;
-    }
+    auto deltaMDSize = deltaMDFileStream.tellg();
+    if (deltaMDSize < 0)
+        return E_FAIL;
+    std::unique_ptr<BYTE[]> deltaMDMemBlock(new BYTE[(size_t)deltaMDSize]);
+    deltaMDFileStream.seekg(0, std::ios::beg);
+    deltaMDFileStream.read((char*)deltaMDMemBlock.get(), deltaMDSize);
 
-    if (deltaILFileStream.is_open())
-        deltaILFileStream.close();
-    if (deltaMDFileStream.is_open())
-        deltaMDFileStream.close();
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pModules->GetModuleWithName(dllFileName, &pModule, true));
+    ToRelease<ICorDebugModule2> pModule2;
+    IfFailRet(pModule->QueryInterface(IID_ICorDebugModule2, (LPVOID *)&pModule2));
+    IfFailRet(pModule2->ApplyChanges((ULONG)deltaMDSize, deltaMDMemBlock.get(), (ULONG)deltaILSize, deltaILMemBlock.get()));
 
-    return Status;
+    return S_OK;
 }
 
-HRESULT ManagedDebugger::ApplyPdbDelta(const std::string &dllFileName, const std::string &deltaPDB)
+HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates)
 {
     HRESULT Status;
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(m_sharedModules->GetModuleWithName(dllFileName, &pModule, true));
 
     std::unordered_set<mdMethodDef> pdbMethodTokens;
-    IfFailRet(m_sharedModules->ApplyPdbDelta(pModule, m_justMyCode, deltaPDB, pdbMethodTokens));
+    IfFailRet(m_sharedModules->ApplyPdbDeltaAndLineUpdates(pModule, m_justMyCode, deltaPDB, lineUpdates, pdbMethodTokens));
 
     // Since we could have new code lines and new methods added, check all breakpoints again.
     std::vector<BreakpointEvent> events;
@@ -1323,7 +1314,8 @@ HRESULT ManagedDebugger::ApplyPdbDelta(const std::string &dllFileName, const std
     return S_OK;
 }
 
-HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL, const std::string &deltaPDB)
+HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL,
+                                              const std::string &deltaPDB, const std::string &lineUpdates)
 {
     LogFuncEntry();
 
@@ -1340,7 +1332,7 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
         IfFailRet(m_iCorProcess->Stop(0));
 
     IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
-    IfFailRet(ApplyPdbDelta(dllFileName, deltaPDB));
+    IfFailRet(ApplyPdbDeltaAndLineUpdates(dllFileName, deltaPDB, lineUpdates));
 
     if (procRunning == TRUE)
         IfFailRet(m_iCorProcess->Continue(0));

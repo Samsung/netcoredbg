@@ -231,6 +231,7 @@ namespace NetcoreDbgTest.Script
             SdbPush(@"__FILE__:__LINE__"+"\n"+caller_trace, hostPath + ".metadata", targetPath);
             SdbPush(@"__FILE__:__LINE__"+"\n"+caller_trace, hostPath + ".il", targetPath);
             SdbPush(@"__FILE__:__LINE__"+"\n"+caller_trace, hostPath + ".pdb", targetPath);
+            SdbPush(@"__FILE__:__LINE__"+"\n"+caller_trace, hostPath + ".bin", targetPath);
         }
 
         public void GetDelta(string caller_trace, string source, string sourceFileName)
@@ -243,7 +244,7 @@ namespace NetcoreDbgTest.Script
             string targetPath = Path.Combine(@"/tmp", fileName);
             string targetAssemblyName = Path.GetFileName(ControlInfo.TargetAssemblyPath);
             Assert.Equal(MIResultClass.Done,
-                         MIDebugger.Request("-apply-deltas " + targetAssemblyName + " " + targetPath + ".metadata " + targetPath + ".il " + targetPath + ".pdb").Class,
+                         MIDebugger.Request("-apply-deltas " + targetAssemblyName + " " + targetPath + ".metadata " + targetPath + ".il " + targetPath + ".pdb " + targetPath + ".bin").Class,
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 

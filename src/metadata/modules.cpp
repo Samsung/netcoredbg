@@ -9,6 +9,7 @@
 #include <map>
 #include <iomanip>
 #include <algorithm>
+#include <fstream>
 
 #include "managed/interop.h"
 #include "utils/platform.h"
@@ -487,6 +488,45 @@ HRESULT Modules::ResolveFuncBreakpointInModule(ICorDebugModule *pModule, const s
     return ResolveMethodInModule(pModule, funcname, cb);
 }
 
+template <class T>
+static void LineUpdatesForwardCorrection(unsigned fullPathIndex, mdMethodDef methodToken, method_block_updates_t &methodBlockUpdates, T &block)
+{
+    auto findSourceUpdate = methodBlockUpdates.find(methodToken);
+    if (findSourceUpdate == methodBlockUpdates.end())
+        return;
+
+    for (const auto &entry : findSourceUpdate->second)
+    {
+        if (entry.fullPathIndex != fullPathIndex ||
+            entry.oldLine > block.startLine ||
+            entry.oldLine + entry.endLineOffset < block.startLine)
+            continue;
+
+        int32_t offset = entry.newLine - entry.oldLine;
+        block.startLine += offset;
+        block.endLine += offset;
+        break;
+    }
+}
+
+static void LineUpdatesBackwardCorrection(unsigned fullPathIndex, mdMethodDef methodToken, method_block_updates_t &methodBlockUpdates, int32_t &startLine)
+{
+    auto findSourceUpdate = methodBlockUpdates.find(methodToken);
+    if (findSourceUpdate != methodBlockUpdates.end())
+    {
+        for (const auto &entry : findSourceUpdate->second)
+        {
+            if (entry.fullPathIndex != fullPathIndex ||
+                entry.newLine > startLine ||
+                entry.newLine + entry.endLineOffset < startLine)
+                continue;
+
+            startLine += entry.oldLine - entry.newLine;
+            break;
+        }
+    }
+}
+
 HRESULT Modules::GetFrameILAndSequencePoint(
     ICorDebugFrame *pFrame,
     ULONG32 &ilOffset,
@@ -517,7 +557,7 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    std::lock_guard<std::mutex> lockModulesInfo(m_modulesInfoMutex);
     auto info_pair = m_modulesInfo.find(modAddress);
     if (info_pair == m_modulesInfo.end())
     {
@@ -528,13 +568,20 @@ HRESULT Modules::GetFrameILAndSequencePoint(
     if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
         return E_FAIL;
 
-    return GetSequencePointByILOffset(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, ilOffset, &sequencePoint);
+    IfFailRet(GetSequencePointByILOffset(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, ilOffset, &sequencePoint));
+
+    // In case Hot Reload we may have line updates that we must take into account.
+    unsigned fullPathIndex;
+    IfFailRet(GetIndexBySourceFullPath(sequencePoint.document, fullPathIndex));
+    LineUpdatesForwardCorrection(fullPathIndex, methodToken, mdInfo.m_methodBlockUpdates, sequencePoint);
+
+    return S_OK;
 }
 
 HRESULT Modules::GetFrameILAndNextUserCodeILOffset(
     ICorDebugFrame *pFrame,
     ULONG32 &ilOffset,
-    ULONG32 &ilCloseOffset,
+    ULONG32 &ilNextOffset,
     bool *noUserCodeFound)
 {
     HRESULT Status;
@@ -559,7 +606,7 @@ HRESULT Modules::GetFrameILAndNextUserCodeILOffset(
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pFunc->GetModule(&pModule));
 
-    return GetNextSequencePointInMethod(pModule, methodToken, methodVersion, ilOffset, ilCloseOffset, noUserCodeFound);
+    return GetNextUserCodeILOffsetInMethod(pModule, methodToken, methodVersion, ilOffset, ilNextOffset, noUserCodeFound);
 }
 
 HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_STEP_RANGE *range)
@@ -935,12 +982,12 @@ HRESULT Modules::GetModuleWithName(const std::string &name, ICorDebugModule **pp
     return E_FAIL;
 }
 
-HRESULT Modules::GetNextSequencePointInMethod(
+HRESULT Modules::GetNextUserCodeILOffsetInMethod(
     ICorDebugModule *pModule,
     mdMethodDef methodToken,
     ULONG32 methodVersion,
     ULONG32 ilOffset,
-    ULONG32 &ilCloseOffset,
+    ULONG32 &ilNextOffset,
     bool *noUserCodeFound)
 {
     HRESULT Status;
@@ -958,7 +1005,7 @@ HRESULT Modules::GetNextSequencePointInMethod(
     if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
         return E_FAIL;
 
-    return Interop::GetNextSequencePointByILOffset(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, ilOffset, ilCloseOffset, noUserCodeFound);
+    return Interop::GetNextUserCodeILOffset(mdInfo.m_symbolReaderHandles[methodVersion - 1], methodToken, ilOffset, ilNextOffset, noUserCodeFound);
 }
 
 HRESULT Modules::GetSequencePointByILOffset(
@@ -1163,23 +1210,94 @@ HRESULT Modules::FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDa
     return S_OK;
 }
 
-HRESULT Modules::UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, std::unordered_set<mdMethodDef> methodTokens, PVOID pSymbolReaderHandle)
+static HRESULT LineUpdatesForMethodData(unsigned fullPathIndex, method_data_t &methodData, const std::vector<block_update_t> &blockUpdate, method_block_updates_t &methodBlockUpdates)
+{
+    for (const auto &block : blockUpdate)
+    {
+        if (block.oldLine < 0 || block.endLineOffset < 0 || methodData.endLine < 0)
+            return E_INVALIDARG;
+
+        // Note, endLineOffset could be std::numeric_limits<int32_t>::max() (max line number in C# source), so, we forced to cast it first.
+        // Also, this is why we test that method within range and after that negate result.
+        if (!(methodData.startLine >= block.oldLine &&
+              (uint32_t)methodData.endLine <= (uint32_t)block.oldLine + (uint32_t)block.endLineOffset))
+            continue;
+
+        const int32_t codeLineOffset = block.newLine - block.oldLine;
+
+        auto updateCashe = [&]() -> bool
+        {
+            auto findMethod = methodBlockUpdates.find(methodData.methodDef);
+            if (findMethod == methodBlockUpdates.end())
+                return false;
+
+            for (auto &entry : findMethod->second)
+            {
+                if (fullPathIndex == entry.fullPathIndex &&
+                    methodData.startLine == entry.newLine &&
+                    methodData.endLine == entry.newLine + entry.endLineOffset)
+                {
+                    // All we need for previous stored data is change newLine, since oldLine will be the same (PDB for this method version was not changed).
+                    entry.newLine += codeLineOffset;
+                    return true;
+                }
+            }
+            return false;
+        };
+        if (!updateCashe())
+            methodBlockUpdates[methodData.methodDef].emplace_back(fullPathIndex, methodData.startLine + codeLineOffset, methodData.startLine, methodData.endLine - methodData.startLine);
+
+        methodData.startLine += codeLineOffset;
+        methodData.endLine += codeLineOffset;
+
+        break;
+    }
+
+    return S_OK;
+}
+
+HRESULT Modules::UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, std::unordered_set<mdMethodDef> methodTokens,
+                                                 src_block_updates_t &srcBlockUpdates, PVOID pSymbolReaderHandle, method_block_updates_t &methodBlockUpdates)
 {
     std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
 
     HRESULT Status;
     std::unique_ptr<module_methods_data_t, module_methods_data_t_deleter> inputData;
     IfFailRet(GetPdbMethodsRanges(pMDImport, pSymbolReaderHandle, &methodTokens, inputData));
-    if (inputData == nullptr)
+
+    struct src_update_data_t
+    {
+        std::vector<block_update_t> blockUpdate;
+        int32_t methodNum = 0;
+        method_data_t *methodsData = nullptr;
+    };
+    std::unordered_map<unsigned, src_update_data_t> srcUpdateData;
+
+    if (inputData)
+    {
+        for (int i = 0; i < inputData->fileNum; i++)
+        {
+            unsigned fullPathIndex;
+            IfFailRet(GetFullPathIndex(inputData->moduleMethodsData[i].document, fullPathIndex));
+
+            srcUpdateData[fullPathIndex].methodNum = inputData->moduleMethodsData[i].methodNum;
+            srcUpdateData[fullPathIndex].methodsData = inputData->moduleMethodsData[i].methodsData;
+        }
+    }
+    for (const auto &entry : srcBlockUpdates)
+    {
+        srcUpdateData[entry.first].blockUpdate = entry.second;
+    }
+
+    if (srcUpdateData.empty())
         return S_OK;
 
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    for (int i = 0; i < inputData->fileNum; i++)
+    for (const auto &updateData : srcUpdateData)
     {
-        unsigned fullPathIndex;
-        IfFailRet(GetFullPathIndex(inputData->moduleMethodsData[i].document, fullPathIndex));
+        const unsigned fullPathIndex = updateData.first;
 
         std::map<size_t, std::set<method_data_t>> inputMethodsData;
         if (m_sourcesMethodsData[fullPathIndex].empty())
@@ -1188,31 +1306,32 @@ HRESULT Modules::UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMeta
             auto &tmpFileMethodsData = m_sourcesMethodsData[fullPathIndex].back();
             tmpFileMethodsData.modAddress = modAddress;
 
-            for (int j = 0; j < inputData->moduleMethodsData[i].methodNum; j++)
+            for (int j = 0; j < updateData.second.methodNum; j++)
             {
-                AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, inputData->moduleMethodsData[i].methodsData[j], 0);
+                AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, updateData.second.methodsData[j], 0);
             }
         }
         else
         {
-            // Move multiMethodsData first (since this is constructors and all will be on level 0 for sure).
-            // Use std::unordered_set here instead array for fast search.
             std::unordered_set<mdMethodDef> inputMetodDefSet;
-            for (int j = 0; j < inputData->moduleMethodsData[i].methodNum; j++)
+            for (int j = 0; j < updateData.second.methodNum; j++)
             {
-                inputMetodDefSet.insert(inputData->moduleMethodsData[i].methodsData[j].methodDef);
+                inputMetodDefSet.insert(updateData.second.methodsData[j].methodDef);
+                // All sequence points related to this method were updated and provide proper lines from PDB directly.
+                methodBlockUpdates.erase(updateData.second.methodsData[j].methodDef);
             }
 
+            // Move multiMethodsData first (since this is constructors and all will be on level 0 for sure).
+            // Use std::unordered_set here instead array for fast search.
             auto &tmpFileMethodsData = m_sourcesMethodsData[fullPathIndex].back();
             std::vector<method_data_t> tmpMultiMethodsData;
-
-            for (auto entryData : tmpFileMethodsData.multiMethodsData)
+            for (const auto &entryData : tmpFileMethodsData.multiMethodsData)
             {
                 auto findData = inputMetodDefSet.find(entryData.first.methodDef);
                 if (findData == inputMetodDefSet.end())
                     tmpMultiMethodsData.emplace_back(entryData.first);
 
-                for (auto entryMethodDef : entryData.second)
+                for (const auto &entryMethodDef : entryData.second)
                 {
                     findData = inputMetodDefSet.find(entryMethodDef);
                     if (findData == inputMetodDefSet.end())
@@ -1222,27 +1341,31 @@ HRESULT Modules::UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMeta
             }
 
             tmpFileMethodsData.multiMethodsData.clear();
-            for (auto methodData : tmpMultiMethodsData)
+            for (auto &methodData : tmpMultiMethodsData)
             {
+                IfFailRet(LineUpdatesForMethodData(fullPathIndex, methodData, updateData.second.blockUpdate, methodBlockUpdates));
                 AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, methodData, 0);
             }
 
             // Move normal methods.
-            for (auto methodsData : tmpFileMethodsData.methodsData)
+            for (auto &methodsData : tmpFileMethodsData.methodsData)
             {
-                for (auto methodData : methodsData)
+                for (auto &methodData : methodsData)
                 {
                     auto findData = inputMetodDefSet.find(methodData.methodDef);
                     if (findData == inputMetodDefSet.end())
+                    {
+                        IfFailRet(LineUpdatesForMethodData(fullPathIndex, methodData, updateData.second.blockUpdate, methodBlockUpdates));
                         AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, methodData, 0);
+                    }
                 }
             }
             tmpFileMethodsData.methodsData.clear();
 
             // Move new and modified methods.
-            for (int j = 0; j < inputData->moduleMethodsData[i].methodNum; j++)
+            for (int j = 0; j < updateData.second.methodNum; j++)
             {
-                AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, inputData->moduleMethodsData[i].methodsData[j], 0);
+                AddMethodData(inputMethodsData, tmpFileMethodsData.multiMethodsData, updateData.second.methodsData[j], 0);
             }
         }
 
@@ -1359,7 +1482,8 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
     IfFailRet(Interop::StringToUpper(filename));
 #endif
 
-    std::lock_guard<std::mutex> lock(m_sourcesInfoMutex);
+    std::lock_guard<std::mutex> lockModulesInfo(m_modulesInfoMutex);
+    std::lock_guard<std::mutex> lockSourcesInfo(m_sourcesInfoMutex);
 
     auto findIndex = m_sourcePathToIndex.find(filename);
     if (findIndex == m_sourcePathToIndex.end())
@@ -1446,10 +1570,18 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
             symbolReaderHandles.emplace_back(mdInfo.m_symbolReaderHandles[currentVersion - 1]);
         }
 
+        // In case Hot Reload we may have line updates that we must take into account.
+        LineUpdatesBackwardCorrection(findIndex->second, Tokens[0], mdInfo.m_methodBlockUpdates, correctedStartLine);
+
         PVOID data = nullptr;
         int32_t Count = 0;
+#ifndef _WIN32
+        std::string fullName = m_sourceIndexToPath[findIndex->second];
+#else
+        std::string fullName = m_sourceIndexToInitialFullPath[findIndex->second];
+#endif
         if (FAILED(Interop::ResolveBreakPoints(symbolReaderHandles.data(), (int32_t)Tokens.size(), Tokens.data(),
-                                               correctedStartLine, closestNestedToken, Count, &data))
+                                               correctedStartLine, closestNestedToken, Count, fullName, &data))
             || data == nullptr)
         {
             continue;
@@ -1459,6 +1591,10 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
         for (int32_t i = 0; i < Count; i++)
         {
             info_pair->second.m_iCorModule->AddRef();
+
+            // In case Hot Reload we may have line updates that we must take into account.
+            LineUpdatesForwardCorrection(findIndex->second, inputData.get()[i].methodToken, mdInfo.m_methodBlockUpdates, inputData.get()[i]);
+
             resolvedPoints.emplace_back(resolved_bp_t(inputData.get()[i].startLine, inputData.get()[i].endLine, inputData.get()[i].ilOffset,
                                                       inputData.get()[i].methodToken, info_pair->second.m_iCorModule.GetPtr()));
         }
@@ -1467,7 +1603,90 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
     return S_OK;
 }
 
-HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB, std::unordered_set<mdMethodDef> &methodTokens)
+static HRESULT LoadLineUpdatesFile(Modules *pModules, const std::string &lineUpdates, src_block_updates_t &srcBlockUpdates)
+{
+    std::ifstream lineUpdatesFileStream(lineUpdates, std::ios::in | std::ios::binary);
+    if (!lineUpdatesFileStream.is_open())
+        return COR_E_FILENOTFOUND;
+
+    HRESULT Status;
+    uint32_t sourcesCount = 0;
+    lineUpdatesFileStream.read((char*)&sourcesCount, 4);
+    if (lineUpdatesFileStream.fail())
+        return E_FAIL;
+
+    struct line_update_t
+    {
+        int32_t newLine;
+        int32_t oldLine;
+    };
+    std::unordered_map<unsigned /*source fullPathIndex*/, std::vector<line_update_t>> lineUpdatesData;
+
+    for (uint32_t i = 0; i < sourcesCount; i++)
+    {
+        uint32_t stringSize = 0;
+        lineUpdatesFileStream.read((char*)&stringSize, 4);
+        if (lineUpdatesFileStream.fail())
+            return E_FAIL;
+
+        std::string fullPath;
+        fullPath.resize(stringSize);
+        lineUpdatesFileStream.read((char*)fullPath.data(), stringSize);
+        if (lineUpdatesFileStream.fail())
+            return E_FAIL;
+
+        unsigned fullPathIndex;
+        IfFailRet(pModules->GetIndexBySourceFullPath(fullPath, fullPathIndex));
+
+        uint32_t updatesCount = 0;
+        lineUpdatesFileStream.read((char*)&updatesCount, 4);
+        if (lineUpdatesFileStream.fail())
+            return E_FAIL;
+
+        if (updatesCount == 0)
+            continue;
+
+        std::vector<line_update_t> &lineUpdates = lineUpdatesData[fullPathIndex];
+        lineUpdates.resize(updatesCount);
+
+        lineUpdatesFileStream.read((char*)lineUpdates.data(), updatesCount * sizeof(line_update_t));
+        if (lineUpdatesFileStream.fail())
+            return E_FAIL;
+    }
+
+    line_update_t startBlock;
+    const int32_t empty = -1;
+    for (const auto &updateFileData : lineUpdatesData)
+    {
+        startBlock.newLine = empty;
+        for (const auto &lineUpdates : updateFileData.second)
+        {
+            if (lineUpdates.newLine != lineUpdates.oldLine)
+            {
+                assert(startBlock.newLine == empty);
+
+                startBlock.newLine = lineUpdates.newLine;
+                startBlock.oldLine = lineUpdates.oldLine;
+            }
+            else
+            {
+                // We use (newLine == oldLine) entry in LineUpdates as "end line" marker for moved region.
+                if (startBlock.newLine != empty)
+                    srcBlockUpdates[updateFileData.first].emplace_back(startBlock.newLine + 1, startBlock.oldLine + 1, lineUpdates.oldLine - 1 - startBlock.oldLine);
+
+                startBlock.newLine = empty;
+            }
+        }
+        // In case this is last method in source file, Roslyn don't provide "end line" in LineUpdates, use max source line as "end line".
+        if (startBlock.newLine != empty)
+            srcBlockUpdates[updateFileData.first].emplace_back(startBlock.newLine + 1, startBlock.oldLine + 1, std::numeric_limits<int32_t>::max());
+    }
+
+    return S_OK;
+}
+
+HRESULT Modules::ApplyPdbDeltaAndLineUpdates(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB,
+                                             const std::string &lineUpdates, std::unordered_set<mdMethodDef> &methodTokens)
 {
     HRESULT Status;
     CORDB_ADDRESS modAddress;
@@ -1490,10 +1709,13 @@ HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std
     // Note, even if methodTokens is empty, pSymbolReaderHandle must be added into vector (we use indexes that correspond to il/metadata apply number + will care about release it in proper way).
     mdInfo.m_symbolReaderHandles.emplace_back(pSymbolReaderHandle);
 
-    if (methodTokens.empty())
+    src_block_updates_t srcBlockUpdates;
+    IfFailRet(LoadLineUpdatesFile(this, lineUpdates, srcBlockUpdates));
+
+    if (methodTokens.empty() && srcBlockUpdates.empty())
         return S_OK;
 
-    if (needJMC)
+    if (needJMC && !methodTokens.empty())
         DisableJMCByAttributes(pModule, methodTokens);
 
     ToRelease<IUnknown> pMDUnknown;
@@ -1501,7 +1723,7 @@ HRESULT Modules::ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std
     ToRelease<IMetaDataImport> pMDImport;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDImport));
 
-    return UpdateSourcesCodeLinesForModule(pModule, pMDImport, methodTokens, pSymbolReaderHandle);
+    return UpdateSourcesCodeLinesForModule(pModule, pMDImport, methodTokens, srcBlockUpdates, pSymbolReaderHandle, mdInfo.m_methodBlockUpdates);
 }
 
 HRESULT Modules::GetSourceFullPathByIndex(unsigned index, std::string &fullPath)

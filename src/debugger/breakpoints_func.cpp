@@ -262,15 +262,15 @@ HRESULT FuncBreakpoints::AddFuncBreakpoint(ManagedFuncBreakpoint &fbp, ResolvedF
         ULONG32 currentVersion; // Note, new breakpoints could be setup for last code version only, since protocols (MI, VSCode, ...) provide method name (sig) only.
         IfFailRet(pFunc->GetCurrentVersionNumber(&currentVersion));
 
-        ULONG32 ilCloseOffset;
-        if (FAILED(m_sharedModules->GetNextSequencePointInMethod(entry.first, entry.second, currentVersion, 0, ilCloseOffset)))
+        ULONG32 ilNextOffset;
+        if (FAILED(m_sharedModules->GetNextUserCodeILOffsetInMethod(entry.first, entry.second, currentVersion, 0, ilNextOffset)))
             return S_OK;
 
         ToRelease<ICorDebugCode> pCode;
         IfFailRet(pFunc->GetILCode(&pCode));
 
         ToRelease<ICorDebugFunctionBreakpoint> iCorFuncBreakpoint;
-        IfFailRet(pCode->CreateBreakpoint(ilCloseOffset, &iCorFuncBreakpoint));
+        IfFailRet(pCode->CreateBreakpoint(ilNextOffset, &iCorFuncBreakpoint));
         IfFailRet(iCorFuncBreakpoint->Activate(fbp.enabled ? TRUE : FALSE));
 
         CORDB_ADDRESS modAddress;

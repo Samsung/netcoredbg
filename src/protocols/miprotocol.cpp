@@ -1097,9 +1097,9 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
     { "apply-deltas", [this](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
 
-        if (args.size() != 4)
+        if (args.size() != 5)
         {
-            output = "Command requires 4 arguments";
+            output = "Command requires 5 arguments";
             return E_FAIL;
         }
 
@@ -1107,8 +1107,9 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
         std::string deltaMD = args.at(1);
         std::string deltaIL = args.at(2);
         std::string deltaPDB = args.at(3);
+        std::string lineUpdates = args.at(4);
 
-        IfFailRet(m_sharedDebugger->HotReloadApplyDeltas(dllFileName, deltaMD, deltaIL, deltaPDB));
+        IfFailRet(m_sharedDebugger->HotReloadApplyDeltas(dllFileName, deltaMD, deltaIL, deltaPDB, lineUpdates));
 
         return S_OK;
     }},

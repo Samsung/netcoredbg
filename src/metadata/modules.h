@@ -99,12 +99,37 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
 std::string GetModuleFileName(ICorDebugModule *pModule);
 HRESULT IsModuleHaveSameName(ICorDebugModule *pModule, const std::string &Name, bool isFullPath);
 
+struct block_update_t
+{
+    int32_t newLine;
+    int32_t oldLine;
+    int32_t endLineOffset;
+    block_update_t(int32_t newLine_, int32_t oldLine_, int32_t endLineOffset_) :
+        newLine(newLine_), oldLine(oldLine_), endLineOffset(endLineOffset_)
+    {}
+};
+typedef std::unordered_map<unsigned /*source fullPathIndex*/, std::vector<block_update_t>> src_block_updates_t;
+
+struct file_block_update_t
+{
+    unsigned fullPathIndex;
+    int32_t newLine;
+    int32_t oldLine;
+    int32_t endLineOffset;
+    file_block_update_t(unsigned fullPathIndex_, int32_t newLine_, int32_t oldLine_, int32_t endLineOffset_) :
+        fullPathIndex(fullPathIndex_), newLine(newLine_), oldLine(oldLine_), endLineOffset(endLineOffset_)
+    {}
+};
+typedef std::unordered_map<mdMethodDef, std::vector<file_block_update_t>> method_block_updates_t;
+
 class Modules
 {
     struct ModuleInfo
     {
         std::vector<PVOID> m_symbolReaderHandles;
         ToRelease<ICorDebugModule> m_iCorModule;
+        // Cache for LineUpdates data for all methods in this module (Hot Reload related).
+        method_block_updates_t m_methodBlockUpdates;
 
         ModuleInfo(PVOID Handle, ICorDebugModule *Module) :
             m_iCorModule(Module)
@@ -155,8 +180,8 @@ class Modules
 
     HRESULT GetFullPathIndex(BSTR document, unsigned &fullPathIndex);
     HRESULT FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle);
-    HRESULT UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport,
-                                            std::unordered_set<mdMethodDef> methodTokens, PVOID pSymbolReaderHandle);
+    HRESULT UpdateSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, std::unordered_set<mdMethodDef> methodTokens,
+                                            src_block_updates_t &blockUpdates, PVOID pSymbolReaderHandle, method_block_updates_t &methodBlockUpdates);
     HRESULT ResolveRelativeSourceFileName(std::string &filename);
 
 #ifdef WIN32
@@ -200,7 +225,8 @@ public:
 
     HRESULT GetSourceFullPathByIndex(unsigned index, std::string &fullPath);
     HRESULT GetIndexBySourceFullPath(std::string fullPath, unsigned &index);
-    HRESULT ApplyPdbDelta(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB, std::unordered_set<mdMethodDef> &methodTokens);
+    HRESULT ApplyPdbDeltaAndLineUpdates(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB,
+                                        const std::string &lineUpdates, std::unordered_set<mdMethodDef> &methodTokens);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule, bool onlyWithPDB = false);
 
@@ -212,7 +238,7 @@ public:
     HRESULT GetFrameILAndNextUserCodeILOffset(
         ICorDebugFrame *pFrame,
         ULONG32 &ilOffset,
-        ULONG32 &ilCloseOffset,
+        ULONG32 &ilNextOffset,
         bool *noUserCodeFound);
 
     HRESULT ResolveFuncBreakpointInAny(
@@ -257,12 +283,12 @@ public:
         PVOID *data,
         int32_t &hoistedLocalScopesCount);
 
-    HRESULT GetNextSequencePointInMethod(
+    HRESULT GetNextUserCodeILOffsetInMethod(
         ICorDebugModule *pModule,
         mdMethodDef methodToken,
         ULONG32 methodVersion,
         ULONG32 ilOffset,
-        ULONG32 &ilCloseOffset,
+        ULONG32 &ilNextOffset,
         bool *noUserCodeFound = nullptr);
 
     HRESULT GetSequencePointByILOffset(

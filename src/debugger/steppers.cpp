@@ -163,12 +163,12 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
 
     // Same behaviour as MS vsdbg and MSVS C# debugger have - step only for code with PDB loaded (no matter JMC enabled or not by user).
     ULONG32 ipOffset;
-    ULONG32 ilCloseUserCodeOffset;
+    ULONG32 ilNextUserCodeOffset;
     bool noUserCodeFound = false; // Must be initialized with `false`, since GetFrameILAndNextUserCodeILOffset call could be failed before delegate call.
-    if (SUCCEEDED(Status = m_sharedModules->GetFrameILAndNextUserCodeILOffset(iCorFrame, ipOffset, ilCloseUserCodeOffset, &noUserCodeFound)))
+    if (SUCCEEDED(Status = m_sharedModules->GetFrameILAndNextUserCodeILOffset(iCorFrame, ipOffset, ilNextUserCodeOffset, &noUserCodeFound)))
     {
         // Current IL offset less than IL offset of next close user code line.
-        if (ipOffset < ilCloseUserCodeOffset)
+        if (ipOffset < ilNextUserCodeOffset)
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OVER));
             return S_OK;

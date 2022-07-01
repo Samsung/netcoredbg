@@ -65,6 +65,7 @@ ALL_TEST_NAMES=(
     "MITestHotReloadJMC"
     "MITestHotReloadWithoutBreak"
     "MITestGeneric"
+    "MITestHotReloadPDB"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"

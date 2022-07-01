@@ -400,10 +400,10 @@ namespace NetCoreDbg
         /// <param name="sequencePoint">sequence point return</param>
         /// <param name="noUserCodeFound">return 1 in case all sequence points checked and no user code was found, otherwise return 0</param>
         /// <returns>"Ok" if information is available</returns>
-        private static RetCode GetNextSequencePointByILOffset(IntPtr symbolReaderHandle, int methodToken, uint ilOffset, out uint ilCloseOffset, out int noUserCodeFound)
+        private static RetCode GetNextUserCodeILOffset(IntPtr symbolReaderHandle, int methodToken, uint ilOffset, out uint ilNextOffset, out int noUserCodeFound)
         {
             Debug.Assert(symbolReaderHandle != IntPtr.Zero);
-            ilCloseOffset = 0;
+            ilNextOffset = 0;
             noUserCodeFound = 0;
 
             try
@@ -420,7 +420,7 @@ namespace NetCoreDbg
 
                     if (point.Offset >= ilOffset)
                     {
-                        ilCloseOffset = (uint)point.Offset;
+                        ilNextOffset = (uint)point.Offset;
                         return RetCode.OK;
                     }
                 }
@@ -456,11 +456,6 @@ namespace NetCoreDbg
                 startLine = startLine_;
                 endLine = endLine_;
                 startColumn = startColumn_;
-                endColumn = endColumn_;
-            }
-            public void SetRangeEnd(int endLine_, int endColumn_)
-            {
-                endLine = endLine_;
                 endColumn = endColumn_;
             }
             public void ExtendRange(int startLine_, int endLine_, int startColumn_, int endColumn_)
@@ -532,42 +527,17 @@ namespace NetCoreDbg
                 {
                     int methodToken = Marshal.ReadInt32(constrTokens, i);
                     method_data_t currentData = new method_data_t(methodToken, 0, 0, 0, 0);
-                    DocumentHandle currentDocHandle = new DocumentHandle();
 
                     foreach (SequencePoint p in GetSequencePointCollection(methodToken, reader))
                     {
                         if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine)
                             continue;
 
-                        if (currentData.startLine == 0)
-                        {
-                            currentData.SetRange(p.StartLine, p.EndLine, p.StartColumn, p.EndColumn);
-                            currentDocHandle = p.Document;
-                        }
-                        // same segment only in case same file and on next line or on same line but on the right
-                        else if ((p.StartLine == currentData.endLine + 1 ||
-                                  (p.StartLine == currentData.endLine && p.StartColumn > currentData.endColumn)) &&
-                                 currentDocHandle == p.Document )
-                        {
-                            currentData.SetRangeEnd(p.EndLine, p.EndColumn);
-                        }
-                        else // SequencePoint from another segment
-                        {
-                            if (!ModuleData.ContainsKey(currentDocHandle))
-                                ModuleData[currentDocHandle] = new List<method_data_t>();
+                        if (!ModuleData.ContainsKey(p.Document))
+                                ModuleData[p.Document] = new List<method_data_t>();
 
-                            ModuleData[currentDocHandle].Add(currentData);
-                            currentData.SetRange(p.StartLine, p.EndLine, p.StartColumn, p.EndColumn);
-                            currentDocHandle = p.Document;
-                        }
-                    }
-
-                    if (currentData.startLine != 0)
-                    {
-                        if (!ModuleData.ContainsKey(currentDocHandle))
-                            ModuleData[currentDocHandle] = new List<method_data_t>();
-
-                        ModuleData[currentDocHandle].Add(currentData);
+                        currentData.SetRange(p.StartLine, p.EndLine, p.StartColumn, p.EndColumn);
+                        ModuleData[p.Document].Add(currentData);
                     }
                 }
 
@@ -681,7 +651,8 @@ namespace NetCoreDbg
         /// <param name="Count">entry's count in data</param>
         /// <param name="data">pointer to memory with result</param>
         /// <returns>"Ok" if information is available</returns>
-        internal static RetCode ResolveBreakPoints(IntPtr symbolReaderHandles, int tokenNum, IntPtr Tokens, int sourceLine, int nestedToken, out int Count, out IntPtr data)
+        internal static RetCode ResolveBreakPoints(IntPtr symbolReaderHandles, int tokenNum, IntPtr Tokens, int sourceLine, int nestedToken,
+                                                   out int Count, [MarshalAs(UnmanagedType.LPWStr)] string sourcePath, out IntPtr data)
         {
             Debug.Assert(symbolReaderHandles != IntPtr.Zero);
             Count = 0;
@@ -713,6 +684,11 @@ namespace NetCoreDbg
                     foreach (SequencePoint p in GetSequencePointCollection(methodToken, reader))
                     {
                         if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine || p.EndLine < sourceLine)
+                            continue;
+
+                        // Note, in case of constructors, we must care about source too, since we may have situation when field/property have same line in another source.
+                        var fileName = reader.GetString(reader.GetDocument(p.Document).Name);
+                        if (fileName != sourcePath)
                             continue;
 
                         // first access, assign to first user code sequence point
