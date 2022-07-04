@@ -124,6 +124,45 @@ namespace NetcoreDbgTest.Script
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void WasBreakpointHit(string caller_trace, string bpName)
+        {
+            var bp = (LineBreakpoint)ControlInfo.Breakpoints[bpName];
+
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+
+                if (reason.CString != "breakpoint-hit") {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
+
+                if (fileName.CString == bp.FileName &&
+                    line == bp.NumLine) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void Continue(string caller_trace)
+        {
+            Assert.Equal(MIResultClass.Running,
+                         MIDebugger.Request("-exec-continue").Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void DebuggerExit(string caller_trace)
         {
             Assert.Equal(MIResultClass.Exit,
@@ -295,13 +334,35 @@ namespace MITestAsyncStepping
             ctest_attr2.test_func();                                        Label.Breakpoint("test_attr_class2_func");
             Console.WriteLine("Test debugger attribute on methods end.");   Label.Breakpoint("test_attr_end");
 
-            Label.Checkpoint("test_attr2", "finish", (Object context) => {
+            Label.Checkpoint("test_attr2", "test_async_void", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_class1_func");
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_class2_func");
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_end");
+
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "test_async_void1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "test_async_void3");
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test `async void` stepping.
+
+            await Task.Run((Action)( async () =>
+            {
+                await Task.Yield();                                        Label.Breakpoint("test_async_void1");
+            }));                                                           Label.Breakpoint("test_async_void2");
+            await Task.Delay(5000);
+            Console.WriteLine("Test debugger `async void` stepping end."); Label.Breakpoint("test_async_void3");
+
+            Label.Checkpoint("test_async_void", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "test_async_void1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_async_void2");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "test_async_void3");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
 

@@ -285,6 +285,8 @@ namespace NetcoreDbgTestCore
                         id, new Tuple<string, InvocationExpressionSyntax>(next_id, node));
                     break;
             }
+
+            base.VisitInvocationExpression(node);
         }
 
         public TestLabelsInfo TestLabelsInfo;

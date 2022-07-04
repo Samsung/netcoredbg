@@ -6,6 +6,7 @@
 #include "debugger/stepper_async.h"
 #include "debugger/threads.h"
 #include "metadata/modules.h"
+#include "metadata/typeprinter.h"
 #include "debugger/evalhelpers.h"
 #include "debugger/valueprint.h"
 #include "utils/utf.h"
@@ -160,15 +161,13 @@ static HRESULT GetAsyncIdReference(ICorDebugThread *pThread, ICorDebugFrame *pFr
 // [in] pThread - managed thread for evaluation (related to pFrame);
 // [in] pFrame - frame that used for get all info needed (function, module, etc);
 // [in] pEvalHelpers - pointer to managed debugger EvalHelpers;
-static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDebugFrame *pFrame, EvalHelpers *pEvalHelpers)
+static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDebugFrame *pFrame, ICorDebugValue *pBuilderValue, EvalHelpers *pEvalHelpers)
 {
     HRESULT Status;
-    ToRelease<ICorDebugValue> pValue;
-    IfFailRet(GetAsyncTBuilder(pFrame, &pValue));
 
     // Find SetNotificationForWaitCompletion() method.
     ToRelease<ICorDebugValue2> pValue2;
-    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+    IfFailRet(pBuilderValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
     ToRelease<ICorDebugType> pType;
     IfFailRet(pValue2->GetExactType(&pType));
     ToRelease<ICorDebugClass> pClass;
@@ -238,7 +237,7 @@ static HRESULT SetNotificationForWaitCompletion(ICorDebugThread *pThread, ICorDe
     IfFailRet(pModule->GetFunctionFromToken(setNotifDef, &pFunc));
 
     ICorDebugType *ppArgsType[] = {pType, pNewBooleanType};
-    ICorDebugValue *ppArgsValue[] = {pValue, pNewBoolean};
+    ICorDebugValue *ppArgsValue[] = {pBuilderValue, pNewBoolean};
     IfFailRet(pEvalHelpers->EvalFunction(pThread, pFunc, ppArgsType, 2, ppArgsValue, 2, nullptr, defaultEvalFlags));
 
     return S_OK;
@@ -287,7 +286,18 @@ HRESULT AsyncStepper::SetupStep(ICorDebugThread *pThread, IDebugger::StepType st
     }
     if (stepType == IDebugger::StepType::STEP_OUT)
     {
-        IfFailRet(SetNotificationForWaitCompletion(pThread, pFrame, m_sharedEvalHelpers.get()));
+        ToRelease<ICorDebugValue> pBuilderValue;
+        IfFailRet(GetAsyncTBuilder(pFrame, &pBuilderValue));
+
+        // In case method is "async void", builder is "System.Runtime.CompilerServices.AsyncVoidMethodBuilder"
+        // "If we are inside `async void` method, do normal step-out" from:
+        // https://github.com/dotnet/runtime/blob/32d0360b73bd77256cc9a9314a3c4280a61ea9bc/src/mono/mono/component/debugger-engine.c#L1350
+        std::string builderType;
+        IfFailRet(TypePrinter::GetTypeOfValue(pBuilderValue, builderType));
+        if (builderType == "System.Runtime.CompilerServices.AsyncVoidMethodBuilder")
+            return m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OUT);
+
+        IfFailRet(SetNotificationForWaitCompletion(pThread, pFrame, pBuilderValue, m_sharedEvalHelpers.get()));
         IfFailRet(SetBreakpointIntoNotifyDebuggerOfWaitCompletion());
         // Note, we don't create stepper here, since all we need in case of breakpoint is call Continue() from StepCommand().
         return S_OK;

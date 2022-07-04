@@ -157,6 +157,50 @@ namespace NetcoreDbgTest.Script
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void WasBreakpointHit(string caller_trace, string bpName)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
+
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            var lbp = (LineBreakpoint)breakpoint;
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+
+            if (stackTraceResponse.body.stackFrames[0].line == lbp.NumLine
+                && stackTraceResponse.body.stackFrames[0].source.name == lbp.FileName
+                // NOTE this code works only with one source file
+                && stackTraceResponse.body.stackFrames[0].source.path == ControlInfo.SourceFilesPath)
+                return;
+
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void Continue(string caller_trace)
+        {
+            ContinueRequest continueRequest = new ContinueRequest();
+            continueRequest.arguments.threadId = threadId;
+            Assert.True(VSCodeDebugger.Request(continueRequest).Success,
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void StepOver(string caller_trace)
         {
             NextRequest nextRequest = new NextRequest();
@@ -309,13 +353,36 @@ namespace VSCodeTestAsyncStepping
             await ctest_attr2.test_func();                                  Label.Breakpoint("test_attr_class2_func");
             Console.WriteLine("Test debugger attribute on methods end.");   Label.Breakpoint("test_attr_end");
 
-            Label.Checkpoint("test_attr2", "finish", (Object context) => {
+            Label.Checkpoint("test_attr2", "test_async_void", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_class1_func");
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_class2_func");
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_end");
+
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "test_async_void1");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "test_async_void3");
+                Context.SetBreakpoints(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            // Test `async void` stepping.
+
+            await Task.Run((Action)( async () =>
+            {
+                await Task.Yield();                                        Label.Breakpoint("test_async_void1");
+            }));                                                           Label.Breakpoint("test_async_void2");
+            await Task.Delay(5000);
+            Console.WriteLine("Test debugger `async void` stepping end."); Label.Breakpoint("test_async_void3");
+
+            Label.Checkpoint("test_async_void", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "test_async_void1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_async_void2");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "test_async_void3");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
 
