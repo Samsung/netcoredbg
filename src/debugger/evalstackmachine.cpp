@@ -1216,22 +1216,89 @@ namespace
     HRESULT ElementAccessExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
         int32_t Int = ((FormatFI*)pArguments)->Int;
-
         HRESULT Status;
-        std::vector<ULONG32> indexes;
-        IfFailRet(GetIndexesFromStack(indexes, Int, evalStack, ed, output));
 
+        std::vector<ToRelease<ICorDebugValue>> indexvalues(Int);
+
+        for (int32_t i = Int - 1; i >= 0; i--)
+        {
+            ToRelease<ICorDebugValue> iCorValue;
+            IfFailRet(GetFrontStackEntryValue(&indexvalues[i], nullptr, evalStack, ed, output));
+            evalStack.pop_front();
+        }
         if (evalStack.front().preventBinding)
             return S_OK;
 
-        ToRelease<ICorDebugValue> iCorArrayValue;
+        ToRelease<ICorDebugValue> iCorObjectValue;
         std::unique_ptr<Evaluator::SetterData> setterData;
-        IfFailRet(GetFrontStackEntryValue(&iCorArrayValue, &setterData, evalStack, ed, output));
+        IfFailRet(GetFrontStackEntryValue(&iCorObjectValue, &setterData, evalStack, ed, output));
 
-        evalStack.front().iCorValue.Free();
-        evalStack.front().identifiers.clear();
-        evalStack.front().setterData = std::move(setterData);
-        return ed.pEvaluator->GetElement(iCorArrayValue, indexes, &evalStack.front().iCorValue);
+        ToRelease<ICorDebugValue> iCorRealValue;
+        CorElementType elemType;
+        IfFailRet(GetRealValueWithType(iCorObjectValue, &iCorRealValue, &elemType));
+        std::vector<ULONG32> indexes;
+
+        if (elemType == ELEMENT_TYPE_SZARRAY || elemType == ELEMENT_TYPE_ARRAY) {
+            for (int32_t i = Int - 1; i >= 0; i--)
+            {
+                ULONG32 result_index = 0;
+                // TODO implicitly convert iCorValue to int, if type not int
+                // at this moment GetElementIndex() work with integer types only
+                IfFailRet(GetElementIndex(indexvalues[i], result_index));
+                indexes.insert(indexes.begin(), result_index);
+            }
+            evalStack.front().iCorValue.Free();
+            evalStack.front().identifiers.clear();
+            evalStack.front().setterData = std::move(setterData);
+            Status = ed.pEvaluator->GetElement(iCorObjectValue, indexes, &evalStack.front().iCorValue);
+        } else {
+            std::vector<Evaluator::ArgElementType> funcArgs(Int);
+            for (int32_t i = 0; i < Int; ++i)
+            {
+                ToRelease<ICorDebugValue> iCorValueArg;
+                IfFailRet(DereferenceAndUnboxValue(indexvalues[i].GetPtr(), &iCorValueArg, nullptr));
+                IfFailRet(iCorValueArg->GetType(&funcArgs[i].corType));
+
+                if (funcArgs[i].corType == ELEMENT_TYPE_VALUETYPE || funcArgs[i].corType == ELEMENT_TYPE_CLASS)
+                    IfFailRet(TypePrinter::NameForTypeByValue(iCorValueArg, funcArgs[i].typeName));
+            }
+
+            ToRelease<ICorDebugFunction> iCorFunc;
+            ed.pEvaluator->WalkMethods(iCorObjectValue, [&](
+                bool,
+                const std::string &methodName,
+                Evaluator::ReturnElementType& retType,
+                std::vector<Evaluator::ArgElementType> &methodArgs,
+                Evaluator::GetFunctionCallback getFunction)
+            {
+                std::string name = "get_Item";
+                if (retType.corType == ELEMENT_TYPE_VOID || methodName.rfind(name) != methodName.length() - name.length() || funcArgs.size() != methodArgs.size())
+                    return S_OK; // Return with success to continue walk.
+
+                for (size_t i = 0; i < funcArgs.size(); ++i)
+                {
+                    if (funcArgs[i].corType != methodArgs[i].corType ||
+                        funcArgs[i].typeName != methodArgs[i].typeName)
+                        return S_OK;
+                }
+                IfFailRet(getFunction(&iCorFunc));
+                return E_ABORT; // Fast exit from cycle, since we already found iCorFunc.
+            });
+            if (!iCorFunc)
+                return E_INVALIDARG;
+            evalStack.front().ResetEntry();
+            std::vector<ICorDebugValue*> iCorValueArgs;
+            iCorValueArgs.reserve(Int+1);
+
+            iCorValueArgs.emplace_back(iCorObjectValue.GetPtr());
+
+            for (int32_t i = 0; i < Int; i++)
+            {
+                iCorValueArgs.emplace_back(indexvalues[i].GetPtr());
+            }
+            Status = ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, iCorValueArgs.data(), Int + 1, &evalStack.front().iCorValue, ed.evalFlags);
+        }
+        return Status;
     }
 
     HRESULT ElementBindingExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)

@@ -67,6 +67,7 @@ ALL_TEST_NAMES=(
     "MITestHotReloadPDB"
     "MITestHotReloadUpdate"
     "MITestGeneric"
+    "MITestEvalArraysIndexers"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -90,6 +91,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestSizeof"
     "VSCodeTestAsyncLambdaEvaluate"
     "VSCodeTestGeneric"
+    "VSCodeTestEvalArraysIndexers"
 )
 
 # Skipped tests:

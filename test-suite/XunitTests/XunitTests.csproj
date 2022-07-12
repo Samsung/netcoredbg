@@ -78,6 +78,8 @@
     <ProjectReference Include="..\VSCodeTestAsyncLambdaEvaluate\VSCodeTestAsyncLambdaEvaluate.csproj" />
     <ProjectReference Include="..\VSCodeTestGeneric\VSCodeTestGeneric.csproj" />
     <ProjectReference Include="..\MITestGeneric\MITestGeneric.csproj" />
+    <ProjectReference Include="..\VSCodeTestEvalArraysIndexers\VSCodeTestEvalArraysIndexers.csproj" />
+    <ProjectReference Include="..\MITestEvalArraysIndexers\MITestEvalArraysIndexers.csproj" />
   </ItemGroup>
 
 </Project>

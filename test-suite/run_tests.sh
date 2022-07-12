@@ -45,6 +45,7 @@ ALL_TEST_NAMES=(
     "MITestSizeof"
     "MITestAsyncLambdaEvaluate"
     "MITestGeneric"
+    "MITestEvalArraysIndexers"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -71,6 +72,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestSizeof"
     "VSCodeTestAsyncLambdaEvaluate"
     "VSCodeTestGeneric"
+    "VSCodeTestEvalArraysIndexers"
 )
 
 # Skipped tests:
