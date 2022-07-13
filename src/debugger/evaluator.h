@@ -40,23 +40,28 @@ public:
     struct SetterData
     {
         ToRelease<ICorDebugValue> thisValue;
+        ToRelease<ICorDebugType> propertyType;
         ToRelease<ICorDebugFunction> setterFunction;
 
-        SetterData(ICorDebugValue *pValue, ICorDebugFunction *pFunction)
+        SetterData(ICorDebugValue *pValue, ICorDebugType *pType, ICorDebugFunction *pFunction)
         {
-            Set(pValue, pFunction);
+            Set(pValue, pType, pFunction);
         };
 
         SetterData(SetterData &setterData)
         {
-            Set(setterData.thisValue.GetPtr(), setterData.setterFunction.GetPtr());
+            Set(setterData.thisValue.GetPtr(), setterData.propertyType.GetPtr(), setterData.setterFunction.GetPtr());
         };
 
-        void Set(ICorDebugValue *pValue, ICorDebugFunction *pFunction)
+        void Set(ICorDebugValue *pValue, ICorDebugType *pType, ICorDebugFunction *pFunction)
         {
             if (pValue)
                 pValue->AddRef();
             thisValue = pValue;
+
+            if (pType)
+                pType->AddRef();
+            propertyType = pType;
 
             if (pFunction)
                 pFunction->AddRef();

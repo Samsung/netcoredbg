@@ -76,6 +76,8 @@
     <ProjectReference Include="..\VSCodeTestSizeof\VSCodeTestSizeof.csproj" />
     <ProjectReference Include="..\MITestAsyncLambdaEvaluate\MITestAsyncLambdaEvaluate.csproj" />
     <ProjectReference Include="..\VSCodeTestAsyncLambdaEvaluate\VSCodeTestAsyncLambdaEvaluate.csproj" />
+    <ProjectReference Include="..\VSCodeTestGeneric\VSCodeTestGeneric.csproj" />
+    <ProjectReference Include="..\MITestGeneric\MITestGeneric.csproj" />
   </ItemGroup>
 
 </Project>

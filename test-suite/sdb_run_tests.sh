@@ -64,6 +64,7 @@ ALL_TEST_NAMES=(
     "MITestHotReloadStepping"
     "MITestHotReloadJMC"
     "MITestHotReloadWithoutBreak"
+    "MITestGeneric"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -86,6 +87,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestNoJMCAsyncStepping"
     "VSCodeTestSizeof"
     "VSCodeTestAsyncLambdaEvaluate"
+    "VSCodeTestGeneric"
 )
 
 # Skipped tests:

@@ -649,12 +649,12 @@ HRESULT Evaluator::SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ICo
     // Call setter.
     if (!setterData->thisValue)
     {
-        return m_sharedEvalHelpers->EvalFunction(pThread, setterData->setterFunction, nullptr, 0, iCorValue.GetRef(), 1, nullptr, evalFlags);
+        return m_sharedEvalHelpers->EvalFunction(pThread, setterData->setterFunction, setterData->propertyType.GetRef(), 1, iCorValue.GetRef(), 1, nullptr, evalFlags);
     }
     else
     {
         ICorDebugValue *ppArgsValue[] = {setterData->thisValue, iCorValue};
-        return m_sharedEvalHelpers->EvalFunction(pThread, setterData->setterFunction, nullptr, 0, ppArgsValue, 2, nullptr, evalFlags);
+        return m_sharedEvalHelpers->EvalFunction(pThread, setterData->setterFunction, setterData->propertyType.GetRef(), 1, ppArgsValue, 2, nullptr, evalFlags);
     }
 }
 
@@ -916,7 +916,7 @@ HRESULT Evaluator::WalkMembers(
                 {
                     iCorFuncSetter.Free();
                 }
-                SetterData setterData(is_static ? nullptr : pInputValue, iCorFuncSetter);
+                SetterData setterData(is_static ? nullptr : pInputValue, pType, iCorFuncSetter);
                 IfFailRet(cb(pType, is_static, name, getValue, &setterData));
             }
             else
