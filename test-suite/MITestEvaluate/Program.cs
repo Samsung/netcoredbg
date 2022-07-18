@@ -1410,7 +1410,7 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "111", "int", "stGetInt()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "666", "int", "stGetInt(333)");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "getInt()", "Error:");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestTimeOut()", "Error: 0x80131505");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestTimeOut()", "Evaluation timed out.");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

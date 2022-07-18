@@ -22,7 +22,7 @@ public:
 
     typedef std::function<HRESULT(ICorDebugEval*)> WaitEvalResultCallback;
 
-    EvalWaiter(std::shared_ptr<Threads> &sharedThreads) : m_sharedThreads(sharedThreads), m_evalCanceled(false) {}
+    EvalWaiter(std::shared_ptr<Threads> &sharedThreads) : m_sharedThreads(sharedThreads), m_evalCanceled(false), m_evalCrossThreadDependency(false) {}
 
     bool IsEvalRunning();
     void CancelEvalRunning();
@@ -40,6 +40,7 @@ private:
 
     std::shared_ptr<Threads> m_sharedThreads;
     bool m_evalCanceled;
+    bool m_evalCrossThreadDependency;
 
     struct evalResultData_t
     {
@@ -77,6 +78,7 @@ private:
     std::unique_ptr<evalResult_t> m_evalResult;
 
     std::future< std::unique_ptr<evalResultData_t> > RunEval(
+        HRESULT &Status,
         ICorDebugProcess *pProcess,
         ICorDebugThread *pThread,
         ICorDebugEval *pEval,

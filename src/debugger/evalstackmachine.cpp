@@ -1134,7 +1134,7 @@ namespace
                 IfFailRet(pGenericValue->GetValue((LPVOID) &(elemValue[0])));
 
                 iCorValue.Free();
-                CreateValueType(ed.pEvalWaiter, ed.pThread, entry->second, &iCorValue, elemValue.GetPtr());
+                IfFailRet(CreateValueType(ed.pEvalWaiter, ed.pThread, entry->second, &iCorValue, elemValue.GetPtr()));
             }
 
             ToRelease<ICorDebugValue2> iCorValue2;
@@ -1793,6 +1793,30 @@ HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, i
             break;
     }
     while (1);
+
+    switch (Status)
+    {
+        case CORDBG_E_ILLEGAL_IN_PROLOG:
+        case CORDBG_E_ILLEGAL_IN_NATIVE_CODE:
+        case CORDBG_E_ILLEGAL_IN_STACK_OVERFLOW:
+        case CORDBG_E_ILLEGAL_IN_OPTIMIZED_CODE:
+        case CORDBG_E_ILLEGAL_AT_GC_UNSAFE_POINT:
+            output = "This expression causes side effects and will not be evaluated. ";
+            output += errormessage(Status);
+            LOGE("Eval error: %#x %s\n", Status, errormessage(Status));
+            break;
+        case COR_E_TIMEOUT:
+            output = "Evaluation timed out.";
+            break;
+        case COR_E_OPERATIONCANCELED:
+            output = "Evaluation canceled by user.";
+            break;
+        case CORDBG_E_CANT_CALL_ON_THIS_THREAD:
+            output = "The function evaluation requires all threads to run.";
+            break;
+        default:
+            break;
+    }
 
     Interop::ReleaseStackMachineProgram(pStackProgram);
     return Status;

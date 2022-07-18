@@ -1533,7 +1533,7 @@ namespace VSCodeTestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "111", "int", "stGetInt()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "222", "int", "stGetInt(111)");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "getInt()", "error");
-                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "TestTimeOut()", "error: 0x80131505");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "TestTimeOut()", "Evaluation timed out.");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

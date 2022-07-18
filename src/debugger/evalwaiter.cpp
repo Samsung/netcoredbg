@@ -55,6 +55,7 @@ void EvalWaiter::CancelEvalRunning()
 }
 
 std::future<std::unique_ptr<EvalWaiter::evalResultData_t> > EvalWaiter::RunEval(
+    HRESULT &Status,
     ICorDebugProcess *pProcess,
     ICorDebugThread *pThread,
     ICorDebugEval *pEval,
@@ -67,7 +68,6 @@ std::future<std::unique_ptr<EvalWaiter::evalResultData_t> > EvalWaiter::RunEval(
         LOGE("get_future() returns not valid promise object");
     }
 
-    HRESULT Status;
     DWORD threadId = 0;
     pThread->GetID(&threadId);
 
@@ -151,7 +151,8 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
 
         try
         {
-            auto f = RunEval(iCorProcess, pThread, iCorEval, cbSetupEval);
+            auto f = RunEval(Status, iCorProcess, pThread, iCorEval, cbSetupEval);
+            IfFailRet(Status);
 
             if (!f.valid())
                 return E_FAIL;
@@ -205,10 +206,16 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
     };
 
     m_evalCanceled = false;
+    m_evalCrossThreadDependency = false;
     HRESULT ret = WaitResult();
 
     if (ret == CORDBG_S_FUNC_EVAL_ABORTED)
-        ret = m_evalCanceled ? COR_E_OPERATIONCANCELED : COR_E_TIMEOUT;
+    {
+        if (m_evalCrossThreadDependency)
+            ret = CORDBG_E_CANT_CALL_ON_THIS_THREAD;
+        else
+            ret = m_evalCanceled ? COR_E_OPERATIONCANCELED : COR_E_TIMEOUT;
+    }
 
     ChangeThreadsState(THREAD_RUN);
     return ret;
@@ -239,6 +246,7 @@ HRESULT EvalWaiter::ManagedCallbackCustomNotification(ICorDebugThread *pThread)
         return Status;
     }
 
+    m_evalCrossThreadDependency = true;
     return S_OK;
 }
 
