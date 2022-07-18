@@ -57,6 +57,8 @@ public:
 
     HRESULT CreateString(ICorDebugThread *pThread, const std::string &value, ICorDebugValue **ppNewString);
 
+    HRESULT FindMethodInModule(const std::string &moduleName, const WCHAR className[], const WCHAR methodName[], ICorDebugFunction **ppFunction);
+
     void Cleanup();
 
 private:

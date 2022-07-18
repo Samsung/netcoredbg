@@ -134,6 +134,15 @@ static HRESULT FindFunction(ICorDebugModule *pModule,
     return pModule->GetFunctionFromToken(methodDef, ppFunction);
 }
 
+HRESULT EvalHelpers::FindMethodInModule(const std::string &moduleName, const WCHAR className[], const WCHAR methodName[], ICorDebugFunction **ppFunction)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(m_sharedModules->GetModuleWithName(moduleName, &pModule));
+    IfFailRet(FindFunction(pModule, className, methodName, ppFunction));
+    return S_OK;
+}
+
 static bool TypeHaveStaticMembers(ICorDebugType *pType)
 {
     HRESULT Status;
@@ -327,12 +336,10 @@ HRESULT EvalHelpers::CreatTypeObjectStaticConstructor(
 
         if (!m_pSuppressFinalize)
         {
-            ToRelease<ICorDebugModule> pModule;
-            IfFailRet(m_sharedModules->GetModuleWithName("System.Private.CoreLib.dll", &pModule));
-
+            static const std::string assemblyName = "System.Private.CoreLib.dll";
             static const WCHAR gcName[] = W("System.GC");
             static const WCHAR suppressFinalizeMethodName[] = W("SuppressFinalize");
-            IfFailRet(FindFunction(pModule, gcName, suppressFinalizeMethodName, &m_pSuppressFinalize));
+            IfFailRet(FindMethodInModule(assemblyName, gcName, suppressFinalizeMethodName, &m_pSuppressFinalize));
         }
 
         if (!m_pSuppressFinalize)

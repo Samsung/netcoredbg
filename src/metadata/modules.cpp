@@ -1073,9 +1073,9 @@ static HRESULT GetPdbMethodsRanges(IMetaDataImport *pMDImport, PVOID pSymbolRead
     std::vector<int32_t> normalTokens;
 
     ULONG numTypedefs = 0;
-    HCORENUM fEnum = NULL;
+    HCORENUM hEnum = NULL;
     mdTypeDef typeDef;
-    while(SUCCEEDED(pMDImport->EnumTypeDefs(&fEnum, &typeDef, 1, &numTypedefs)) && numTypedefs != 0)
+    while(SUCCEEDED(pMDImport->EnumTypeDefs(&hEnum, &typeDef, 1, &numTypedefs)) && numTypedefs != 0)
     {
         ULONG numMethods = 0;
         HCORENUM fEnum = NULL;
@@ -1100,7 +1100,7 @@ static HRESULT GetPdbMethodsRanges(IMetaDataImport *pMDImport, PVOID pSymbolRead
         }
         pMDImport->CloseEnum(fEnum);
     }
-    pMDImport->CloseEnum(fEnum);
+    pMDImport->CloseEnum(hEnum);
 
     if (sizeof(std::size_t) > sizeof(std::uint32_t) &&
         (constrTokens.size() > std::numeric_limits<uint32_t>::max() || normalTokens.size() > std::numeric_limits<uint32_t>::max()))
