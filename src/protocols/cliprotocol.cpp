@@ -1552,7 +1552,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::str
     }
 
     HRESULT Status;
-    IfFailRet(m_sharedDebugger->Pause());
+    IfFailRet(m_sharedDebugger->Pause(ThreadId::AllThreads));
     output = "^stopped";
     return S_OK;
 }
@@ -2535,7 +2535,7 @@ void CLIProtocol::Pause()
     if (m_processStatus == Running)
     {
         lock.unlock();
-        m_sharedDebugger->Pause();
+        m_sharedDebugger->Pause(ThreadId::AllThreads);
     }
 }
 

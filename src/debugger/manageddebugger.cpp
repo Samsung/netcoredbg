@@ -363,7 +363,7 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     return Status;
 }
 
-HRESULT ManagedDebugger::Pause()
+HRESULT ManagedDebugger::Pause(ThreadId lastStoppedThread)
 {
     LogFuncEntry();
 
@@ -371,7 +371,7 @@ HRESULT ManagedDebugger::Pause()
     HRESULT Status;
     IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
-    return m_managedCallback->Pause(m_iCorProcess);
+    return m_managedCallback->Pause(m_iCorProcess, lastStoppedThread);
 }
 
 HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
@@ -1326,16 +1326,15 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
 
     // Deltas can be applied only on stopped debuggee process. For Hot Reload scenario we temporary stop it and continue after deltas applied.
     HRESULT Status;
-    BOOL procRunning = FALSE;
-    IfFailRet(m_iCorProcess->IsRunning(&procRunning));
-    if (procRunning == TRUE)
-        IfFailRet(m_iCorProcess->Stop(0));
+    IfFailRet(m_managedCallback->Stop(m_iCorProcess));
+    bool continueProcess = (Status == S_OK); // Was stopped by m_managedCallback->Stop() call.
+
 
     IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
     IfFailRet(ApplyPdbDeltaAndLineUpdates(dllFileName, deltaPDB, lineUpdates));
 
-    if (procRunning == TRUE)
-        IfFailRet(m_iCorProcess->Continue(0));
+    if (continueProcess)
+        IfFailRet(m_managedCallback->Continue(m_iCorProcess));
 
     return S_OK;
 }

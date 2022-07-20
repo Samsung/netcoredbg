@@ -704,7 +704,7 @@ HRESULT MIProtocol::HandleCommand(const std::string& command, const std::vector<
     } },
     { "exec-interrupt", [this](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
-        IfFailRet(m_sharedDebugger->Pause());
+        IfFailRet(m_sharedDebugger->Pause(ThreadId::AllThreads));
         output = "^done";
         return S_OK;
     } },

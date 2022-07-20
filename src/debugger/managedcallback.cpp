@@ -26,6 +26,8 @@
 #include "interfaces/iprotocol.h"
 #include "utils/utf.h"
 
+#include <algorithm>
+
 namespace netcoredbg
 {
 
@@ -275,19 +277,42 @@ HRESULT ManagedCallback::Continue(ICorDebugProcess *pProcess)
     return S_OK;
 }
 
-HRESULT ManagedCallback::Pause(ICorDebugProcess *pProcess)
+// Caller should care about m_callbacksMutex.
+// Check stop status and stop, if need.
+// Return S_FALSE in case already was stopped, S_OK in case stopped by this call.
+static HRESULT InternalStop(ICorDebugProcess *pProcess, bool &stopEventInProcess)
+{
+    if (stopEventInProcess)
+        return S_FALSE; // Already stopped.
+
+    HRESULT Status;
+    IfFailRet(pProcess->Stop(0));
+    stopEventInProcess = true;
+    return S_OK;
+}
+
+// Analog of "pProcess->Stop(0)" call that also care about callbacks.
+HRESULT ManagedCallback::Stop(ICorDebugProcess *pProcess)
 {
     std::unique_lock<std::mutex> lock(m_callbacksMutex);
+    // DO NOT reset steppers here, this is "pProcess->Stop(0)" like call, that care about callbacks.
+    return InternalStop(pProcess, m_stopEventInProcess);
+}
 
-    if (m_stopEventInProcess)
-        return S_OK;
+// Stop process and set last stopped thread. If `lastStoppedThread` not passed value from protocol, find best thread.
+HRESULT ManagedCallback::Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedThread)
+{
+    // Must be real thread ID or ThreadId::AllThreads.
+    if (!lastStoppedThread)
+        return E_INVALIDARG;
+
+    std::unique_lock<std::mutex> lock(m_callbacksMutex);
 
     // Note, in case Stop() failed, no stop event will be emitted, don't set m_stopEventInProcess to "true" in this case.
     HRESULT Status;
-    if (FAILED(Status = pProcess->Stop(0)))
-        return Status;
-
-    m_stopEventInProcess = true;
+    IfFailRet(InternalStop(pProcess, m_stopEventInProcess));
+    if (Status == S_FALSE) // Already stopped.
+        return S_OK;
 
     // Same logic as provide vsdbg in case of pause during stepping.
     m_debugger.m_uniqueSteppers->DisableAllSteppers(pProcess);
@@ -297,47 +322,64 @@ HRESULT ManagedCallback::Pause(ICorDebugProcess *pProcess)
     std::vector<Thread> threads;
     m_debugger.GetThreads(threads);
 
-    ThreadId lastStoppedId = m_debugger.GetLastStoppedThreadId();
-
-    // Reorder threads so that last stopped thread is checked first
-    for (size_t i = 0; i < threads.size(); ++i)
+    // In case `lastStoppedThread` provided, just check that we really have it.
+    if (lastStoppedThread != ThreadId::AllThreads)
     {
-        if (threads[i].id == lastStoppedId)
+        // In case VSCode protocol, user provide "pause" thread id.
+        if (std::find_if(threads.begin(), threads.end(), [&](Thread t){ return t.id == lastStoppedThread; }) != threads.end())
         {
-            std::swap(threads[0], threads[i]);
-            break;
-        }
-    }
-
-    // Now get stack trace for each thread and find a frame with valid source location.
-    for (const Thread& thread : threads)
-    {
-        int totalFrames = 0;
-        std::vector<StackFrame> stackFrames;
-
-        if (FAILED(m_debugger.GetStackTrace(thread.id, FrameLevel(0), 0, stackFrames, totalFrames)))
-            continue;
-
-        for (const StackFrame& stackFrame : stackFrames)
-        {
-            if (stackFrame.source.IsNull())
-                continue;
-
-            StoppedEvent event(StopPause, thread.id);
-            event.frame = stackFrame;
-            m_debugger.SetLastStoppedThreadId(thread.id);
-            m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+            // VSCode protocol event must provide thread only (VSCode count on this), even if this thread don't have user code.
+            m_debugger.SetLastStoppedThreadId(lastStoppedThread);
+            m_debugger.m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, lastStoppedThread));
             m_debugger.m_ioredirect.async_cancel();
             return S_OK;
         }
     }
+    else
+    {
+        // MI and CLI protocols provide ThreadId::AllThreads as lastStoppedThread, this protocols require thread and frame with user code.
+        // Note, MIEngine (MI/GDB) require frame connected to user source or it will crash Visual Studio.
 
-    assert(threads.size() > 0);
-    // Event must provide thread (VSCode and MI/GDB protocols count on this), even if this thread don't have user code.
-    // Note, provide thread without user code also legit for this event.
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, threads[0].id));
-    m_debugger.m_ioredirect.async_cancel();
-    return S_OK;
+        ThreadId lastStoppedId = m_debugger.GetLastStoppedThreadId();
+
+        // Reorder threads so that last stopped thread is checked first
+        for (size_t i = 0; i < threads.size(); ++i)
+        {
+            if (threads[i].id == lastStoppedId)
+            {
+                std::swap(threads[0], threads[i]);
+                break;
+            }
+        }
+
+        // Now get stack trace for each thread and find a frame with valid source location.
+        for (const Thread& thread : threads)
+        {
+            int totalFrames = 0;
+            std::vector<StackFrame> stackFrames;
+
+            if (FAILED(m_debugger.GetStackTrace(thread.id, FrameLevel(0), 0, stackFrames, totalFrames)))
+                continue;
+
+            for (const StackFrame& stackFrame : stackFrames)
+            {
+                if (stackFrame.source.IsNull())
+                    continue;
+
+                StoppedEvent event(StopPause, thread.id);
+                event.frame = stackFrame;
+                m_debugger.SetLastStoppedThreadId(thread.id);
+                m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+                m_debugger.m_ioredirect.async_cancel();
+                return S_OK;
+            }
+        }
+    }
+
+    // Fatal error during stop, just fail Pause request and don't stop process.
+    m_stopEventInProcess = false;
+    IfFailRet(pProcess->Continue(0));
+    return E_FAIL;
 }
 
 ManagedCallback::~ManagedCallback()

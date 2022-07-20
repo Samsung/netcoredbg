@@ -635,8 +635,9 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
         return sharedDebugger->Continue(threadId);
     } },
     { "pause", [&](const json &arguments, json &body){
-        // Ignore `threadId` argument, since only pause for all threads are supported now.
-        return sharedDebugger->Pause();
+        ThreadId threadId{int(arguments.at("threadId"))};
+        body["threadId"] = int(threadId);
+        return sharedDebugger->Pause(threadId);
     } },
     { "next", [&](const json &arguments, json &body){
         return sharedDebugger->StepCommand(ThreadId{int(arguments.at("threadId"))}, IDebugger::StepType::STEP_OVER);

@@ -147,7 +147,7 @@ public:
     ThreadId GetLastStoppedThreadId() override;
     void InvalidateLastStoppedThreadId();
     HRESULT Continue(ThreadId threadId) override;
-    HRESULT Pause() override;
+    HRESULT Pause(ThreadId lastStoppedThread) override;
     HRESULT GetThreads(std::vector<Thread> &threads) override;
     HRESULT SetLineBreakpoints(const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;
