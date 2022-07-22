@@ -685,6 +685,31 @@ namespace MITestEvaluate
             return 5;
         }
 
+        static int TestArrayArg(int[] arrayArg, int i)
+        {
+            return arrayArg[0] + i;
+        }
+
+        static int TestArrayArg(test_array[] arrayT, int i)
+        {
+            return i;
+        }
+
+        static int TestArrayArg2(short[] arrayArg, int i)
+        {
+            return arrayArg[0] + i;
+        }
+
+        static int TestArray2Arg(int[,] multiArray2, int i)
+        {
+            return multiArray2[0,0] + i;
+        }
+
+        static int TestArray2Arg2(short[,] multiArray2, int i)
+        {
+            return multiArray2[0,0] + i;
+        }
+
         static void Main(string[] args)
         {
             Label.Checkpoint("init", "values_test", (Object context) => {
@@ -742,6 +767,9 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "array1[ 0]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "30", "int", "array1[2 ]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "50", "int", "array1 [ 4 ]"); // check spaces
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "TestArrayArg(array1, 5)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "11", "int", "TestArrayArg(array2, 11)");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestArrayArg2(array1, 5)", "Error:");
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{int[2, 3]}", "int[,]", "multi_array2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "101", "int", "multi_array2[0,0]");
@@ -752,6 +780,8 @@ namespace MITestEvaluate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "102", "int", "multi_array2[i1,i4]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "101", "int", "multi_array2[ 0 , 0 ]"); // check spaces
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "105", "int", "multi_array2  [ 1,1 ]"); // check spaces
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "106", "int", "TestArray2Arg(multi_array2, 5)");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestArray2Arg2(multi_array2, 5)", "Error:");
 
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.test_array[4]}", "MITestEvaluate.test_array[]", "array2");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestEvaluate.test_array}", "MITestEvaluate.test_array", "array2[0]");

@@ -462,7 +462,62 @@ static HRESULT ForEachProperties(IMetaDataImport *pMD, mdTypeDef currentTypeDef,
 // LoBounds ::= 29-bit-encoded-integer
 // Number ::= 29-bit-encoded-integer
 
-static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Evaluator::ArgElementType &argElementType)
+static void GetCorTypeName(ULONG corType, std::string &typeName)
+{
+    switch (corType)
+    {
+        case ELEMENT_TYPE_VOID:
+            typeName = "void";
+            break;
+        case ELEMENT_TYPE_BOOLEAN:
+            typeName = "bool";
+            break;
+        case ELEMENT_TYPE_CHAR:
+            typeName = "char";
+            break;
+        case ELEMENT_TYPE_I1:
+            typeName = "sbyte";
+            break;
+        case ELEMENT_TYPE_U1:
+            typeName = "byte";
+            break;
+        case ELEMENT_TYPE_I2:
+            typeName = "short";
+            break;
+        case ELEMENT_TYPE_U2:
+            typeName = "ushort";
+            break;
+        case ELEMENT_TYPE_I4:
+            typeName = "int";
+            break;
+        case ELEMENT_TYPE_U4:
+            typeName = "uint";
+            break;
+        case ELEMENT_TYPE_I8:
+            typeName = "long";
+            break;
+        case ELEMENT_TYPE_U8:
+            typeName = "ulong";
+            break;
+        case ELEMENT_TYPE_R4:
+            typeName = "float";
+            break;
+        case ELEMENT_TYPE_R8:
+            typeName = "double";
+            break;
+        case ELEMENT_TYPE_STRING:
+            typeName = "string";
+            break;
+        case ELEMENT_TYPE_OBJECT:
+            typeName = "object";
+            break;
+        default:
+            typeName = "";
+            break;
+    }
+}
+
+static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Evaluator::ArgElementType &argElementType, bool addCorTypeName = false)
 {
     HRESULT Status;
     ULONG corType;
@@ -487,6 +542,8 @@ static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Ev
         case ELEMENT_TYPE_R8:
         case ELEMENT_TYPE_STRING:
         case ELEMENT_TYPE_OBJECT:
+            if (addCorTypeName)
+                GetCorTypeName(argElementType.corType, argElementType.typeName);
             break;
 
         case ELEMENT_TYPE_VALUETYPE:
@@ -495,14 +552,49 @@ static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Ev
             IfFailRet(TypePrinter::NameForTypeByToken(tk, pMD, argElementType.typeName, nullptr));
             break;
 
+        case ELEMENT_TYPE_SZARRAY:
+            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, true)) || Status == S_FALSE)
+                return Status;
+            argElementType.corType = (CorElementType)corType;
+            argElementType.typeName += "[]";
+            break;
+        case ELEMENT_TYPE_ARRAY:
+        {
+            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, true)) || Status == S_FALSE)
+                return Status;
+            argElementType.corType = (CorElementType)corType;
+            // Parse for the rank
+            ULONG rank = 0;
+            *ppSig += CorSigUncompressData(*ppSig, &rank);
+            // if rank == 0, we are done
+            if (rank == 0)
+                break;
+            // any size of dimension specified?
+            ULONG sizeDim;
+            ULONG ulTemp;
+            *ppSig += CorSigUncompressData(*ppSig, &sizeDim);
+            while (sizeDim--)
+            {
+                *ppSig += CorSigUncompressData(*ppSig, &ulTemp);
+            }
+            // any lower bound specified?
+            ULONG lowerBound;
+            int iTemp;
+            *ppSig += CorSigUncompressData(*ppSig, &lowerBound);
+            while (lowerBound--)
+            {
+                *ppSig += CorSigUncompressSignedInt(*ppSig, &iTemp);
+            }
+            argElementType.typeName += "[" + std::string(rank - 1, ',') + "]";
+            break;
+        }
+
 // TODO
         case ELEMENT_TYPE_U: // "nuint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
         case ELEMENT_TYPE_I: // "nint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
         case ELEMENT_TYPE_TYPEDBYREF:
-        case ELEMENT_TYPE_ARRAY:
         case ELEMENT_TYPE_PTR: // int* ptr (unsafe code only)
         case ELEMENT_TYPE_BYREF: // ref, in, out
-        case ELEMENT_TYPE_SZARRAY:
         case ELEMENT_TYPE_VAR: // Generic parameter in a generic type definition, represented as number
         case ELEMENT_TYPE_MVAR: // Generic parameter in a generic method definition, represented as number
         case ELEMENT_TYPE_GENERICINST: // A type modifier for generic types - List<>, Dictionary<>, ...

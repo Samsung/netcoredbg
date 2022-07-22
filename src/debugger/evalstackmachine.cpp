@@ -1151,6 +1151,8 @@ namespace
 
             if (funcArgs[i].corType == ELEMENT_TYPE_VALUETYPE || funcArgs[i].corType == ELEMENT_TYPE_CLASS)
                 IfFailRet(TypePrinter::NameForTypeByValue(iCorValueArg, funcArgs[i].typeName));
+            else if (funcArgs[i].corType == ELEMENT_TYPE_SZARRAY || funcArgs[i].corType == ELEMENT_TYPE_ARRAY)
+                IfFailRet(TypePrinter::GetTypeOfValue(iCorValueArg, funcArgs[i].typeName));
         }
 
         ToRelease<ICorDebugFunction> iCorFunc;
