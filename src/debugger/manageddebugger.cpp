@@ -1314,6 +1314,93 @@ HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileN
     return S_OK;
 }
 
+// Call all ClearCache() and UpdateApplication() methods from UpdateHandlerTypes.
+static HRESULT UpdateApplication(ICorDebugThread *pThread, Modules *pModules, Evaluator *pEvaluator, EvalHelpers *pEvalHelpers)
+{
+    HRESULT Status;
+    std::vector<ToRelease<ICorDebugType>> modulesUpdateHandlerTypes;
+    pModules->CopyModulesUpdateHandlerTypes(modulesUpdateHandlerTypes);
+
+    std::list<ToRelease<ICorDebugFunction>> listClearCache;
+    std::list<ToRelease<ICorDebugFunction>> listUpdateApplication;
+    for (auto &updateHandlerType : modulesUpdateHandlerTypes)
+    {
+        pEvaluator->WalkMethods(updateHandlerType.GetPtr(), [&](
+            bool is_static,
+            const std::string &methodName,
+            Evaluator::ReturnElementType &methodRet,
+            std::vector<Evaluator::ArgElementType> &methodArgs,
+            Evaluator::GetFunctionCallback getFunction)
+        {
+            
+            if (!is_static ||
+                methodRet.corType != ELEMENT_TYPE_VOID ||
+                methodArgs.size() != 1 ||
+                methodArgs[0].corType != ELEMENT_TYPE_SZARRAY ||
+                methodArgs[0].typeName != "System.Type[]")
+                return S_OK;
+
+            if (methodName == "ClearCache")
+            {
+                listClearCache.emplace_back();
+                IfFailRet(getFunction(&listClearCache.back()));
+            }
+            else if (methodName == "UpdateApplication")
+            {
+                listUpdateApplication.emplace_back();
+                IfFailRet(getFunction(&listUpdateApplication.back()));
+            }
+
+            return S_OK;
+        });
+    }
+
+    // TODO send real type array (for all changed types) instead of null
+    ToRelease<ICorDebugEval> iCorEval;
+    IfFailRet(pThread->CreateEval(&iCorEval));
+    ToRelease<ICorDebugValue> iCorNullValue;
+    IfFailRet(iCorEval->CreateValue(ELEMENT_TYPE_CLASS, nullptr, &iCorNullValue));
+
+    for (auto &func : listClearCache)
+    {
+        IfFailRet(pEvalHelpers->EvalFunction(pThread, func.GetPtr(), nullptr, 0, iCorNullValue.GetRef(), 1, nullptr, defaultEvalFlags));
+    }
+    for (auto &func : listUpdateApplication)
+    {
+        IfFailRet(pEvalHelpers->EvalFunction(pThread, func.GetPtr(), nullptr, 0, iCorNullValue.GetRef(), 1, nullptr, defaultEvalFlags));
+    }
+
+    return S_OK;
+}
+
+HRESULT ManagedDebugger::FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread)
+{
+    ThreadId lastStoppedId = GetLastStoppedThreadId();
+    std::vector<Thread> threads;
+    GetThreads(threads);
+    for (size_t i = 0; i < threads.size(); ++i)
+    {
+        if (threads[i].id == lastStoppedId)
+        {
+            std::swap(threads[0], threads[i]);
+            break;
+        }
+    }
+
+    for (auto &thread : threads)
+    {
+        ToRelease<ICorDebugValue> iCorValue;
+        if (SUCCEEDED(m_iCorProcess->GetThread(int(thread.id), &pThread)) &&
+            SUCCEEDED(m_sharedEvalHelpers->CreateString(pThread, "test_string", &iCorValue)))
+        {
+            return S_OK;
+        }
+        pThread.Free();
+    }
+
+    return E_FAIL;
+}
+
 HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL,
                                               const std::string &deltaPDB, const std::string &lineUpdates)
 {
@@ -1329,9 +1416,14 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
     IfFailRet(m_managedCallback->Stop(m_iCorProcess));
     bool continueProcess = (Status == S_OK); // Was stopped by m_managedCallback->Stop() call.
 
-
     IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
     IfFailRet(ApplyPdbDeltaAndLineUpdates(dllFileName, deltaPDB, lineUpdates));
+
+    ToRelease<ICorDebugThread> pThread;
+    if (SUCCEEDED(FindEvalCapableThread(pThread)))
+        IfFailRet(UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get()));
+    //else
+    //   TODO implement async UpdateApplication() call for deltas apply on running process and process Paused by user.
 
     if (continueProcess)
         IfFailRet(m_managedCallback->Continue(m_iCorProcess));

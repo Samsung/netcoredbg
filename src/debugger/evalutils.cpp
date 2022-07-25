@@ -303,6 +303,6 @@ namespace EvalUtils
         return S_OK;
     }
 
-} // namespace EvalHelper
+} // namespace EvalUtils
 
 } // namespace netcoredbg

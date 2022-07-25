@@ -10,6 +10,7 @@
 #include <functional>
 #include <unordered_map>
 #include <set>
+#include <list>
 #include <mutex>
 #include <memory>
 #include "interfaces/types.h"
@@ -154,6 +155,8 @@ class Modules
 
     std::mutex m_modulesInfoMutex;
     std::unordered_map<CORDB_ADDRESS, ModuleInfo> m_modulesInfo;
+    // Must care about topological sort during ClearCache() and UpdateApplication() methods calls at Hot Reload.
+    std::list<ToRelease<ICorDebugType>> m_modulesUpdateHandlerTypes;
 
     struct FileMethodsData
     {
@@ -229,6 +232,8 @@ public:
                                         const std::string &lineUpdates, std::unordered_set<mdMethodDef> &methodTokens);
 
     HRESULT GetModuleWithName(const std::string &name, ICorDebugModule **ppModule, bool onlyWithPDB = false);
+
+    void CopyModulesUpdateHandlerTypes(std::vector<ToRelease<ICorDebugType>> &modulesUpdateHandlerTypes);
 
     HRESULT GetFrameILAndSequencePoint(
         ICorDebugFrame *pFrame,

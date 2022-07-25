@@ -64,8 +64,9 @@ ALL_TEST_NAMES=(
     "MITestHotReloadStepping"
     "MITestHotReloadJMC"
     "MITestHotReloadWithoutBreak"
-    "MITestGeneric"
     "MITestHotReloadPDB"
+    "MITestHotReloadUpdate"
+    "MITestGeneric"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -215,6 +216,9 @@ for TEST_NAME in $TEST_NAMES; do
     if  [[ $TEST_NAME == MITestHotReloadAsyncStepping ]] ;
     then
         TEST_PROJ_NAME="TestAppHotReloadAsync"
+    elif  [[ $TEST_NAME == MITestHotReloadUpdate ]] ;
+    then
+        TEST_PROJ_NAME="TestAppHotReloadUpdate"
     elif  [[ $TEST_NAME == MITestHotReload* ]] ;
     then
         TEST_PROJ_NAME="TestAppHotReload"
