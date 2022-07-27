@@ -2,6 +2,19 @@
 
 : ${TIMEOUT:=150}
 
+generate_xml()
+{
+    local xml_path=$1
+    local testnames=$2
+
+    echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?>
+        <testsuites>
+            <testsuite name=\"Tests\" tests=\"\" failures=\"\" errors=\"\" time=\"\">
+                ${testnames}
+            </testsuite>
+        </testsuites>" > "${xml_path}/test-results.xml"
+}
+
 ALL_TEST_NAMES=(
     "MIExampleTest"
     "MITestBreakpoint"
@@ -62,6 +75,19 @@ ALL_TEST_NAMES=(
 
 # Skipped tests:
 # VSCodeTest297killNCD --- is not automated enough. For manual run only.
+for i in "$@"
+do
+case $i in
+    -x=*|--xml=*)
+    XML_ABS_PATH="${i#*=}"
+    generate_report=true
+    shift
+    ;;
+    *)
+        TEST_NAMES="$TEST_NAMES *"
+    ;;
+esac
+done
 
 TEST_NAMES="$@"
 
@@ -78,6 +104,7 @@ dotnet build TestRunner || exit $?
 test_pass=0
 test_fail=0
 test_list=""
+test_xml=""
 
 DOC=<<EOD
   test_timeout run a command with timelimit and with housekeeping of all child processes
@@ -150,11 +177,18 @@ for TEST_NAME in $TEST_NAMES; do
     if [ "$res" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
         test_list="$test_list$TEST_NAME ... failed res=$res\n"
+        test_xml+="<testcase name=\"$TEST_NAME\"><failure></failure></testcase>"
     else
         test_pass=$(($test_pass + 1))
         test_list="$test_list$TEST_NAME ... passed\n"
+        test_xml+="<testcase name=\"$TEST_NAME\"></testcase>"
     fi
 done
+
+if $generate_report; then
+    #Generate xml test file to current directory
+    generate_xml "${XML_ABS_PATH}" "${test_xml}"
+fi
 
 echo ""
 echo -e $test_list
