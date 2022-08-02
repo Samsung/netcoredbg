@@ -21,17 +21,19 @@ class EntryBreakpoint;
 class ExceptionBreakpoints;
 class FuncBreakpoints;
 class LineBreakpoints;
+class HotReloadBreakpoint;
 
 class Breakpoints
 {
 public:
 
-    Breakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<Variables> &sharedVariables) :
+    Breakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Variables> &sharedVariables) :
         m_uniqueBreakBreakpoint(new BreakBreakpoint(sharedModules)),
         m_uniqueEntryBreakpoint(new EntryBreakpoint(sharedModules)),
         m_uniqueExceptionBreakpoints(new ExceptionBreakpoints(sharedEvaluator)),
         m_uniqueFuncBreakpoints(new FuncBreakpoints(sharedModules, sharedVariables)),
         m_uniqueLineBreakpoints(new LineBreakpoints(sharedModules, sharedVariables)),
+        m_uniqueHotReloadBreakpoint(new HotReloadBreakpoint(sharedModules, sharedEvaluator, sharedEvalHelpers)),
         m_nextBreakpointId(1)
     {}
 
@@ -44,6 +46,7 @@ public:
     HRESULT SetFuncBreakpoints(bool haveProcess, const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints);
     HRESULT SetLineBreakpoints(bool haveProcess, const std::string &filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints);
     HRESULT SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints);
+    HRESULT SetHotReloadBreakpoint();
     HRESULT UpdateBreakpointsOnHotReload(ICorDebugModule *pModule, std::unordered_set<mdMethodDef> &methodTokens, std::vector<BreakpointEvent> &events);
 
     HRESULT GetExceptionInfo(ICorDebugThread *pThread, ExceptionInfo &exceptionInfo);
@@ -63,7 +66,13 @@ public:
     HRESULT ManagedCallbackBreakpoint(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, bool &atEntry);
     HRESULT ManagedCallbackException(ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule, StoppedEvent &event);
     HRESULT ManagedCallbackLoadModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events);
+    HRESULT ManagedCallbackLoadModuleAll(ICorDebugModule *pModule);
     HRESULT ManagedCallbackExitThread(ICorDebugThread *pThread);
+
+    // S_OK - internal HotReload breakpoint hit
+    // S_FALSE - not internal HotReload breakpoint hit
+    HRESULT CheckApplicationReload(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
+    void CheckApplicationReload(ICorDebugThread *pThread);
 
 private:
 
@@ -72,6 +81,7 @@ private:
     std::unique_ptr<ExceptionBreakpoints> m_uniqueExceptionBreakpoints;
     std::unique_ptr<FuncBreakpoints> m_uniqueFuncBreakpoints;
     std::unique_ptr<LineBreakpoints> m_uniqueLineBreakpoints;
+    std::unique_ptr<HotReloadBreakpoint> m_uniqueHotReloadBreakpoint;
 
     std::mutex m_nextBreakpointIdMutex;
     uint32_t m_nextBreakpointId;

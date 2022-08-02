@@ -102,6 +102,37 @@ namespace NetcoreDbgTest.Script
                         @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void WasBreakHit(string caller_trace, string bpFileName, int bpNumLine)
+        {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+                var signal_name = (MIConst)output["signal-name"];
+
+                if (reason.CString != "signal-received" &&
+                    signal_name.CString != "SIGINT") {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
+
+                if (fileName.CString == bpFileName &&
+                    line == bpNumLine) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void WasExit(string caller_trace)
         {
             Func<MIOutOfBandRecord, bool> filter = (record) => {
@@ -298,11 +329,21 @@ namespace MITestHotReloadUpdate
                         {
                             Console.WriteLine(""Updated string."");
                             HotReloadBreakpointTest1();                                                      // line 20
+                            System.Threading.Thread.Sleep(1000);
                             HotReloadBreakpointTest1();
+                            System.Threading.Thread.Sleep(10000);
+                            if (i_test1 == 1000 && i_test2 == 1001 &&
+                                i_test3 == 2000 && i_test4 == 2001 &&
+                                i_test5 == 3000 && i_test6 == 3001)
+                                exit_correct();
                         }
                         static void HotReloadBreakpointTest1()
                         {
                             Console.WriteLine(""Added string."");
+                        }
+                        static void exit_correct()
+                        {
+                            Debugger.Break();
                         }
 
         internal static class HotReload
@@ -388,11 +429,21 @@ namespace MITestHotReloadUpdate
                         {
                             Console.WriteLine(""Updated string."");
                             HotReloadBreakpointTest1();
+                            System.Threading.Thread.Sleep(1000);
                             HotReloadBreakpointTest1();                                                      // line 21
+                            System.Threading.Thread.Sleep(10000);
+                            if (i_test1 == 1000 && i_test2 == 1001 &&
+                                i_test3 == 2000 && i_test4 == 2001 &&
+                                i_test5 == 3000 && i_test6 == 3001)
+                                exit_correct();
                         }
                         static void HotReloadBreakpointTest1()
                         {
                             Console.WriteLine(""Updated added string."");
+                        }
+                        static void exit_correct()
+                        {
+                            Debugger.Break();
                         }
 
         internal static class HotReload
@@ -446,7 +497,7 @@ namespace MITestHotReloadUpdate
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
-            Label.Checkpoint("test_update2", "finish", (Object context) => {
+            Label.Checkpoint("test_update2", "test_update3", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 21);
 
@@ -457,6 +508,105 @@ namespace MITestHotReloadUpdate
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "300", "int", "TestAppHotReloadUpdate.Program.i_test5");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "301", "int", "TestAppHotReloadUpdate.Program.i_test6");
 
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            Label.Checkpoint("test_update3", "test_update4", (Object context) => {
+                Context Context = (Context)context;
+
+                System.Threading.Thread.Sleep(2000);
+
+                Context.GetDelta(@"__FILE__:__LINE__",
+                @"using System;using System.Diagnostics;using System.Threading;using System.Reflection.Metadata;[assembly: MetadataUpdateHandler(typeof(TestAppHotReloadUpdate.HotReload1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111))][assembly: MetadataUpdateHandler(typeof(TestAppHotReloadUpdate.Program))][assembly: MetadataUpdateHandler(typeof(TestAppHotReloadUpdate.Program.HotReload))][assembly: MetadataUpdateHandler(typeof(TestAppHotReloadUpdate.Program.HotReload.HotReloadNested))]
+                namespace TestAppHotReloadUpdate
+                {
+                    public class Program
+                    {
+                        static public int i_test1 = 0;
+                        static public int i_test2 = 0;
+                        static public int i_test3 = 0;
+                        static public int i_test4 = 0;
+                        static public int i_test5 = 0;
+                        static public int i_test6 = 0;
+                        static void Main(string[] args)
+                        {
+                            Console.WriteLine(""Hello World!"");
+                            HotReloadTest();
+                        }
+                        static void HotReloadTest()
+                        {
+                            Console.WriteLine(""Updated string."");
+                            HotReloadBreakpointTest1();
+                            System.Threading.Thread.Sleep(1000);
+                            HotReloadBreakpointTest1();
+                            if (i_test1 == 1000 && i_test2 == 1001 &&
+                                i_test3 == 2000 && i_test4 == 2001 &&
+                                i_test5 == 3000 && i_test6 == 3001)
+                                exit_correct();
+                        }
+                        static void HotReloadBreakpointTest1()
+                        {
+                            Console.WriteLine(""Updated added string."");
+                        }
+                        static void HotReloadBreakpointTest2()
+                        {
+                        }
+                        static void exit_correct()
+                        {
+                            Debugger.Break();                                                      // line 37
+                        }
+
+        internal static class HotReload
+        {
+            public static void ClearCache(Type[]? changedTypes)
+            {
+                Console.WriteLine(""ClearCache2"");
+                TestAppHotReloadUpdate.Program.i_test1 = 1000;
+            }
+
+            public static void UpdateApplication(Type[]? changedTypes)
+            {
+                Console.WriteLine(""UpdateApplication2"");
+                TestAppHotReloadUpdate.Program.i_test2 = TestAppHotReloadUpdate.Program.i_test1 + 1;
+            }
+            internal static class HotReloadNested
+            {
+                public static void ClearCache(Type[]? changedTypes)
+                {
+                    Console.WriteLine(""ClearCache3"");
+                    TestAppHotReloadUpdate.Program.i_test3 = 2000;
+                }
+
+                public static void UpdateApplication(Type[]? changedTypes)
+                {
+                    Console.WriteLine(""UpdateApplication3"");
+                    TestAppHotReloadUpdate.Program.i_test4 = TestAppHotReloadUpdate.Program.i_test3 + 1;
+                }
+            }
+        }
+                    }
+    internal static class HotReload1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    {
+        public static void ClearCache(Type[]? changedTypes)
+        {
+            Console.WriteLine(""ClearCache1"");
+            TestAppHotReloadUpdate.Program.i_test5 = 3000;
+        }
+
+        public static void UpdateApplication(Type[]? changedTypes)
+        {
+            Console.WriteLine(""UpdateApplication1"");
+            TestAppHotReloadUpdate.Program.i_test6 = TestAppHotReloadUpdate.Program.i_test5 + 1;
+        }
+    }
+                }", @"Program.cs");
+                Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta3");
+                Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta3");
+            });
+
+            Label.Checkpoint("test_update4", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakHit(@"__FILE__:__LINE__", @"Program.cs", 37);
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

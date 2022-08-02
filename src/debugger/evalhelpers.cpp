@@ -110,10 +110,7 @@ static HRESULT GetMethodToken(IMetaDataImport *pMD, mdTypeDef cl, const WCHAR *m
     return methodDef;
 }
 
-static HRESULT FindFunction(ICorDebugModule *pModule,
-                            const WCHAR *typeName,
-                            const WCHAR *methodName,
-                            ICorDebugFunction **ppFunction)
+HRESULT FindFunction(ICorDebugModule *pModule, const WCHAR *typeName, const WCHAR *methodName, ICorDebugFunction **ppFunction)
 {
     HRESULT Status;
 

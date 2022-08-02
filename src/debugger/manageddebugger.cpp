@@ -30,7 +30,9 @@
 #include "debugger/breakpoints_exception.h"
 #include "debugger/breakpoints_func.h"
 #include "debugger/breakpoints_line.h"
+#include "debugger/breakpoint_hotreload.h"
 #include "debugger/breakpoints.h"
+#include "debugger/hotreloadhelpers.h"
 #include "debugger/manageddebugger.h"
 #include "debugger/managedcallback.h"
 #include "debugger/stepper_simple.h"
@@ -61,6 +63,14 @@ extern "C" const IID IID_IUnknown = { 0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0
 
 namespace
 {
+
+    const std::string envDOTNET_STARTUP_HOOKS = "DOTNET_STARTUP_HOOKS";
+#ifdef FEATURE_PAL
+    const char delimiterDOTNET_STARTUP_HOOKS = ':';
+#else  // FEATURE_PAL
+    const char delimiterDOTNET_STARTUP_HOOKS = ';';
+#endif // FEATURE_PAL
+
     int GetSystemEnvironmentAsMap(std::map<std::string, std::string>& outMap)
     {
         char*const*const pEnv = GetSystemEnvironment();
@@ -168,7 +178,7 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers, m_sharedEvalStackMachine)),
     m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator, m_sharedEvalStackMachine)),
     m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
-    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator, m_sharedVariables)),
+    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator, m_sharedEvalHelpers, m_sharedVariables)),
     m_managedCallback(nullptr),
     m_justMyCode(true),
     m_stepFiltering(true),
@@ -183,6 +193,7 @@ ManagedDebugger::ManagedDebugger() :
     )
 {
     m_sharedEvalStackMachine->SetupEval(m_sharedEvaluator, m_sharedEvalHelpers, m_sharedEvalWaiter);
+    m_sharedThreads->SetEvaluator(m_sharedEvaluator);
 }
 
 ManagedDebugger::~ManagedDebugger()
@@ -608,41 +619,53 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
     HANDLE resumeHandle = 0; // Fake thread handle for the process resume
 
     std::vector<char> outEnv;
-    if (!m_env.empty())
+
+    // We need to append the environ values with keeping the current process environment block.
+    // It works equal for any platrorms in coreclr CreateProcessW(), but not critical for Linux.
+    std::map<std::string, std::string> envMap;
+    if (GetSystemEnvironmentAsMap(envMap) != -1)
     {
-        // We need to append the environ values with keeping the current process environment block.
-        // It works equal for any platrorms in coreclr CreateProcessW(), but not critical for Linux.
-        std::map<std::string, std::string> envMap;
-        if (GetSystemEnvironmentAsMap(envMap) != -1)
+        // Override the system value (PATHs appending needs a complex implementation)
+        for (const auto &pair : m_env)
         {
-            auto it = m_env.begin();
-            auto end = m_env.end();
-            // Override the system value (PATHs appending needs a complex implementation)
-            while (it != end)
+            if (pair.first == envDOTNET_STARTUP_HOOKS && !envMap[pair.first].empty())
             {
-                envMap[it->first] = it->second;
-                ++it;
+                envMap[pair.first] = envMap[pair.first] + delimiterDOTNET_STARTUP_HOOKS + pair.second;
+                continue;
             }
-            for (const auto &pair : envMap)
-            {
-                outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
-                outEnv.push_back('=');
-                outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
-                outEnv.push_back('\0');
-            }
+            envMap[pair.first] = pair.second;
+        }
+#ifdef NCDB_DOTNET_STARTUP_HOOK
+        if (m_hotReload)
+        {
+            auto find = envMap.find(envDOTNET_STARTUP_HOOKS);
+            if (find != envMap.end())
+                find->second = find->second + delimiterDOTNET_STARTUP_HOOKS + NCDB_DOTNET_STARTUP_HOOK;
+            else
+                envMap[envDOTNET_STARTUP_HOOKS] = NCDB_DOTNET_STARTUP_HOOK;
+        }
+#endif // NCDB_DOTNET_STARTUP_HOOK
+        for (const auto &pair : envMap)
+        {
+            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
+            outEnv.push_back('=');
+            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
             outEnv.push_back('\0');
         }
-        else
+    }
+    else
+    {
+        for (const auto &pair : m_env)
         {
-            for (const auto &pair : m_env)
-            {
-                outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
-                outEnv.push_back('=');
-                outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
-                outEnv.push_back('\0');
-            }
+            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
+            outEnv.push_back('=');
+            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
+            outEnv.push_back('\0');
         }
     }
+    // Environtment variable should looks like: "Var=Value\0OtherVar=OtherValue\0\0"
+    if (!outEnv.empty())
+        outEnv.push_back('\0');
 
     // cwd in launch.json set working directory for debugger https://code.visualstudio.com/docs/python/debugging#_cwd
     if (!m_cwd.empty())
@@ -1314,83 +1337,24 @@ HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileN
     return S_OK;
 }
 
-// Call all ClearCache() and UpdateApplication() methods from UpdateHandlerTypes.
-static HRESULT UpdateApplication(ICorDebugThread *pThread, Modules *pModules, Evaluator *pEvaluator, EvalHelpers *pEvalHelpers)
-{
-    HRESULT Status;
-    std::vector<ToRelease<ICorDebugType>> modulesUpdateHandlerTypes;
-    pModules->CopyModulesUpdateHandlerTypes(modulesUpdateHandlerTypes);
-
-    std::list<ToRelease<ICorDebugFunction>> listClearCache;
-    std::list<ToRelease<ICorDebugFunction>> listUpdateApplication;
-    for (auto &updateHandlerType : modulesUpdateHandlerTypes)
-    {
-        pEvaluator->WalkMethods(updateHandlerType.GetPtr(), [&](
-            bool is_static,
-            const std::string &methodName,
-            Evaluator::ReturnElementType &methodRet,
-            std::vector<Evaluator::ArgElementType> &methodArgs,
-            Evaluator::GetFunctionCallback getFunction)
-        {
-            
-            if (!is_static ||
-                methodRet.corType != ELEMENT_TYPE_VOID ||
-                methodArgs.size() != 1 ||
-                methodArgs[0].corType != ELEMENT_TYPE_SZARRAY ||
-                methodArgs[0].typeName != "System.Type[]")
-                return S_OK;
-
-            if (methodName == "ClearCache")
-            {
-                listClearCache.emplace_back();
-                IfFailRet(getFunction(&listClearCache.back()));
-            }
-            else if (methodName == "UpdateApplication")
-            {
-                listUpdateApplication.emplace_back();
-                IfFailRet(getFunction(&listUpdateApplication.back()));
-            }
-
-            return S_OK;
-        });
-    }
-
-    // TODO send real type array (for all changed types) instead of null
-    ToRelease<ICorDebugEval> iCorEval;
-    IfFailRet(pThread->CreateEval(&iCorEval));
-    ToRelease<ICorDebugValue> iCorNullValue;
-    IfFailRet(iCorEval->CreateValue(ELEMENT_TYPE_CLASS, nullptr, &iCorNullValue));
-
-    for (auto &func : listClearCache)
-    {
-        IfFailRet(pEvalHelpers->EvalFunction(pThread, func.GetPtr(), nullptr, 0, iCorNullValue.GetRef(), 1, nullptr, defaultEvalFlags));
-    }
-    for (auto &func : listUpdateApplication)
-    {
-        IfFailRet(pEvalHelpers->EvalFunction(pThread, func.GetPtr(), nullptr, 0, iCorNullValue.GetRef(), 1, nullptr, defaultEvalFlags));
-    }
-
-    return S_OK;
-}
-
 HRESULT ManagedDebugger::FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread)
 {
     ThreadId lastStoppedId = GetLastStoppedThreadId();
-    std::vector<Thread> threads;
-    GetThreads(threads);
-    for (size_t i = 0; i < threads.size(); ++i)
+    std::vector<ThreadId> threadIds;
+    m_sharedThreads->GetThreadIds(threadIds);
+    for (size_t i = 0; i < threadIds.size(); ++i)
     {
-        if (threads[i].id == lastStoppedId)
+        if (threadIds[i] == lastStoppedId)
         {
-            std::swap(threads[0], threads[i]);
+            std::swap(threadIds[0], threadIds[i]);
             break;
         }
     }
 
-    for (auto &thread : threads)
+    for (auto &threadId : threadIds)
     {
         ToRelease<ICorDebugValue> iCorValue;
-        if (SUCCEEDED(m_iCorProcess->GetThread(int(thread.id), &pThread)) &&
+        if (SUCCEEDED(m_iCorProcess->GetThread(int(threadId), &pThread)) &&
             SUCCEEDED(m_sharedEvalHelpers->CreateString(pThread, "test_string", &iCorValue)))
         {
             return S_OK;
@@ -1421,9 +1385,9 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
 
     ToRelease<ICorDebugThread> pThread;
     if (SUCCEEDED(FindEvalCapableThread(pThread)))
-        IfFailRet(UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get()));
-    //else
-    //   TODO implement async UpdateApplication() call for deltas apply on running process and process Paused by user.
+        IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get()));
+    else
+        IfFailRet(m_uniqueBreakpoints->SetHotReloadBreakpoint());
 
     if (continueProcess)
         IfFailRet(m_managedCallback->Continue(m_iCorProcess));

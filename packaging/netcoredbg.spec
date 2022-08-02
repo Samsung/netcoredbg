@@ -42,6 +42,7 @@ Requires: coreclr
 %define sdktoolsdir     /home/owner/share/tmp/sdk_tools
 %define install_prefix /usr
 %define sdk_install_prefix /home/owner/share/tmp/sdk_tools/netcoredbg
+%define netcoreapp_hotreload_min_ver %{_datarootdir}/%{netcoreapp}6.0.0
 
 %ifarch x86_64
 %define ARCH AMD64
@@ -89,6 +90,10 @@ export CXXFLAGS=$(echo $CXXFLAGS | sed -e 's/--target=i686/--target=i586/')
 
 export NETCOREAPPDIR=$(if [ -d %{_datarootdir}/%{netcoreappalias} ]; then echo %{_datarootdir}/%{netcoreappalias}; else find %{_datarootdir}/%{netcoreapp} -maxdepth 1 -type d -name '[0-9]*' -print | sort -n | tail -1; fi)
 
+if [ -d %{netcoreapp_hotreload_min_ver} ]; then
+    STARTUP_HOOK=%{sdk_install_prefix}/ncdbhook.dll
+fi
+
 mkdir build
 cd build
 cmake .. \
@@ -100,12 +105,17 @@ cmake .. \
     -DCLR_CMAKE_LINUX_ID=tizen \
     -DDBGSHIM_RUNTIME_DIR=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF \
+    -DNCDB_DOTNET_STARTUP_HOOK=$STARTUP_HOOK \
     -DBUILD_TESTING=%{build_testing}
 
 make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 
 %define _dotnet_build_conf %{build_type}
 %dotnet_build -s ../packaging/pkgs ../src/managed
+# Build Debug only, code must be not optimized.
+if [ -d %{netcoreapp_hotreload_min_ver} ]; then
+    NCDB_HOOK_TargetFramework=net6.0 dotnet build -c Debug ../src/ncdbhook
+fi
 
 %install
 cd build
@@ -113,6 +123,9 @@ cd build
 mkdir -p %{buildroot}%{sdk_install_prefix}
 mv %{buildroot}%{install_prefix}/netcoredbg %{buildroot}%{sdk_install_prefix}
 install -p -m 644 ../src/managed/bin/*/*/ManagedPart.dll %{buildroot}%{sdk_install_prefix}
+if [ -d %{netcoreapp_hotreload_min_ver} ]; then
+    install -p -m 644 ../src/ncdbhook/bin/*/*/ncdbhook.dll %{buildroot}%{sdk_install_prefix}
+fi
 
 export CSVER=$(ls /nuget/microsoft.codeanalysis.common.*.nupkg | sort -n | tail -1 | cut -d "." -f4-6)
 export SYSCODEPAGES=$(ls /nuget/system.text.encoding.codepages.4.*.nupkg | sort -n | tail -1)

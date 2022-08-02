@@ -1,0 +1,105 @@
+// Copyright (c) 2022 Samsung Electronics Co., LTD
+// Distributed under the MIT License.
+// See the LICENSE file in the project root for more information.
+
+#include "debugger/breakpoint_hotreload.h"
+#include "debugger/breakpointutils.h"
+#include "debugger/hotreloadhelpers.h"
+#include "debugger/evalhelpers.h"
+#include "metadata/modules.h"
+
+namespace netcoredbg
+{
+
+HRESULT HotReloadBreakpoint::SetHotReloadBreakpoint()
+{
+#ifdef NCDB_DOTNET_STARTUP_HOOK
+
+    std::lock_guard<std::mutex> lock(m_reloadMutex);
+
+    if (!m_iCorFunc)
+        return E_FAIL;
+
+    HRESULT Status;
+    IfFailRet(m_iCorFunc->CreateBreakpoint(&m_iCorFuncBreakpoint));
+    IfFailRet(m_iCorFuncBreakpoint->Activate(TRUE));
+
+    return S_OK;
+
+#else // NCDB_DOTNET_STARTUP_HOOK
+
+    return E_NOTIMPL;
+
+#endif // NCDB_DOTNET_STARTUP_HOOK
+}
+
+HRESULT HotReloadBreakpoint::ManagedCallbackLoadModuleAll(ICorDebugModule *pModule)
+{
+#ifdef NCDB_DOTNET_STARTUP_HOOK
+
+    static std::string dllName(NCDB_DOTNET_STARTUP_HOOK);
+
+    std::lock_guard<std::mutex> lock(m_reloadMutex);
+
+    if (dllName != GetModuleFileName(pModule))
+        return S_OK;
+
+    HRESULT Status;
+    static const WCHAR className[] = W("StartupHook");
+    static const WCHAR methodName[] = W("ncdbfunc");
+    IfFailRet(FindFunction(pModule, className, methodName, &m_iCorFunc));
+
+#endif // NCDB_DOTNET_STARTUP_HOOK
+
+    return S_OK;
+}
+
+HRESULT HotReloadBreakpoint::CheckApplicationReload(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
+{
+    std::lock_guard<std::mutex> lock(m_reloadMutex);
+
+    if (!m_iCorFuncBreakpoint)
+        return S_FALSE; // S_FALSE - no error, but not affect on callback
+
+    HRESULT Status;
+    HRESULT ReturnStatus;
+    ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
+    IfFailRet(pBreakpoint->QueryInterface(IID_ICorDebugFunctionBreakpoint, (LPVOID*) &pFunctionBreakpoint));
+    if (FAILED(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, m_iCorFuncBreakpoint)))
+        ReturnStatus = S_FALSE; // Probably, we stopped on other breakpoint, need check this and emit event.
+    else
+        ReturnStatus = S_OK;
+
+    IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get()));
+
+    m_iCorFuncBreakpoint->Activate(FALSE);
+    m_iCorFuncBreakpoint.Free();
+
+    return ReturnStatus;
+}
+
+void HotReloadBreakpoint::CheckApplicationReload(ICorDebugThread *pThread)
+{
+    std::lock_guard<std::mutex> lock(m_reloadMutex);
+
+    if (!m_iCorFuncBreakpoint)
+        return;
+
+    HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get());
+
+    m_iCorFuncBreakpoint->Activate(FALSE);
+    m_iCorFuncBreakpoint.Free();
+}
+
+void HotReloadBreakpoint::Delete()
+{
+    std::lock_guard<std::mutex> lock(m_reloadMutex);
+
+    if (!m_iCorFuncBreakpoint)
+        return;
+
+    m_iCorFuncBreakpoint->Activate(FALSE);
+    m_iCorFuncBreakpoint.Free();
+}
+
+} // namespace netcoredbg

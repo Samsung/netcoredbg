@@ -7,6 +7,7 @@
 #include "debugger/breakpoints_exception.h"
 #include "debugger/breakpoints_func.h"
 #include "debugger/breakpoints_line.h"
+#include "debugger/breakpoint_hotreload.h"
 #include "debugger/breakpoints.h"
 #include "debugger/breakpointutils.h"
 
@@ -56,6 +57,7 @@ void Breakpoints::DeleteAll()
     m_uniqueFuncBreakpoints->DeleteAll();
     m_uniqueLineBreakpoints->DeleteAll();
     m_uniqueExceptionBreakpoints->DeleteAll();
+    m_uniqueHotReloadBreakpoint->Delete();
 }
 
 HRESULT Breakpoints::DisableAll(ICorDebugProcess *pProcess)
@@ -165,6 +167,12 @@ HRESULT Breakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std::ve
     return S_OK;
 }
 
+HRESULT Breakpoints::ManagedCallbackLoadModuleAll(ICorDebugModule *pModule)
+{
+    m_uniqueHotReloadBreakpoint->ManagedCallbackLoadModuleAll(pModule);
+    return S_OK;
+}
+
 HRESULT Breakpoints::ManagedCallbackException(ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule, StoppedEvent &event)
 {
     return m_uniqueExceptionBreakpoints->ManagedCallbackException(pThread, eventType, excModule, event);
@@ -211,6 +219,21 @@ void Breakpoints::EnumerateBreakpoints(std::function<bool (const IDebugger::Brea
 HRESULT Breakpoints::ManagedCallbackExitThread(ICorDebugThread *pThread)
 {
     return m_uniqueExceptionBreakpoints->ManagedCallbackExitThread(pThread);
+}
+
+HRESULT Breakpoints::CheckApplicationReload(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
+{
+    return m_uniqueHotReloadBreakpoint->CheckApplicationReload(pThread, pBreakpoint);
+}
+
+void Breakpoints::CheckApplicationReload(ICorDebugThread *pThread)
+{
+    m_uniqueHotReloadBreakpoint->CheckApplicationReload(pThread);
+}
+
+HRESULT Breakpoints::SetHotReloadBreakpoint()
+{
+    return m_uniqueHotReloadBreakpoint->SetHotReloadBreakpoint();
 }
 
 } // namespace netcoredbg

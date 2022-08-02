@@ -14,6 +14,7 @@
 #include "debugger/breakpoints_exception.h"
 #include "debugger/breakpoints_func.h"
 #include "debugger/breakpoints_line.h"
+#include "debugger/breakpoint_hotreload.h"
 #include "debugger/breakpoints.h"
 #include "debugger/valueprint.h"
 #include "debugger/waitpid.h"
@@ -33,6 +34,11 @@ namespace netcoredbg
 
 bool ManagedCallback::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint)
 {
+    // S_FALSE or error - continue callback.
+    // S_OK - this is internal Hot Reload breakpoint, ignore this callback call.
+    if (S_OK == m_debugger.m_uniqueBreakpoints->CheckApplicationReload(pThread, pBreakpoint))
+        return false;
+
     // S_FALSE - not error and steppers not affect on callback
     if (S_FALSE != m_debugger.m_uniqueSteppers->ManagedCallbackBreakpoint(pAppDomain, pThread))
         return false;
@@ -62,6 +68,8 @@ bool ManagedCallback::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, 
 
 bool ManagedCallback::CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason)
 {
+    m_debugger.m_uniqueBreakpoints->CheckApplicationReload(pThread);
+
     // S_FALSE - not error and steppers not affect on callback (callback will emit stop event)
     if (S_FALSE != m_debugger.m_uniqueSteppers->ManagedCallbackStepComplete(pThread, reason))
         return false;
@@ -83,6 +91,8 @@ bool ManagedCallback::CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain
 
 bool ManagedCallback::CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread)
 {
+    m_debugger.m_uniqueBreakpoints->CheckApplicationReload(pThread);
+
     // S_FALSE - not error and not affect on callback (callback will emit stop event)
     if (S_FALSE != m_debugger.m_uniqueBreakpoints->ManagedCallbackBreak(pThread, m_debugger.GetLastStoppedThreadId()))
         return false;
@@ -107,6 +117,8 @@ bool ManagedCallback::CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorD
 
 bool ManagedCallback::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule)
 {
+    m_debugger.m_uniqueBreakpoints->CheckApplicationReload(pThread);
+
     ThreadId threadId(getThreadId(pThread));
     StoppedEvent event(StopException, threadId);
 
@@ -609,6 +621,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(ICorDebugAppDomain *pAppDo
         for (const BreakpointEvent &event : events)
             m_debugger.m_sharedProtocol->EmitBreakpointEvent(event);
     }
+    m_debugger.m_uniqueBreakpoints->ManagedCallbackLoadModuleAll(pModule);
 
     // enable Debugger.NotifyOfCrossThreadDependency after System.Private.CoreLib.dll loaded (trigger for 1 time call only)
     if (module.name == "System.Private.CoreLib.dll")

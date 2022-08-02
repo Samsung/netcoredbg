@@ -19,6 +19,8 @@ namespace netcoredbg
 class Modules;
 class EvalWaiter;
 
+HRESULT FindFunction(ICorDebugModule *pModule, const WCHAR *typeName, const WCHAR *methodName, ICorDebugFunction **ppFunction);
+
 class EvalHelpers
 {
 public:

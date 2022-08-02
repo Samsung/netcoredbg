@@ -115,8 +115,8 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
     IfFailRet(pThread->GetProcess(&iCorProcess));
     if (!iCorProcess)
         return E_FAIL;
-    std::vector<Thread> userThreads;
-    IfFailRet(m_sharedThreads->GetThreadsWithState(iCorProcess, userThreads));
+    std::vector<ThreadId> userThreadIds;
+    IfFailRet(m_sharedThreads->GetThreadIds(userThreadIds));
     ThreadId threadId(getThreadId(pThread));
     if (!threadId)
         return E_FAIL;
@@ -124,13 +124,13 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
     // Note, we need suspend during eval only user's threads, that not used for eval.
     auto ChangeThreadsState = [&](CorDebugThreadState state)
     {
-        for (const auto &userThread : userThreads)
+        for (const auto &userThreadId : userThreadIds)
         {
-            if (threadId == userThread.id)
+            if (threadId == userThreadId)
                 continue;
 
             ToRelease<ICorDebugThread> iCorThread;
-            if (FAILED(iCorProcess->GetThread(int(userThread.id), &iCorThread)) ||
+            if (FAILED(iCorProcess->GetThread(int(userThreadId), &iCorThread)) ||
                 FAILED(iCorThread->SetDebugState(state)))
             {
                 if (state == THREAD_SUSPEND)
