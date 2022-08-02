@@ -317,6 +317,24 @@ namespace VSCodeTestEvalArraysIndexers
         }
     }
 
+    public class MyString
+    {
+        string s;
+        public MyString(string ms)
+        {
+            s = ms;
+        }
+    }
+
+    struct MyInt
+    {
+        int i;
+        public MyInt(int mi)
+        {
+            i = mi;
+        }
+    }
+
     class Program
     {
         static string[] str = new string[]
@@ -349,8 +367,16 @@ namespace VSCodeTestEvalArraysIndexers
             var indexAsString = new IndexAsString();
             Dictionary<int,string> dictis = new Dictionary<int,string>();
             Dictionary<string,int> dictsi = new Dictionary<string,int>();
+            Dictionary<MyInt,MyString> dictmims = new Dictionary<MyInt,MyString>();
+            Dictionary<MyString,MyInt> dictmsmi = new Dictionary<MyString,MyInt>();
             List<string> lists = new List<string>();
+            List<MyString> listms = new List<MyString>();
             SortedList<string,int> slist = new SortedList<string,int>();
+
+            MyInt[] myInts = new MyInt[6]
+                {new MyInt(0), new MyInt(1), new MyInt(2), new MyInt(3), new MyInt(4), new MyInt(5)};
+            MyString[] myStrings = new MyString[6]
+                {new MyString("zero"), new MyString("one"), new MyString("two"), new MyString("three"), new MyString("four"), new MyString("five")};
 
             int i0 = 0;
             int i1 = 1;
@@ -371,17 +397,35 @@ namespace VSCodeTestEvalArraysIndexers
             dictsi.Add("three", 3);
             dictsi.Add("four", 4);
 
-            lists.Add("null");
-            lists.Add("first");
-            lists.Add("second");
-            lists.Add("third");
-            lists.Add("fourth");
+            lists.Add("zero");
+            lists.Add("one");
+            lists.Add("two");
+            lists.Add("three");
+            lists.Add("four");
 
-            slist.Add("null", 0);
-            slist.Add("first", 1);
-            slist.Add("second", 2);
-            slist.Add("third", 3);
-            slist.Add("fourth", 4);
+            listms.Add(myStrings[0]);
+            listms.Add(myStrings[1]);
+            listms.Add(myStrings[2]);
+            listms.Add(myStrings[3]);
+            listms.Add(myStrings[4]);
+
+            slist.Add("zero", 0);
+            slist.Add("one", 1);
+            slist.Add("two", 2);
+            slist.Add("three", 3);
+            slist.Add("four", 4);
+
+            dictmims.Add(myInts[0],myStrings[0]);
+            dictmims.Add(myInts[1],myStrings[1]);
+            dictmims.Add(myInts[2],myStrings[2]);
+            dictmims.Add(myInts[3],myStrings[3]);
+            dictmims.Add(myInts[4],myStrings[4]);
+
+            dictmsmi.Add(myStrings[0],myInts[0]);
+            dictmsmi.Add(myStrings[1],myInts[1]);
+            dictmsmi.Add(myStrings[2],myInts[2]);
+            dictmsmi.Add(myStrings[3],myInts[3]);
+            dictmsmi.Add(myStrings[4],myInts[4]);
 
             // Use the indexer's set accessor
             simpleInt[3] = 333;
@@ -521,6 +565,148 @@ namespace VSCodeTestEvalArraysIndexers
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "36", "int", "indexAsString[ 6 , str[6] ]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "indexAsString[11,str[10]]");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "indexAsString[i1, str[10]]");
+
+                // check Dictionary<int,string>
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"one\"", "string", "dictis[1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[ 4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[ 4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[i4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[ i4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[i4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictis[ i4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[i1+i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[ i1+i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[i1+i2 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[ i1+i2 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[i1 + i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[ i1 + i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[i1 + i2 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "dictis[ i1 + i2 ]");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictis[\"four\"]", "error: 0x80070057");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictis[str[4]]", "error: 0x80070057");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictis[5]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictis[i7]");
+ 
+                // check Dictionary<string, int>
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "dictsi[\"one\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "dictsi[ \"one\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "dictsi[\"one\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "dictsi[ \"one\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[\"four\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[ \"four\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[\"four\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[ \"four\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "dictsi[str[2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "dictsi[str[ 2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "dictsi[str[2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "dictsi[str[ 2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[2+2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[ 2+2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[2+2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[ 2+2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[2 + 2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[ 2 + 2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[2 + 2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictsi[str[ 2 + 2 ]]");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictsi[4]", "error: 0x80070057");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictsi[i4]", "error: 0x80070057");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictsi[str[5]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictsi[\"five\"]");
+
+                // check List<string>
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"one\"", "string", "lists[1]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[ 4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[ 4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[i4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[ i4]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[i4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "lists[ i4 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[i1+i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[ i1+i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[i1+i2 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[ i1+i2 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[i1 + i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[ i1 + i2]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[i1 + i2 ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"three\"", "string", "lists[ i1 + i2 ]");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "lists[4.4]", "error: 0x80070057");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "lists[str[4]]", "error: 0x80070057");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "lists[\"four\"]", "error: 0x80070057");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.ArgumentOutOfRangeException}", "System.ArgumentOutOfRangeException", "lists[5]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.ArgumentOutOfRangeException}", "System.ArgumentOutOfRangeException", "lists[i7]");
+
+                // check List<MyString>
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "{VSCodeTestEvalArraysIndexers.MyString}", "VSCodeTestEvalArraysIndexers.MyString", "listms[3]");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "{VSCodeTestEvalArraysIndexers.MyString}", "VSCodeTestEvalArraysIndexers.MyString", "listms[ 3]");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "{VSCodeTestEvalArraysIndexers.MyString}", "VSCodeTestEvalArraysIndexers.MyString", "listms[3 ]");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "{VSCodeTestEvalArraysIndexers.MyString}", "VSCodeTestEvalArraysIndexers.MyString", "listms[ 3 ]");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"one\"", "string", "listms[1].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[4].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[ 4].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[4 ].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[ 4 ].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[i4].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[ i4].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[i4 ].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"four\"", "string", "listms[ i4 ].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[i1+i2].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[ i1+i2].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[i1+i2 ].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[ i1+i2 ].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[i1 + i2].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[ i1 + i2].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[i1 + i2 ].s");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "\"three\"", "string", "listms[ i1 + i2 ].s");
+                Context.CheckErrorAtRequest(@"__FILE__ :__LINE__", frameId, "listms[4.4]", "error: 0x80070057");
+                Context.CheckErrorAtRequest(@"__FILE__ :__LINE__", frameId, "listms[myStrings[4]]", "error: 0x80070057");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "{System.ArgumentOutOfRangeException}", "System.ArgumentOutOfRangeException", "listms[5]");
+                Context.GetAndCheckValue(@"__FILE__ :__LINE__", frameId, "{System.ArgumentOutOfRangeException}", "System.ArgumentOutOfRangeException", "listms[i7]");
+
+                // check SortedList<string,int>
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "slist[\"one\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "slist[ \"one\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "slist[\"one\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "slist[ \"one\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[\"four\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[ \"four\"]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[\"four\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[ \"four\" ]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "slist[str[2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "slist[str[ 2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "slist[str[2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "2", "int", "slist[str[ 2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[2+2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[ 2+2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[2+2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[ 2+2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[2 + 2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[ 2 + 2]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[2 + 2 ]]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "slist[str[ 2 + 2 ]]");
+
+                // check Dictionary<MyInt,MyString>
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"one\"", "string", "dictmims[myInts[1]].s");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictmims[myInts[4]].s");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictmims[ myInts[4]].s");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictmims[myInts[4]].s ");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"four\"", "string", "dictmims[ myInts[4]].s ");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictmims[myStrings[4]]", "error: 0x80070057");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictmims[\"a string\"]", "error: 0x80070057");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictmims[myInts[5]]");
+
+                // check Dictionary<MyInt,MyString>
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "1", "int", "dictmsmi[myStrings[1]].i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictmsmi[myStrings[4]].i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictmsmi[ myStrings[4]].i");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictmsmi[myStrings[4]].i ");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "4", "int", "dictmsmi[ myStrings[4]].i ");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictmsmi[myInts[4]]", "error: 0x80070057");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictmsmi[\"a string\"]", "error: 0x80070057");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictmsmi[myStrings[5]]");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

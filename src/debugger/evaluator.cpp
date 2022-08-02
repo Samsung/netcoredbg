@@ -517,13 +517,18 @@ static void GetCorTypeName(ULONG corType, std::string &typeName)
     }
 }
 
-static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Evaluator::ArgElementType &argElementType, bool addCorTypeName = false)
+static HRESULT ParseElementType(IMetaDataImport *pMD,
+                                PCCOR_SIGNATURE *ppSig,
+                                Evaluator::ArgElementType &argElementType,
+                                std::vector<Evaluator::ArgElementType> &genericArgs,
+                                bool addCorTypeName = false)
 {
     HRESULT Status;
     ULONG corType;
     mdToken tk;
     *ppSig += CorSigUncompressData(*ppSig, &corType);
     argElementType.corType = (CorElementType)corType;
+    ULONG argNum = 0;
 
     switch (argElementType.corType)
     {
@@ -553,14 +558,14 @@ static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Ev
             break;
 
         case ELEMENT_TYPE_SZARRAY:
-            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, true)) || Status == S_FALSE)
+            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, genericArgs, true)) || Status == S_FALSE)
                 return Status;
             argElementType.corType = (CorElementType)corType;
             argElementType.typeName += "[]";
             break;
         case ELEMENT_TYPE_ARRAY:
         {
-            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, true)) || Status == S_FALSE)
+            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, genericArgs, true)) || Status == S_FALSE)
                 return Status;
             argElementType.corType = (CorElementType)corType;
             // Parse for the rank
@@ -589,13 +594,23 @@ static HRESULT ParseElementType(IMetaDataImport *pMD, PCCOR_SIGNATURE *ppSig, Ev
             break;
         }
 
+        case ELEMENT_TYPE_VAR: // Generic parameter in a generic type definition, represented as number
+            *ppSig += CorSigUncompressData(*ppSig, &argNum);
+            if (argNum >= genericArgs.size())
+                return S_FALSE;
+            else
+            {
+                argElementType = genericArgs[argNum];
+                if (addCorTypeName && argElementType.typeName.empty())
+                    GetCorTypeName(argElementType.corType, argElementType.typeName);
+            }
+            break;
 // TODO
         case ELEMENT_TYPE_U: // "nuint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
         case ELEMENT_TYPE_I: // "nint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
         case ELEMENT_TYPE_TYPEDBYREF:
         case ELEMENT_TYPE_PTR: // int* ptr (unsafe code only)
         case ELEMENT_TYPE_BYREF: // ref, in, out
-        case ELEMENT_TYPE_VAR: // Generic parameter in a generic type definition, represented as number
         case ELEMENT_TYPE_MVAR: // Generic parameter in a generic method definition, represented as number
         case ELEMENT_TYPE_GENERICINST: // A type modifier for generic types - List<>, Dictionary<>, ...
         case ELEMENT_TYPE_CMOD_REQD:
@@ -634,6 +649,25 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
     ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
+    std::vector<Evaluator::ArgElementType> genericArgs;
+    ToRelease<ICorDebugTypeEnum> paramTypes;
+
+    if (SUCCEEDED(pInputType->EnumerateTypeParameters(&paramTypes)))
+    {
+        ULONG fetched = 0;
+        ToRelease<ICorDebugType> pCurrentTypeParam;
+
+        while (SUCCEEDED(paramTypes->Next(1, &pCurrentTypeParam, &fetched)) && fetched == 1)
+        {
+            Evaluator::ArgElementType argElType;
+            pCurrentTypeParam->GetType(&argElType.corType);
+            if(argElType.corType == ELEMENT_TYPE_VALUETYPE || argElType.corType == ELEMENT_TYPE_CLASS)
+                IfFailRet(TypePrinter::NameForTypeByType(pCurrentTypeParam, argElType.typeName));
+            genericArgs.emplace_back(argElType);
+            pCurrentTypeParam.Free();
+        }
+    }
+
     ULONG numMethods = 0;
     HCORENUM fEnum = NULL;
     mdMethodDef methodDef;
@@ -650,7 +684,6 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
                                      szFunctionName, _countof(szFunctionName), &nameLen,
                                      &methodAttr, &pSig, &cbSig, nullptr,  nullptr)))
             continue;
-
         ULONG cParams; // Count of signature parameters.
         ULONG elementSize;
         ULONG convFlags;
@@ -666,7 +699,7 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
 
         // 3. return type
         ArgElementType returnElementType;
-        IfFailRet(ParseElementType(pMD, &pSig, returnElementType));
+        IfFailRet(ParseElementType(pMD, &pSig, returnElementType, genericArgs));
         if (Status == S_FALSE)
             continue;
 
@@ -674,7 +707,7 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb
         std::vector<ArgElementType> argElementTypes(cParams);
         for (ULONG i = 0; i < cParams; ++i)
         {
-            IfFailRet(ParseElementType(pMD, &pSig, argElementTypes[i]));
+            IfFailRet(ParseElementType(pMD, &pSig, argElementTypes[i], genericArgs));
             if (Status == S_FALSE)
                 break;
         }

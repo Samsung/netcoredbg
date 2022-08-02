@@ -1272,7 +1272,8 @@ namespace
                 Evaluator::GetFunctionCallback getFunction)
             {
                 std::string name = "get_Item";
-                if (retType.corType == ELEMENT_TYPE_VOID || methodName.rfind(name) != methodName.length() - name.length() || funcArgs.size() != methodArgs.size())
+                std::size_t found = methodName.rfind(name);
+                if (retType.corType == ELEMENT_TYPE_VOID || found == std::string::npos || found != methodName.length() - name.length() || funcArgs.size() != methodArgs.size())
                     return S_OK; // Return with success to continue walk.
 
                 for (size_t i = 0; i < funcArgs.size(); ++i)
@@ -1296,7 +1297,13 @@ namespace
             {
                 iCorValueArgs.emplace_back(indexvalues[i].GetPtr());
             }
-            Status = ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, iCorValueArgs.data(), Int + 1, &evalStack.front().iCorValue, ed.evalFlags);
+
+            ToRelease<ICorDebugValue2> iCorValue2;
+            IfFailRet(iCorObjectValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+            ToRelease<ICorDebugType> iCorType;
+            IfFailRet(iCorValue2->GetExactType(&iCorType));
+
+            Status = ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, iCorType.GetRef(), 1, iCorValueArgs.data(), Int + 1, &evalStack.front().iCorValue, ed.evalFlags);
         }
         return Status;
     }
