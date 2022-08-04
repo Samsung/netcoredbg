@@ -50,4 +50,39 @@ internal sealed class StartupHook
     public static void ncdbfunc()
     {
     }
+
+    public static Type[] ncdbGetMetadataUpdateTypes(string assemblyLocation, string typeTokens)
+    {
+        List<Type>? types = null;
+        HashSet<int> uintTypeTokens = new HashSet<int>();
+        foreach (var strToken in typeTokens.Split(';'))
+        {
+            try
+            {
+                uintTypeTokens.Add(Convert.ToInt32(strToken));
+            }
+            catch
+            {
+                continue;
+            }
+        }
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (assembly == null || assembly.Location != assemblyLocation)
+                continue;
+
+            foreach (var type in assembly.GetTypes())
+            {
+                if (!uintTypeTokens.Contains(type.MetadataToken))
+                    continue;
+
+                types ??= new();
+                types.Add(type);
+            }
+        }
+
+        return types?.ToArray() ?? Type.EmptyTypes;
+    }
+
 }

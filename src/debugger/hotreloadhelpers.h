@@ -6,6 +6,8 @@
 
 #include "cor.h"
 #include "cordebug.h"
+#include <unordered_set>
+#include <string>
 
 namespace netcoredbg
 {
@@ -18,7 +20,8 @@ namespace HotReloadHelpers
 {
 
     // Call all ClearCache() and UpdateApplication() methods from UpdateHandlerTypes.
-    HRESULT UpdateApplication(ICorDebugThread *pThread, Modules *pModules, Evaluator *pEvaluator, EvalHelpers *pEvalHelpers);
+    HRESULT UpdateApplication(ICorDebugThread *pThread, Modules *pModules, Evaluator *pEvaluator, EvalHelpers *pEvalHelpers,
+                              const std::string &updatedDLL, const std::unordered_set<mdTypeDef> &updatedTypeTokens);
 
 } // namespace HotReloadHelpers
 

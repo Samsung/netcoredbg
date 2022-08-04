@@ -231,9 +231,9 @@ void Breakpoints::CheckApplicationReload(ICorDebugThread *pThread)
     m_uniqueHotReloadBreakpoint->CheckApplicationReload(pThread);
 }
 
-HRESULT Breakpoints::SetHotReloadBreakpoint()
+HRESULT Breakpoints::SetHotReloadBreakpoint(const std::string &updatedDLL, const std::unordered_set<mdTypeDef> &updatedTypeTokens)
 {
-    return m_uniqueHotReloadBreakpoint->SetHotReloadBreakpoint();
+    return m_uniqueHotReloadBreakpoint->SetHotReloadBreakpoint(updatedDLL, updatedTypeTokens);
 }
 
 } // namespace netcoredbg

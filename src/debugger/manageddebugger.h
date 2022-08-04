@@ -170,7 +170,8 @@ public:
     HRESULT FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread);
     HRESULT HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL,
                                  const std::string &deltaPDB, const std::string &lineUpdates) override;
-    HRESULT ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates);
+    HRESULT ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
+                                        std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens);
 
     void FindFileNames(string_view pattern, unsigned limit, SearchCallback) override;
     void FindFunctions(string_view pattern, unsigned limit, SearchCallback) override;

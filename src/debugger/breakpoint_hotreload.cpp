@@ -11,7 +11,7 @@
 namespace netcoredbg
 {
 
-HRESULT HotReloadBreakpoint::SetHotReloadBreakpoint()
+HRESULT HotReloadBreakpoint::SetHotReloadBreakpoint(const std::string &updatedDLL, const std::unordered_set<mdTypeDef> &updatedTypeTokens)
 {
 #ifdef NCDB_DOTNET_STARTUP_HOOK
 
@@ -20,9 +20,28 @@ HRESULT HotReloadBreakpoint::SetHotReloadBreakpoint()
     if (!m_iCorFunc)
         return E_FAIL;
 
+    if (m_iCorFuncBreakpoint)
+    {
+        // Case with several deltas applyed during `pause`.
+        // TODO (?) support several DLLs update.
+        assert(m_updatedDLL == updatedDLL);
+        for (const auto &typeTokens : updatedTypeTokens)
+        {
+            m_updatedTypeTokens.insert(typeTokens);
+        }
+        return S_OK;
+    }
+
     HRESULT Status;
     IfFailRet(m_iCorFunc->CreateBreakpoint(&m_iCorFuncBreakpoint));
-    IfFailRet(m_iCorFuncBreakpoint->Activate(TRUE));
+    if (FAILED(Status = m_iCorFuncBreakpoint->Activate(TRUE)))
+    {
+        m_iCorFuncBreakpoint.Free();
+        return Status;
+    }
+
+    m_updatedDLL = updatedDLL;
+    m_updatedTypeTokens = updatedTypeTokens;
 
     return S_OK;
 
@@ -70,10 +89,10 @@ HRESULT HotReloadBreakpoint::CheckApplicationReload(ICorDebugThread *pThread, IC
     else
         ReturnStatus = S_OK;
 
-    IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get()));
+    IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get(),
+                                                  m_updatedDLL, m_updatedTypeTokens));
 
-    m_iCorFuncBreakpoint->Activate(FALSE);
-    m_iCorFuncBreakpoint.Free();
+    Clear();
 
     return ReturnStatus;
 }
@@ -85,10 +104,10 @@ void HotReloadBreakpoint::CheckApplicationReload(ICorDebugThread *pThread)
     if (!m_iCorFuncBreakpoint)
         return;
 
-    HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get());
+    HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get(),
+                                        m_updatedDLL, m_updatedTypeTokens);
 
-    m_iCorFuncBreakpoint->Activate(FALSE);
-    m_iCorFuncBreakpoint.Free();
+    Clear();
 }
 
 void HotReloadBreakpoint::Delete()
@@ -98,8 +117,16 @@ void HotReloadBreakpoint::Delete()
     if (!m_iCorFuncBreakpoint)
         return;
 
+    Clear();
+}
+
+// Caller must care about m_reloadMutex.
+void HotReloadBreakpoint::Clear()
+{
     m_iCorFuncBreakpoint->Activate(FALSE);
     m_iCorFuncBreakpoint.Free();
+    m_updatedDLL.clear();
+    m_updatedTypeTokens.clear();
 }
 
 } // namespace netcoredbg

@@ -450,12 +450,24 @@ namespace MITestHotReloadUpdate
         {
             public static void ClearCache(Type[]? changedTypes)
             {
+                if (changedTypes == null || changedTypes == Type.EmptyTypes)
+                    return;
                 Console.WriteLine(""ClearCache2"");
                 TestAppHotReloadUpdate.Program.i_test1 = 100;
             }
 
             public static void UpdateApplication(Type[]? changedTypes)
             {
+                if (changedTypes == null)
+                    return;
+                bool found = false;
+                foreach (var type in changedTypes)
+                {
+                    if (found = (type == Type.GetType(""TestAppHotReloadUpdate.Program+HotReload"")))
+                        break;
+                }
+                if (!found)
+                    return;
                 Console.WriteLine(""UpdateApplication2"");
                 TestAppHotReloadUpdate.Program.i_test2 = TestAppHotReloadUpdate.Program.i_test1 + 1;
             }
@@ -463,12 +475,24 @@ namespace MITestHotReloadUpdate
             {
                 public static void ClearCache(Type[]? changedTypes)
                 {
+                    if (changedTypes == null || changedTypes == Type.EmptyTypes)
+                        return;
                     Console.WriteLine(""ClearCache3"");
                     TestAppHotReloadUpdate.Program.i_test3 = 200;
                 }
 
                 public static void UpdateApplication(Type[]? changedTypes)
                 {
+                    if (changedTypes == null)
+                        return;
+                    bool found = false;
+                    foreach (var type in changedTypes)
+                    {
+                        if (found = (type == Type.GetType(""TestAppHotReloadUpdate.Program+HotReload+HotReloadNested"")))
+                            break;
+                    }
+                    if (!found)
+                        return;
                     Console.WriteLine(""UpdateApplication3"");
                     TestAppHotReloadUpdate.Program.i_test4 = TestAppHotReloadUpdate.Program.i_test3 + 1;
                 }
@@ -479,12 +503,24 @@ namespace MITestHotReloadUpdate
     {
         public static void ClearCache(Type[]? changedTypes)
         {
+            if (changedTypes == null || changedTypes == Type.EmptyTypes)
+                return;
             Console.WriteLine(""ClearCache1"");
             TestAppHotReloadUpdate.Program.i_test5 = 300;
         }
 
         public static void UpdateApplication(Type[]? changedTypes)
         {
+            if (changedTypes == null)
+                return;
+            bool found = false;
+            foreach (var type in changedTypes)
+            {
+                if (found = (type == Type.GetType(""TestAppHotReloadUpdate.HotReload1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111"")))
+                    break;
+            }
+            if (!found)
+                return;
             Console.WriteLine(""UpdateApplication1"");
             TestAppHotReloadUpdate.Program.i_test6 = TestAppHotReloadUpdate.Program.i_test5 + 1;
         }

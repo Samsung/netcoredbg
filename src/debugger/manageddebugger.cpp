@@ -1319,7 +1319,8 @@ static HRESULT ApplyMetadataAndILDeltas(Modules *pModules, const std::string &dl
     return S_OK;
 }
 
-HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates)
+HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
+                                                     std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens)
 {
     HRESULT Status;
     ToRelease<ICorDebugModule> pModule;
@@ -1327,6 +1328,18 @@ HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileN
 
     std::unordered_set<mdMethodDef> pdbMethodTokens;
     IfFailRet(m_sharedModules->ApplyPdbDeltaAndLineUpdates(pModule, m_justMyCode, deltaPDB, lineUpdates, pdbMethodTokens));
+
+    updatedDLL = GetModuleFileName(pModule);
+    for (const auto &methodToken : pdbMethodTokens)
+    {
+        mdTypeDef typeDef;
+        ToRelease<ICorDebugFunction> iCorFunction;
+        ToRelease<ICorDebugClass> iCorClass;
+        if (SUCCEEDED(pModule->GetFunctionFromToken(methodToken, &iCorFunction)) &&
+            SUCCEEDED(iCorFunction->GetClass(&iCorClass)) &&
+            SUCCEEDED(iCorClass->GetToken(&typeDef)))
+            updatedTypeTokens.insert(typeDef);
+    }
 
     // Since we could have new code lines and new methods added, check all breakpoints again.
     std::vector<BreakpointEvent> events;
@@ -1381,13 +1394,15 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
     bool continueProcess = (Status == S_OK); // Was stopped by m_managedCallback->Stop() call.
 
     IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
-    IfFailRet(ApplyPdbDeltaAndLineUpdates(dllFileName, deltaPDB, lineUpdates));
+    std::string updatedDLL;
+    std::unordered_set<mdTypeDef> updatedTypeTokens;
+    IfFailRet(ApplyPdbDeltaAndLineUpdates(dllFileName, deltaPDB, lineUpdates, updatedDLL, updatedTypeTokens));
 
     ToRelease<ICorDebugThread> pThread;
     if (SUCCEEDED(FindEvalCapableThread(pThread)))
-        IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get()));
+        IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get(), updatedDLL, updatedTypeTokens));
     else
-        IfFailRet(m_uniqueBreakpoints->SetHotReloadBreakpoint());
+        IfFailRet(m_uniqueBreakpoints->SetHotReloadBreakpoint(updatedDLL, updatedTypeTokens));
 
     if (continueProcess)
         IfFailRet(m_managedCallback->Continue(m_iCorProcess));

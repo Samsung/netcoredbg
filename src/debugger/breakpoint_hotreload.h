@@ -9,6 +9,8 @@
 
 #include <mutex>
 #include <memory>
+#include <unordered_set>
+#include <string>
 #include "utils/torelease.h"
 
 namespace netcoredbg
@@ -28,7 +30,7 @@ public:
         m_sharedEvalHelpers(sharedEvalHelpers)
     {}
 
-    HRESULT SetHotReloadBreakpoint();
+    HRESULT SetHotReloadBreakpoint(const std::string &updatedDLL, const std::unordered_set<mdTypeDef> &updatedTypeTokens);
     void Delete();
 
     // Important! Must provide succeeded return code:
@@ -47,7 +49,10 @@ private:
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     ToRelease<ICorDebugFunction> m_iCorFunc;
     ToRelease<ICorDebugFunctionBreakpoint> m_iCorFuncBreakpoint;
+    std::string m_updatedDLL;
+    std::unordered_set<mdTypeDef> m_updatedTypeTokens;
 
+    void Clear();
 };
 
 } // namespace netcoredbg
