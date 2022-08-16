@@ -9,12 +9,13 @@
 #include <mutex>
 #include "interfaces/idebugger.h"
 #include "utils/torelease.h"
+#include "metadata/async_info.h"
 
 
 namespace netcoredbg
 {
 
-class Modules;
+class AsyncInfo;
 class EvalHelpers;
 class SimpleStepper;
 
@@ -24,7 +25,7 @@ public:
 
     AsyncStepper(std::shared_ptr<SimpleStepper> simpleStepper, std::shared_ptr<Modules> &sharedModules, std::shared_ptr<EvalHelpers> &sharedEvalHelpers) :
         m_simpleStepper(simpleStepper),
-        m_sharedModules(sharedModules),
+        m_uniqueAsyncInfo(new AsyncInfo(sharedModules)),
         m_sharedEvalHelpers(sharedEvalHelpers),
         m_asyncStep(nullptr),
         m_asyncStepNotifyDebuggerOfWaitCompletion(nullptr)
@@ -47,7 +48,7 @@ public:
 private:
 
     std::shared_ptr<SimpleStepper> m_simpleStepper;
-    std::shared_ptr<Modules> m_sharedModules;
+    std::unique_ptr<AsyncInfo> m_uniqueAsyncInfo;
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
 
     enum class asyncStepStatus

@@ -6,7 +6,7 @@
 #include "debugger/stepper_simple.h"
 #include "debugger/stepper_async.h"
 #include "debugger/steppers.h"
-#include "metadata/modules.h"
+#include "metadata/attributes.h"
 #include "utils/utf.h"
 
 namespace netcoredbg
@@ -162,8 +162,8 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
     m_filteredPrevStep = false;
 
     // Same behaviour as MS vsdbg and MSVS C# debugger have - step only for code with PDB loaded (no matter JMC enabled or not by user).
-    ULONG32 ipOffset;
-    ULONG32 ilNextUserCodeOffset;
+    ULONG32 ipOffset = 0;
+    ULONG32 ilNextUserCodeOffset = 0;
     bool noUserCodeFound = false; // Must be initialized with `false`, since GetFrameILAndNextUserCodeILOffset call could be failed before delegate call.
     if (SUCCEEDED(Status = m_sharedModules->GetFrameILAndNextUserCodeILOffset(iCorFrame, ipOffset, ilNextUserCodeOffset, &noUserCodeFound)))
     {

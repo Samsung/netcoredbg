@@ -107,8 +107,12 @@ set(netcoredbg_SRC
     debugger/waitpid.cpp
     interfaces/types.cpp
     managed/interop.cpp
+    metadata/attributes.cpp
+    metadata/async_info.cpp
     metadata/jmc.cpp
     metadata/modules.cpp
+    metadata/modules_app_update.cpp
+    metadata/modules_sources.cpp
     metadata/typeprinter.cpp
     protocols/cliprotocol.cpp
     protocols/escaped_string.cpp

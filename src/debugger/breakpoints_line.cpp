@@ -194,7 +194,7 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
         IfFailRet(pModule->GetBaseAddress(&modAddress));
 
     std::string fullname = bp_fullname;
-    std::vector<Modules::resolved_bp_t> resolvedPoints;
+    std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
     unsigned fullname_index = 0;
 
     IfFailRet(m_sharedModules->ResolveBreakpoint(modAddress, bp_fullname, fullname_index, bp.linenum, resolvedPoints));

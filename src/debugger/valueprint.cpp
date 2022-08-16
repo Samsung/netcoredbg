@@ -17,7 +17,7 @@
 #include "utils/torelease.h"
 #include "utils/utf.h"
 #include "managed/interop.h"
-#include "metadata/modules.h" // HasAttribute()
+#include "metadata/attributes.h"
 
 namespace netcoredbg
 {

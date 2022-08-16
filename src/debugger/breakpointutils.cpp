@@ -4,7 +4,7 @@
 
 #include "debugger/breakpointutils.h"
 #include "debugger/variables.h"
-#include "metadata/modules.h"
+#include "metadata/attributes.h"
 #include "utils/torelease.h"
 
 namespace netcoredbg

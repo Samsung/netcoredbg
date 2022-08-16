@@ -262,7 +262,7 @@ HRESULT FuncBreakpoints::AddFuncBreakpoint(ManagedFuncBreakpoint &fbp, ResolvedF
         ULONG32 currentVersion; // Note, new breakpoints could be setup for last code version only, since protocols (MI, VSCode, ...) provide method name (sig) only.
         IfFailRet(pFunc->GetCurrentVersionNumber(&currentVersion));
 
-        ULONG32 ilNextOffset;
+        ULONG32 ilNextOffset = 0;
         if (FAILED(m_sharedModules->GetNextUserCodeILOffsetInMethod(entry.first, entry.second, currentVersion, 0, ilNextOffset)))
             return S_OK;
 
