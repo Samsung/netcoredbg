@@ -111,9 +111,7 @@ private:
     void Cleanup();
 
     void DisableAllBreakpointsAndSteppers();
-    HRESULT SetupStep(ICorDebugThread *pThread, StepType stepType);
 
-    HRESULT GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames);
     HRESULT GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame);
 
     HRESULT RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs);
@@ -124,6 +122,10 @@ private:
     HRESULT RunIfReady();
 
     HRESULT SetEnableCustomNotification(BOOL fEnable);
+
+    HRESULT FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread);
+    HRESULT ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
+                                        std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens);
 
 public:
     ManagedDebugger();
@@ -167,11 +169,8 @@ public:
     HRESULT GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo) override;
     HRESULT GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen) override;
     void FreeUnmanaged(PVOID mem) override;
-    HRESULT FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread);
     HRESULT HotReloadApplyDeltas(const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL,
                                  const std::string &deltaPDB, const std::string &lineUpdates) override;
-    HRESULT ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
-                                        std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens);
 
     void FindFileNames(string_view pattern, unsigned limit, SearchCallback) override;
     void FindFunctions(string_view pattern, unsigned limit, SearchCallback) override;

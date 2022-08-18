@@ -13,6 +13,7 @@
 #include <memory>
 #include <atomic>
 
+#include "protocols/protocol_utils.h"
 #include "interfaces/iprotocol.h"
 #include "utils/string_view.h"
 #include "utils/streams.h"
@@ -56,10 +57,7 @@ class CLIProtocol : public IProtocol
     std::string m_fileExec;
     std::vector<std::string> m_execArgs;
 
-    std::unordered_map<std::string, std::unordered_map<uint32_t, LineBreakpoint> > m_lineBreakpoints;
-    std::unordered_map<uint32_t, FuncBreakpoint> m_funcBreakpoints;
-    std::unordered_map<uint32_t, ExceptionBreakpoint> m_exceptionBreakpoints;
-
+    BreakpointsHandle m_breakpointsHandle;
     std::string m_sourcePath;
     int m_sourceLine;
     int m_listSize;
@@ -179,13 +177,7 @@ private:
                         std::string &output,
                         IDebugger::StepType stepType);
     HRESULT PrintFrames(ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame);
-    HRESULT SetLineBreakpoint(const std::string &module, const std::string &filename, int linenum, const std::string &condition, Breakpoint &breakpoints);
-    HRESULT SetFuncBreakpoint(const std::string &module, const std::string &funcname, const std::string &params, const std::string &condition, Breakpoint &breakpoint);
-    HRESULT SetExceptionBreakpoints(std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints);
     HRESULT PrintVariable(const Variable &v, std::ostringstream &output, bool expand, bool is_static);
-    void DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids);
-    void DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids);
-    void DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids);
     static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &output);
     bool ParseLine(const std::string &str, std::string &token, std::string &cmd, std::vector<std::string> &args);
 

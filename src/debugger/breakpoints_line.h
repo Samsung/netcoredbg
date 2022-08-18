@@ -55,12 +55,6 @@ public:
     //     return S_OK;
     HRESULT ManagedCallbackLoadModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events);
 
-private:
-
-    std::shared_ptr<Modules> m_sharedModules;
-    std::shared_ptr<Variables> m_sharedVariables;
-    bool m_justMyCode;
-
     struct ManagedLineBreakpoint
     {
         uint32_t id;
@@ -98,6 +92,12 @@ private:
         ManagedLineBreakpoint& operator=(const ManagedLineBreakpoint &that) = delete;
     };
 
+private:
+
+    std::shared_ptr<Modules> m_sharedModules;
+    std::shared_ptr<Variables> m_sharedVariables;
+    bool m_justMyCode;
+
     struct ManagedLineBreakpointMapping
     {
         LineBreakpoint breakpoint;
@@ -121,9 +121,6 @@ private:
     // Container have structure for fast compare current breakpoints data with new breakpoints data from protocol:
     // path to source -> list of ManagedLineBreakpointMapping that include LineBreakpoint (from protocol) and resolve related data.
     std::unordered_map<std::string, std::list<ManagedLineBreakpointMapping> > m_lineBreakpointMapping;
-
-    HRESULT EnableOneICorBreakpointForLine(std::list<ManagedLineBreakpoint> &bList);
-    HRESULT ResolveLineBreakpoint(ICorDebugModule *pModule, ManagedLineBreakpoint &bp, const std::string &bp_fullname, unsigned &bp_fullname_index);
 
 };
 

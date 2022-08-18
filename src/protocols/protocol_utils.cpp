@@ -2,13 +2,209 @@
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 
+#include "cor.h"
+#include "cordebug.h"
+
 #include <sstream>
 #include <algorithm>
 #include <iomanip>
+#include <unordered_map>
 #include "protocol_utils.h"
+#include "interfaces/idebugger.h"
+#include "utils/torelease.h"
 
 namespace netcoredbg
 {
+
+void BreakpointsHandle::Cleanup()
+{
+    m_lineBreakpoints.clear();
+    m_funcBreakpoints.clear();
+    m_exceptionBreakpoints.clear();
+}
+
+HRESULT BreakpointsHandle::SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger,
+                                             const std::string &module, const std::string &filename, int linenum,
+                                             const std::string &condition, Breakpoint &breakpoint)
+{
+    HRESULT Status;
+
+    auto &breakpointsInSource = m_lineBreakpoints[filename];
+    std::vector<LineBreakpoint> lineBreakpoints;
+    for (auto it : breakpointsInSource)
+        lineBreakpoints.push_back(it.second);
+
+    lineBreakpoints.emplace_back(module, linenum, condition);
+
+    std::vector<Breakpoint> breakpoints;
+    IfFailRet(sharedDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints));
+
+    // Note, SetLineBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "lineBreakpoints".
+    breakpoint = breakpoints.back();
+    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(lineBreakpoints.back())));
+    return S_OK;
+}
+
+HRESULT BreakpointsHandle::SetFuncBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger,
+                                             const std::string &module, const std::string &funcname, const std::string &params,
+                                             const std::string &condition, Breakpoint &breakpoint)
+{
+    HRESULT Status;
+
+    std::vector<FuncBreakpoint> funcBreakpoints;
+    for (const auto &it : m_funcBreakpoints)
+        funcBreakpoints.push_back(it.second);
+
+    funcBreakpoints.emplace_back(module, funcname, params, condition);
+
+    std::vector<Breakpoint> breakpoints;
+    IfFailRet(sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
+
+    // Note, SetFuncBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
+    breakpoint = breakpoints.back();
+    m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
+    return S_OK;
+}
+
+// Note, exceptionBreakpoints data will be invalidated by this call.
+HRESULT BreakpointsHandle::SetExceptionBreakpoints(std::shared_ptr<IDebugger> &sharedDebugger,
+                                                   /* [in] */ std::vector<ExceptionBreakpoint> &exceptionBreakpoints,
+                                                   /* [out] */ std::vector<Breakpoint> &breakpoints)
+{
+    HRESULT Status;
+
+    std::vector<ExceptionBreakpoint> excBreakpoints;
+    for (const auto &it : m_exceptionBreakpoints)
+        excBreakpoints.push_back(it.second);
+
+    excBreakpoints.insert(excBreakpoints.end(), // Don't copy, but move exceptionBreakpoints into excBreakpoints.
+                          std::make_move_iterator(exceptionBreakpoints.begin()), std::make_move_iterator(exceptionBreakpoints.end()));
+
+    IfFailRet(sharedDebugger->SetExceptionBreakpoints(excBreakpoints, breakpoints));
+
+    for (size_t i = m_exceptionBreakpoints.size(); i < breakpoints.size(); ++i)
+        m_exceptionBreakpoints.insert(std::make_pair(breakpoints[i].id, std::move(excBreakpoints[i])));
+
+    return S_OK;
+}
+
+HRESULT BreakpointsHandle::SetLineBreakpointCondition(std::shared_ptr<IDebugger> &sharedDebugger, uint32_t id, const std::string &condition)
+{
+    // For each file
+    for (auto &breakpointsIter : m_lineBreakpoints)
+    {
+        std::unordered_map<uint32_t, LineBreakpoint> &fileBreakpoints = breakpointsIter.second;
+
+        // Find breakpoint with specified id in this file
+        const auto &sbIter = fileBreakpoints.find(id);
+        if (sbIter == fileBreakpoints.end())
+            continue;
+
+        // Modify breakpoint condition
+        sbIter->second.condition = condition;
+
+        // Gather all breakpoints in this file
+        std::vector<LineBreakpoint> existingBreakpoints;
+        existingBreakpoints.reserve(fileBreakpoints.size());
+        for (const auto &it : fileBreakpoints)
+            existingBreakpoints.emplace_back(it.second);
+
+        // Update breakpoints data for this file
+        const std::string &filename = breakpointsIter.first;
+        std::vector<Breakpoint> tmpBreakpoints;
+        return sharedDebugger->SetLineBreakpoints(filename, existingBreakpoints, tmpBreakpoints);
+    }
+
+    return E_FAIL;
+}
+
+HRESULT BreakpointsHandle::SetFuncBreakpointCondition(std::shared_ptr<IDebugger> &sharedDebugger, uint32_t id, const std::string &condition)
+{
+    const auto &fbIter = m_funcBreakpoints.find(id);
+    if (fbIter == m_funcBreakpoints.end())
+        return E_FAIL;
+
+    fbIter->second.condition = condition;
+
+    std::vector<FuncBreakpoint> existingFuncBreakpoints;
+    existingFuncBreakpoints.reserve(m_funcBreakpoints.size());
+    for (const auto &fb : m_funcBreakpoints)
+        existingFuncBreakpoints.emplace_back(fb.second);
+
+    std::vector<Breakpoint> tmpBreakpoints;
+    return sharedDebugger->SetFuncBreakpoints(existingFuncBreakpoints, tmpBreakpoints);
+}
+
+void BreakpointsHandle::DeleteLineBreakpoints(std::shared_ptr<IDebugger> &sharedDebugger, const std::unordered_set<uint32_t> &ids)
+{
+    for (auto &breakpointsIter : m_lineBreakpoints)
+    {
+        std::size_t initialSize = breakpointsIter.second.size();
+        std::vector<LineBreakpoint> remainingBreakpoints;
+        for (auto it = breakpointsIter.second.begin(); it != breakpointsIter.second.end();)
+        {
+            if (ids.find(it->first) == ids.end())
+            {
+                remainingBreakpoints.push_back(it->second);
+                ++it;
+            }
+            else
+                it = breakpointsIter.second.erase(it);
+        }
+
+        if (initialSize == breakpointsIter.second.size())
+            continue;
+
+        std::string filename = breakpointsIter.first;
+
+        std::vector<Breakpoint> tmpBreakpoints;
+        sharedDebugger->SetLineBreakpoints(filename, remainingBreakpoints, tmpBreakpoints);
+    }
+}
+
+void BreakpointsHandle::DeleteFuncBreakpoints(std::shared_ptr<IDebugger> &sharedDebugger, const std::unordered_set<uint32_t> &ids)
+{
+    std::size_t initialSize = m_funcBreakpoints.size();
+    std::vector<FuncBreakpoint> remainingFuncBreakpoints;
+    for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
+    {
+        if (ids.find(it->first) == ids.end())
+        {
+            remainingFuncBreakpoints.push_back(it->second);
+            ++it;
+        }
+        else
+            it = m_funcBreakpoints.erase(it);
+    }
+
+    if (initialSize == m_funcBreakpoints.size())
+        return;
+
+    std::vector<Breakpoint> tmpBreakpoints;
+    sharedDebugger->SetFuncBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
+}
+
+void BreakpointsHandle::DeleteExceptionBreakpoints(std::shared_ptr<IDebugger> &sharedDebugger, const std::unordered_set<uint32_t> &ids)
+{
+    std::size_t initialSize = m_exceptionBreakpoints.size();
+    std::vector<ExceptionBreakpoint> remainingExceptionBreakpoints;
+    for (auto it = m_exceptionBreakpoints.begin(); it != m_exceptionBreakpoints.end();)
+    {
+        if (ids.find(it->first) == ids.end())
+        {
+            remainingExceptionBreakpoints.push_back(it->second);
+            ++it;
+        }
+        else
+            it = m_exceptionBreakpoints.erase(it);
+    }
+
+    if (initialSize == m_exceptionBreakpoints.size())
+        return;
+
+    std::vector<Breakpoint> tmpBreakpoints;
+    sharedDebugger->SetExceptionBreakpoints(remainingExceptionBreakpoints, tmpBreakpoints);
+}
 
 namespace ProtocolUtils
 {

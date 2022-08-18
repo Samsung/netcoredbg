@@ -396,19 +396,6 @@ HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
     return m_sharedThreads->GetThreadsWithState(m_iCorProcess, threads);
 }
 
-HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
-{
-    LogFuncEntry();
-
-    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
-    HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
-
-    ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
-    return GetStackTrace(pThread, startFrame, maxFrames, stackFrames, totalFrames);
-}
-
 VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
 {
     ManagedDebugger *self = static_cast<ManagedDebugger*>(parameter);
@@ -599,6 +586,58 @@ static bool IsDirExists(const char* const path)
     return true;
 }
 
+static void PrepareSystemEnvironmentArg(const std::map<std::string, std::string> &env, std::vector<char> &outEnv, bool hotReload)
+{
+    // We need to append the environ values with keeping the current process environment block.
+    // It works equal for any platrorms in coreclr CreateProcessW(), but not critical for Linux.
+    std::map<std::string, std::string> envMap;
+    if (GetSystemEnvironmentAsMap(envMap) != -1)
+    {
+        // Override the system value (PATHs appending needs a complex implementation)
+        for (const auto &pair : env)
+        {
+            if (pair.first == envDOTNET_STARTUP_HOOKS && !envMap[pair.first].empty())
+            {
+                envMap[pair.first] = envMap[pair.first] + delimiterDOTNET_STARTUP_HOOKS + pair.second;
+                continue;
+            }
+            envMap[pair.first] = pair.second;
+        }
+#ifdef NCDB_DOTNET_STARTUP_HOOK
+        if (hotReload)
+        {
+            auto find = envMap.find(envDOTNET_STARTUP_HOOKS);
+            if (find != envMap.end())
+                find->second = find->second + delimiterDOTNET_STARTUP_HOOKS + NCDB_DOTNET_STARTUP_HOOK;
+            else
+                envMap[envDOTNET_STARTUP_HOOKS] = NCDB_DOTNET_STARTUP_HOOK;
+        }
+#else
+        (void)hotReload; // suppress warning about unused param
+#endif // NCDB_DOTNET_STARTUP_HOOK
+        for (const auto &pair : envMap)
+        {
+            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
+            outEnv.push_back('=');
+            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
+            outEnv.push_back('\0');
+        }
+    }
+    else
+    {
+        for (const auto &pair : env)
+        {
+            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
+            outEnv.push_back('=');
+            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
+            outEnv.push_back('\0');
+        }
+    }
+    // Environtment variable should looks like: "Var=Value\0OtherVar=OtherValue\0\0"
+    if (!outEnv.empty())
+        outEnv.push_back('\0');
+}
+
 HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs)
 {
     static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
@@ -619,53 +658,7 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
     HANDLE resumeHandle = 0; // Fake thread handle for the process resume
 
     std::vector<char> outEnv;
-
-    // We need to append the environ values with keeping the current process environment block.
-    // It works equal for any platrorms in coreclr CreateProcessW(), but not critical for Linux.
-    std::map<std::string, std::string> envMap;
-    if (GetSystemEnvironmentAsMap(envMap) != -1)
-    {
-        // Override the system value (PATHs appending needs a complex implementation)
-        for (const auto &pair : m_env)
-        {
-            if (pair.first == envDOTNET_STARTUP_HOOKS && !envMap[pair.first].empty())
-            {
-                envMap[pair.first] = envMap[pair.first] + delimiterDOTNET_STARTUP_HOOKS + pair.second;
-                continue;
-            }
-            envMap[pair.first] = pair.second;
-        }
-#ifdef NCDB_DOTNET_STARTUP_HOOK
-        if (m_hotReload)
-        {
-            auto find = envMap.find(envDOTNET_STARTUP_HOOKS);
-            if (find != envMap.end())
-                find->second = find->second + delimiterDOTNET_STARTUP_HOOKS + NCDB_DOTNET_STARTUP_HOOK;
-            else
-                envMap[envDOTNET_STARTUP_HOOKS] = NCDB_DOTNET_STARTUP_HOOK;
-        }
-#endif // NCDB_DOTNET_STARTUP_HOOK
-        for (const auto &pair : envMap)
-        {
-            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
-            outEnv.push_back('=');
-            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
-            outEnv.push_back('\0');
-        }
-    }
-    else
-    {
-        for (const auto &pair : m_env)
-        {
-            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
-            outEnv.push_back('=');
-            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
-            outEnv.push_back('\0');
-        }
-    }
-    // Environtment variable should looks like: "Var=Value\0OtherVar=OtherValue\0\0"
-    if (!outEnv.empty())
-        outEnv.push_back('\0');
+    PrepareSystemEnvironmentArg(m_env, outEnv, m_hotReload);
 
     // cwd in launch.json set working directory for debugger https://code.visualstudio.com/docs/python/debugging#_cwd
     if (!m_cwd.empty())
@@ -867,12 +860,12 @@ HRESULT ManagedDebugger::SetExceptionBreakpoints(const std::vector<ExceptionBrea
     return m_uniqueBreakpoints->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints);
 }
 
-HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
+static HRESULT InternalSetEnableCustomNotification(Modules *pModules, BOOL fEnable)
 {
     HRESULT Status = S_OK;
 
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(m_sharedModules->GetModuleWithName("System.Private.CoreLib.dll", &pModule));
+    IfFailRet(pModules->GetModuleWithName("System.Private.CoreLib.dll", &pModule));
 
     ToRelease<IUnknown> pMDUnknown;
     IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
@@ -899,6 +892,11 @@ HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
     ToRelease<ICorDebugProcess3> pProcess3;
     IfFailRet(pProcess->QueryInterface(IID_ICorDebugProcess3, (LPVOID*) &pProcess3));
     return pProcess3->SetEnableCustomNotification(pClass, fEnable);
+}
+
+HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
+{
+    return InternalSetEnableCustomNotification(m_sharedModules.get(), fEnable);
 }
 
 HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
@@ -1013,7 +1011,7 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     return InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, level, stackFrame);
 }
 
-HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
+static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
     LogFuncEntry();
 
@@ -1070,7 +1068,7 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel star
             case FrameCLRManaged:
                 {
                     StackFrame stackFrame;
-                    InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, FrameLevel{currentFrame}, stackFrame);
+                    InternalGetFrameLocation(pFrame, pModules, hotReload, threadId, FrameLevel{currentFrame}, stackFrame);
                     stackFrames.push_back(stackFrame);
                 }
                 break;
@@ -1081,6 +1079,19 @@ HRESULT ManagedDebugger::GetStackTrace(ICorDebugThread *pThread, FrameLevel star
     totalFrames = currentFrame + 1;
 
     return S_OK;
+}
+
+HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
+{
+    LogFuncEntry();
+
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+
+    ToRelease<ICorDebugThread> pThread;
+    IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
+    return InternalGetStackTrace(m_sharedModules.get(), m_hotReload, pThread, startFrame, maxFrames, stackFrames, totalFrames);
 }
 
 int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)
@@ -1170,13 +1181,14 @@ void ManagedDebugger::FindFunctions(string_view pattern, unsigned limit, SearchC
     m_sharedModules->FindFunctions(pattern, limit, cb);
 }
 
-void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, string_view pattern, unsigned limit, SearchCallback cb)
+static void InternalFindVariables(ICorDebugProcess *pProcess, Variables *pVariables, ThreadId thread, FrameLevel framelevel,
+                                  string_view pattern, unsigned limit, ManagedDebugger::SearchCallback cb)
 {
     LogFuncEntry();
     StackFrame frame{thread, framelevel, ""};
     std::vector<Scope> scopes;
     std::vector<Variable> variables;
-    HRESULT status = GetScopes(frame.id, scopes);
+    HRESULT status = pVariables->GetScopes(pProcess, frame.id, scopes);
     if (FAILED(status))
     {
         LOGW("GetScopes failed: %s", errormessage(status));
@@ -1189,7 +1201,7 @@ void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, stri
         return;
     }
 
-    status = GetVariables(scopes[0].variablesReference, VariablesNamed, 0, 0, variables);
+    status = pVariables->GetVariables(pProcess, scopes[0].variablesReference, VariablesNamed, 0, 0, variables);
     if (FAILED(status))
     {
         LOGW("GetVariables failed: %s", errormessage(status));
@@ -1212,6 +1224,17 @@ void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, stri
     }
 }
 
+void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, string_view pattern, unsigned limit, SearchCallback cb)
+{
+    LogFuncEntry();
+
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    if (FAILED(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState)))
+        return;
+
+    InternalFindVariables(m_iCorProcess, m_sharedVariables.get(), thread, framelevel, pattern, limit, cb);
+}
+
 
 void ManagedDebugger::InputCallback(IORedirectHelper::StreamType type, span<char> text)
 {
@@ -1225,15 +1248,11 @@ void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointI
     return m_uniqueBreakpoints->EnumerateBreakpoints(std::move(callback));
 }
 
-
-HRESULT ManagedDebugger::GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen)
+static HRESULT GetModuleOfCurrentThreadCode(ICorDebugProcess *pProcess, int lastStoppedThreadId, ICorDebugModule **ppModule)
 {
-    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
-
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_iCorProcess->GetThread(int(GetLastStoppedThreadId()), &pThread));
+    IfFailRet(pProcess->GetThread(lastStoppedThreadId, &pThread));
 
     ToRelease<ICorDebugFrame> pFrame;
     IfFailRet(pThread->GetActiveFrame(&pFrame));
@@ -1244,8 +1263,17 @@ HRESULT ManagedDebugger::GetSourceFile(const std::string &sourcePath, char** fil
     IfFailRet(pFrame->GetFunctionToken(&methodToken));
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));
+    return pFunc->GetModule(ppModule);
+}
+
+HRESULT ManagedDebugger::GetSourceFile(const std::string &sourcePath, char** fileBuf, int* fileLen)
+{
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    HRESULT Status;
+    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+
     ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pFunc->GetModule(&pModule));
+    IfFailRet(GetModuleOfCurrentThreadCode(m_iCorProcess, int(GetLastStoppedThreadId()), &pModule));
     return m_sharedModules->GetSource(pModule, sourcePath, fileBuf, fileLen);
 }
 

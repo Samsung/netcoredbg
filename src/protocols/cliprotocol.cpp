@@ -18,7 +18,6 @@
 #include "utils/platform.h"
 #include "utils/torelease.h"
 #include "protocols/cliprotocol.h"
-#include "protocols/protocol_utils.h"
 #include "linenoise.h"
 #include "utils/utf.h"
 #include "utils/filesystem.h"
@@ -760,182 +759,8 @@ HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLe
 
 void CLIProtocol::Cleanup()
 {
-    lock_guard lock(m_mutex);
-
-    m_lineBreakpoints.clear();
-    m_funcBreakpoints.clear();
-    m_exceptionBreakpoints.clear();
+    m_breakpointsHandle.Cleanup();
 }
-
-HRESULT CLIProtocol::SetLineBreakpoint(
-    const std::string &module,
-    const std::string &filename,
-    int linenum,
-    const std::string &condition,
-    Breakpoint &breakpoint)
-{
-    std::vector<LineBreakpoint> lineBreakpoints;
-
-    {
-      lock_guard lock(m_mutex);
-
-      auto &breakpointsInSource = m_lineBreakpoints[filename];
-      for (auto it : breakpointsInSource)
-          lineBreakpoints.push_back(it.second);
-    }
-
-    lineBreakpoints.emplace_back(module, linenum, condition);
-
-    HRESULT Status;
-    std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_sharedDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints));
-
-    // Note, SetLineBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "lineBreakpoints".
-    breakpoint = breakpoints.back();
-
-    // FIXME: m_lineBreakpoints might be changed during call to m_sharedDebugger->SetSoueceBreakpoints
-    auto &breakpointsInSource = m_lineBreakpoints[filename];
-    breakpointsInSource.insert(std::make_pair(breakpoint.id, std::move(lineBreakpoints.back())));
-    return S_OK;
-}
-
-HRESULT CLIProtocol::SetFuncBreakpoint(
-    const std::string &module,
-    const std::string &funcname,
-    const std::string &params,
-    const std::string &condition,
-    Breakpoint &breakpoint)
-{
-    HRESULT Status;
-    std::vector<FuncBreakpoint> funcBreakpoints;
-
-    {
-      lock_guard lock(m_mutex);
-      for (const auto &it : m_funcBreakpoints)
-          funcBreakpoints.push_back(it.second);
-    }
-
-    funcBreakpoints.emplace_back(module, funcname, params, condition);
-
-    std::vector<Breakpoint> breakpoints;
-    IfFailRet(m_sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
-
-    // Note, SetFuncBreakpoints() will return new breakpoint in "breakpoints" with same index as we have it in "funcBreakpoints".
-    breakpoint = breakpoints.back();
-
-    lock_guard lock(m_mutex);
-    m_funcBreakpoints.insert(std::make_pair(breakpoint.id, std::move(funcBreakpoints.back())));
-    return S_OK;
-}
-
-HRESULT CLIProtocol::SetExceptionBreakpoints(
-    std::vector<ExceptionBreakpoint> &exceptionBreakpoints,      /* [in] */
-    std::vector<Breakpoint> &breakpoints)     /* [out] */
-{
-    HRESULT Status;
-
-    std::vector<ExceptionBreakpoint> excBreakpoints;
-    for (const auto &it : m_exceptionBreakpoints)
-        excBreakpoints.push_back(it.second);
-
-    excBreakpoints.insert(excBreakpoints.end(), // Don't copy, but move exceptionBreakpoints into excBreakpoints.
-                          std::make_move_iterator(exceptionBreakpoints.begin()), std::make_move_iterator(exceptionBreakpoints.end()));
-
-    IfFailRet(m_sharedDebugger->SetExceptionBreakpoints(excBreakpoints, breakpoints));
-
-    for (size_t i = m_exceptionBreakpoints.size(); i < breakpoints.size(); ++i)
-        m_exceptionBreakpoints.insert(std::make_pair(breakpoints[i].id, std::move(excBreakpoints[i])));
-
-    return S_OK;
-}
-
-void CLIProtocol::DeleteLineBreakpoints(const std::unordered_set<uint32_t> &ids)
-{
-    std::forward_list<std::pair<const std::string&, std::vector<LineBreakpoint> > > defer_args;
-
-    {
-      unique_lock lock(m_mutex);
-
-      for (auto &breakpointsIter : m_lineBreakpoints)
-      {
-        std::size_t initialSize = breakpointsIter.second.size();
-        std::vector<LineBreakpoint> remainingBreakpoints;
-
-        for (auto it = breakpointsIter.second.begin(); it != breakpointsIter.second.end();)
-        {
-            if (ids.find(it->first) == ids.end())
-            {
-                remainingBreakpoints.push_back(it->second);
-                ++it;
-            }
-            else
-                it = breakpointsIter.second.erase(it);
-        }
-
-        if (initialSize == breakpointsIter.second.size())
-            continue;
-
-        defer_args.emplace_front(breakpointsIter.first, std::move(remainingBreakpoints));
-      }
-    }
-
-    // call m_sharedDebugger's function without lock
-    for (const auto& each : defer_args)
-    {
-        std::vector<Breakpoint> tmpBreakpoints;
-        m_sharedDebugger->SetLineBreakpoints(each.first, each.second, tmpBreakpoints);
-    }
-}
-
-void CLIProtocol::DeleteFuncBreakpoints(const std::unordered_set<uint32_t> &ids)
-{
-    std::vector<FuncBreakpoint> remainingFuncBreakpoints;
-
-    {
-      lock_guard lock(m_mutex);
-
-      std::size_t initialSize = m_funcBreakpoints.size();
-      for (auto it = m_funcBreakpoints.begin(); it != m_funcBreakpoints.end();)
-      {
-        if (ids.find(it->first) == ids.end())
-        {
-            remainingFuncBreakpoints.push_back(it->second);
-            ++it;
-        }
-        else
-            it = m_funcBreakpoints.erase(it);
-      }
-
-      if (initialSize == m_funcBreakpoints.size())
-          return;
-    }
-
-    std::vector<Breakpoint> tmpBreakpoints;
-    m_sharedDebugger->SetFuncBreakpoints(remainingFuncBreakpoints, tmpBreakpoints);
-}
-
-void CLIProtocol::DeleteExceptionBreakpoints(const std::unordered_set<uint32_t> &ids)
-{
-    std::size_t initialSize = m_exceptionBreakpoints.size();
-    std::vector<ExceptionBreakpoint> remainingExceptionBreakpoints;
-    for (auto it = m_exceptionBreakpoints.begin(); it != m_exceptionBreakpoints.end();)
-    {
-        if (ids.find(it->first) == ids.end())
-        {
-            remainingExceptionBreakpoints.push_back(it->second);
-            ++it;
-        }
-        else
-            it = m_exceptionBreakpoints.erase(it);
-    }
-
-    if (initialSize == m_exceptionBreakpoints.size())
-        return;
-
-    std::vector<Breakpoint> tmpBreakpoints;
-    m_sharedDebugger->SetExceptionBreakpoints(remainingExceptionBreakpoints, tmpBreakpoints);
-}
-
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.
@@ -1156,7 +981,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
         struct LineBreak lb;
 
         if (ProtocolUtils::ParseBreakpoint(args, lb)
-            && SUCCEEDED(SetLineBreakpoint(lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
+            && SUCCEEDED(m_breakpointsHandle.SetLineBreakpoint(m_sharedDebugger, lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
             Status = S_OK;
     }
     else if (bt == BreakType::FuncBreak)
@@ -1164,7 +989,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
         struct FuncBreak fb;
 
         if (ProtocolUtils::ParseBreakpoint(args, fb)
-            && SUCCEEDED(SetFuncBreakpoint(fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
+            && SUCCEEDED(m_breakpointsHandle.SetFuncBreakpoint(m_sharedDebugger, fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
             Status = S_OK;
     }
 
@@ -1233,7 +1058,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Catch>(const std::vector<std::string>
     std::vector<Breakpoint> breakpoints;
     // `breakpoints` will return all configured exception breakpoints, not only configured by this command.
     // Note, exceptionBreakpoints data will be invalidated by this call.
-    IfFailRet(SetExceptionBreakpoints(exceptionBreakpoints, breakpoints));
+    IfFailRet(m_breakpointsHandle.SetExceptionBreakpoints(m_sharedDebugger, exceptionBreakpoints, breakpoints));
     // Print only breakpoints configured by this command (last newBreakPointCnt entries).
     IfFailRet(PrintExceptionBPs(breakpoints, newBreakPointCnt, outStr, findFilter->first));
 
@@ -1284,9 +1109,9 @@ HRESULT CLIProtocol::doCommand<CommandTag::Delete>(const std::vector<std::string
         if (ok)
             ids.insert(id);
     }
-    DeleteLineBreakpoints(ids);
-    DeleteFuncBreakpoints(ids);
-    DeleteExceptionBreakpoints(ids);
+    m_breakpointsHandle.DeleteLineBreakpoints(m_sharedDebugger, ids);
+    m_breakpointsHandle.DeleteFuncBreakpoints(m_sharedDebugger, ids);
+    m_breakpointsHandle.DeleteExceptionBreakpoints(m_sharedDebugger, ids);
     return S_OK;
 }
 
@@ -1739,7 +1564,7 @@ template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::vector<std::string> &, std::string &)
 {
     // no mutex locking needed here
-    this->m_exit = true;
+    m_exit = true;
     m_sources.reset(nullptr);
     m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
     return S_OK;

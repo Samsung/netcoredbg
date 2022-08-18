@@ -24,10 +24,7 @@
 namespace netcoredbg
 {
 
-void Variables::GetNumChild(
-    ICorDebugValue *pValue,
-    int &numChild,
-    bool static_members)
+static void GetNumChild(Evaluator *pEvaluator, ICorDebugValue *pValue, int &numChild, bool static_members)
 {
     numChild = 0;
 
@@ -37,7 +34,7 @@ void Variables::GetNumChild(
     int numStatic = 0;
     int numInstance = 0;
     // No thread and FrameLevel{0} here, since we need only count childs.
-    if (FAILED(m_sharedEvaluator->WalkMembers(pValue, nullptr, FrameLevel{0}, false, [&numStatic, &numInstance](
+    if (FAILED(pEvaluator->WalkMembers(pValue, nullptr, FrameLevel{0}, false, [&numStatic, &numInstance](
         ICorDebugType *,
         bool is_static,
         const std::string &,
@@ -65,41 +62,34 @@ void Variables::GetNumChild(
     }
 }
 
-struct Variables::Member
+struct VariableMember
 {
     std::string name;
     std::string ownerType;
     ToRelease<ICorDebugValue> value;
-    Member(const std::string &name, const std::string& ownerType, ICorDebugValue *pValue) :
+    VariableMember(const std::string &name, const std::string& ownerType, ICorDebugValue *pValue) :
         name(name),
         ownerType(ownerType),
         value(pValue)
     {}
-    Member(Member &&that) = default;
-    Member(const Member &that) = delete;
+    VariableMember(VariableMember &&that) = default;
+    VariableMember(const VariableMember &that) = delete;
 };
 
-void Variables::FillValueAndType(Member &member, Variable &var, bool escape)
+static void FillValueAndType(VariableMember &member, Variable &var)
 {
     if (member.value == nullptr)
     {
         var.value = "<error>";
         return;
     }
-    PrintValue(member.value, var.value, escape);
+    PrintValue(member.value, var.value, true);
     TypePrinter::GetTypeOfValue(member.value, var.type);
 }
 
-HRESULT Variables::FetchFieldsAndProperties(
-    ICorDebugValue *pInputValue,
-    ICorDebugThread *pThread,
-    FrameLevel frameLevel,
-    std::vector<Member> &members,
-    bool fetchOnlyStatic,
-    bool &hasStaticMembers,
-    int childStart,
-    int childEnd,
-    int evalFlags)
+static HRESULT FetchFieldsAndProperties(Evaluator *pEvaluator, ICorDebugValue *pInputValue, ICorDebugThread *pThread,
+                                        FrameLevel frameLevel, std::vector<VariableMember> &members, bool fetchOnlyStatic,
+                                        bool &hasStaticMembers, int childStart, int childEnd, int evalFlags)
 {
     hasStaticMembers = false;
     HRESULT Status;
@@ -109,7 +99,7 @@ HRESULT Variables::FetchFieldsAndProperties(
 
     int currentIndex = -1;
 
-    IfFailRet(m_sharedEvaluator->WalkMembers(pInputValue, pThread, frameLevel, false, [&](
+    IfFailRet(pEvaluator->WalkMembers(pInputValue, pThread, frameLevel, false, [&](
         ICorDebugType *pType,
         bool is_static,
         const std::string &name,
@@ -202,7 +192,7 @@ HRESULT Variables::AddVariableReference(Variable &variable, FrameId frameId, ICo
         return E_FAIL;
 
     int numChild = 0;
-    GetNumChild(pValue, numChild, valueKind == ValueIsClass);
+    GetNumChild(m_sharedEvaluator.get(), pValue, numChild, valueKind == ValueIsClass);
     if (numChild == 0)
         return S_OK;
 
@@ -317,7 +307,7 @@ HRESULT Variables::GetScopes(ICorDebugProcess *pProcess, FrameId frameId, std::v
     return S_OK;
 }
 
-void Variables::FixupInheritedFieldNames(std::vector<Member> &members)
+static void FixupInheritedFieldNames(std::vector<VariableMember> &members)
 {
     std::unordered_set<std::string> names;
     for (auto &it : members)
@@ -344,18 +334,12 @@ HRESULT Variables::GetChildren(
         return S_OK;
 
     HRESULT Status;
-    std::vector<Member> members;
+    std::vector<VariableMember> members;
     bool hasStaticMembers = false;
 
-    IfFailRet(FetchFieldsAndProperties(ref.iCorValue,
-                                       pThread,
-                                       ref.frameId.getLevel(),
-                                       members,
-                                       ref.valueKind == ValueIsClass,
-                                       hasStaticMembers,
-                                       start,
-                                       count == 0 ? INT_MAX : start + count,
-                                       ref.evalFlags));
+    IfFailRet(FetchFieldsAndProperties(m_sharedEvaluator.get(), ref.iCorValue, pThread, ref.frameId.getLevel(),
+                                       members, ref.valueKind == ValueIsClass, hasStaticMembers, start,
+                                       count == 0 ? INT_MAX : start + count, ref.evalFlags));
 
     FixupInheritedFieldNames(members);
 

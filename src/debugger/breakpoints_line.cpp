@@ -86,48 +86,7 @@ HRESULT LineBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugB
     return S_FALSE; // Stopped at break, but breakpoint not found.
 }
 
-HRESULT LineBreakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events)
-{
-    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
-
-    for (auto &initialBreakpoints : m_lineBreakpointMapping)
-    {
-        for (auto &initialBreakpoint : initialBreakpoints.second)
-        {
-            if (initialBreakpoint.resolved_linenum)
-                continue;
-
-            ManagedLineBreakpoint bp;
-            bp.id = initialBreakpoint.id;
-            bp.module = initialBreakpoint.breakpoint.module;
-            bp.enabled = initialBreakpoint.enabled;
-            bp.linenum = initialBreakpoint.breakpoint.line;
-            bp.endLine = initialBreakpoint.breakpoint.line;
-            bp.condition = initialBreakpoint.breakpoint.condition;
-            unsigned resolved_fullname_index = 0;
-
-            if (FAILED(ResolveLineBreakpoint(pModule, bp, initialBreakpoints.first, resolved_fullname_index)))
-                continue;
-
-            std::string resolved_fullname;
-            m_sharedModules->GetSourceFullPathByIndex(resolved_fullname_index, resolved_fullname);
-
-            Breakpoint breakpoint;
-            bp.ToBreakpoint(breakpoint, resolved_fullname);
-            events.emplace_back(BreakpointChanged, breakpoint);
-
-            initialBreakpoint.resolved_fullname_index = resolved_fullname_index;
-            initialBreakpoint.resolved_linenum = bp.linenum;
-
-            m_lineResolvedBreakpoints[resolved_fullname_index][initialBreakpoint.resolved_linenum].push_back(std::move(bp));
-            EnableOneICorBreakpointForLine(m_lineResolvedBreakpoints[resolved_fullname_index][initialBreakpoint.resolved_linenum]);
-        }
-    }
-
-    return S_OK;
-}
-
-HRESULT LineBreakpoints::EnableOneICorBreakpointForLine(std::list<ManagedLineBreakpoint> &bList)
+static HRESULT EnableOneICorBreakpointForLine(std::list<LineBreakpoints::ManagedLineBreakpoint> &bList)
 {
     // Same logic as provide vsdbg - only one breakpoint is active for one line.
     BOOL needEnable = TRUE;
@@ -159,7 +118,8 @@ HRESULT LineBreakpoints::EnableOneICorBreakpointForLine(std::list<ManagedLineBre
 
 // [in] pModule - optional, provide filter by module during resolve
 // [in,out] bp - breakpoint data for resolve
-HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, ManagedLineBreakpoint &bp, const std::string &bp_fullname, unsigned &bp_fullname_index)
+static HRESULT ResolveLineBreakpoint(Modules *pModules, ICorDebugModule *pModule, LineBreakpoints::ManagedLineBreakpoint &bp, const std::string &bp_fullname,
+                                     std::vector<ModulesSources::resolved_bp_t> &resolvedPoints, unsigned &bp_fullname_index)
 {
     if (bp_fullname.empty() || bp.linenum <= 0 || bp.endLine <= 0)
         return E_INVALIDARG;
@@ -176,7 +136,7 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
     else if (!bp.module.empty())
     {
         bool isFullPath = IsFullPath(bp.module);
-        m_sharedModules->ForEachModule([&bp, &modAddress, &isFullPath, &Status](ICorDebugModule *pModule) -> HRESULT
+        pModules->ForEachModule([&bp, &modAddress, &isFullPath, &Status](ICorDebugModule *pModule) -> HRESULT
         {
             IfFailRet(IsModuleHaveSameName(pModule, bp.module, isFullPath));
             if (Status == S_FALSE)
@@ -193,15 +153,18 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
     else if (pModule) // Filter data from only one module during resolve, if need.
         IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    std::string fullname = bp_fullname;
-    std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
-    unsigned fullname_index = 0;
-
-    IfFailRet(m_sharedModules->ResolveBreakpoint(modAddress, bp_fullname, fullname_index, bp.linenum, resolvedPoints));
+    IfFailRet(pModules->ResolveBreakpoint(modAddress, bp_fullname, bp_fullname_index, bp.linenum, resolvedPoints));
     if (resolvedPoints.empty())
         return E_FAIL;
 
-    modAddress = 0;
+    return S_OK;
+}
+
+static HRESULT ActivateLineBreakpoint(LineBreakpoints::ManagedLineBreakpoint &bp, const std::string &bp_fullname, bool justMyCode,
+                                      const std::vector<ModulesSources::resolved_bp_t> &resolvedPoints)
+{
+    HRESULT Status;
+    CORDB_ADDRESS modAddress = 0;
     CORDB_ADDRESS modAddressTrack = 0;
     bp.iCorFuncBreakpoints.reserve(resolvedPoints.size());
     for (const auto &resolvedBP : resolvedPoints)
@@ -212,13 +175,13 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
         if (modAddress && modAddress != modAddressTrack)
         {
             LOGW("During breakpoint resolve, multiple modules with same source file path was detected.");
-            LOGW("File name: %s", fullname.c_str());
+            LOGW("File name: %s", bp_fullname.c_str());
             LOGW("Breakpoint activated in module: %s", GetModuleFileName(resolvedPoints[0].iCorModule).c_str());
             LOGW("Ignored module: %s", GetModuleFileName(resolvedBP.iCorModule).c_str());
             continue;
         }
 
-        IfFailRet(BreakpointUtils::SkipBreakpoint(resolvedBP.iCorModule, resolvedBP.methodToken, m_justMyCode));
+        IfFailRet(BreakpointUtils::SkipBreakpoint(resolvedBP.iCorModule, resolvedBP.methodToken, justMyCode));
         if (Status == S_OK) // S_FALSE - don't skip breakpoint
             continue;
 
@@ -246,7 +209,49 @@ HRESULT LineBreakpoints::ResolveLineBreakpoint(ICorDebugModule *pModule, Managed
     bp.linenum = resolvedPoints[0].startLine;
     bp.endLine = resolvedPoints[0].endLine;
     bp.modAddress = modAddress;
-    bp_fullname_index = fullname_index;
+
+    return S_OK;
+}
+
+HRESULT LineBreakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std::vector<BreakpointEvent> &events)
+{
+    std::lock_guard<std::mutex> lock(m_breakpointsMutex);
+
+    for (auto &initialBreakpoints : m_lineBreakpointMapping)
+    {
+        for (auto &initialBreakpoint : initialBreakpoints.second)
+        {
+            if (initialBreakpoint.resolved_linenum)
+                continue;
+
+            ManagedLineBreakpoint bp;
+            bp.id = initialBreakpoint.id;
+            bp.module = initialBreakpoint.breakpoint.module;
+            bp.enabled = initialBreakpoint.enabled;
+            bp.linenum = initialBreakpoint.breakpoint.line;
+            bp.endLine = initialBreakpoint.breakpoint.line;
+            bp.condition = initialBreakpoint.breakpoint.condition;
+            unsigned resolved_fullname_index = 0;
+            std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
+
+            if (FAILED(ResolveLineBreakpoint(m_sharedModules.get(), pModule, bp, initialBreakpoints.first, resolvedPoints, resolved_fullname_index)) ||
+                FAILED(ActivateLineBreakpoint(bp, initialBreakpoints.first, m_justMyCode, resolvedPoints)))
+                continue;
+
+            std::string resolved_fullname;
+            m_sharedModules->GetSourceFullPathByIndex(resolved_fullname_index, resolved_fullname);
+
+            Breakpoint breakpoint;
+            bp.ToBreakpoint(breakpoint, resolved_fullname);
+            events.emplace_back(BreakpointChanged, breakpoint);
+
+            initialBreakpoint.resolved_fullname_index = resolved_fullname_index;
+            initialBreakpoint.resolved_linenum = bp.linenum;
+
+            m_lineResolvedBreakpoints[resolved_fullname_index][initialBreakpoint.resolved_linenum].push_back(std::move(bp));
+            EnableOneICorBreakpointForLine(m_lineResolvedBreakpoints[resolved_fullname_index][initialBreakpoint.resolved_linenum]);
+        }
+    }
 
     return S_OK;
 }
@@ -349,8 +354,11 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
             bp.endLine = line;
             bp.condition = initialBreakpoint.breakpoint.condition;
             unsigned resolved_fullname_index = 0;
+            std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
 
-            if (haveProcess && SUCCEEDED(ResolveLineBreakpoint(nullptr, bp, filename, resolved_fullname_index)))
+            if (haveProcess &&
+                SUCCEEDED(ResolveLineBreakpoint(m_sharedModules.get(), nullptr, bp, filename, resolvedPoints, resolved_fullname_index)) &&
+                SUCCEEDED(ActivateLineBreakpoint(bp, filename, m_justMyCode, resolvedPoints)))
             {
                 initialBreakpoint.resolved_fullname_index = resolved_fullname_index;
                 initialBreakpoint.resolved_linenum = bp.linenum;
@@ -472,8 +480,10 @@ HRESULT LineBreakpoints::UpdateBreakpointsOnHotReload(ICorDebugModule *pModule, 
             bp.condition = initialBreakpoint.breakpoint.condition;
             unsigned resolved_fullname_index = 0;
             Breakpoint breakpoint;
+            std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
 
-            if (FAILED(ResolveLineBreakpoint(pModule, bp, initialBreakpoints.first, resolved_fullname_index)))
+            if (FAILED(ResolveLineBreakpoint(m_sharedModules.get(), pModule, bp, initialBreakpoints.first, resolvedPoints, resolved_fullname_index)) ||
+                FAILED(ActivateLineBreakpoint(bp, initialBreakpoints.first, m_justMyCode, resolvedPoints)))
             {
                 if (initiallyResolved_linenum) // Previously was resolved, need emit breakpoint changed event.
                 {

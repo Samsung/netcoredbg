@@ -132,33 +132,6 @@ private:
     std::shared_ptr<EvalHelpers> m_sharedEvalHelpers;
     std::shared_ptr<EvalStackMachine> m_sharedEvalStackMachine;
 
-    HRESULT FollowNestedFindValue(
-        ICorDebugThread *pThread,
-        FrameLevel frameLevel,
-        const std::string &methodClass,
-        std::vector<std::string> &identifiers,
-        ICorDebugValue **ppResult,
-        std::unique_ptr<SetterData> *resultSetterData,
-        int evalFlags);
-
-    HRESULT FollowFields(
-        ICorDebugThread *pThread,
-        FrameLevel frameLevel,
-        ICorDebugValue *pValue,
-        ValueKind valueKind,
-        std::vector<std::string> &identifiers,
-        int nextIdentifier,
-        ICorDebugValue **ppResult,
-        std::unique_ptr<SetterData> *resultSetterData,
-        int evalFlags);
-
-    HRESULT WalkMembers(
-        ICorDebugValue *pInputValue,
-        ICorDebugThread *pThread,
-        FrameLevel frameLevel,
-        ICorDebugType *pTypeCast,
-        bool provideSetterData,
-        WalkMembersCallback cb);
 };
 
 } // namespace netcoredbg

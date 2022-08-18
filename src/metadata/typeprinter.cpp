@@ -15,6 +15,9 @@
 namespace netcoredbg 
 {
 
+namespace TypePrinter
+{
+
 static std::string ConsumeGenericArgs(const std::string &name, std::list<std::string> &args)
 {
     if (args.empty())
@@ -58,7 +61,7 @@ static std::string ConsumeGenericArgs(const std::string &name, std::list<std::st
     return ss.str();
 }
 
-std::string TypePrinter::RenameToSystem(const std::string &typeName)
+std::string RenameToSystem(const std::string &typeName)
 {
     static const std::unordered_map<std::string, std::string> cs2system = {
         {"void",    "System.Void"},
@@ -84,7 +87,7 @@ std::string TypePrinter::RenameToSystem(const std::string &typeName)
     return renamed != cs2system.end() ? renamed->second : typeName;
 }
 
-std::string TypePrinter::RenameToCSharp(const std::string &typeName)
+std::string RenameToCSharp(const std::string &typeName)
 {
     static const std::unordered_map<std::string, std::string> system2cs = {
         {"System.Void",    "void"},
@@ -120,7 +123,7 @@ std::string TypePrinter::RenameToCSharp(const std::string &typeName)
 *                                                                      *
 \**********************************************************************/
 // Caller should guard against exception
-HRESULT TypePrinter::NameForTypeDef(
+HRESULT NameForTypeDef(
     mdTypeDef tkTypeDef,
     IMetaDataImport *pImport,
     std::string &mdName,
@@ -153,10 +156,7 @@ HRESULT TypePrinter::NameForTypeDef(
     return S_OK;
 }
 
-HRESULT TypePrinter::NameForTypeRef(
-    mdTypeRef tkTypeRef,
-    IMetaDataImport *pImport,
-    std::string &mdName)
+static HRESULT NameForTypeRef(mdTypeRef tkTypeRef, IMetaDataImport *pImport, std::string &mdName)
 {
     // Note, instead of GetTypeDefProps(), GetTypeRefProps() return fully-qualified name.
     // CoreCLR use dynamic allocated or size fixed buffers up to 16kb for GetTypeRefProps().
@@ -172,7 +172,7 @@ HRESULT TypePrinter::NameForTypeRef(
     return S_OK;
 }
 
-HRESULT TypePrinter::NameForTypeByToken(mdToken mb,
+HRESULT NameForTypeByToken(mdToken mb,
                                         IMetaDataImport *pImport,
                                         std::string &mdName,
                                         std::list<std::string> *args)
@@ -201,7 +201,54 @@ HRESULT TypePrinter::NameForTypeByToken(mdToken mb,
     return hr;
 }
 
-HRESULT TypePrinter::NameForTypeByType(ICorDebugType *pType, std::string &mdName)
+static HRESULT AddGenericArgs(ICorDebugType *pType, std::list<std::string> &args)
+{
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+
+    if (SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
+    {
+        ULONG fetched = 0;
+        ToRelease<ICorDebugType> pCurrentTypeParam;
+
+        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &fetched)) && fetched == 1)
+        {
+            std::string name;
+            GetTypeOfValue(pCurrentTypeParam, name);
+            args.emplace_back(name);
+            pCurrentTypeParam.Free();
+        }
+    }
+
+    return S_OK;
+}
+
+HRESULT AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::string> &args)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugILFrame2> pILFrame2;
+    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame2, (LPVOID*) &pILFrame2));
+
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+
+    if (SUCCEEDED(pILFrame2->EnumerateTypeParameters(&pTypeEnum)))
+    {
+        ULONG numTypes = 0;
+        ToRelease<ICorDebugType> pCurrentTypeParam;
+
+        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &numTypes)) && numTypes == 1)
+        {
+            std::string name;
+            GetTypeOfValue(pCurrentTypeParam, name);
+            args.emplace_back(name);
+            pCurrentTypeParam.Free();
+        }
+    }
+
+    return S_OK;
+}
+
+HRESULT NameForTypeByType(ICorDebugType *pType, std::string &mdName)
 {
     HRESULT Status;
     ToRelease<ICorDebugClass> pClass;
@@ -219,7 +266,7 @@ HRESULT TypePrinter::NameForTypeByType(ICorDebugType *pType, std::string &mdName
     return NameForTypeByToken(tk, pMD, mdName, &args);
 }
 
-HRESULT TypePrinter::NameForTypeByValue(ICorDebugValue *pValue, std::string &mdName)
+HRESULT NameForTypeByValue(ICorDebugValue *pValue, std::string &mdName)
 {
     HRESULT Status;
     ToRelease<ICorDebugValue2> iCorValue2;
@@ -229,7 +276,7 @@ HRESULT TypePrinter::NameForTypeByValue(ICorDebugValue *pValue, std::string &mdN
     return NameForTypeByType(iCorType, mdName);
 }
 
-HRESULT TypePrinter::NameForToken(mdToken mb,
+HRESULT NameForToken(mdToken mb,
                                   IMetaDataImport *pImport,
                                   std::string &mdName,
                                   bool bClassName,
@@ -328,54 +375,7 @@ HRESULT TypePrinter::NameForToken(mdToken mb,
     return hr;
 }
 
-HRESULT TypePrinter::AddGenericArgs(ICorDebugType *pType, std::list<std::string> &args)
-{
-    ToRelease<ICorDebugTypeEnum> pTypeEnum;
-
-    if (SUCCEEDED(pType->EnumerateTypeParameters(&pTypeEnum)))
-    {
-        ULONG fetched = 0;
-        ToRelease<ICorDebugType> pCurrentTypeParam;
-
-        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &fetched)) && fetched == 1)
-        {
-            std::string name;
-            GetTypeOfValue(pCurrentTypeParam, name);
-            args.emplace_back(name);
-            pCurrentTypeParam.Free();
-        }
-    }
-
-    return S_OK;
-}
-
-HRESULT TypePrinter::AddGenericArgs(ICorDebugFrame *pFrame, std::list<std::string> &args)
-{
-    HRESULT Status;
-
-    ToRelease<ICorDebugILFrame2> pILFrame2;
-    IfFailRet(pFrame->QueryInterface(IID_ICorDebugILFrame2, (LPVOID*) &pILFrame2));
-
-    ToRelease<ICorDebugTypeEnum> pTypeEnum;
-
-    if (SUCCEEDED(pILFrame2->EnumerateTypeParameters(&pTypeEnum)))
-    {
-        ULONG numTypes = 0;
-        ToRelease<ICorDebugType> pCurrentTypeParam;
-
-        while (SUCCEEDED(pTypeEnum->Next(1, &pCurrentTypeParam, &numTypes)) && numTypes == 1)
-        {
-            std::string name;
-            GetTypeOfValue(pCurrentTypeParam, name);
-            args.emplace_back(name);
-            pCurrentTypeParam.Free();
-        }
-    }
-
-    return S_OK;
-}
-
-HRESULT TypePrinter::GetTypeOfValue(ICorDebugValue *pValue, std::string &output)
+HRESULT GetTypeOfValue(ICorDebugValue *pValue, std::string &output)
 {
     ToRelease<ICorDebugType> pType;
     ToRelease<ICorDebugValue2> pValue2;
@@ -389,7 +389,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugValue *pValue, std::string &output)
 
 // From strike.cpp
 
-HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType)
+HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::string &arrayType)
 {
     if (pType == nullptr)
         return E_INVALIDARG;
@@ -562,12 +562,8 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &elementTy
 }
 
 // From sildasm.cpp
-PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
-    PCCOR_SIGNATURE typePtr,
-    const std::vector<std::string> &args,
-    IMetaDataImport *pImport,
-    std::string &out,
-    std::string &appendix)
+static PCCOR_SIGNATURE NameForTypeSig(PCCOR_SIGNATURE typePtr, const std::vector<std::string> &args,
+                                      IMetaDataImport *pImport, std::string &out, std::string &appendix)
 {
     mdToken tk;
     const char* str;
@@ -617,7 +613,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
         case ELEMENT_TYPE_CLASS        :
             {
                 typePtr += CorSigUncompressToken(typePtr, &tk);
-                TypePrinter::NameForToken(tk, pImport, out, true, nullptr);
+                NameForToken(tk, pImport, out, true, nullptr);
             }
             break;
 
@@ -719,7 +715,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
                     typePtr = NameForTypeSig(typePtr, args, pImport, genType, genTypeAppendix);
                     genericArgs.push_back(genType + genTypeAppendix);
                 }
-                TypePrinter::NameForToken(tk, pImport, out, true, &genericArgs);
+                NameForToken(tk, pImport, out, true, &genericArgs);
             }
             break;
 
@@ -751,7 +747,7 @@ PCCOR_SIGNATURE TypePrinter::NameForTypeSig(
     return typePtr;
 }
 
-void TypePrinter::NameForTypeSig(
+void NameForTypeSig(
     PCCOR_SIGNATURE typePtr,
     ICorDebugType *enclosingType,
     IMetaDataImport *pImport,
@@ -781,7 +777,7 @@ void TypePrinter::NameForTypeSig(
     typeName = out + appendix;
 }
 
-HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
+HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &output)
 {
     HRESULT Status;
     std::string elementType;
@@ -791,7 +787,7 @@ HRESULT TypePrinter::GetTypeOfValue(ICorDebugType *pType, std::string &output)
     return S_OK;
 }
 
-HRESULT TypePrinter::GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeName, std::string &methodName)
+HRESULT GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeName, std::string &methodName)
 {
     HRESULT Status;
 
@@ -864,7 +860,7 @@ HRESULT TypePrinter::GetTypeAndMethod(ICorDebugFrame *pFrame, std::string &typeN
     return S_OK;
 }
 
-HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
+HRESULT GetMethodName(ICorDebugFrame *pFrame, std::string &output)
 {
     HRESULT Status;
 
@@ -880,5 +876,7 @@ HRESULT TypePrinter::GetMethodName(ICorDebugFrame *pFrame, std::string &output)
     output = ss.str();
     return S_OK;
 }
+
+} // namespace TypePrinter
 
 } // namespace netcoredbg
