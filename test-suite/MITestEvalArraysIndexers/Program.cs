@@ -325,6 +325,9 @@ namespace MITestEvalArraysIndexers
             MyString[] myStrings = new MyString[6]
                 {new MyString("zero"), new MyString("one"), new MyString("two"), new MyString("three"), new MyString("four"), new MyString("five")};
 
+            SimpleInt sinull;
+            SimpleInt? siq;
+
             int i0 = 0;
             int i1 = 1;
             int i2 = 2;
@@ -653,6 +656,14 @@ namespace MITestEvalArraysIndexers
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "dictmsmi[myInts[4]]", "Error: 0x80070057");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "dictmsmi[\\\"a string\\\"]", "Error: 0x80070057");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictmsmi[myStrings[5]]");
+
+                // check nullables
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvalArraysIndexers.SimpleInt", "sinull");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{System.NullReferenceException}", "System.NullReferenceException", "sinull[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvalArraysIndexers.SimpleInt", "sinull?[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvalArraysIndexers.SimpleInt", "siq");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{System.NullReferenceException}", "System.NullReferenceException", "siq[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvalArraysIndexers.SimpleInt", "siq?[0]");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

@@ -378,6 +378,9 @@ namespace VSCodeTestEvalArraysIndexers
             MyString[] myStrings = new MyString[6]
                 {new MyString("zero"), new MyString("one"), new MyString("two"), new MyString("three"), new MyString("four"), new MyString("five")};
 
+            SimpleInt sinull;
+            SimpleInt? siq;
+
             int i0 = 0;
             int i1 = 1;
             int i2 = 2;
@@ -707,6 +710,14 @@ namespace VSCodeTestEvalArraysIndexers
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictmsmi[myInts[4]]", "error: 0x80070057");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "dictmsmi[\"a string\"]", "error: 0x80070057");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.Collections.Generic.KeyNotFoundException}", "System.Collections.Generic.KeyNotFoundException", "dictmsmi[myStrings[5]]");
+
+                // check nullables
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "null", "VSCodeTestEvalArraysIndexers.SimpleInt", "sinull");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.NullReferenceException}", "System.NullReferenceException", "sinull[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "null", "VSCodeTestEvalArraysIndexers.SimpleInt", "sinull?[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "null", "VSCodeTestEvalArraysIndexers.SimpleInt", "siq");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "{System.NullReferenceException}", "System.NullReferenceException", "siq[0]");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "null", "VSCodeTestEvalArraysIndexers.SimpleInt", "siq?[0]");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
