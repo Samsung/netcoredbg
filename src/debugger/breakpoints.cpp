@@ -144,6 +144,21 @@ HRESULT Breakpoints::ManagedCallbackBreakpoint(ICorDebugThread *pThread, ICorDeb
         return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)
     }
 
+    // Don't stop at breakpoint in not JMC code, if possible (error here is not fatal for debug process).
+    // We need this check here, since we can't guarantee this check in SkipBreakpoint().
+    ToRelease<ICorDebugFrame> iCorFrame;
+    ToRelease<ICorDebugFunction> iCorFunction;
+    ToRelease<ICorDebugFunction2> iCorFunction2;
+    BOOL JMCStatus;
+    if (SUCCEEDED(pThread->GetActiveFrame(&iCorFrame)) && iCorFrame != nullptr &&
+        SUCCEEDED(iCorFrame->GetFunction(&iCorFunction)) &&
+        SUCCEEDED(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID*) &iCorFunction2)) &&
+        SUCCEEDED(iCorFunction2->GetJMCStatus(&JMCStatus)) &&
+        JMCStatus == FALSE)
+    {
+        return S_OK; // forced to interrupt this callback (breakpoint in not user code, continue process execution)
+    }
+
     if (SUCCEEDED(Status = m_uniqueLineBreakpoints->CheckBreakpointHit(pThread, pBreakpoint, breakpoint)) &&
         Status == S_OK) // S_FALSE - no breakpoint hit
     {

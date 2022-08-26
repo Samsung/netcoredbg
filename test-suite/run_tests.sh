@@ -46,6 +46,7 @@ ALL_TEST_NAMES=(
     "MITestAsyncLambdaEvaluate"
     "MITestGeneric"
     "MITestEvalArraysIndexers"
+    "MITestBreakpointWithoutStop"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -73,6 +74,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestAsyncLambdaEvaluate"
     "VSCodeTestGeneric"
     "VSCodeTestEvalArraysIndexers"
+    "VSCodeTestBreakpointWithoutStop"
 )
 
 # Skipped tests:
