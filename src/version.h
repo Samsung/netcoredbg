@@ -3,4 +3,4 @@
 // See the LICENSE file in the project root for more information.
 
 // WARNING: do not modify this file! Generated automatically.
-static const char __VERSION[] = "2.1.0-4";
+static const char __VERSION[] = "2.2.0-1";
