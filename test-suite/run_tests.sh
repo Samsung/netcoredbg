@@ -189,7 +189,7 @@ for TEST_NAME in $TEST_NAMES; do
     fi
 done
 
-if $generate_report; then
+if [[ $generate_report == true ]]; then
     #Generate xml test file to current directory
     generate_xml "${XML_ABS_PATH}" "${test_xml}"
 fi
