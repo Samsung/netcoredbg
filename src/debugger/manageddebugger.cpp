@@ -63,6 +63,7 @@ extern "C" const IID IID_IUnknown = { 0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0
 
 namespace
 {
+    const auto startupWaitTimeout = std::chrono::milliseconds(5000);
 
     const std::string envDOTNET_STARTUP_HOOKS = "DOTNET_STARTUP_HOOKS";
 #ifdef FEATURE_PAL
@@ -117,8 +118,10 @@ namespace
 
 void ManagedDebugger::NotifyProcessCreated()
 {
-    std::lock_guard<std::mutex> lock(m_processAttachedMutex);
+    std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessAttachedState::Attached;
+    lock.unlock();
+    m_processAttachedCV.notify_one();
 }
 
 void ManagedDebugger::NotifyProcessExited()
@@ -183,8 +186,6 @@ ManagedDebugger::ManagedDebugger() :
     m_justMyCode(true),
     m_stepFiltering(true),
     m_hotReload(false),
-    m_startupReady(false),
-    m_startupResult(S_OK),
     m_unregisterToken(nullptr),
     m_processId(0),
     m_ioredirect(
@@ -400,19 +401,13 @@ VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT
 {
     ManagedDebugger *self = static_cast<ManagedDebugger*>(parameter);
 
-    std::unique_lock<std::mutex> lock(self->m_startupMutex);
-
-    self->m_startupResult = FAILED(hr) ? hr : self->Startup(pCordb, self->m_processId);
-    self->m_startupReady = true;
+    self->Startup(pCordb, self->m_processId);
 
     if (self->m_unregisterToken)
     {
         self->m_dbgshim.UnregisterForRuntimeStartup(self->m_unregisterToken);
         self->m_unregisterToken = nullptr;
     }
-
-    lock.unlock();
-    self->m_startupCV.notify_one();
 }
 
 // From dbgshim.cpp
@@ -640,7 +635,6 @@ static void PrepareSystemEnvironmentArg(const std::map<std::string, std::string>
 
 HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs)
 {
-    static const auto startupCallbackWaitTimeout = std::chrono::milliseconds(5000);
     HRESULT Status;
 
     IfFailRet(CheckNoProcess());
@@ -652,7 +646,6 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
         ss << " \"" << EscapeShellArg(arg) << "\"";
     }
 
-    m_startupReady = false;
     m_clrPath.clear();
 
     HANDLE resumeHandle = 0; // Fake thread handle for the process resume
@@ -689,26 +682,13 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
     IfFailRet(m_dbgshim.ResumeProcess(resumeHandle));
     m_dbgshim.CloseResumeHandle(resumeHandle);
 
-    // Wait for ManagedDebugger::StartupCallback to complete
-
-    /// FIXME: if the process exits too soon the ManagedDebugger::StartupCallback()
-    /// is never called (bug in dbgshim?).
-    /// The workaround is to wait with timeout.
-    const auto now = std::chrono::system_clock::now();
-
-    std::unique_lock<std::mutex> lock(m_startupMutex);
-    if (!m_startupCV.wait_until(lock, now + startupCallbackWaitTimeout, [this](){return m_startupReady;}))
-    {
-        // Timed out
-        m_dbgshim.UnregisterForRuntimeStartup(m_unregisterToken);
-        m_unregisterToken = nullptr;
+    std::unique_lock<std::mutex> lockAttachedMutex(m_processAttachedMutex);
+    if (!m_processAttachedCV.wait_for(lockAttachedMutex, startupWaitTimeout, [this]{return m_processAttachedState == ProcessAttachedState::Attached;}))
         return E_FAIL;
-    }
 
-    if (SUCCEEDED(m_startupResult))
-        m_sharedProtocol->EmitExecEvent(PID{m_processId}, fileExec);
+   m_sharedProtocol->EmitExecEvent(PID{m_processId}, fileExec);
 
-    return m_startupResult;
+    return S_OK;
 }
 
 HRESULT ManagedDebugger::CheckNoProcess()
@@ -838,7 +818,13 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
     IfFailRet(m_dbgshim.CreateDebuggingInterfaceFromVersionEx(CorDebugVersion_4_0, pBuffer, &pCordb));
 
     m_unregisterToken = nullptr;
-    return Startup(pCordb, pid);
+    IfFailRet(Startup(pCordb, pid));
+
+    std::unique_lock<std::mutex> lockAttachedMutex(m_processAttachedMutex);
+    if (!m_processAttachedCV.wait_for(lockAttachedMutex, startupWaitTimeout, [this]{return m_processAttachedState == ProcessAttachedState::Attached;}))
+        return E_FAIL;
+
+    return S_OK;
 }
 
 HRESULT ManagedDebugger::GetExceptionInfo(ThreadId threadId, ExceptionInfo &exceptionInfo)

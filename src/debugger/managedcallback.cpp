@@ -140,6 +140,12 @@ bool ManagedCallback::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, I
     return true;
 }
 
+bool ManagedCallback::CallbacksWorkerCreateProcess()
+{
+    m_debugger.NotifyProcessCreated();
+    return false;
+}
+
 void ManagedCallback::CallbacksWorker()
 {
     std::unique_lock<std::mutex> lock(m_callbacksMutex);
@@ -168,6 +174,9 @@ void ManagedCallback::CallbacksWorker()
             break;
         case CallbackQueueCall::Exception:
             m_stopEventInProcess = CallbacksWorkerException(c.iCorAppDomain, c.iCorThread, c.EventType, c.ExcModule);
+            break;
+        case CallbackQueueCall::CreateProcess:
+            m_stopEventInProcess = CallbacksWorkerCreateProcess();
             break;
         default:
             // finish loop
@@ -531,10 +540,32 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::EvalException(ICorDebugAppDomain *pAp
 
 // https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/icordebugmanagedcallback-createprocess-method
 // Notifies the debugger when a process has been attached or started for the first time.
+// Remarks
+// This method is not called until the common language runtime is initialized. Most of the ICorDebug methods will return CORDBG_E_NOTREADY before the CreateProcess callback.
 HRESULT STDMETHODCALLTYPE ManagedCallback::CreateProcess(ICorDebugProcess *pProcess)
 {
     LogFuncEntry();
-    m_debugger.NotifyProcessCreated();
+
+    // Important! Care about callback queue before NotifyProcessCreated() call.
+    // In case of `attach`, NotifyProcessCreated() call will notify debugger that debuggee process attached and debugger
+    // should stop debuggee process by dirrect `Pause()` call. From another side, callback queue have bunch of asynchronous
+    // added entries and, for example, `CreateThread()` could be called after this callback and broke our debugger logic.
+    ToRelease<ICorDebugAppDomainEnum> domains;
+    ICorDebugAppDomain *pAppDomain;
+    ULONG domainsFetched;
+    if (SUCCEEDED(pProcess->EnumerateAppDomains(&domains)))
+    {
+        // At this point we have only one domain for sure.
+        if (SUCCEEDED(domains->Next(1, &pAppDomain, &domainsFetched)) && domainsFetched == 1)
+        {
+            // Don't AddRef() here for pAppDomain! We get it with AddRef() from Next() and will release in m_callbacksQueue by ToRelease destructor.
+            return AddCallbackToQueue(pAppDomain, [&]()
+            {
+                m_callbacksQueue.emplace_back(CallbackQueueCall::CreateProcess, pAppDomain, nullptr, nullptr, STEP_NORMAL, ExceptionCallbackType::FIRST_CHANCE);
+            });
+        }
+    }
+
     return ContinueProcessWithCallbacksQueue(pProcess);
 }
 

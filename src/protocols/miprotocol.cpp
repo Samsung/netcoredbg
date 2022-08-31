@@ -784,7 +784,7 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, Breakpo
         return variablesHandle.DeleteVar(args.at(0));
     }},
     { "gdb-exit", [&](const std::vector<std::string> &args, std::string &output) -> HRESULT {
-        sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
+        sharedDebugger->Disconnect(); // Terminate debuggee process if debugger ran this process and detach in case debugger was attached to it.
         return S_OK;
     }},
     { "file-exec-and-symbols", [&](const std::vector<std::string> &args, std::string &output) -> HRESULT {
@@ -1048,7 +1048,7 @@ void MIProtocol::CommandLoop()
     }
 
     if (!m_exit)
-        m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
+        m_sharedDebugger->Disconnect(); // Terminate debuggee process if debugger ran this process and detach in case debugger was attached to it.
 
     Printf("%s^exit\n", token.c_str());
     Printf("(gdb)\n");

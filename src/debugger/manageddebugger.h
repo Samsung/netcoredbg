@@ -91,11 +91,6 @@ private:
     bool m_stepFiltering;
     bool m_hotReload;
 
-    std::mutex m_startupMutex;
-    std::condition_variable m_startupCV;
-    bool m_startupReady;
-    HRESULT m_startupResult;
-
     PVOID m_unregisterToken;
     DWORD m_processId;
     std::string m_clrPath;

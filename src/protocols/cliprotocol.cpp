@@ -1566,7 +1566,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::vector<std::string> 
     // no mutex locking needed here
     m_exit = true;
     m_sources.reset(nullptr);
-    m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
+    m_sharedDebugger->Disconnect(); // Terminate debuggee process if debugger ran this process and detach in case debugger was attached to it.
     return S_OK;
 }
 
@@ -1645,16 +1645,9 @@ HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::vector<std::string
     applyCommandMode();
     lock.unlock();
 
-    Status = m_sharedDebugger->ConfigurationDone();
-    if (SUCCEEDED(Status))
-    {
-        output = "^running";
-
-        lock.lock();
-        m_processStatus = Running;
-        m_state_cv.notify_all();
-    }
-    return Status;
+    IfFailRet(m_sharedDebugger->ConfigurationDone());
+    IfFailRet(m_sharedDebugger->Pause(ThreadId::AllThreads));
+    return S_OK;
 }
 
 template <>
@@ -2323,7 +2316,7 @@ void CLIProtocol::CommandLoop()
 
     printf("^exit\n");
 
-    m_sharedDebugger->Disconnect(IDebugger::DisconnectAction::DisconnectTerminate);
+    m_sharedDebugger->Disconnect(); // Terminate debuggee process if debugger ran this process and detach in case debugger was attached to it.
 
     linenoiseHistorySave(HistoryFileName);
     linenoiseHistoryFree();

@@ -496,6 +496,9 @@ int
         if (run || pidDebuggee)
             cliProtocol->SetRunningState();
 
+        if (pidDebuggee != 0)
+            cliProtocol->Pause();
+
         // run commands passed in command line via '-ex' option
         cliProtocol->Source({initCommands});
     }

@@ -34,7 +34,8 @@ class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedC
         Breakpoint,
         StepComplete,
         Break,
-        Exception
+        Exception,
+        CreateProcess
     };
 
     struct CallbackQueueEntry
@@ -75,6 +76,7 @@ class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedC
     bool CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason);
     bool CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread);
     bool CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule);
+    bool CallbacksWorkerCreateProcess();
     HRESULT AddCallbackToQueue(ICorDebugAppDomain *pAppDomain, std::function<void()> callback);
     bool HasQueuedCallbacks(ICorDebugProcess *pProcess);
     HRESULT ContinueAppDomainWithCallbacksQueue(ICorDebugAppDomain *pAppDomain);

@@ -202,6 +202,9 @@ public:
         virtual ~LineReader() {}
     };
 
+    // pause debugee execution
+    void Pause();
+
 private:
     // This function should be used by any others CLIProtocol's functions
     // to read input lines for interpreting (commands, etc...)
@@ -227,9 +230,6 @@ private:
     // CLIProtocol instance currently owning console
     static CLIProtocol* g_console_owner;
     static std::mutex g_console_mutex; // mutex which protect g_console_owner
-
-    // pause debugee execution
-    void Pause();
 
     // process Ctrl-C events
     static void interruptHandler();
