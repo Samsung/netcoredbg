@@ -409,6 +409,10 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMet
         }
     }
 
+    // https://github.com/dotnet/runtime/blob/57bfe474518ab5b7cfe6bf7424a79ce3af9d6657/docs/design/coreclr/profiling/davbr-blog-archive/samples/sigparse.cpp
+    static const ULONG SIG_METHOD_VARARG = 0x5; // vararg calling convention
+    static const ULONG SIG_METHOD_GENERIC = 0x10; // used to indicate that the method has one or more generic parameters.
+
     ULONG numMethods = 0;
     HCORENUM fEnum = NULL;
     mdMethodDef methodDef;
@@ -433,6 +437,11 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMet
         // [[HASTHIS] [EXPLICITTHIS]] (DEFAULT|VARARG|GENERIC GenParamCount)
         elementSize = CorSigUncompressData(pSig, &convFlags);
         pSig += elementSize;
+
+        // TODO add VARARG and GENERIC methods support.
+        if ((convFlags & SIG_METHOD_VARARG) ||
+            (convFlags & SIG_METHOD_GENERIC))
+            continue;
 
         // 2. count of params
         elementSize = CorSigUncompressData(pSig, &cParams);
