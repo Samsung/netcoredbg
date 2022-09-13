@@ -96,7 +96,8 @@ void to_json(json &j, const Thread &t) {
 void to_json(json &j, const Scope &s) {
     j = json{
         {"name",               s.name},
-        {"variablesReference", s.variablesReference}};
+        {"variablesReference", s.variablesReference},
+        {"expensive",          false}};
 
     if (s.variablesReference > 0)
     {
