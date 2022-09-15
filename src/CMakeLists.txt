@@ -184,6 +184,12 @@ if (NCDB_DOTNET_STARTUP_HOOK)
     add_definitions(-DNCDB_DOTNET_STARTUP_HOOK="${NCDB_DOTNET_STARTUP_HOOK}")
 endif (NCDB_DOTNET_STARTUP_HOOK)
 
+if (INTEROP_DEBUGGING)
+    add_definitions(-DINTEROP_DEBUGGING)
+    target_link_libraries(netcoredbg elf++ dwarf++)
+    include_directories(${PROJECT_SOURCE_DIR}/third_party/libelfin/elf ${PROJECT_SOURCE_DIR}/third_party/libelfin/dwarf)
+endif (INTEROP_DEBUGGING)
+
 if (CLR_CMAKE_TARGET_TIZEN_LINUX)
     add_definitions(-DDEBUGGER_FOR_TIZEN)
     target_link_libraries(netcoredbg dlog)
