@@ -90,6 +90,7 @@ private:
     bool m_justMyCode;
     bool m_stepFiltering;
     bool m_hotReload;
+    bool m_interopDebugging;
 
     PVOID m_unregisterToken;
     DWORD m_processId;
@@ -130,6 +131,9 @@ public:
     void SetStepFiltering(bool enable) override;
     bool IsHotReload() const override { return m_hotReload; }
     HRESULT SetHotReload(bool enable) override;
+#ifdef INTEROP_DEBUGGING
+    void SetInteropDebugging(bool enable) override;
+#endif
 
     HRESULT Initialize() override;
     HRESULT Attach(int pid) override;

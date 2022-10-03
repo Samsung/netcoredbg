@@ -20,6 +20,10 @@
 #include "buildinfo.h"
 #include "version.h"
 
+#ifdef INTEROP_DEBUGGING
+#include "debugger/sigaction.h"
+#endif
+
 #ifdef _WIN32
 #include <io.h>
 #include <fcntl.h>
@@ -54,6 +58,9 @@ static void print_help()
         "--interpreter=cli                     Runs the debugger with Command Line Interface. \n"
         "--interpreter=mi                      Puts the debugger into MI mode.\n"
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
+#ifdef INTEROP_DEBUGGING
+        "--interop-debugging                   Puts the debugger into interop (mixed) mode.\n"
+#endif
         "--command=<file>                      Interpret commands file at the start.\n"
         "-ex \"<command>\"                       Execute command at the start\n"
 #ifdef NCDB_DOTNET_STARTUP_HOOK
@@ -256,6 +263,7 @@ int
     std::vector<std::string> execArgs;
 
     bool needHotReload = false;
+    bool needInteropDebugging = false;
     bool run = false;
 
     std::unordered_map<std::string, std::function<void(int& i)>> entireArguments
@@ -290,6 +298,11 @@ int
         { "--interpreter=cli", [&](int& i){
 
             protocol_constructor = &instantiate_protocol<CLIProtocol>;
+
+        } },
+        { "--interop-debugging", [&](int& i){
+
+            needInteropDebugging = true;
 
         } },
         { "--hot-reload", [&](int& i){
@@ -468,6 +481,12 @@ int
         else
             fprintf(stderr, "Warning: Hot Reload can't be be enabled for attached process.\n");
     }
+#ifdef INTEROP_DEBUGGING
+    // In case of interop debugging we depend on SIGCHLD set to SIG_DFL by init code.
+    // Note, debugger include corhost (CoreCLR) that could setup sigaction for SIGCHLD and ruin interop debugger work.
+    SetSigactionMode(needInteropDebugging);
+    debugger->SetInteropDebugging(needInteropDebugging);
+#endif
 
     if (!execFile.empty())
         protocol->SetLaunchCommand(execFile, execArgs);

@@ -33,6 +33,7 @@
 #include "debugger/breakpoint_hotreload.h"
 #include "debugger/breakpoints.h"
 #include "debugger/hotreloadhelpers.h"
+#include "debugger/interop_debugging.h"
 #include "debugger/manageddebugger.h"
 #include "debugger/managedcallback.h"
 #include "debugger/stepper_simple.h"
@@ -71,6 +72,10 @@ namespace
 #else  // FEATURE_PAL
     const char delimiterDOTNET_STARTUP_HOOKS = ';';
 #endif // FEATURE_PAL
+
+#ifdef INTEROP_DEBUGGING
+    const std::string envNCDB_INTEROP_DEBUGGING = "NCDB_INTEROP_DEBUGGING";
+#endif // INTEROP_DEBUGGING
 
     int GetSystemEnvironmentAsMap(std::map<std::string, std::string>& outMap)
     {
@@ -118,6 +123,17 @@ namespace
 
 void ManagedDebugger::NotifyProcessCreated()
 {
+#ifdef INTEROP_DEBUGGING
+    // Note, in case `attach` CoreCLR also call CreateProcess() that call this method.
+    int error_n = 0;
+    if (m_interopDebugging && FAILED(InteropDebugging::Init((pid_t)m_processId, error_n)))
+    {
+        LOGE("Interop debugging disabled due to initialization fail: %s", strerror(error_n));
+        m_sharedProtocol->EmitInteropDebuggingErrorEvent(error_n);
+        m_interopDebugging = false;
+    }
+#endif // INTEROP_DEBUGGING
+
     std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessAttachedState::Attached;
     lock.unlock();
@@ -186,6 +202,7 @@ ManagedDebugger::ManagedDebugger() :
     m_justMyCode(true),
     m_stepFiltering(true),
     m_hotReload(false),
+    m_interopDebugging(false),
     m_unregisterToken(nullptr),
     m_processId(0),
     m_ioredirect(
@@ -298,6 +315,11 @@ HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
         default:
             return E_FAIL;
     }
+
+#ifdef INTEROP_DEBUGGING
+    if (m_interopDebugging)
+        InteropDebugging::Shutdown();
+#endif
 
     if (!terminate)
     {
@@ -581,7 +603,23 @@ static bool IsDirExists(const char* const path)
     return true;
 }
 
-static void PrepareSystemEnvironmentArg(const std::map<std::string, std::string> &env, std::vector<char> &outEnv, bool hotReload)
+static void SetCustomEnvironmentArgs(std::map<std::string, std::string> &env, bool hotReload)
+{
+#ifdef NCDB_DOTNET_STARTUP_HOOK
+    if (hotReload)
+    {
+        auto find = env.find(envDOTNET_STARTUP_HOOKS);
+        if (find != env.end())
+            find->second = find->second + delimiterDOTNET_STARTUP_HOOKS + NCDB_DOTNET_STARTUP_HOOK;
+        else
+            env[envDOTNET_STARTUP_HOOKS] = NCDB_DOTNET_STARTUP_HOOK;
+    }
+#else
+    (void)hotReload; // suppress warning about unused param
+#endif // NCDB_DOTNET_STARTUP_HOOK
+}
+
+static void PrepareSystemEnvironmentArg(const std::map<std::string, std::string> &env, std::vector<char> &outEnv, bool hotReload, bool &interopDebugging)
 {
     // We need to append the environ values with keeping the current process environment block.
     // It works equal for any platrorms in coreclr CreateProcessW(), but not critical for Linux.
@@ -596,37 +634,29 @@ static void PrepareSystemEnvironmentArg(const std::map<std::string, std::string>
                 envMap[pair.first] = envMap[pair.first] + delimiterDOTNET_STARTUP_HOOKS + pair.second;
                 continue;
             }
-            envMap[pair.first] = pair.second;
-        }
-#ifdef NCDB_DOTNET_STARTUP_HOOK
-        if (hotReload)
-        {
-            auto find = envMap.find(envDOTNET_STARTUP_HOOKS);
-            if (find != envMap.end())
-                find->second = find->second + delimiterDOTNET_STARTUP_HOOKS + NCDB_DOTNET_STARTUP_HOOK;
-            else
-                envMap[envDOTNET_STARTUP_HOOKS] = NCDB_DOTNET_STARTUP_HOOK;
-        }
+#ifdef INTEROP_DEBUGGING
+            else if (pair.first == envNCDB_INTEROP_DEBUGGING)
+            {
+                interopDebugging = true;
+                continue;
+            }
 #else
-        (void)hotReload; // suppress warning about unused param
-#endif // NCDB_DOTNET_STARTUP_HOOK
-        for (const auto &pair : envMap)
-        {
-            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
-            outEnv.push_back('=');
-            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
-            outEnv.push_back('\0');
+            (void)interopDebugging; // suppress warning about unused param
+#endif // INTEROP_DEBUGGING
+            envMap[pair.first] = pair.second;
         }
     }
     else
     {
-        for (const auto &pair : env)
-        {
-            outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
-            outEnv.push_back('=');
-            outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
-            outEnv.push_back('\0');
-        }
+        envMap = env;
+    }
+    SetCustomEnvironmentArgs(envMap, hotReload);
+    for (const auto &pair : envMap)
+    {
+        outEnv.insert(outEnv.end(), pair.first.begin(), pair.first.end());
+        outEnv.push_back('=');
+        outEnv.insert(outEnv.end(), pair.second.begin(), pair.second.end());
+        outEnv.push_back('\0');
     }
     // Environtment variable should looks like: "Var=Value\0OtherVar=OtherValue\0\0"
     if (!outEnv.empty())
@@ -651,7 +681,7 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
     HANDLE resumeHandle = 0; // Fake thread handle for the process resume
 
     std::vector<char> outEnv;
-    PrepareSystemEnvironmentArg(m_env, outEnv, m_hotReload);
+    PrepareSystemEnvironmentArg(m_env, outEnv, m_hotReload, m_interopDebugging);
 
     // cwd in launch.json set working directory for debugger https://code.visualstudio.com/docs/python/debugging#_cwd
     if (!m_cwd.empty())
@@ -686,7 +716,7 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
     if (!m_processAttachedCV.wait_for(lockAttachedMutex, startupWaitTimeout, [this]{return m_processAttachedState == ProcessAttachedState::Attached;}))
         return E_FAIL;
 
-   m_sharedProtocol->EmitExecEvent(PID{m_processId}, fileExec);
+    m_sharedProtocol->EmitExecEvent(PID{m_processId}, fileExec);
 
     return S_OK;
 }
@@ -726,7 +756,7 @@ HRESULT ManagedDebugger::DetachFromProcess()
 
         HRESULT Status;
         if (FAILED(Status = m_iCorProcess->Detach()))
-            LOGE("Process terminate failed: %s", errormessage(Status));
+            LOGE("Process detach failed: %s", errormessage(Status));
 
         m_processAttachedState = ProcessAttachedState::Unattached; // Since we free process object anyway, reset process attached state.
     } while(0);
@@ -1291,6 +1321,13 @@ HRESULT ManagedDebugger::SetHotReload(bool enable)
 
     return S_OK;
 }
+
+#ifdef INTEROP_DEBUGGING
+void ManagedDebugger::SetInteropDebugging(bool enable)
+{
+    m_interopDebugging = enable;
+}
+#endif
 
 static HRESULT ApplyMetadataAndILDeltas(Modules *pModules, const std::string &dllFileName, const std::string &deltaMD, const std::string &deltaIL)
 {

@@ -61,6 +61,49 @@ void waitpid_t::SetExitCode(pid_t PID, int Code)
     exitCode = Code;
 }
 
+#ifdef INTEROP_DEBUGGING
+
+void waitpid_t::SetInteropWaitpidMode(bool mode)
+{
+    std::lock_guard<std::mutex> mutex_guard(pidMutex);
+    interopWaitpidMode = mode;
+}
+
+bool waitpid_t::IsInteropWaitpidMode()
+{
+    std::lock_guard<std::mutex> mutex_guard(pidMutex);
+    return interopWaitpidMode;
+}
+
+void waitpid_t::InitPidStatus(pid_t pid)
+{
+    std::lock_guard<std::mutex> mutex_guard(pidMutex);
+    pidExited = false;
+    pidStatus = 0;
+    pidPid = pid;
+}
+
+void waitpid_t::SetPidExitedStatus(pid_t pid, int status)
+{
+    std::lock_guard<std::mutex> mutex_guard(pidMutex);
+    if (pidPid != pid)
+        return;
+
+    pidExited = true;
+    pidStatus = status;
+    SetExitCode(pid, WEXITSTATUS(pidStatus));
+}
+
+bool waitpid_t::GetPidExitedStatus(pid_t &pid, int &status)
+{
+    std::lock_guard<std::mutex> mutex_guard(pidMutex);
+    status = pidStatus;
+    pid = pidPid;
+    return pidExited;
+}
+
+#endif // INTEROP_DEBUGGING
+
 waitpid_t waitpid;
 
 } // namespace hook
@@ -73,6 +116,41 @@ hook::waitpid_t &GetWaitpid()
 // Note, we guaranty waitpid hook works only during debuggee process execution, it aimed to work only for PAL's waitpid calls interception.
 extern "C" pid_t waitpid(pid_t pid, int *status, int options)
 {
+#ifdef INTEROP_DEBUGGING
+    if (netcoredbg::hook::waitpid.IsInteropWaitpidMode())
+    {
+        // Note, we support only `WNOHANG`, dbgshim don't need other options support.
+        if (options != WNOHANG)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+
+        pid_t pidPid = 0;
+        int pidStatus = 0;
+        if (!netcoredbg::hook::waitpid.GetPidExitedStatus(pidPid, pidStatus))
+        {
+            return 0;
+        }
+        else if (pidPid != pid) // Note, we support only one PID status, dbgshim don't need other PIDs (TIDs) statuses.
+        {
+            errno = ESRCH;
+            return -1;
+        }
+        else
+        {
+            if (status)
+                *status = pidStatus;
+
+            return pid;
+        }
+    }
+    else if ((options & WNOHANG) != WNOHANG) // Don't allow block waiting in case interop debugging.
+    {
+        errno = EINVAL;
+        return -1;
+    }
+#endif // INTEROP_DEBUGGING
     pid_t pidWaitRetval = netcoredbg::hook::waitpid(pid, status, options);
 
     // same logic as PAL have, see PROCGetProcessStatus() and CPalSynchronizationManager::HasProcessExited()

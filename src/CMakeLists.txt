@@ -153,6 +153,12 @@ if (NOT CLR_CMAKE_TARGET_TIZEN_LINUX)
     list(APPEND netcoredbg_SRC utils/logger.cpp)
 endif()
 
+if (INTEROP_DEBUGGING)
+    list(APPEND netcoredbg_SRC 
+            debugger/interop_debugging.cpp
+            debugger/sigaction.cpp
+        )
+endif (INTEROP_DEBUGGING)
 
 # special threatment of buildinfo.cpp -- this file rebuilds every time,
 # whatever it changed or not (because it contains version information and

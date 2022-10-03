@@ -110,6 +110,7 @@ cmake .. \
     -DDBGSHIM_DIR=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF \
     -DNCDB_DOTNET_STARTUP_HOOK=$STARTUP_HOOK \
+    -DINTEROP_DEBUGGING=1 \
     -DBUILD_TESTING=%{build_testing}
 
 make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}

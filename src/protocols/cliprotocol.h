@@ -91,6 +91,7 @@ public:
     void EmitExitedEvent(const ExitedEvent &event) override;
     void EmitTerminatedEvent() override;
     void EmitContinuedEvent(ThreadId threadId) override;
+    void EmitInteropDebuggingErrorEvent(const int error_n) override;
     void EmitThreadEvent(const ThreadEvent &event) override;
     void EmitModuleEvent(const ModuleEvent &event) override;
     void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") override;

@@ -874,6 +874,12 @@ void CLIProtocol::EmitContinuedEvent(ThreadId threadId)
     LogFuncEntry();
 }
 
+void CLIProtocol::EmitInteropDebuggingErrorEvent(const int error_n)
+{
+    LogFuncEntry();
+
+    printf("Interop debugging disabled due to initialization fail: %s\n", strerror(error_n));
+}
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // as callback function, in separate thread.

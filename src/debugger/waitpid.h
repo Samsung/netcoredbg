@@ -6,6 +6,7 @@
 
 #ifdef FEATURE_PAL
 
+#include <signal.h>
 #include <mutex>
 
 namespace netcoredbg
@@ -23,6 +24,14 @@ private:
     int exitCode = 0; // same behaviour as CoreCLR have, by default exit code is 0
     std::recursive_mutex interlock;
 
+#ifdef INTEROP_DEBUGGING
+    std::mutex pidMutex;
+    bool interopWaitpidMode = false;
+    bool pidExited = false;
+    int pidStatus = 0;
+    pid_t pidPid = 0;
+#endif // INTEROP_DEBUGGING
+
     waitpid_t(const waitpid_t&) = delete;
     waitpid_t& operator=(const waitpid_t&) = delete;
 
@@ -36,6 +45,14 @@ public:
     void SetupTrackingPID(pid_t PID);
     int GetExitCode();
     void SetExitCode(pid_t PID, int Code);
+
+#ifdef INTEROP_DEBUGGING
+    void SetInteropWaitpidMode(bool mode);
+    bool IsInteropWaitpidMode();
+    void InitPidStatus(pid_t pid);
+    void SetPidExitedStatus(pid_t pid, int status);
+    bool GetPidExitedStatus(pid_t &pid, int &status);
+#endif // INTEROP_DEBUGGING
 };
 
 } // namespace hook
