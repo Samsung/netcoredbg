@@ -161,8 +161,10 @@ struct ClrAddr
     uint32_t ilOffset;
     uint32_t nativeOffset;
     uint32_t methodToken;
+    ULONG32 methodVersion; // EnC
 
-    ClrAddr() : ilOffset(0), nativeOffset(0), methodToken(0) {}
+    // Note, initial/default method code version is 1 (not zero!).
+    ClrAddr() : ilOffset(0), nativeOffset(0), methodToken(0), methodVersion(1) {}
     bool IsNull() const { return methodToken == 0; }
 };
 
@@ -187,18 +189,29 @@ public:
     ClrAddr clrAddr; // exposed for MI protocol
     uint64_t addr; // exposed for MI protocol
 
+    enum ActiveStatementFlags : uint16_t
+    {
+        None = 0x00,
+        LeafFrame = 0x01,
+        PartiallyExecuted = 0x02,
+        MethodUpToDate = 0x08,
+        NonLeafFrame = 0x10,
+        Stale = 0x20
+    };
+    uint16_t activeStatementFlags; // EnC
+
     StackFrame() :
         thread(ThreadId{}, true), level(FrameLevel{}, true), id(),
-        line(0), column(0), endLine(0), endColumn(0), addr(0) {}
+        line(0), column(0), endLine(0), endColumn(0), addr(0), activeStatementFlags(0) {}
 
     StackFrame(ThreadId threadId, FrameLevel level, const std::string& name) :
         thread(threadId, true), level(level, true), id(FrameId(threadId, level)),
-        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0)
+        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0), activeStatementFlags(0)
     {}
 
     StackFrame(FrameId id) :
         thread(ThreadId{}, false), level(FrameLevel{}, false), id(id),
-        line(0), column(0), endLine(0), endColumn(0), addr(0)
+        line(0), column(0), endLine(0), endColumn(0), addr(0), activeStatementFlags(0)
     {}
 
     FrameLevel GetLevel() const

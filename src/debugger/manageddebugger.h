@@ -152,7 +152,7 @@ public:
     HRESULT BreakpointActivate(int id, bool act) override;
     void EnumerateBreakpoints(std::function<bool (const IDebugger::BreakpointInfo&)>&& callback) override;
     HRESULT AllBreakpointsActivate(bool act) override;
-    HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames) override;
+    HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller = false) override;
     HRESULT StepCommand(ThreadId threadId, StepType stepType) override;
     HRESULT GetScopes(FrameId frameId, std::vector<Scope> &scopes) override;
     HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) override;

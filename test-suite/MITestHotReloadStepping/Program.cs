@@ -179,6 +179,42 @@ namespace NetcoreDbgTest.Script
             Assert.True(MIDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void CheckStackFrames(string caller_trace)
+        {
+            var res = MIDebugger.Request("-stack-list-frames 0 1000");
+                Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__");
+
+            var stack = (MIList)res["stack"];
+            var frame = (MITuple)((MIResult)stack[0]).Value;
+            var level = ((MIConst)frame["level"]).CString;
+            var func = ((MIConst)frame["func"]).CString;
+
+            if (level == "0" && func.StartsWith("[Outdated Code]")) {
+                return;
+            }
+
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void CheckHotReloadAwareStackFrames(string caller_trace)
+        {
+            var res = MIDebugger.Request("-stack-list-frames 0 1000 --hot-reload");
+                Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__");
+
+            var stack = (MIList)res["stack"];
+            var frame = (MITuple)((MIResult)stack[0]).Value;
+            var level = ((MIConst)frame["level"]).CString;
+            var func = ((MIConst)frame["func"]).CString;
+            var clr_addr = (MITuple)frame["clr-addr"];
+            var method_version = ((MIConst)clr_addr["method-version"]).CString;
+
+            if (level == "0" && func.StartsWith("TestAppHotReload") && method_version == "2") {
+                return;
+            }
+
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void DebuggerExit(string caller_trace)
         {
             Assert.Equal(MIResultClass.Exit,
@@ -405,8 +441,13 @@ namespace MITestHotReloadStepping
 
                 Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStepInOutdatedCode(@"__FILE__:__LINE__");
+
+                Context.CheckStackFrames(@"__FILE__:__LINE__");
+                Context.CheckHotReloadAwareStackFrames(@"__FILE__:__LINE__");
+
                 Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStepInOutdatedCode(@"__FILE__:__LINE__");
+
                 Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStepInOutdatedCode(@"__FILE__:__LINE__");
 

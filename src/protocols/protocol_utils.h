@@ -61,6 +61,7 @@ namespace ProtocolUtils
     int ParseInt(const std::string &s, bool &ok);
     void StripArgs(std::vector<std::string> &args);
     int GetIntArg(const std::vector<std::string> &args, const std::string& name, int defaultValue);
+    bool FindAndEraseArg(std::vector<std::string> &args, const std::string &name);
     bool GetIndices(const std::vector<std::string> &args, int &index1, int &index2);
     BreakType GetBreakpointType(const std::vector<std::string> &args);
     std::string GetConditionPrepareArgs(std::vector<std::string> &args);

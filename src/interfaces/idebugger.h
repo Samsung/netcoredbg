@@ -91,7 +91,7 @@ public:
     virtual HRESULT BreakpointActivate(int id, bool act) = 0;
     virtual void EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback) = 0;
     virtual HRESULT AllBreakpointsActivate(bool act) = 0;
-    virtual HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames) = 0;
+    virtual HRESULT GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller = false) = 0;
     virtual HRESULT StepCommand(ThreadId threadId, StepType stepType) = 0;
     virtual HRESULT GetScopes(FrameId frameId, std::vector<Scope> &scopes) = 0;
     virtual HRESULT GetVariables(uint32_t variablesReference, VariablesFilter filter, int start, int count, std::vector<Variable> &variables) = 0;

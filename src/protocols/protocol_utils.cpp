@@ -258,6 +258,23 @@ int GetIntArg(const std::vector<std::string> &args, const std::string& name, int
     return ok ? val : defaultValue;
 }
 
+// Return `true` in case arg was found and erased.
+bool FindAndEraseArg(std::vector<std::string> &args, const std::string& name)
+{
+    auto it = args.begin();
+    while (it != args.end())
+    {
+        if (*it == name)
+        {
+            it = args.erase(it);
+            return true;
+        }
+        else
+            ++it;
+    }
+    return false;
+}
+
 bool GetIndices(const std::vector<std::string> &args, int &index1, int &index2)
 {
     if (args.size() < 2)

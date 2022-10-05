@@ -913,7 +913,7 @@ HRESULT ManagedDebugger::AllBreakpointsActivate(bool act)
     return m_uniqueBreakpoints->AllBreakpointsActivate(act);
 }
 
-static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModules, bool hotReload, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
+static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModules, bool hotReload, ThreadId threadId, FrameLevel level, StackFrame &stackFrame, bool hotReloadAwareCaller)
 {
     HRESULT Status;
 
@@ -923,11 +923,11 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pFunc->GetModule(&pModule));
 
+    ULONG32 methodVersion = 1;
+    ULONG32 currentVersion = 1;
     if (hotReload)
     {
         // In case current (top) code version is 1, executed in this frame method version can't be not 1.
-        ULONG32 currentVersion = 1;
-        ULONG32 methodVersion = 1;
         if (SUCCEEDED(pFunc->GetCurrentVersionNumber(&currentVersion)) && currentVersion != 1)
         {
             ToRelease<ICorDebugCode> pCode;
@@ -935,7 +935,7 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
             IfFailRet(pCode->GetVersionNumber(&methodVersion));
         }
 
-        if (methodVersion != currentVersion)
+        if (!hotReloadAwareCaller && methodVersion != currentVersion)
         {
             std::string moduleNamePrefix;
             WCHAR name[mdNameLen];
@@ -984,8 +984,16 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
     stackFrame.clrAddr.methodToken = methodToken;
     stackFrame.clrAddr.ilOffset = ilOffset;
     stackFrame.clrAddr.nativeOffset = nOffset;
+    stackFrame.clrAddr.methodVersion = methodVersion;
 
     stackFrame.addr = GetFrameAddr(pFrame);
+
+    if (stackFrame.clrAddr.ilOffset != 0)
+        stackFrame.activeStatementFlags |= StackFrame::ActiveStatementFlags::PartiallyExecuted;
+    if (methodVersion == currentVersion)
+        stackFrame.activeStatementFlags |= StackFrame::ActiveStatementFlags::MethodUpToDate;
+    else
+        stackFrame.activeStatementFlags |= StackFrame::ActiveStatementFlags::Stale;
 
     TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
@@ -994,10 +1002,11 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
 
 HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
 {
-    return InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, level, stackFrame);
+    return InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, level, stackFrame, false);
 }
 
-static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebugThread *pThread, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
+static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebugThread *pThread, FrameLevel startFrame,
+                                     unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller)
 {
     LogFuncEntry();
 
@@ -1008,6 +1017,14 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
     ThreadId threadId{tid};
 
     int currentFrame = -1;
+
+    auto AddFrameStatementFlag = [&] ()
+    {
+        if (currentFrame == 0)
+            stackFrames.back().activeStatementFlags |= StackFrame::ActiveStatementFlags::LeafFrame;
+        else
+            stackFrames.back().activeStatementFlags |= StackFrame::ActiveStatementFlags::NonLeafFrame;
+    };
 
     IfFailRet(WalkFrames(pThread, [&](
         FrameType frameType,
@@ -1027,16 +1044,19 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
             case FrameUnknown:
                 stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "?");
                 stackFrames.back().addr = GetFrameAddr(pFrame);
+                AddFrameStatementFlag();
                 break;
             case FrameNative:
                 stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, pNative->symbol);
                 stackFrames.back().addr = pNative->addr;
                 stackFrames.back().source = Source(pNative->file);
                 stackFrames.back().line = pNative->linenum;
+                AddFrameStatementFlag();
                 break;
             case FrameCLRNative:
                 stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "[Native Frame]");
                 stackFrames.back().addr = GetFrameAddr(pFrame);
+                AddFrameStatementFlag();
                 break;
             case FrameCLRInternal:
                 {
@@ -1049,16 +1069,19 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
                     name += "]";
                     stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, name);
                     stackFrames.back().addr = GetFrameAddr(pFrame);
+                    AddFrameStatementFlag();
                 }
                 break;
             case FrameCLRManaged:
                 {
                     StackFrame stackFrame;
-                    InternalGetFrameLocation(pFrame, pModules, hotReload, threadId, FrameLevel{currentFrame}, stackFrame);
+                    InternalGetFrameLocation(pFrame, pModules, hotReload, threadId, FrameLevel{currentFrame}, stackFrame, hotReloadAwareCaller);
                     stackFrames.push_back(stackFrame);
+                    AddFrameStatementFlag();
                 }
                 break;
         }
+
         return S_OK;
     }));
 
@@ -1067,7 +1090,7 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
     return S_OK;
 }
 
-HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
+HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller)
 {
     LogFuncEntry();
 
@@ -1077,7 +1100,7 @@ HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame
 
     ToRelease<ICorDebugThread> pThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
-    return InternalGetStackTrace(m_sharedModules.get(), m_hotReload, pThread, startFrame, maxFrames, stackFrames, totalFrames);
+    return InternalGetStackTrace(m_sharedModules.get(), m_hotReload, pThread, startFrame, maxFrames, stackFrames, totalFrames, hotReloadAwareCaller);
 }
 
 int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)

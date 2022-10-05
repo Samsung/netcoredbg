@@ -125,6 +125,7 @@ static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &out
         ss << "clr-addr={module-id=\"{" << stackFrame.moduleId << "}\","
            << "method-token=\"0x"
            << std::setw(8) << std::setfill('0') << std::hex << stackFrame.clrAddr.methodToken << "\","
+           << "method-version=\"" << std::dec << stackFrame.clrAddr.methodVersion << "\","
            << "il-offset=\"" << std::dec << stackFrame.clrAddr.ilOffset
            << "\",native-offset=\"" << stackFrame.clrAddr.nativeOffset << "\"},";
     }
@@ -133,19 +134,50 @@ static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &out
     if (stackFrame.id)
         ss << ",addr=\"" << ProtocolUtils::AddrToString(stackFrame.addr) << "\"";
 
+    ss << ",active-statement-flags=\"";
+    if (stackFrame.activeStatementFlags == StackFrame::ActiveStatementFlags::None)
+    {
+        ss << "None";
+    }
+    else
+    {
+        struct flag_t
+        {
+            StackFrame::ActiveStatementFlags bit;
+            std::string name;
+            flag_t(StackFrame::ActiveStatementFlags bit_, const std::string &name_) : bit(bit_), name(name_) {}
+        };
+        static const std::vector<flag_t> flagsMap
+           {{StackFrame::ActiveStatementFlags::LeafFrame,          "LeafFrame"},
+            {StackFrame::ActiveStatementFlags::NonLeafFrame,       "NonLeafFrame"},
+            {StackFrame::ActiveStatementFlags::PartiallyExecuted,  "PartiallyExecuted"},
+            {StackFrame::ActiveStatementFlags::MethodUpToDate,     "MethodUpToDate"},
+            {StackFrame::ActiveStatementFlags::Stale,              "Stale"}};
+        bool first = true;
+        for (auto &flag : flagsMap)
+        {
+            if ((stackFrame.activeStatementFlags & flag.bit) == flag.bit)
+            {
+                ss << (first ? "":",") << flag.name;
+                first = false;
+            }
+        }
+    }
+    ss << "\"";
+
     output = ss.str();
 
     return stackFrame.source.IsNull() ? S_FALSE : S_OK;
 }
 
-static HRESULT PrintFrames(std::shared_ptr<IDebugger> &sharedDebugger, ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame)
+static HRESULT PrintFrames(std::shared_ptr<IDebugger> &sharedDebugger, ThreadId threadId, std::string &output, FrameLevel lowFrame, FrameLevel highFrame, bool hotReloadAwareCaller)
 {
     HRESULT Status;
     std::ostringstream ss;
 
     int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
-    IfFailRet(sharedDebugger->GetStackTrace(threadId, lowFrame, int(highFrame) - int(lowFrame), stackFrames, totalFrames));
+    IfFailRet(sharedDebugger->GetStackTrace(threadId, lowFrame, int(highFrame) - int(lowFrame), stackFrames, totalFrames, hotReloadAwareCaller));
 
     int currentFrame = int(lowFrame);
 
@@ -698,11 +730,12 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, Breakpo
     { "stack-list-frames", [&](const std::vector<std::string> &args_orig, std::string &output) -> HRESULT {
         std::vector<std::string> args = args_orig;
         ThreadId threadId { ProtocolUtils::GetIntArg(args, "--thread", int(sharedDebugger->GetLastStoppedThreadId())) };
+        bool hotReloadAwareCaller = ProtocolUtils::FindAndEraseArg(args, "--hot-reload");
         int lowFrame = 0;
         int highFrame = FrameLevel::MaxFrameLevel;
         ProtocolUtils::StripArgs(args);
         ProtocolUtils::GetIndices(args, lowFrame, highFrame);
-        return PrintFrames(sharedDebugger, threadId, output, FrameLevel{lowFrame}, FrameLevel{highFrame});
+        return PrintFrames(sharedDebugger, threadId, output, FrameLevel{lowFrame}, FrameLevel{highFrame}, hotReloadAwareCaller);
     }},
     { "stack-list-variables", [&](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         HRESULT Status;
