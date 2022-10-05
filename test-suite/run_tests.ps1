@@ -1,4 +1,9 @@
-﻿# Making Windows PowerShell console window Unicode (UTF-8) aware.
+﻿param(
+    [String]$x,
+    [Parameter(Mandatory = $false, Position = 0, ValueFromRemainingArguments = $true)]
+    [String[]] $tests
+)
+# Making Windows PowerShell console window Unicode (UTF-8) aware.
 $OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = New-Object System.Text.UTF8Encoding
 
 $ALL_TEST_NAMES = @(
@@ -66,7 +71,7 @@ $ALL_TEST_NAMES = @(
 # Skipped tests:
 # VSCodeTest297killNCD --- is not automated enough. For manual run only.
 
-$TEST_NAMES = $args
+$TEST_NAMES = $tests
 
 if ($NETCOREDBG.count -eq 0) {
     $NETCOREDBG = "../bin/netcoredbg.exe"
@@ -85,6 +90,7 @@ if ($lastexitcode -ne 0) {
 $test_pass = 0
 $test_fail = 0
 $test_list = ""
+$test_xml = ""
 
 # Build, push and run tests
 foreach ($TEST_NAME in $TEST_NAMES) {
@@ -119,12 +125,25 @@ foreach ($TEST_NAME in $TEST_NAMES) {
     {
         $test_pass++
         $test_list = "$test_list$TEST_NAME ... passed`n"
+        $test_xml += "<testcase name=`"$TEST_NAME`"></testcase>"
     }
     else
     {
         $test_fail++
         $test_list = "$test_list$TEST_NAME ... failed`n"
+        $test_xml += "<testcase name=`"$TEST_NAME`"><failure></failure></testcase>"
     }
+}
+
+#Generate xml test file to current directory
+if($x -NotLike '')
+{
+    "<?xml version=`"1.0`" encoding=`"utf-16`" ?>
+        <testsuites>
+            <testsuite name=""Tests"" tests=`""" failures=`""" errors=`""" time=`""">
+                $test_xml
+            </testsuite>
+        </testsuites>" | Out-File -FilePath "${x}\test-results.xml"
 }
 
 Write-Host ""
