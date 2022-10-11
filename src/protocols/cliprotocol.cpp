@@ -793,18 +793,18 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
     {
         case StopBreakpoint:
         {
-            printf("\nstopped, reason: breakpoint %i hit, thread id: %i, stopped threads: all, times= %u, frame={%s\n}\n",
+            printf("\nstopped, reason: breakpoint %i hit, thread id: %i, stopped threads: all, times= %u, frame={%s}\n",
                   (unsigned int)event.breakpoint.id, int(event.threadId), (unsigned int)event.breakpoint.hitCount, frameLocation.c_str());
             break;
         }
         case StopStep:
         {
-            printf("\nstopped, reason: end stepping range, thread id: %i, stopped threads: all, frame={%s\n}\n", int(event.threadId), frameLocation.c_str());
+            printf("\nstopped, reason: end stepping range, thread id: %i, stopped threads: all, frame={%s}\n", int(event.threadId), frameLocation.c_str());
             break;
         }
         case StopException:
         {
-            printf("\nstopped, reason: exception received, name: %s, exception: %s, stage: %s, category: %s, thread id: %i, stopped-threads: all, frame={%s\n}\n",
+            printf("\nstopped, reason: exception received, name: %s, exception: %s, stage: %s, category: %s, thread id: %i, stopped-threads: all, frame={%s}\n",
                 event.exception_name.c_str(),
                 event.exception_message.empty() ? event.text.c_str() : event.exception_message.c_str(),
                 event.exception_stage.c_str(),
@@ -815,13 +815,13 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
         }
         case StopEntry:
         {
-            printf("\nstopped, reason: entry point hit, thread id: %i, stopped threads: all, frame={%s\n}\n",
+            printf("\nstopped, reason: entry point hit, thread id: %i, stopped threads: all, frame={%s}\n",
                 int(event.threadId), frameLocation.c_str());
             break;
         }
         case StopPause:
         {
-            printf("\nstopped, reason: interrupted, thread id: %i, stopped threads: all, frame={%s\n}\n",
+            printf("\nstopped, reason: interrupted, thread id: %i, stopped threads: all, frame={%s}\n",
                   int(event.threadId), frameLocation.c_str());
             break;
         }
