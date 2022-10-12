@@ -8,13 +8,11 @@ project(netcoredbg)
 
 set(CORECLR_DIR "" CACHE FILEPATH "Path to CoreCLR source directory")
 set(DOTNET_DIR "" CACHE FILEPATH "Path to .NET SDK directory")
-# Note, since 5.0 src are broken and will not build netcoredbg without patch, stay with 3.1 for now.
-set(CORECLR_BRANCH "release/3.1" CACHE STRING "CoreCLR source branch")
-# Note, we must use latest runtime, since we need copy latest dbgshim in order to work with all runtime versions.
-# https://github.com/dotnet/runtime/pull/44748#issuecomment-729268650
-set(DOTNET_CHANNEL "6.0" CACHE STRING ".NET SDK channel")
+set(CORECLR_BRANCH "release/7.0" CACHE STRING "CoreCLR source branch")
+# After move of dbgshim from runtime to diagnostics, this sdk is used only for build of managed part.
+set(DOTNET_CHANNEL "7.0" CACHE STRING ".NET SDK channel")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
-set(DBGSHIM_RUNTIME_DIR "" CACHE FILEPATH "Path to dbgshim library directory (at runtime)")
+set(DBGSHIM_DIR "" CACHE FILEPATH "Path to dbgshim library directory")
 
 function(clr_unknown_arch)
     message(FATAL_ERROR "Only AMD64, ARM64, ARM, ARMEL, I386 and WASM are supported")
@@ -42,9 +40,36 @@ include(clrdefinitions.cmake)
 include(fetchdeps.cmake)
 
 set(CORECLR_SRC_DIR "${CORECLR_DIR}/src")
+set(VERSION_PROPS_PATH "${CORECLR_DIR}/eng/Versions.props")
 if (NOT EXISTS "${CORECLR_SRC_DIR}/pal")
-  set(CORECLR_SRC_DIR "${CORECLR_DIR}")
+    set(CORECLR_SRC_DIR "${CORECLR_DIR}")
+    set(VERSION_PROPS_PATH "${CORECLR_DIR}/../../eng/Versions.props")
 endif()
+
+if (WIN32)
+    execute_process(
+            COMMAND powershell -Command "Select-Xml -Path ${VERSION_PROPS_PATH} -XPath '/Project/PropertyGroup/ProductVersion' | ForEach-Object { $_.Node.InnerXML }"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE CORECLR_VERSION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_VARIABLE errout
+            RESULT_VARIABLE retcode)
+else()
+    execute_process(
+            COMMAND bash -c "grep ProductVersion ${VERSION_PROPS_PATH} | sed 's,</.*,,;s,.*>,,'"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            OUTPUT_VARIABLE CORECLR_VERSION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_VARIABLE errout
+            RESULT_VARIABLE retcode)
+endif()
+
+if (NOT "${retcode}" STREQUAL "0" OR "${CORECLR_VERSION}" STREQUAL "")
+    # For some version of runtime Versions.props file doesn't exist
+    set(CORECLR_VERSION "unknown")
+endif()
+
+message("Building with ${CORECLR_VERSION} CoreCLR")
 
 # Basic checks for valid paths
 if (NOT IS_DIRECTORY "${CORECLR_SRC_DIR}/pal")

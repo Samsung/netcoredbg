@@ -47,8 +47,8 @@ struct dbgshim_t
         CreateDebuggingInterfaceFromVersionEx(nullptr),
         m_module(nullptr)
     {
-#ifdef DBGSHIM_RUNTIME_DIR
-        std::string libName(DBGSHIM_RUNTIME_DIR);
+#ifdef DBGSHIM_DIR
+        std::string libName(DBGSHIM_DIR);
         libName += DIRECTORY_SEPARATOR_STR_A;
 #else
         std::string exe = GetExeAbsPath();

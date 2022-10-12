@@ -26,17 +26,19 @@ if ("${CORECLR_DIR}" STREQUAL "")
             file(REMOVE_RECURSE "${CORECLR_DIR}")
         endif()
         execute_process(
-            COMMAND ${GIT_EXECUTABLE} clone --progress --depth 1 https://github.com/dotnet/coreclr "${CORECLR_DIR}" -b "${CORECLR_BRANCH}"
+            COMMAND ${GIT_EXECUTABLE} clone --progress --depth 1 https://github.com/dotnet/runtime "${CORECLR_DIR}" -b "${CORECLR_BRANCH}"
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             RESULT_VARIABLE retcode)
         if (NOT "${retcode}" STREQUAL "0")
             message(FATAL_ERROR "Fatal error when cloning coreclr sources")
         endif()
     endif()
+
+    set(CORECLR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/.coreclr/src/coreclr)
 endif()
 
 # Fetch .NET SDK binaries if necessary
-if ("${DOTNET_DIR}" STREQUAL "" AND (("${DBGSHIM_RUNTIME_DIR}" STREQUAL "") OR ${BUILD_MANAGED}))
+if ("${DOTNET_DIR}" STREQUAL "" AND ${BUILD_MANAGED})
     set(DOTNET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/.dotnet)
 
     if (WIN32)
@@ -59,7 +61,7 @@ if ("${DOTNET_DIR}" STREQUAL "" AND (("${DBGSHIM_RUNTIME_DIR}" STREQUAL "") OR $
         if (NOT "${retcode}" STREQUAL "0")
             message(FATAL_ERROR "Fatal error when installing dotnet")
         endif()
-        else()
+    else()
         execute_process(
             COMMAND bash -c "curl -sSL \"https://dot.net/v1/dotnet-install.sh\" | bash /dev/stdin --channel \"${DOTNET_CHANNEL}\" --install-dir \"${DOTNET_DIR}\" --verbose"
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

@@ -38,6 +38,7 @@
     </PackageReference>
     <PackageReference Include="Microsoft.CSharp" Version="[4.4,)" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="[2.3,)" />
+    <PackageReference Include="Microsoft.Diagnostics.DbgShim" Condition="'$(UseDbgShimDependency)' == 'true'" Version="*" />
   </ItemGroup>
 
 </Project>
