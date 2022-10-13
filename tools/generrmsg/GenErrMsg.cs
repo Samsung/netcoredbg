@@ -8,8 +8,15 @@ namespace generrmsg
 {
     public class ErrMsg
     {
+// nullable reference types are avaiable only since c# 8 (.net core 3.0), by default nullability is enabled only since .net 6
+// for builds with .NET 6+ sdks NET6_0_OR_GREATER is set, this "if" condition doesn't need any futher updates for new sdks in future
+#if NET6_0_OR_GREATER
+        public string? SymName { get; set; }
+        public string? Message { get; set; }
+#else
         public string SymName { get; set; }
         public string Message { get; set; }
+#endif
         public int Code { get; set;}
     }
 
@@ -26,6 +33,18 @@ namespace generrmsg
                 return;
             }
             Dictionary<string, ErrMsg> errmsgs = new Dictionary<string, ErrMsg>();
+
+// nullable reference types are avaiable only since c# 8 (.net core 3.0), by default nullability is enabled only since .net 6
+// for builds with .NET 6+ sdks NET6_0_OR_GREATER is set, this "if" condition doesn't need any futher updates for new sdks in future
+#if NET6_0_OR_GREATER
+            string? hresult = null;
+            string? msg=null;
+            string? symname = null;
+            string? comment = null;
+            string? sourcefilename = args[0];
+            string? outputfilename = null;
+            string? hfilename = null;
+#else
             string hresult = null;
             string msg=null;
             string symname = null;
@@ -33,6 +52,7 @@ namespace generrmsg
             string sourcefilename = args[0];
             string outputfilename = null;
             string hfilename = null;
+#endif
             int FaciltyUrt=0x13; // The source of the error code is .NET CLR.
             int SeveritySuccess=0;
             int SeverityError=1;
@@ -98,7 +118,7 @@ namespace generrmsg
                              } else {
                                    errmsg.Message = "\"" + symname + "\"";
                              }
-                             if (!errmsgs.ContainsKey(hresult)) {
+                             if (hresult != null && !errmsgs.ContainsKey(hresult)) {
                                  errmsgs.Add(key: hresult, value: errmsg);
                              }
                          }
