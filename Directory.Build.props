@@ -5,7 +5,4 @@
   <PropertyGroup Condition="$(MSBuildProjectName.Contains('corguids'))">
     <BaseIntermediateOutputPath>obj_corguids</BaseIntermediateOutputPath>
   </PropertyGroup>
-  <PropertyGroup Condition="$(MSBuildProjectName.Contains('symbolreader_dll'))">
-    <BaseIntermediateOutputPath>obj_symbolreader_dll</BaseIntermediateOutputPath>
-  </PropertyGroup>
 </Project>
