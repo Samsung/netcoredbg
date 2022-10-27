@@ -1,3 +1,7 @@
+# Prerequisites
+
+Netcoredbg test suite requires **.NET SDK version 3.1**, you can download it manually from here: https://dotnet.microsoft.com/en-us/download/dotnet/3.1
+
 # How to launch MIExampleTest for tcp netcoredbg server
 
 - launch target and install netcoredbg;

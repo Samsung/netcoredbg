@@ -10,7 +10,7 @@ command line (like as GDB).
 You can find licensing information in file [LICENSE](LICENSE), in root directory of Netcoredbg sources.
 
 ## Usage
-More details about usage of NCDB you can find in [CLI](doc/cli.md) manual.
+More details about usage of NCDB you can find in [CLI](docs/cli.md) manual.
 
 
 ## Building from source code
@@ -39,7 +39,6 @@ Building of Netcoredbg requires Microsoft's .NET, so currently you can build Net
    You should check out tag v7.x.
 
 7. Optional step: Netcoredbg requires **.NET SDK**, which can be downloaded automatically, but you can download it manually from here: https://dotnet.microsoft.com/download
-   You need .NET SDK 7.0.
 
 #### Compiling
 
@@ -108,7 +107,7 @@ After this, build instructions are same as for Unix (including prerequisites).
    You need latest tag **v7.x**.
 
 6. This step might be omitted too, and cmake will automatically downloads that it needs.
-   But in case of failure you need download and install **.NET Core 7.0 SDK** from here: https://dotnet.microsoft.com/download
+   But in case of failure you need download and install **.NET SDK** from here: https://dotnet.microsoft.com/download
 
 #### Compiling
 
@@ -183,14 +182,14 @@ Options:
 
 Basically, to debug .NET code you should run Netcoredbg with the following command line:
 ```
-$ /path/to/netcoredbg --interpreter=TYPE -- /path/to/corerun /path/to/program.dll
+$ /path/to/netcoredbg --interpreter=TYPE -- /path/to/dotnet /path/to/program.dll
 ```
 
 ## Notes for developers
 
 ### Running the tests
 
-You can find detailed instruction how to run tests in `test-suite` directory, see [test-suite/README.md](test-suite/REDME.md).
+You can find detailed instruction how to run tests in `test-suite` directory, see [test-suite/README.md](test-suite/README.md).
 Basically you just need to build and install Netcoredbg into `bin` directory (in Netcoredbg source tree) and then change directory to `test-suite` and run script `/run_tests.sh`
 
 
