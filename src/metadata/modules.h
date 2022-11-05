@@ -119,6 +119,8 @@ public:
         Module &module,
         bool needJMC,
         bool needHotReload,
+        ULONG64 inMemoryPdbAddress,
+        ULONG64 inMemoryPdbSize,
         std::string &outputText);
 
     void CleanupAllModules();
