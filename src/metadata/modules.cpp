@@ -479,25 +479,28 @@ static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, ULONG
     if (isDynamic)
         return E_FAIL; // Dynamic assemblies are a special case which we will ignore for now
 
-    ICorDebugProcess* process = 0;
-    ULONG64 peAddress = 0;
-    ULONG32 peSize = 0;
-    IfFailRet(pModule->GetProcess(&process));
-    IfFailRet(pModule->GetBaseAddress(&peAddress));
-    IfFailRet(pModule->GetSize(&peSize));
-
+    std::vector<unsigned char> peBuf;
     ULONG64 peBufAddress = 0;
     ULONG32 peBufSize = 0;
-    std::vector<unsigned char> buf;
-    if (peAddress != 0 && peSize != 0)
+    if (isInMemory)
     {
-      peBufSize = peSize;
-      buf.resize(peBufSize);
-      peBufAddress = (ULONG64)&buf[0];
-      SIZE_T read = 0;
-      IfFailRet(process->ReadMemory(peAddress, peSize, &buf[0], &read));
-      if (read != peSize)
-        return E_FAIL;
+      ICorDebugProcess* process = 0;
+      ULONG64 peAddress = 0;
+      ULONG32 peSize = 0;
+      IfFailRet(pModule->GetProcess(&process));
+      IfFailRet(pModule->GetBaseAddress(&peAddress));
+      IfFailRet(pModule->GetSize(&peSize));
+
+      if (peAddress != 0 && peSize != 0)
+      {
+        peBufSize = peSize;
+        peBuf.resize(peBufSize);
+        peBufAddress = (ULONG64)&peBuf[0];
+        SIZE_T read = 0;
+        IfFailRet(process->ReadMemory(peAddress, peSize, &peBuf[0], &read));
+        if (read != peSize)
+          return E_FAIL;
+      }
     }
 
     return Interop::LoadSymbolsForPortablePDB(
