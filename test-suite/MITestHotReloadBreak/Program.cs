@@ -281,7 +281,7 @@ namespace NetcoreDbgTest.Script
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 process.StartInfo.FileName = "bash";
-                process.StartInfo.Arguments = "-c \"sdb push " + hostFullPath + " " + targetPath + "\"";
+                process.StartInfo.Arguments = "-c \"" + ControlInfo.SDB + " push " + hostFullPath + " " + targetPath + "\"";
             }
             else
                 throw new Exception("Host OS not supported. " + @"__FILE__:__LINE__"+"\n"+caller_trace);

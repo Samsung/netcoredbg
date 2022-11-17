@@ -247,6 +247,7 @@ for TEST_NAME in $TEST_NAMES; do
         $DOTNET run --project TestRunner -- \
             --tcp localhost $PORT \
             --proto $PROTO \
+            --sdb "$SDB" \
             --test $TEST_NAME \
             --sources $SOURCE_FILES \
             --assembly $REMOTETESTDIR/$TEST_PROJ_NAME.dll
@@ -262,6 +263,7 @@ for TEST_NAME in $TEST_NAMES; do
             --tcp localhost $PORT \
             --dotnet /usr/bin/dotnet \
             --proto $PROTO \
+            --sdb "$SDB" \
             --test $TEST_NAME \
             --sources "$SOURCE_FILES" \
             --assembly $REMOTETESTDIR/$TEST_PROJ_NAME.dll

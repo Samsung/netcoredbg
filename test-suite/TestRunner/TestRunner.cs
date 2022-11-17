@@ -281,6 +281,17 @@ namespace TestRunner
                     i += 2;
 
                     break;
+                case "--sdb":
+                    if (i + 1 >= args.Length) {
+                        NeedHelp = true;
+                        break;
+                    }
+
+                    Environment.SDB = args[i + 1];
+
+                    i += 2;
+
+                    break;
                 default:
                     NeedHelp = true;
                     break;
