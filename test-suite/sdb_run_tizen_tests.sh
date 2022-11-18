@@ -101,6 +101,7 @@ if [[ -z $RPMFILE ]]; then
         if [ $($SDB shell od -An -t x1 -j 4 -N 1 /bin/od | grep "02") ]; then ARCH=aarch64;
         else ARCH=armv7l; fi
     elif $SDB shell lscpu | grep -q i686;    then ARCH=i686;
+    elif $SDB shell lscpu | grep -q x86_64;  then ARCH=x86_64;
     else echo "Unknown target architecture"; exit 1; fi
 
     # The following command assumes that GBS build was performed on a clean system (or in Docker),
