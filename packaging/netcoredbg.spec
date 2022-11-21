@@ -42,7 +42,7 @@ Requires: coreclr
 %define sdktoolsdir     /home/owner/share/tmp/sdk_tools
 %define install_prefix /usr
 %define sdk_install_prefix /home/owner/share/tmp/sdk_tools/netcoredbg
-%define netcoreapp_hotreload_min_ver %{_datarootdir}/%{netcoreapp}6.0.0
+%define netcoreapp_hotreload_min_ver 6.0.0
 
 %ifarch x86_64
 %define ARCH AMD64
@@ -88,9 +88,13 @@ export CFLAGS=$(echo $CFLAGS | sed -e 's/--target=i686/--target=i586/')
 export CXXFLAGS=$(echo $CXXFLAGS | sed -e 's/--target=i686/--target=i586/')
 %endif
 
-export NETCOREAPPDIR=$(if [ -d %{_datarootdir}/%{netcoreappalias} ]; then echo %{_datarootdir}/%{netcoreappalias}; else find %{_datarootdir}/%{netcoreapp} -maxdepth 1 -type d -name '[0-9]*' -print | sort -n | tail -1; fi)
+current_netcoreapp_version=$(for i in `find %{_datarootdir}/%{netcoreapp} -maxdepth 1 -type d -name '[0-9]*' -print`; do basename $i; done | sort -n | tail -1)
+export NETCOREAPPDIR=$(if [ -d %{_datarootdir}/%{netcoreappalias} ]; then echo %{_datarootdir}/%{netcoreappalias}; else echo %{_datarootdir}/%{netcoreapp}/${current_netcoreapp_version}; fi)
 
-if [ -d %{netcoreapp_hotreload_min_ver} ]; then
+echo "Building with .NET $current_netcoreapp_version"
+is_hot_reload_supported=$(echo "$current_netcoreapp_version" %{netcoreapp_hotreload_min_ver} | awk '{print ($1 >= $2)}')
+
+if [ "${is_hot_reload_supported}" == "1" ]; then
     STARTUP_HOOK=%{sdk_install_prefix}/ncdbhook.dll
 fi
 
@@ -113,7 +117,7 @@ make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 %define _dotnet_build_conf %{build_type}
 %dotnet_build -s ../packaging/pkgs ../src/managed
 # Build Debug only, code must be not optimized.
-if [ -d %{netcoreapp_hotreload_min_ver} ]; then
+if [ "${is_hot_reload_supported}" == "1" ]; then
     NCDB_HOOK_TargetFramework=net6.0 dotnet build -c Debug ../src/ncdbhook
 fi
 
@@ -123,7 +127,7 @@ cd build
 mkdir -p %{buildroot}%{sdk_install_prefix}
 mv %{buildroot}%{install_prefix}/netcoredbg %{buildroot}%{sdk_install_prefix}
 install -p -m 644 ../src/managed/bin/*/*/ManagedPart.dll %{buildroot}%{sdk_install_prefix}
-if [ -d %{netcoreapp_hotreload_min_ver} ]; then
+if [ -f ../src/ncdbhook/bin/*/*/ncdbhook.dll ]; then
     install -p -m 644 ../src/ncdbhook/bin/*/*/ncdbhook.dll %{buildroot}%{sdk_install_prefix}
 fi
 
