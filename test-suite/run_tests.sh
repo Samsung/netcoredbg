@@ -160,7 +160,10 @@ for TEST_NAME in $TEST_NAMES; do
         continue
     }
 
-    SOURCE_FILES=$(find $TEST_NAME \! -path "$TEST_NAME/obj/*" -type f -name "*.cs" -printf '%p;')
+    SOURCE_FILES=""
+    for file in `find $TEST_NAME \! -path "$TEST_NAME/obj/*" -type f -name "*.cs"`; do
+        SOURCE_FILES="${SOURCE_FILES}${file};"
+    done
 
     PROTO="mi"
     if  [[ $TEST_NAME == VSCode* ]] ;
