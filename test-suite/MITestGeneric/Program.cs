@@ -244,27 +244,151 @@ namespace MITestGeneric
 {
     class Program
     {
+        public class MY
+        {
+            public int m;
+            public static int retme(int arg1)
+            {
+                return arg1;
+            }
+        }
+
+        public class TestNested<X,Y>
+        {
+            public class Nested<A,B>
+            {
+                public static MY my;
+
+                public A test1(A arga)
+                {
+                    return arga;
+                }
+
+                public B test1(B argb)
+                {
+                    return argb;
+                }
+
+                public C test3<C>(A arga, B argb, C argc)
+                {
+                    return argc;
+                }
+
+                public static A static_test1(A arga)
+                {
+                    return arga;
+                }
+
+                public static B static_test1(B argb)
+                {
+                    return argb;
+                }
+
+                public static C static_test3<C>(A arga, B argb, C argc)
+                {
+                    return argc;
+                }
+            }
+
+            public static Nested<X,Y> static_nested;
+            public Nested<X,Y> nested;
+            public Nested<X,Y> uninitialized;
+            public TestNested()
+            {
+                nested = new Nested<X,Y>();
+            }
+        }
+
         public class TestGeneric<T,U>
         {
-
-            public T test1(T arg1)
+            public T test1(T argt)
             {
-                return arg1;
+                return argt;
             }
 
-            public W test2<W>(W arg2)
+            public U test1(U argu)
             {
-                return arg2;
+                return argu;
             }
 
-            static public T static_test1(T arg1)
+            public T test12(T argt, U argu)
             {
-                return arg1;
+                return argt;
             }
 
-            static public W static_test2<W>(W arg2)
+            public U test21(U argu, T argt)
             {
-                return arg2;
+                return argu;
+            }
+
+            public W test2<W>(W argw)
+            {
+                return argw;
+            }
+
+            public W test3<W>(T argt, U argu, W argw)
+            {
+                return argw;
+            }
+
+            public W test41<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argw;
+            }
+
+            public Y test42<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argy;
+            }
+
+            public Z test43<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argz;
+            }
+
+            public T test44<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argt;
+            }
+
+            static public T static_test1(T argt)
+            {
+                return argt;
+            }
+
+            static public U static_test1(U argu)
+            {
+                return argu;
+            }
+
+            static public W static_test2<W>(W argw)
+            {
+                return argw;
+            }
+
+            static public W static_test3<W>(T argt, U argu, W argw)
+            {
+                return argw;
+            }
+
+            static public W static_test41<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argw;
+            }
+
+            static public Y static_test42<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argy;
+            }
+
+            static public Z static_test43<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argz;
+            }
+
+            static public T static_test44<W,Y,Z>(W argw, Y argy, Z argz, T argt)
+            {
+                return argt;
             }
 
             public T i1;
@@ -287,6 +411,7 @@ namespace MITestGeneric
 
             public void test_func()
             {
+                MY my = new MY();
                 Console.WriteLine("test_func()");                                                            Label.Breakpoint("BREAK2");
 
                 Label.Checkpoint("test_func", "test_set_value", (Object context) => {
@@ -303,11 +428,50 @@ namespace MITestGeneric
                     Context.GetAndCheckValue(@"__FILE__:__LINE__", "456", "int", "static_p_i1");
                     Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test_string4\\\"", "string", "static_p_s1");
 
-                    // FIXME
-                    //Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "test1(5)");
-                    //Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "test2<int>(10)");
-                    //Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "static_test1(15)");
-                    //Context.GetAndCheckValue(@"__FILE__:__LINE__", "20", "int", "static_test2<int>(20)");
+                    // Instance methods
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "test1(5)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"five\\\"", "string", "test1(\\\"five\\\")");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test1(false)", "Error");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "test12(5,\\\"five\\\")");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"five\\\"", "string", "test21(\\\"five\\\",5)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "test2<int>(10)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "test2<bool>(false)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "test2<char>('a')");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"abc\\\"", "string", "test2<string>(\\\"abc\\\")");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestGeneric.Program.MY}", "MITestGeneric.Program.MY", "test2<MY>(my)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "test3<char>(101,\\\"string\\\",'a')");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test3<bool>(101,\\\"string\\\",'a')", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test3<char>(101,'a','a')", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test3<char>('a',\\\"string\\\",'a')", "Error");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "test41<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "test42<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "test43<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "41", "int", "test44<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test44<bool,string,char>('a',true,\\\"string\\\", 41)", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test44<string,char,bool>('a',true,\\\"string\\\", 41)", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "test44<bool,char,string>('a',true,\\\"string\\\", 41)", "Error");
+
+                    // Static methods
+
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "static_test1(15)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"fifteen\\\"", "string", "static_test1(\\\"fifteen\\\")");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "static_test1(false)", "Error");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "20", "int", "static_test2<int>(20)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "static_test2<bool>(true)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "120 'x'", "char", "static_test2<char>('x')");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"xyz\\\"", "string", "static_test2<string>(\\\"xyz\\\")");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestGeneric.Program.MY}", "MITestGeneric.Program.MY", "static_test2<MY>(my)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "static_test3<char>(101,\\\"string\\\",'a')");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "static_test3<bool>(101,\\\"string\\\",'a')", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "static_test3<char>(101,'a','a')", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "static_test3<char>('a',\\\"string\\\",'a')", "Error");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "static_test41<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "static_test42<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "static_test43<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", "41", "int", "static_test44<char,bool,string>('a',true,\\\"string\\\", 41)");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "static_test44<bool,string,char>('a',true,\\\"string\\\", 41)", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "static_test44<string,char,bool>('a',true,\\\"string\\\", 41)", "Error");
+                    Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "static_test44<bool,char,string>('a',true,\\\"string\\\", 41)", "Error");
 
                     // Test set value.
 
@@ -353,6 +517,9 @@ namespace MITestGeneric
             TestGeneric<int,string>.static_s1 = "test_string3";
             TestGeneric<int,string>.static_p_i1 = 456;
             TestGeneric<int,string>.static_p_s1 = "test_string4";
+            MY my = new MY();
+            TestNested<char,int> testnested = new TestNested<char,int>();
+            TestNested<char,int> uninitialized;
 
             ttt.test_func();                                                                                 Label.Breakpoint("BREAK1");
 
@@ -370,17 +537,72 @@ namespace MITestGeneric
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.static_p_i1", "error");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.static_p_s1", "error");
 
-                // FIXME debugger must be fixed first
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "345", "int", "TestGeneric<int, string>.static_i1");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test_string3\\\"", "string", "TestGeneric<int, string>.static_s1");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "456", "int", "TestGeneric<int, string>.static_p_i1");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test_string4\\\"", "string", "TestGeneric<int, string>.static_p_s1");
+                // Static class members
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "345", "int", "TestGeneric<int, string>.static_i1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test_string3\\\"", "string", "TestGeneric<int, string>.static_s1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "456", "int", "TestGeneric<int, string>.static_p_i1");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"test_string4\\\"", "string", "TestGeneric<int, string>.static_p_s1");
 
-                // FIXME debugger must be fixed first
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "ttt.test1(5)");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "ttt.test2<int>(10)");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "TestGeneric<int,string>.static_test1(15)");
-                //Context.GetAndCheckValue(@"__FILE__:__LINE__", "20", "int", "TestGeneric<int,string>.static_test2<int>(20)");
+                // Instance methods
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "ttt.test1(5)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"five\\\"", "string", "ttt.test1(\\\"five\\\")");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.test1(false)", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "5", "int", "ttt.test12(5,\\\"five\\\")");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"five\\\"", "string", "ttt.test21(\\\"five\\\",5)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "10", "int", "ttt.test2<int>(10)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "false", "bool", "ttt.test2<bool>(false)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "ttt.test2<char>('a')");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"abc\\\"", "string", "ttt.test2<string>(\\\"abc\\\")");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestGeneric.Program.MY}", "MITestGeneric.Program.MY", "ttt.test2<MY>(my)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "ttt.test3<char>(101,\\\"string\\\",'a')");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.test3<bool>(101,\\\"string\\\",'a')", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.test3<char>(101,'a','a')", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.test3<char>('a',\\\"string\\\",'a')", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "ttt.test41<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "ttt.test42<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "ttt.test43<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "41", "int", "ttt.test44<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.test44<bool,string,char>('a',true,\\\"string\\\", 41)", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.test44<string,char,bool>('a',true,\\\"string\\\", 41)", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "ttt.test44<bool,char,string>('a',true,\\\"string\\\", 41)", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "testnested.nested.test1('a')");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "123", "int", "testnested.nested.test1(123)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "789", "int", "testnested.nested.test3<int>('c',456,789)");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testnested.nested.test3<int>(false,456,789)", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testnested.nested.test3<int>('c',456,\\\"abc\\\")", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"cde\\\"", "string", "testnested.nested.test3<string>('c',456,\\\"cde\\\")");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testnested.nested.test3<string>(false,456,\\\"cde\\\")", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "testnested.nested.test3<string>('c',456,789)", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestGeneric.Program.TestNested<char, int>", "uninitialized?.uninitialized?.test3<string>('c',456,\\\"cde\\\")");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestGeneric.Program.TestNested<char, int>.Nested<char, int>", "testnested.uninitialized?.test3<string>('c',456,\\\"cde\\\")");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "uninitialized.uninitialized?.test3<string>('c',456,\\\"cde\\\")", "error:");
+
+                // Static methods
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "15", "int", "TestGeneric<int,string>.static_test1(15)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"fifteen\\\"", "string", "TestGeneric<int,string>.static_test1(\\\"fifteen\\\")");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_test1(false)", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "20", "int", "TestGeneric<int,string>.static_test2<int>(20)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "TestGeneric<int,string>.static_test2<bool>(true)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "120 'x'", "char", "TestGeneric<int,string>.static_test2<char>('x')");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"xyz\\\"", "string", "TestGeneric<int,string>.static_test2<string>(\\\"xyz\\\")");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{MITestGeneric.Program.MY}", "MITestGeneric.Program.MY", "TestGeneric<int,string>.static_test2<MY>(my)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "TestGeneric<int,string>.static_test3<char>(101,\\\"string\\\",'a')");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_test3<bool>(101,\\\"string\\\",'a')", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_test3<char>(101,'a','a')", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_test3<char>('a',\\\"string\\\",'a')", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "TestGeneric<int,string>.static_test41<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "TestGeneric<int,string>.static_test42<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"string\\\"", "string", "TestGeneric<int,string>.static_test43<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "41", "int", "TestGeneric<int,string>.static_test44<char,bool,string>('a',true,\\\"string\\\", 41)");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_test44<bool,string,char>('a',true,\\\"string\\\", 41)", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_test44<string,char,bool>('a',true,\\\"string\\\", 41)", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_test44<bool,char,string>('a',true,\\\"string\\\", 41)", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "97 'a'", "char", "TestNested<int,string>.Nested<char,bool>.static_test1('a')");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "true", "bool", "TestNested<int,string>.Nested<char,bool>.static_test1(true)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"abc\\\"", "string", "TestNested<int,string>.Nested<char,bool>.static_test3<string>('a', true, \\\"abc\\\")");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestNested<int,string>.Nested<char,bool>.static_test1(\\\"xyz\\\")", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestNested<int,string>.Nested<char,bool>.static_test3<string>('a', true, 123)", "Error");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "TestNested<int,string>.Nested<char,bool>.static_test3<string>(123, true, \\\"abc\\\")", "Error");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -400,14 +622,14 @@ namespace MITestGeneric
                 Context.CreateAndCompareVar(@"__FILE__:__LINE__", "ttt.p_s1", "\\\"changed_string2\\\"");
 
                 // FIXME debugger must be fixed first
-                //Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_i1", "777");
-                //Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_s1", "\"changed_string3\"", true);
-                //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_s1", "\\\"changed_string3\\\"");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_i1", "777");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_s1", "\"changed_string3\"", true);
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_s1", "\\\"changed_string3\\\"");
 
                 // FIXME debugger must be fixed first
-                //Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_p_i1", "888");
-                //Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_p_s1", "\"changed_string4\"", true);
-                //Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_p_s1", "\\\"changed_string4\\\"");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_p_i1", "888");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_p_s1", "\"changed_string4\"", true);
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "TestGeneric<int,string>.static_p_s1", "\\\"changed_string4\\\"");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

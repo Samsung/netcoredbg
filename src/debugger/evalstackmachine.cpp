@@ -11,6 +11,7 @@
 #include "debugger/evalhelpers.h"
 #include "debugger/evalwaiter.h"
 #include "debugger/valueprint.h"
+#include "debugger/evalutils.h"
 #include "managed/interop.h"
 #include "metadata/typeprinter.h"
 #include "utils/utf.h"
@@ -1035,15 +1036,45 @@ namespace
 
     HRESULT GenericName(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // TODO uint32_t Flags = ((FormatFIS*)pArguments)->Flags;
-        // TODO int32_t Int = ((FormatFIS*)pArguments)->Int;
-        // TODO std::string String = to_utf8(((FormatFIS*)pArguments)->wString);
-        return E_NOTIMPL;
+        HRESULT Status;
+        int32_t Int = ((FormatFIS*)pArguments)->Int;
+        std::string String = to_utf8(((FormatFIS*)pArguments)->wString);
+        std::vector<ToRelease<ICorDebugType>> genericValues;
+        std::string generics = ">";
+        genericValues.reserve(Int);
+        for(int i = 0; i < Int; i++)
+        {
+            ToRelease<ICorDebugValue> icdv;
+            ToRelease<ICorDebugType> icdt;
+            ToRelease<ICorDebugValue2> icdv2;
+            std::string genericType;
+            Status = GetFrontStackEntryValue(&icdv, nullptr, evalStack, ed, output);
+            if(Status == S_OK) {
+                IfFailRet(icdv->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &icdv2));
+                IfFailRet(icdv2->GetExactType(&icdt));
+            }
+            else {
+                IfFailRet(GetFrontStackEntryType(&icdt, evalStack, ed, output));
+            }
+            TypePrinter::GetTypeOfValue(icdt, genericType);
+            generics = "," + genericType + generics;
+            genericValues.emplace_back(icdt.Detach());
+            evalStack.pop_front();
+        }
+        generics.erase(0,1);
+        String += "<" + generics;
+        evalStack.emplace_front();
+        evalStack.front().identifiers.emplace_back(std::move(String));
+        evalStack.front().genericTypeCache = std::move(genericValues);
+        evalStack.front().editable = true;
+        return S_OK;
     }
 
     HRESULT InvocationExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
+        // todo:        static const char* extensionAttributeName = "System.Runtime.CompilerServices.ExtensionAttribute..ctor";
         int32_t Int = ((FormatFI*)pArguments)->Int;
+
         if (Int < 0)
             return E_INVALIDARG;
 
@@ -1057,11 +1088,20 @@ namespace
             evalStack.pop_front();
         }
 
+        if (evalStack.front().preventBinding)
+            return S_OK;
+
         assert(evalStack.front().identifiers.size() > 0); // We must have at least method name (identifier).
 
         // TODO local defined function (compiler will create such function with name like `<Calc1>g__Calc2|0_0`)
-        std::string funcName = evalStack.front().identifiers.back();
+        std::string funcNameGenerics = evalStack.front().identifiers.back();
         evalStack.front().identifiers.pop_back();
+
+        std::string funcName;
+        std::vector<std::string> methodGenericStrings = EvalUtils::ParseGenericParams(funcNameGenerics, funcName);
+        size_t pos = funcName.find('`');
+        if (pos != std::string::npos)
+            funcName.resize(pos);
 
         if (!evalStack.front().iCorValue && evalStack.front().identifiers.empty())
         {
@@ -1134,8 +1174,15 @@ namespace
                 IfFailRet(TypePrinter::GetTypeOfValue(iCorValueArg, funcArgs[i].typeName));
         }
 
+        std::vector<Evaluator::ArgElementType> methodGenerics;
+        methodGenerics.reserve(methodGenericStrings.size());
+        for(ULONG32 i = 0; i < methodGenericStrings.size(); i++)
+        {
+            methodGenerics.emplace_back(ed.pEvaluator->GetElementTypeByTypeName(methodGenericStrings[i]));
+        }
+
         ToRelease<ICorDebugFunction> iCorFunc;
-        ed.pEvaluator->WalkMethods(iCorType, [&](
+        ed.pEvaluator->WalkMethods(iCorType, methodGenerics, [&](
             bool is_static,
             const std::string &methodName,
             Evaluator::ReturnElementType&,
@@ -1148,8 +1195,7 @@ namespace
 
             for (size_t i = 0; i < funcArgs.size(); ++i)
             {
-                if (funcArgs[i].corType != methodArgs[i].corType ||
-                    funcArgs[i].typeName != methodArgs[i].typeName)
+                if (funcArgs[i] != methodArgs[i])
                     return S_OK;
             }
 
@@ -1158,24 +1204,49 @@ namespace
 
             return E_ABORT; // Fast exit from cycle.
         });
+
         if (!iCorFunc)
             return E_FAIL;
 
-        evalStack.front().ResetEntry();
-
+        size_t typeArgsCount = evalStack.front().genericTypeCache.size();
         ULONG32 realArgsCount = Int + (isInstance ? 1 : 0);
+        std::vector<ICorDebugType*> iCorTypeArgs;
         std::vector<ICorDebugValue*> iCorValueArgs;
         iCorValueArgs.reserve(realArgsCount);
+        iCorTypeArgs.reserve(typeArgsCount);
+
+        // Place instance value ("this") if not static
         if (isInstance)
         {
             iCorValueArgs.emplace_back(iCorValue.GetPtr());
         }
+
+        // Add arguments values
         for (int32_t i = 0; i < Int; i++)
         {
             iCorValueArgs.emplace_back(iCorArgs[i].GetPtr());
         }
 
-        Status = ed.pEvalHelpers->EvalFunction(ed.pThread, iCorFunc, nullptr, 0, iCorValueArgs.data(), realArgsCount, &evalStack.front().iCorValue, ed.evalFlags);
+        // Collect type(class)'s generic types if any
+        ToRelease<ICorDebugTypeEnum> pTypeEnum;
+        if (SUCCEEDED(iCorType->EnumerateTypeParameters(&pTypeEnum)))
+        {
+            ICorDebugType *curType;
+            ULONG fetched = 0;
+            while (SUCCEEDED(pTypeEnum->Next(1, &curType, &fetched)) && fetched == 1)
+            {
+                iCorTypeArgs.emplace_back(curType);
+            }
+        }
+
+        // Add method's generic types if any
+        for (size_t i = typeArgsCount; i > 0; i--)
+        {
+            iCorTypeArgs.emplace_back(evalStack.front().genericTypeCache[i-1].GetPtr());
+        }
+
+        evalStack.front().ResetEntry();
+        Status = ed.pEvalHelpers->EvalGenericFunction(ed.pThread, iCorFunc, iCorTypeArgs.data(), (ULONG32)iCorTypeArgs.size(), iCorValueArgs.data(), (ULONG32)iCorValueArgs.size(), &evalStack.front().iCorValue, ed.evalFlags);
 
         // CORDBG_S_FUNC_EVAL_HAS_NO_RESULT: Some Func evals will lack a return value, such as those whose return type is void.
         if (Status == CORDBG_S_FUNC_EVAL_HAS_NO_RESULT)
@@ -1456,7 +1527,7 @@ namespace
             ELEMENT_TYPE_MAX,       // Object
             ELEMENT_TYPE_I1,        // SByte
             ELEMENT_TYPE_I2,        // Short
-            ELEMENT_TYPE_MAX,       // String
+            ELEMENT_TYPE_STRING,    // String
             ELEMENT_TYPE_U2,        // UShort
             ELEMENT_TYPE_U4,        // UInt
             ELEMENT_TYPE_U8         // ULong
@@ -1464,13 +1535,16 @@ namespace
 
         // TODO uint32_t Flags = ((FormatFI*)pArguments)->Flags;
         int32_t Int = ((FormatFI*)pArguments)->Int;
+        std::string String;
 
         evalStack.emplace_front();
 
         if (BasicTypesAlias[Int] == ELEMENT_TYPE_VALUETYPE)
-            return CreateValueType(ed.pEvalWaiter, ed.pThread, ed.iCorDecimalClass, &evalStack.front().iCorValuePredefined, nullptr);
+            return CreateValueType(ed.pEvalWaiter, ed.pThread, ed.iCorDecimalClass, &evalStack.front().iCorValue, nullptr);
+        else if (BasicTypesAlias[Int] == ELEMENT_TYPE_STRING)
+            return ed.pEvalHelpers->CreateString(ed.pThread, String, &evalStack.front().iCorValue);
         else
-            return CreatePrimitiveValue(ed.pThread, &evalStack.front().iCorValuePredefined, BasicTypesAlias[Int], nullptr);
+            return CreatePrimitiveValue(ed.pThread, &evalStack.front().iCorValue, BasicTypesAlias[Int], nullptr);
     }
 
     HRESULT AliasQualifiedName(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
@@ -1525,11 +1599,22 @@ namespace
         assert(evalStack.front().identifiers.size() == 1); // Only one unresolved identifier must be here.
 
         std::string identifier = std::move(evalStack.front().identifiers[0]);
+        std::vector<ToRelease<ICorDebugType>> iCorDebugTypes;
+        size_t genericsCount = evalStack.front().genericTypeCache.size();
+        if (genericsCount > 0)
+        {
+            iCorDebugTypes = std::move(evalStack.front().genericTypeCache);
+        }
         evalStack.pop_front();
-
         if (!evalStack.front().preventBinding)
+        {
             evalStack.front().identifiers.emplace_back(std::move(identifier));
-
+            evalStack.front().genericTypeCache.clear(); // We need method's generics only, so remove all previous if exist.
+            if (genericsCount > 0)
+            {
+                evalStack.front().genericTypeCache = std::move(iCorDebugTypes);
+            }
+        }
         return S_OK;
     }
 
@@ -1724,20 +1809,20 @@ namespace
         uint32_t size = 0;
         PVOID szPtr = &size;
 
-        if (evalStack.front().iCorValuePredefined)
+        if (evalStack.front().iCorValue)
         {
             //  predefined type
             CorElementType elType;
-            IfFailRet(evalStack.front().iCorValuePredefined->GetType(&elType));
+            IfFailRet(evalStack.front().iCorValue->GetType(&elType));
             if(elType == ELEMENT_TYPE_CLASS)
             {
                 ToRelease<ICorDebugValue> iCorValue;
-                IfFailRet(DereferenceAndUnboxValue(evalStack.front().iCorValuePredefined, &iCorValue, nullptr));
+                IfFailRet(DereferenceAndUnboxValue(evalStack.front().iCorValue, &iCorValue, nullptr));
                 IfFailRet(iCorValue->GetSize(&size));
             }
             else
             {
-                IfFailRet(evalStack.front().iCorValuePredefined->GetSize(&size));
+                IfFailRet(evalStack.front().iCorValue->GetSize(&size));
             }
         }
         else

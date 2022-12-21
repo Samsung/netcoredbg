@@ -14,7 +14,7 @@ namespace netcoredbg
 namespace EvalUtils
 {
 
-    static std::vector<std::string> ParseGenericParams(const std::string &identifier, std::string &typeName)
+    std::vector<std::string> ParseGenericParams(const std::string &identifier, std::string &typeName)
     {
         std::vector<std::string> result;
 

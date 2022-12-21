@@ -47,6 +47,16 @@ public:
         ICorDebugValue **ppEvalResult,
         int evalFlags);
 
+    HRESULT EvalGenericFunction(
+        ICorDebugThread *pThread,
+        ICorDebugFunction *pFunc,
+        ICorDebugType **ppArgsType,
+        ULONG32 ArgsTypeCount,
+        ICorDebugValue **ppArgsValue,
+        ULONG32 ArgsValueCount,
+        ICorDebugValue **ppEvalResult,
+        int evalFlags);
+
     HRESULT GetLiteralValue(
         ICorDebugThread *pThread,
         ICorDebugType *pType,

@@ -540,6 +540,7 @@ namespace MITestEvaluate
     public class MethodCallTest2
     {
         public static MethodCallTest1 member1 = new MethodCallTest1();
+        public MethodCallTest1 nullMember;
     }
 
     public class MethodCallTest3
@@ -1270,6 +1271,9 @@ namespace MITestEvaluate
             }
 
             MethodCallTest1 MethodCallTest = new MethodCallTest1();
+            MethodCallTest1 methodCallTest1Null;
+            MethodCallTest2 methodCallTest2 = new MethodCallTest2();
+            MethodCallTest2 methodCallTest2Null;
             test_child TestCallChild = new test_child();
             test_parent TestCallParentOverride = new test_child();
             test_parent TestCallParent = new test_parent();
@@ -1302,6 +1306,12 @@ namespace MITestEvaluate
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "MethodCallTest?.Calc1()", "Error");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MethodCallTest?.Calc2()");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "\\\"MITestEvaluate.MethodCallTest1\\\"", "string", "MethodCallTest?.ToString()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.MethodCallTest1", "methodCallTest1Null?.Calc2()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{System.NullReferenceException}", "System.NullReferenceException", "methodCallTest1Null.Calc2()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.MethodCallTest2", "methodCallTest2Null?.member.Calc2()");
+                Context.CheckErrorAtRequest(@"__FILE__:__LINE__", "methodCallTest2Null.member.Calc2()", "Error");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "{System.NullReferenceException}", "System.NullReferenceException", "methodCallTest2.nullMember.Calc2()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", "null", "MITestEvaluate.MethodCallTest1", "methodCallTest2.nullMember?.Calc2()");
 
                 // Call non static method in static member.
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", "6", "int", "MITestEvaluate.MethodCallTest2.member1.Calc2()");

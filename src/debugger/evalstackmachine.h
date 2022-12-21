@@ -35,8 +35,9 @@ struct EvalStackEntry
     std::vector<std::string> identifiers;
     // Resolved to value identifiers.
     ToRelease<ICorDebugValue> iCorValue;
-    // Predefined types values
-    ToRelease<ICorDebugValue> iCorValuePredefined;
+    // Generic types cache. Note, finally we need the method's generic types only, i.e. the last element of
+    // identifiers vector. The other type(class)'s generics can easily be got from the corresponding iCorDebugType
+    std::vector<ToRelease<ICorDebugType>> genericTypeCache;
     // Prevent future binding in case of conditional access with nulled object (`a?.b`, `a?[1]`, ...).
     // Note, this state could be related to iCorValue only (iCorValue must be checked for null first).
     bool preventBinding;
@@ -55,7 +56,7 @@ struct EvalStackEntry
     {
         identifiers.clear();
         iCorValue.Free();
-        iCorValuePredefined.Free();
+        genericTypeCache.clear();
         preventBinding = false;
         if (resetLiteral == ResetLiteralStatus::Yes)
             literal = false;

@@ -564,7 +564,7 @@ namespace NetCoreDbg
                         case SyntaxKind.StringLiteralExpression:
                             stackMachineProgram.Commands.Add(new OneOperandCommand(node.Kind(), CurrentScopeFlags.Peek(), node.GetFirstToken().Value));
                             break;
-/* TODO
+
                         case SyntaxKind.GenericName:
                             // GenericName
                             //     \ TypeArgumentList
@@ -595,7 +595,7 @@ namespace NetCoreDbg
                             }
                             stackMachineProgram.Commands.Add(new TwoOperandCommand(node.Kind(), CurrentScopeFlags.Peek(), node.GetFirstToken().Value, GenericNameArgs));
                             break;
-*/
+
                         case SyntaxKind.InvocationExpression:
 /* TODO
                         case SyntaxKind.ObjectCreationExpression:
@@ -669,8 +669,8 @@ namespace NetCoreDbg
                         case SyntaxKind.ConditionalAccessExpression:
                         case SyntaxKind.ArgumentList:
                         case SyntaxKind.ParenthesizedExpression:
-/* TODO
                         case SyntaxKind.TypeArgumentList:
+/* TODO
                         case SyntaxKind.OmittedTypeArgument:
                         case SyntaxKind.UncheckedExpression:
                         case SyntaxKind.CheckedExpression:
@@ -758,7 +758,6 @@ namespace NetCoreDbg
                 {
                     sb.AppendFormat("    {0}\n", command.ToString());
                 }
-
                 return sb.ToString();
             }
 #endif

@@ -34,7 +34,19 @@ public:
         ArgElementType() :
             corType(ELEMENT_TYPE_END)
         {}
+
+        ArgElementType(CorElementType t, std::string n)
+        {
+            corType = t;
+            typeName = n;
+        }
+
+        bool isAlias (const CorElementType type1, const CorElementType type2, const std::string& name2);
+        bool areEqual(const ArgElementType& arg);
+        inline bool operator==(const ArgElementType& arg) { return areEqual(arg); }
+        inline bool operator!=(const ArgElementType& arg) { return !areEqual(arg); }
     };
+
     typedef ArgElementType ReturnElementType;
 
     struct SetterData
@@ -120,11 +132,12 @@ public:
         bool &thisParam);
 
     HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
-    HRESULT WalkMethods(ICorDebugType *pInputType, WalkMethodsCallback cb);
+    HRESULT WalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, WalkMethodsCallback cb);
     HRESULT WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallback cb);
-
     HRESULT SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ICorDebugValue *pValue, SetterData *setterData,
                      const std::string &value, int evalFlags, std::string &output);
+
+    ArgElementType GetElementTypeByTypeName(const std::string typeName);
 
 private:
 

@@ -14,11 +14,85 @@
 #include "utils/utf.h"
 #include "metadata/modules.h"
 #include "metadata/typeprinter.h"
+#include "metadata/attributes.h"
 #include "valueprint.h"
 #include "managed/interop.h"
 
 namespace netcoredbg
 {
+
+bool Evaluator::ArgElementType::isAlias(const CorElementType type1, const CorElementType type2, const std::string& name2)
+{
+    static const std::unordered_map<CorElementType, ArgElementType> aliases = {
+        {ELEMENT_TYPE_BOOLEAN, {ELEMENT_TYPE_VALUETYPE, "System.Boolean"}},
+        {ELEMENT_TYPE_CHAR,    {ELEMENT_TYPE_VALUETYPE, "System.Char"}},
+        {ELEMENT_TYPE_I1,      {ELEMENT_TYPE_VALUETYPE, "System.Byte"}},
+        {ELEMENT_TYPE_U1,      {ELEMENT_TYPE_VALUETYPE, "System.SByte"}},
+        {ELEMENT_TYPE_R8,      {ELEMENT_TYPE_VALUETYPE, "System.Double"}},
+        {ELEMENT_TYPE_R4,      {ELEMENT_TYPE_VALUETYPE, "System.Single"}},
+        {ELEMENT_TYPE_I4,      {ELEMENT_TYPE_VALUETYPE, "System.Int32"}},
+        {ELEMENT_TYPE_U4,      {ELEMENT_TYPE_VALUETYPE, "System.UInt32"}},
+        {ELEMENT_TYPE_I8,      {ELEMENT_TYPE_VALUETYPE, "System.Int64"}},
+        {ELEMENT_TYPE_U8,      {ELEMENT_TYPE_VALUETYPE, "System.UInt64"}},
+        {ELEMENT_TYPE_OBJECT,  {ELEMENT_TYPE_CLASS,     "System.Object"}},
+        {ELEMENT_TYPE_I2,      {ELEMENT_TYPE_VALUETYPE, "System.Int16"}},
+        {ELEMENT_TYPE_U2,      {ELEMENT_TYPE_VALUETYPE, "System.UInt16"}},
+        {ELEMENT_TYPE_STRING,  {ELEMENT_TYPE_CLASS,     "System.String"}}
+    };
+
+    auto found = aliases.find(type1);
+    if (found != aliases.end())
+    {
+        if (found->second.corType == type2 && found->second.typeName == name2)
+            return true;
+    }
+    return false;
+}
+
+bool Evaluator::ArgElementType::areEqual(const ArgElementType& arg)
+{
+    if (corType == arg.corType && typeName == arg.typeName)
+        return true;
+    if (isAlias(corType, arg.corType, arg.typeName))
+        return true;
+    if (isAlias(arg.corType, corType, typeName))
+        return true;
+    return false;
+}
+
+Evaluator::ArgElementType Evaluator::GetElementTypeByTypeName(const std::string typeName)
+{
+    static const std::unordered_map<std::string, Evaluator::ArgElementType> stypes = {
+        {"void",    {ELEMENT_TYPE_VALUETYPE, "System.Void"}},
+        {"bool",    {ELEMENT_TYPE_VALUETYPE, "System.Boolean"}},
+        {"byte",    {ELEMENT_TYPE_VALUETYPE, "System.Byte"}},
+        {"sbyte",   {ELEMENT_TYPE_VALUETYPE, "System.SByte"}},
+        {"char",    {ELEMENT_TYPE_VALUETYPE, "System.Char"}},
+        {"decimal", {ELEMENT_TYPE_VALUETYPE, "System.Decimal"}},
+        {"double",  {ELEMENT_TYPE_VALUETYPE, "System.Double"}},
+        {"float",   {ELEMENT_TYPE_VALUETYPE, "System.Single"}},
+        {"int",     {ELEMENT_TYPE_VALUETYPE, "System.Int32"}},
+        {"uint",    {ELEMENT_TYPE_VALUETYPE, "System.UInt32"}},
+        {"long",    {ELEMENT_TYPE_VALUETYPE, "System.Int64"}},
+        {"ulong",   {ELEMENT_TYPE_VALUETYPE, "System.UInt64"}},
+        {"object",  {ELEMENT_TYPE_CLASS,     "System.Object"}},
+        {"short",   {ELEMENT_TYPE_VALUETYPE, "System.Int16"}},
+        {"ushort",  {ELEMENT_TYPE_VALUETYPE, "System.UInt16"}},
+        {"string",  {ELEMENT_TYPE_CLASS,     "System.String"}},
+        {"IntPtr",  {ELEMENT_TYPE_VALUETYPE, "System.IntPtr"}},
+        {"UIntPtr", {ELEMENT_TYPE_VALUETYPE, "System.UIntPtr"}}
+    };
+
+    Evaluator::ArgElementType userType;
+    auto found = stypes.find(typeName);
+    if (found != stypes.end())
+    {
+        return found->second;
+    }
+    userType.corType = ELEMENT_TYPE_CLASS;
+    userType.typeName = typeName;
+    return userType;
+}
 
 HRESULT Evaluator::GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue)
 {
@@ -261,7 +335,8 @@ static void GetCorTypeName(ULONG corType, std::string &typeName)
 static HRESULT ParseElementType(IMetaDataImport *pMD,
                                 PCCOR_SIGNATURE *ppSig,
                                 Evaluator::ArgElementType &argElementType,
-                                std::vector<Evaluator::ArgElementType> &genericArgs,
+                                std::vector<Evaluator::ArgElementType> &typeGenerics,
+                                std::vector<Evaluator::ArgElementType> &methodGenerics,
                                 bool addCorTypeName = false)
 {
     HRESULT Status;
@@ -299,14 +374,14 @@ static HRESULT ParseElementType(IMetaDataImport *pMD,
             break;
 
         case ELEMENT_TYPE_SZARRAY:
-            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, genericArgs, true)) || Status == S_FALSE)
+            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, typeGenerics, methodGenerics, true)) || Status == S_FALSE)
                 return Status;
             argElementType.corType = (CorElementType)corType;
             argElementType.typeName += "[]";
             break;
         case ELEMENT_TYPE_ARRAY:
         {
-            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, genericArgs, true)) || Status == S_FALSE)
+            if (FAILED(Status = ParseElementType(pMD, ppSig, argElementType, typeGenerics, methodGenerics, true)) || Status == S_FALSE)
                 return Status;
             argElementType.corType = (CorElementType)corType;
             // Parse for the rank
@@ -337,23 +412,52 @@ static HRESULT ParseElementType(IMetaDataImport *pMD,
 
         case ELEMENT_TYPE_VAR: // Generic parameter in a generic type definition, represented as number
             *ppSig += CorSigUncompressData(*ppSig, &argNum);
-            if (argNum >= genericArgs.size())
+            if (argNum >= typeGenerics.size())
                 return S_FALSE;
             else
             {
-                argElementType = genericArgs[argNum];
+                argElementType = typeGenerics[argNum];
                 if (addCorTypeName && argElementType.typeName.empty())
                     GetCorTypeName(argElementType.corType, argElementType.typeName);
             }
             break;
+
+        case ELEMENT_TYPE_MVAR: // Generic parameter in a generic method definition, represented as number
+            *ppSig += CorSigUncompressData(*ppSig, &argNum);
+            if (argNum >= methodGenerics.size())
+                return S_FALSE;
+            else
+            {
+                argElementType = methodGenerics[argNum];
+                if (addCorTypeName && argElementType.typeName.empty())
+                    GetCorTypeName(argElementType.corType, argElementType.typeName);
+            }
+            break;
+
+        case ELEMENT_TYPE_GENERICINST: // A type modifier for generic types - List<>, Dictionary<>, ...
+            ULONG number;
+            mdToken token;
+            *ppSig += CorSigUncompressData(*ppSig, &corType);
+            if(corType != ELEMENT_TYPE_CLASS && corType != ELEMENT_TYPE_VALUETYPE)
+                return S_FALSE;
+            *ppSig += CorSigUncompressToken(*ppSig, &token);
+            argElementType.corType = (CorElementType)corType;
+            IfFailRet(TypePrinter::NameForTypeByToken(token, pMD, argElementType.typeName, nullptr));
+            *ppSig += CorSigUncompressData(*ppSig, &number);
+            for(ULONG i = 0; i < number; i++)
+            {
+                Evaluator::ArgElementType mycop; // Not needed at the moment
+                if (FAILED(Status = ParseElementType(pMD, ppSig, mycop, typeGenerics, methodGenerics, true)) || Status == S_FALSE)
+                    return Status;
+            }
+            break;
+
 // TODO
         case ELEMENT_TYPE_U: // "nuint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
         case ELEMENT_TYPE_I: // "nint" - error CS8652: The feature 'native-sized integers' is currently in Preview and *unsupported*. To use Preview features, use the 'preview' language version.
         case ELEMENT_TYPE_TYPEDBYREF:
         case ELEMENT_TYPE_PTR: // int* ptr (unsafe code only)
         case ELEMENT_TYPE_BYREF: // ref, in, out
-        case ELEMENT_TYPE_MVAR: // Generic parameter in a generic method definition, represented as number
-        case ELEMENT_TYPE_GENERICINST: // A type modifier for generic types - List<>, Dictionary<>, ...
         case ELEMENT_TYPE_CMOD_REQD:
         case ELEMENT_TYPE_CMOD_OPT:
             return S_FALSE;
@@ -372,11 +476,12 @@ HRESULT Evaluator::WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallb
     IfFailRet(pInputTypeValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
     ToRelease<ICorDebugType> iCorType;
     IfFailRet(iCorValue2->GetExactType(&iCorType));
+    std::vector<Evaluator::ArgElementType> methodGenerics;
 
-    return WalkMethods(iCorType, cb);
+    return WalkMethods(iCorType, methodGenerics, cb);
 }
 
-static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMethodsCallback cb)
+static HRESULT InternalWalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, Evaluator::WalkMethodsCallback cb)
 {
     HRESULT Status;
     ToRelease<ICorDebugClass> pClass;
@@ -390,7 +495,7 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMet
     ToRelease<IMetaDataImport> pMD;
     IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
 
-    std::vector<Evaluator::ArgElementType> genericArgs;
+    std::vector<Evaluator::ArgElementType> typeGenerics;
     ToRelease<ICorDebugTypeEnum> paramTypes;
 
     if (SUCCEEDED(pInputType->EnumerateTypeParameters(&paramTypes)))
@@ -404,7 +509,7 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMet
             pCurrentTypeParam->GetType(&argElType.corType);
             if(argElType.corType == ELEMENT_TYPE_VALUETYPE || argElType.corType == ELEMENT_TYPE_CLASS)
                 IfFailRet(TypePrinter::NameForTypeByType(pCurrentTypeParam, argElType.typeName));
-            genericArgs.emplace_back(argElType);
+            typeGenerics.emplace_back(argElType);
             pCurrentTypeParam.Free();
         }
     }
@@ -429,6 +534,7 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMet
                                      szFunctionName, _countof(szFunctionName), &nameLen,
                                      &methodAttr, &pSig, &cbSig, nullptr,  nullptr)))
             continue;
+        ULONG gParams; // Count of signature generics
         ULONG cParams; // Count of signature parameters.
         ULONG elementSize;
         ULONG convFlags;
@@ -438,26 +544,32 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMet
         elementSize = CorSigUncompressData(pSig, &convFlags);
         pSig += elementSize;
 
-        // TODO add VARARG and GENERIC methods support.
-        if ((convFlags & SIG_METHOD_VARARG) ||
-            (convFlags & SIG_METHOD_GENERIC))
+        // TODO add VARARG methods support.
+        if (convFlags & SIG_METHOD_VARARG)
             continue;
 
-        // 2. count of params
+        // 2. count of generics if any
+        if (convFlags & SIG_METHOD_GENERIC)
+        {
+            elementSize = CorSigUncompressData(pSig, &gParams);
+            pSig += elementSize;
+        }
+
+        // 3. count of params
         elementSize = CorSigUncompressData(pSig, &cParams);
         pSig += elementSize;
 
-        // 3. return type
+        // 4. return type
         Evaluator::ArgElementType returnElementType;
-        IfFailRet(ParseElementType(pMD, &pSig, returnElementType, genericArgs));
+        IfFailRet(ParseElementType(pMD, &pSig, returnElementType, typeGenerics, methodGenerics));
         if (Status == S_FALSE)
             continue;
 
-        // 4. get next element from method signature
+        // 5. get next element from method signature
         std::vector<Evaluator::ArgElementType> argElementTypes(cParams);
         for (ULONG i = 0; i < cParams; ++i)
         {
-            IfFailRet(ParseElementType(pMD, &pSig, argElementTypes[i], genericArgs));
+            IfFailRet(ParseElementType(pMD, &pSig, argElementTypes[i], typeGenerics, methodGenerics));
             if (Status == S_FALSE)
                 break;
         }
@@ -483,15 +595,15 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, Evaluator::WalkMet
     ToRelease<ICorDebugType> iCorBaseType;
     if(SUCCEEDED(pInputType->GetBase(&iCorBaseType)) && iCorBaseType != NULL)
     {
-        IfFailRet(InternalWalkMethods(iCorBaseType, cb));
+        IfFailRet(InternalWalkMethods(iCorBaseType, methodGenerics, cb));
     }
 
     return S_OK;
 }
 
-HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, Evaluator::WalkMethodsCallback cb)
+HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, Evaluator::WalkMethodsCallback cb)
 {
-    return InternalWalkMethods(pInputType, cb);
+    return InternalWalkMethods(pInputType, methodGenerics, cb);
 }
 
 static HRESULT InternalSetValue(EvalStackMachine *pEvalStackMachine, EvalHelpers *pEvalHelpers, ICorDebugThread *pThread, FrameLevel frameLevel,
@@ -1640,3 +1752,4 @@ HRESULT Evaluator::ResolveIdentifiers(ICorDebugThread *pThread, FrameLevel frame
 }
 
 } // namespace netcoredbg
+

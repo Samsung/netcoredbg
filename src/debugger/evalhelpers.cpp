@@ -100,6 +100,39 @@ HRESULT EvalHelpers::EvalFunction(
         });
 }
 
+HRESULT EvalHelpers::EvalGenericFunction(
+    ICorDebugThread *pThread,
+    ICorDebugFunction *pFunc,
+    ICorDebugType **ppTypes,
+    ULONG32 typeCount,
+    ICorDebugValue **ppValues,
+    ULONG32 valueCount,
+    ICorDebugValue **ppResult,
+    int flags)
+{
+    assert((!ppTypes && typeCount == 0) || (ppTypes && typeCount > 0));
+    assert((!ppValues && valueCount == 0) || (ppValues && valueCount > 0));
+
+    if (flags & EVAL_NOFUNCEVAL)
+        return S_OK;
+
+    return m_sharedEvalWaiter->WaitEvalResult(pThread, ppResult,
+        [&](ICorDebugEval *pEval) -> HRESULT
+        {
+            // Note, this code execution protected by EvalWaiter mutex.
+            HRESULT Status;
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+            IfFailRet(pEval2->CallParameterizedFunction(
+                pFunc,
+                typeCount,
+                ppTypes,
+                valueCount,
+                ppValues));
+            return S_OK;
+        });
+}
+
 static HRESULT GetMethodToken(IMetaDataImport *pMD, mdTypeDef cl, const WCHAR *methodName)
 {
     ULONG numMethods = 0;
