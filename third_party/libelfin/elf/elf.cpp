@@ -5,6 +5,14 @@
 #include "elf++.h"
 
 #include <cstring>
+#include <cassert>
+#include <link.h>
+#include <elf.h> // DF_1_PIE
+
+#ifndef DF_1_PIE // in case we have old glibc in Tizen, but PIE is supported
+#define DF_1_PIE 0x08000000
+#endif
+
 
 ELFPP_BEGIN_NAMESPACE
 
@@ -154,6 +162,51 @@ elf::get_segment(unsigned index) const
         if (index >= segments().size())
                 return m->invalid_segment;
         return segments().at(index);
+}
+
+template<typename T>
+static bool Have_DF_1_PIE(const void *seg_data)
+{
+        const T *data = (const T *)seg_data;
+        while (data[0] != DT_NULL)
+        {
+                if (data[0] == DT_FLAGS_1)
+                {
+                        return ((++data)[0] & DF_1_PIE) == DF_1_PIE;
+                }
+                else
+                        data++; // move to value for current tag
+
+                data++; // move to next tag
+        }
+
+        return false;
+}
+
+bool elf::is_PIE() const
+{
+        if (get_hdr().type == et::exec)
+        {
+                return false;
+        }
+        else if (get_hdr().type == et::dyn)
+        {
+                for (auto &seg : segments())
+                {
+                        if (seg.get_hdr().type != pt::dynamic)
+                                continue;
+
+                        if (get_hdr().ei_class == elfclass::_32)
+                                return Have_DF_1_PIE<std::uint32_t>(seg.data());
+                        else
+                                return Have_DF_1_PIE<std::uint64_t>(seg.data());
+                }
+
+                assert(false); // should never reach this code
+                return false;
+        }
+
+        return true;
 }
 
 //////////////////////////////////////////////////////////////////

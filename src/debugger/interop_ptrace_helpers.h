@@ -6,6 +6,8 @@
 #include "cor.h"
 
 #include <sys/types.h>
+#include <sys/user.h>
+#include <cstdint>
 
 namespace netcoredbg
 {
@@ -14,10 +16,18 @@ namespace netcoredbg
 namespace InteropDebugging
 {
 
-    // Initialize interop debugging, attach to process, detect loaded libs, setup native breakpoints, etc.
-    HRESULT Init(pid_t pid, int &error_n);
-    // Shutdown interop debugging, remove all native breakpoints, detach from threads, etc.
-    void Shutdown();
+#ifdef DEBUGGER_UNIX_ARM
+    using user_regs_struct = user_regs;
+#endif
+
+#ifdef DBG_TARGET_64BIT
+    using word_t = std::uint64_t;
+#else
+    using word_t = std::uint32_t;
+#endif
+
+    long ptrace_GETREGS(pid_t pid, user_regs_struct &regs);
+    long ptrace_SETREGS(pid_t pid, user_regs_struct &regs);
 
 } // namespace InteropDebugging
 #endif // INTEROP_DEBUGGING

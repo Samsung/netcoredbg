@@ -114,6 +114,8 @@ public:
          */
         const section &get_section(unsigned index) const;
 
+        bool is_PIE() const;
+
 private:
         struct impl;
         std::shared_ptr<impl> m;

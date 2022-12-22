@@ -155,7 +155,10 @@ endif()
 
 if (INTEROP_DEBUGGING)
     list(APPEND netcoredbg_SRC 
+            debugger/interop_brk_helpers.cpp
             debugger/interop_debugging.cpp
+            debugger/interop_mem_helpers.cpp
+            debugger/interop_ptrace_helpers.cpp
             debugger/sigaction.cpp
         )
 endif (INTEROP_DEBUGGING)
@@ -192,6 +195,17 @@ endif (NCDB_DOTNET_STARTUP_HOOK)
 
 if (INTEROP_DEBUGGING)
     add_definitions(-DINTEROP_DEBUGGING)
+
+    if (CLR_CMAKE_PLATFORM_UNIX_AMD64)
+        add_definitions(-DDEBUGGER_UNIX_AMD64)
+    elseif (CLR_CMAKE_PLATFORM_UNIX_X86)
+        add_definitions(-DDEBUGGER_UNIX_X86)
+    elseif (CLR_CMAKE_PLATFORM_UNIX_ARM64)
+        add_definitions(-DDEBUGGER_UNIX_ARM64)
+    elseif (CLR_CMAKE_PLATFORM_UNIX_ARM)
+        add_definitions(-DDEBUGGER_UNIX_ARM)
+    endif()
+
     target_link_libraries(netcoredbg elf++ dwarf++)
     include_directories(${PROJECT_SOURCE_DIR}/third_party/libelfin/elf ${PROJECT_SOURCE_DIR}/third_party/libelfin/dwarf)
 endif (INTEROP_DEBUGGING)
