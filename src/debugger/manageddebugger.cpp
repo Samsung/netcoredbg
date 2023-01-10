@@ -288,6 +288,11 @@ HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
             terminate = true;
             break;
         case DisconnectDetach:
+            if (m_startMethod != StartAttach)
+            {
+                LOGE("Can't detach debugger form child process.\n");
+                return E_INVALIDARG;
+            }
             terminate = false;
             break;
         default:

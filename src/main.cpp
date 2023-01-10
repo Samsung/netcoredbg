@@ -56,7 +56,9 @@ static void print_help()
         "--interpreter=vscode                  Puts the debugger into VS Code Debugger mode.\n"
         "--command=<file>                      Interpret commands file at the start.\n"
         "-ex \"<command>\"                       Execute command at the start\n"
+#ifdef NCDB_DOTNET_STARTUP_HOOK
         "--hot-reload                          Enable Hot Reload feature.\n"
+#endif
         "--run                                 Run program without waiting commands\n"
         "--engineLogging[=<path to log file>]  Enable logging to VsDbg-UI or file for the engine.\n"
         "                                      Only supported by the VsCode interpreter.\n"
