@@ -96,6 +96,11 @@ HRESULT Breakpoints::SetFuncBreakpoints(bool haveProcess, const std::vector<Func
     });
 }
 
+HRESULT Breakpoints::UpdateLineBreakpoint(bool haveProcess, int id, int linenum, Breakpoint &breakpoint)
+{
+    return m_uniqueLineBreakpoints->UpdateLineBreakpoint(haveProcess, id, linenum, breakpoint);
+}
+
 HRESULT Breakpoints::SetLineBreakpoints(bool haveProcess, const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints)
 {
     return m_uniqueLineBreakpoints->SetLineBreakpoints(haveProcess, filename, lineBreakpoints, breakpoints, [&]() -> uint32_t

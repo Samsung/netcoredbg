@@ -23,6 +23,32 @@ void BreakpointsHandle::Cleanup()
     m_exceptionBreakpoints.clear();
 }
 
+HRESULT BreakpointsHandle::UpdateLineBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger, int id, int linenum, Breakpoint &breakpoint)
+{
+    for (auto &breakpointsInSource : m_lineBreakpoints)
+    {
+        for (auto &brk : breakpointsInSource.second)
+        {
+            if (brk.first != (unsigned)id)
+                continue;
+
+            brk.second.line = linenum;
+
+            breakpoint.id = brk.first;
+            breakpoint.verified = false;
+            breakpoint.condition = brk.second.condition;
+            breakpoint.source = breakpointsInSource.first;
+            breakpoint.line = brk.second.line;
+            breakpoint.endLine = brk.second.line;
+            breakpoint.hitCount = 0;
+
+            return sharedDebugger->UpdateLineBreakpoint(id, linenum, breakpoint);
+        }
+    }
+
+    return E_INVALIDARG;
+}
+
 HRESULT BreakpointsHandle::SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger,
                                              const std::string &module, const std::string &filename, int linenum,
                                              const std::string &condition, Breakpoint &breakpoint)

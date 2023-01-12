@@ -562,6 +562,44 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, Breakpo
         output = "^done";
         return S_OK;
     } },
+    { "break-update-line", [&](const std::vector<std::string> &args, std::string &output) -> HRESULT {
+        // Custom MI protocol command for line breakpoint update.
+        // Command format:
+        //    break-update-line ID NEW_LINE
+        // where
+        //    ID - ID of previously added breakpoint, that should be changed;
+        //    NEW_LINE - new line number in source file.
+        if (args.size() != 2)
+        {
+            output = "Command requires 2 arguments";
+            return E_FAIL;
+        }
+
+        bool ok;
+        int id = ProtocolUtils::ParseInt(args.at(0), ok);
+        if (!ok)
+        {
+            output = "Unknown breakpoint id";
+            return E_FAIL;
+        }
+
+        int linenum = ProtocolUtils::ParseInt(args.at(1), ok);
+        if (!ok)
+        {
+            output = "Unknown breakpoint new line";
+            return E_FAIL;
+        }
+
+        Breakpoint breakpoint;
+        if (SUCCEEDED(breakpointsHandle.UpdateLineBreakpoint(sharedDebugger, id, linenum, breakpoint)))
+        {
+            PrintBreakpoint(breakpoint, output);
+            return S_OK;
+        }
+
+        output = "Unknown breakpoint location, breakpoint was not updated";
+        return E_FAIL;
+    } },
     { "break-insert", [&](const std::vector<std::string> &unmutable_args, std::string &output) -> HRESULT {
         HRESULT Status = E_FAIL;
         Breakpoint breakpoint;

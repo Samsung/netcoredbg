@@ -256,6 +256,87 @@ HRESULT LineBreakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std
     return S_OK;
 }
 
+HRESULT LineBreakpoints::UpdateLineBreakpoint(bool haveProcess, int id, int linenum, Breakpoint &breakpoint)
+{
+    for (auto &initialBreakpoints : m_lineBreakpointMapping)
+    {
+        for (auto &initialBreakpoint : initialBreakpoints.second)
+        {
+            if (initialBreakpoint.id != (unsigned)id)
+                continue;
+
+            initialBreakpoint.breakpoint.line = linenum;
+
+            if (!haveProcess)
+            {
+                initialBreakpoint.resolved_linenum = 0;
+                initialBreakpoint.resolved_fullname_index = 0;
+                breakpoint.message = "The breakpoint is pending and will be resolved when debugging starts.";
+                return S_OK;
+            }
+
+            CORDB_ADDRESS modAddress = 0;
+            if (initialBreakpoint.resolved_linenum)
+            {
+                auto bMap_it = m_lineResolvedBreakpoints.find(initialBreakpoint.resolved_fullname_index);
+                if (bMap_it == m_lineResolvedBreakpoints.end())
+                    return E_FAIL;
+
+                auto bList_it = bMap_it->second.find(initialBreakpoint.resolved_linenum);
+                if (bList_it == bMap_it->second.end())
+                    return E_FAIL;
+
+                for (auto itList = bList_it->second.begin(); itList != bList_it->second.end();)
+                {
+                    if ((*itList).id == initialBreakpoint.id)
+                    {
+                        modAddress = (*itList).modAddress;
+
+                        bList_it->second.erase(itList);
+                        initialBreakpoint.resolved_linenum = 0;
+                        initialBreakpoint.resolved_fullname_index = 0;
+                        EnableOneICorBreakpointForLine(bList_it->second);
+                        break;
+                    }
+                    else
+                        ++itList;
+                }
+            }
+
+            ManagedLineBreakpoint bp;
+            bp.id = initialBreakpoint.id;
+            bp.module = initialBreakpoint.breakpoint.module;
+            bp.enabled = initialBreakpoint.enabled;
+            bp.linenum = initialBreakpoint.breakpoint.line;
+            bp.endLine = initialBreakpoint.breakpoint.line;
+            bp.condition = initialBreakpoint.breakpoint.condition;
+
+            unsigned resolved_fullname_index = 0;
+            std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
+            if (FAILED(m_sharedModules->ResolveBreakpoint(modAddress, initialBreakpoints.first, resolved_fullname_index, bp.linenum, resolvedPoints)) ||
+                FAILED(ActivateLineBreakpoint(bp, initialBreakpoints.first, m_justMyCode, resolvedPoints)))
+            {
+                return S_OK;
+            }
+
+            std::string resolved_fullname;
+            m_sharedModules->GetSourceFullPathByIndex(resolved_fullname_index, resolved_fullname);
+
+            initialBreakpoint.resolved_fullname_index = resolved_fullname_index;
+            initialBreakpoint.resolved_linenum = bp.linenum;
+
+            bp.ToBreakpoint(breakpoint, resolved_fullname);
+
+            m_lineResolvedBreakpoints[resolved_fullname_index][initialBreakpoint.resolved_linenum].push_back(std::move(bp));
+            EnableOneICorBreakpointForLine(m_lineResolvedBreakpoints[resolved_fullname_index][initialBreakpoint.resolved_linenum]);
+            return S_OK;
+        }
+    }
+
+    LOGE("UpdateLineBreakpoint error, no line breakpoint with ID %i", id);
+    return E_INVALIDARG;
+}
+
 HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints,
                                             std::vector<Breakpoint> &breakpoints, std::function<uint32_t()> getId)
 {

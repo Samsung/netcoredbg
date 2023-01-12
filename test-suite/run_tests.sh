@@ -47,6 +47,7 @@ ALL_TEST_NAMES=(
     "MITestGeneric"
     "MITestEvalArraysIndexers"
     "MITestBreakpointWithoutStop"
+    "MITestBreakpointUpdate"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"

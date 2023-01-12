@@ -890,6 +890,14 @@ HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
     return InternalSetEnableCustomNotification(m_sharedModules.get(), fEnable);
 }
 
+HRESULT ManagedDebugger::UpdateLineBreakpoint(int id, int linenum, Breakpoint &breakpoint)
+{
+    LogFuncEntry();
+
+    bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
+    return m_uniqueBreakpoints->UpdateLineBreakpoint(haveProcess, id, linenum, breakpoint);
+}
+
 HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
                                             const std::vector<LineBreakpoint> &lineBreakpoints,
                                             std::vector<Breakpoint> &breakpoints)

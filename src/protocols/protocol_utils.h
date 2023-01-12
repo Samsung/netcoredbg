@@ -42,6 +42,7 @@ private:
     std::unordered_map<uint32_t, ExceptionBreakpoint> m_exceptionBreakpoints;
 
 public:
+    HRESULT UpdateLineBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger, int id, int linenum, Breakpoint &breakpoint);
     HRESULT SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger, const std::string &module, const std::string &filename,
                               int linenum, const std::string &condition, Breakpoint &breakpoints);
     HRESULT SetFuncBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger, const std::string &module, const std::string &funcname,

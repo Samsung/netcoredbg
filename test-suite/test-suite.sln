@@ -125,6 +125,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestBreakpointWithoutStop
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VSCodeTestBreakpointWithoutStop", "VSCodeTestBreakpointWithoutStop\VSCodeTestBreakpointWithoutStop.csproj", "{B46CCE8C-49FA-403C-BC5B-1817CAD09130}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MITestBreakpointUpdate", "MITestBreakpointUpdate\MITestBreakpointUpdate.csproj", "{440BEDAD-6094-4FCA-A941-E44300A378C9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -882,5 +884,17 @@ Global
 		{B46CCE8C-49FA-403C-BC5B-1817CAD09130}.Release|x64.Build.0 = Release|Any CPU
 		{B46CCE8C-49FA-403C-BC5B-1817CAD09130}.Release|x86.ActiveCfg = Release|Any CPU
 		{B46CCE8C-49FA-403C-BC5B-1817CAD09130}.Release|x86.Build.0 = Release|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Debug|x64.Build.0 = Debug|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Debug|x86.Build.0 = Debug|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Release|x64.ActiveCfg = Release|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Release|x64.Build.0 = Release|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Release|x86.ActiveCfg = Release|Any CPU
+		{440BEDAD-6094-4FCA-A941-E44300A378C9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
