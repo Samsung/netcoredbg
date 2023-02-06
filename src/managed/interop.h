@@ -88,6 +88,7 @@ namespace Interop
                                       ULONG64 inMemoryPdbAddress, ULONG64 inMemoryPdbSize, VOID **ppSymbolReaderHandle);
     void DisposeSymbols(PVOID pSymbolReaderHandle);
     HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG32 IlOffset, SequencePoint *sequencePoint);
+    HRESULT GetSequencePoints(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, SequencePoint **sequencePoints, int32_t &Count);
     HRESULT GetNextUserCodeILOffset(PVOID pSymbolReaderHandle, mdMethodDef MethodToken, ULONG32 IlOffset, ULONG32 &ilNextOffset, bool *noUserCodeFound);
     HRESULT GetNamedLocalVariableAndScope(PVOID pSymbolReaderHandle, mdMethodDef methodToken, ULONG localIndex,
                                           WCHAR *localName, ULONG localNameLen, ULONG32 *pIlStart, ULONG32 *pIlEnd);

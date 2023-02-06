@@ -306,7 +306,7 @@ namespace MITestHotReloadBreakpoint
                 // Setup breakpoints before apply delta.
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 16);
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 19);
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 25);
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 27);
                 Context.EnableFuncBreakpoint(@"__FILE__:__LINE__", "Program.HotReloadBreakpointTest1");
                 Context.EnableFuncBreakpoint(@"__FILE__:__LINE__", "Program.HotReloadBreakpointTest2");
 
@@ -335,12 +335,96 @@ namespace MITestHotReloadBreakpoint
                         static void HotReloadBreakpointTest2()
                         {
                             Console.WriteLine(""Another added string."");
-                            Console.WriteLine(""One more added string."");                                   // line 25
+                            int i=0;
+                            i++;
+                            Console.WriteLine(""One more added string."");                                   // line 27
                         }
                     }
                 }", @"Program.cs");
                 Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta2");
                 Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta2");
+
+                Context.GetDelta(@"__FILE__:__LINE__",
+                @"using System;
+                namespace TestAppHotReload
+                {
+                    class Program
+                    {
+                        static void Main(string[] args)
+                        {
+                            Console.WriteLine(""Hello World!"");
+                            HotReloadTest();
+                        }
+                        static void HotReloadTest()
+                        {
+                            Console.WriteLine(""Updated string."");
+                            HotReloadBreakpointTest1();
+                            HotReloadBreakpointTest1();                                                      // line 15
+                        }
+                        static void HotReloadBreakpointTest1()
+                        {
+                            Console.WriteLine(""Updated added string."");                                    // line 19
+                            HotReloadBreakpointTest2();
+                        }
+
+                        static void HotReloadBreakpointTest2()
+                        {
+                            Console.WriteLine(""Another added string."");
+                            int i=0;
+
+                            i++;
+
+
+                            Console.WriteLine(""One more added string."");
+                        }
+                    }
+                }", @"Program.cs");
+                Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta3");
+                Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta3");
+
+
+
+                Context.GetDelta(@"__FILE__:__LINE__",
+                @"using System;
+                namespace TestAppHotReload
+                {
+                    class Program
+                    {
+                        static void Main(string[] args)
+                        {
+                            Console.WriteLine(""Hello World!"");
+                            HotReloadTest();
+                        }
+                        static void HotReloadTest()
+                        {
+                            Console.WriteLine(""Updated string."");
+                            HotReloadBreakpointTest1();
+                            HotReloadBreakpointTest1();                                                      // line 15
+                        }
+                        static void HotReloadBreakpointTest1()
+                        {
+                            Console.WriteLine(""Updated added string."");                                    // line 19
+                            HotReloadBreakpointTest2();
+                        }
+
+
+                        static void HotReloadBreakpointTest2()
+                        {
+                            Console.WriteLine(""Another added string."");
+
+
+                            int i=0;
+                            i++;
+
+
+                            Console.WriteLine(""One more added string."");                                   // line 33
+                        }
+                    }
+                }", @"Program.cs");
+                Context.WriteDeltas(@"__FILE__:__LINE__", "tmp_delta4");
+                Context.ApplyDeltas(@"__FILE__:__LINE__", "tmp_delta4");
+
+
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
@@ -359,13 +443,13 @@ namespace MITestHotReloadBreakpoint
 
             Label.Checkpoint("bp_test_func_added", "bp_test_line_added", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 23); // Program.HotReloadBreakpointTest2
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 25); // Program.HotReloadBreakpointTest2
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
             Label.Checkpoint("bp_test_line_added", "bp_test_line_not_changed", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 25);
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 29);
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

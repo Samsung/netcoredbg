@@ -61,6 +61,7 @@ typedef  void (*DisposeDelegate)(PVOID);
 typedef  RetCode (*GetLocalVariableNameAndScope)(PVOID, int32_t, int32_t, BSTR*, uint32_t*, uint32_t*);
 typedef  RetCode (*GetHoistedLocalScopes)(PVOID, int32_t, PVOID*, int32_t*);
 typedef  RetCode (*GetSequencePointByILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, PVOID);
+typedef  RetCode (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int32_t*);
 typedef  RetCode (*GetNextUserCodeILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, uint32_t*, int32_t*);
 typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
 typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, uint32_t, PVOID, uint32_t, PVOID, PVOID*);
@@ -83,6 +84,7 @@ DisposeDelegate disposeDelegate = nullptr;
 GetLocalVariableNameAndScope getLocalVariableNameAndScopeDelegate = nullptr;
 GetHoistedLocalScopes getHoistedLocalScopesDelegate = nullptr;
 GetSequencePointByILOffsetDelegate getSequencePointByILOffsetDelegate = nullptr;
+GetSequencePointsDelegate getSequencePointsDelegate = nullptr;
 GetNextUserCodeILOffsetDelegate getNextUserCodeILOffsetDelegate = nullptr;
 GetStepRangesFromIPDelegate getStepRangesFromIPDelegate = nullptr;
 GetModuleMethodsRangesDelegate getModuleMethodsRangesDelegate = nullptr;
@@ -227,6 +229,7 @@ void Init(const std::string &coreClrPath)
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetLocalVariableNameAndScope", (void **)&getLocalVariableNameAndScopeDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetHoistedLocalScopes", (void **)&getHoistedLocalScopesDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePointByILOffset", (void **)&getSequencePointByILOffsetDelegate)) &&
+        SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetSequencePoints", (void **)&getSequencePointsDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetNextUserCodeILOffset", (void **)&getNextUserCodeILOffsetDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetStepRangesFromIP", (void **)&getStepRangesFromIPDelegate)) &&
         SUCCEEDED(Status = createDelegate(hostHandle, domainId, ManagedPartDllName, SymbolReaderClassName, "GetModuleMethodsRanges", (void **)&getModuleMethodsRangesDelegate)) &&
@@ -252,6 +255,7 @@ void Init(const std::string &coreClrPath)
                               getLocalVariableNameAndScopeDelegate &&
                               getHoistedLocalScopesDelegate &&
                               getSequencePointByILOffsetDelegate &&
+                              getSequencePointsDelegate &&
                               getNextUserCodeILOffsetDelegate &&
                               getStepRangesFromIPDelegate &&
                               getModuleMethodsRangesDelegate &&
@@ -291,6 +295,7 @@ void Shutdown()
     getLocalVariableNameAndScopeDelegate = nullptr;
     getHoistedLocalScopesDelegate = nullptr;
     getSequencePointByILOffsetDelegate = nullptr;
+    getSequencePointsDelegate = nullptr;
     getNextUserCodeILOffsetDelegate = nullptr;
     getStepRangesFromIPDelegate = nullptr;
     getModuleMethodsRangesDelegate = nullptr;
@@ -314,6 +319,17 @@ HRESULT GetSequencePointByILOffset(PVOID pSymbolReaderHandle, mdMethodDef method
 
     // Sequence points with startLine equal to 0xFEEFEE marker are filtered out on the managed side.
     RetCode retCode = getSequencePointByILOffsetDelegate(pSymbolReaderHandle, methodToken, ilOffset, sequencePoint);
+
+    return retCode == RetCode::OK ? S_OK : E_FAIL;
+}
+
+HRESULT GetSequencePoints(PVOID pSymbolReaderHandle, mdMethodDef methodToken, SequencePoint **sequencePoints, int32_t &Count)
+{
+    std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
+    if (!getSequencePointsDelegate || !pSymbolReaderHandle)
+        return E_FAIL;
+
+    RetCode retCode = getSequencePointsDelegate(pSymbolReaderHandle, methodToken, (PVOID*)sequencePoints, &Count);
 
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }

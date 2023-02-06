@@ -273,9 +273,6 @@ HRESULT FuncBreakpoints::AddFuncBreakpoint(ManagedFuncBreakpoint &fbp, ResolvedF
         IfFailRet(pCode->CreateBreakpoint(ilNextOffset, &iCorFuncBreakpoint));
         IfFailRet(iCorFuncBreakpoint->Activate(fbp.enabled ? TRUE : FALSE));
 
-        CORDB_ADDRESS modAddress;
-        IfFailRet(entry.first->GetBaseAddress(&modAddress));
-
         fbp.funcBreakpoints.emplace_back(entry.second, currentVersion, iCorFuncBreakpoint.Detach());
     }
 

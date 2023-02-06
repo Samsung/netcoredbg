@@ -17,7 +17,7 @@
 namespace netcoredbg
 {
 
-Modules::ModuleInfo::~ModuleInfo() noexcept
+ModuleInfo::~ModuleInfo() noexcept
 {
     for (auto symbolReaderHandle : m_symbolReaderHandles)
     {

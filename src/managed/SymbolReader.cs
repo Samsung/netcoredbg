@@ -392,6 +392,73 @@ namespace NetCoreDbg
         }
 
         /// <summary>
+        /// Get list of all sequence points for method.
+        /// </summary>
+        /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>
+        /// <param name="methodToken">method token</param>
+        /// <param name="points">result - array of sequence points</param>
+        /// <param name="pointsCount">result - count of elements in array of sequence points</param>
+        /// <returns>"Ok" if information is available</returns>
+        private static RetCode GetSequencePoints(IntPtr symbolReaderHandle, int methodToken, out IntPtr points, out int pointsCount)
+        {
+            Debug.Assert(symbolReaderHandle != IntPtr.Zero);
+            var list = new List<DbgSequencePoint>();
+            pointsCount = 0;
+            points = IntPtr.Zero;
+
+            try
+            {
+                GCHandle gch = GCHandle.FromIntPtr(symbolReaderHandle);
+                MetadataReader reader = ((OpenedReader)gch.Target).Reader;
+
+                SequencePointCollection sequencePoints = GetSequencePointCollection(methodToken, reader);
+
+                foreach (SequencePoint p in sequencePoints)
+                {
+                    if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine)
+                        continue;
+
+                    string fileName = reader.GetString(reader.GetDocument(p.Document).Name);
+                    list.Add(new DbgSequencePoint()
+                    {
+                        document =  Marshal.StringToBSTR(fileName),
+                        startLine = p.StartLine,
+                        endLine = p.EndLine,
+                        startColumn = p.StartColumn,
+                        endColumn = p.EndColumn,
+                        offset = p.Offset
+                    });
+                }
+
+                if (list.Count == 0)
+                    return RetCode.Fail;
+
+                var structSize = Marshal.SizeOf<DbgSequencePoint>();
+                IntPtr allPoints = Marshal.AllocCoTaskMem(list.Count * structSize);
+                var currentPtr = allPoints;
+
+                foreach (var p in list)
+                {
+                    Marshal.StructureToPtr(p, currentPtr, false);
+                    currentPtr = currentPtr + structSize;
+                }
+
+                points = allPoints;
+                pointsCount = list.Count;
+            }
+            catch
+            {
+                foreach (var p in list)
+                {
+                    Marshal.FreeBSTR(p.document);
+                }
+                return RetCode.Exception;
+            }
+
+            return RetCode.OK;
+        }
+
+        /// <summary>
         /// Find IL offset for next close user code sequence point by IL offset.
         /// </summary>
         /// <param name="symbolReaderHandle">symbol reader handle returned by LoadSymbolsForModule</param>

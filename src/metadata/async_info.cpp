@@ -21,7 +21,7 @@ HRESULT AsyncInfo::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethod
     if (!asyncMethodSteppingInfo.awaits.empty())
         asyncMethodSteppingInfo.awaits.clear();
 
-    return m_sharedModules->GetModuleInfo(modAddress, [&](Modules::ModuleInfo &mdInfo) -> HRESULT
+    return m_sharedModules->GetModuleInfo(modAddress, [&](ModuleInfo &mdInfo) -> HRESULT
     {
         if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
             return E_FAIL;

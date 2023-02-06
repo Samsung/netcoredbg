@@ -25,37 +25,37 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id);
 std::string GetModuleFileName(ICorDebugModule *pModule);
 HRESULT IsModuleHaveSameName(ICorDebugModule *pModule, const std::string &Name, bool isFullPath);
 
+struct ModuleInfo
+{
+    std::vector<PVOID> m_symbolReaderHandles;
+    ToRelease<ICorDebugModule> m_iCorModule;
+    // Cache for LineUpdates data for all methods in this module (Hot Reload related).
+    method_block_updates_t m_methodBlockUpdates;
+
+    ModuleInfo(PVOID Handle, ICorDebugModule *Module) :
+        m_iCorModule(Module)
+    {
+        if (Handle == nullptr)
+            return;
+
+        m_symbolReaderHandles.reserve(1);
+        m_symbolReaderHandles.emplace_back(Handle);
+    }
+
+    ModuleInfo(ModuleInfo&& other) noexcept :
+        m_symbolReaderHandles(std::move(other.m_symbolReaderHandles)),
+        m_iCorModule(std::move(other.m_iCorModule))
+    {
+    }
+    ModuleInfo(const ModuleInfo&) = delete;
+    ModuleInfo& operator=(ModuleInfo&&) = delete;
+    ModuleInfo& operator=(const ModuleInfo&) = delete;
+    ~ModuleInfo() noexcept;
+};
+
 class Modules
 {
 public:
-
-    struct ModuleInfo
-    {
-        std::vector<PVOID> m_symbolReaderHandles;
-        ToRelease<ICorDebugModule> m_iCorModule;
-        // Cache for LineUpdates data for all methods in this module (Hot Reload related).
-        method_block_updates_t m_methodBlockUpdates;
-
-        ModuleInfo(PVOID Handle, ICorDebugModule *Module) :
-            m_iCorModule(Module)
-        {
-            if (Handle == nullptr)
-                return;
-
-            m_symbolReaderHandles.reserve(1);
-            m_symbolReaderHandles.emplace_back(Handle);
-        }
-
-        ModuleInfo(ModuleInfo&& other) noexcept :
-            m_symbolReaderHandles(std::move(other.m_symbolReaderHandles)),
-            m_iCorModule(std::move(other.m_iCorModule))
-        {
-        }
-        ModuleInfo(const ModuleInfo&) = delete;
-        ModuleInfo& operator=(ModuleInfo&&) = delete;
-        ModuleInfo& operator=(const ModuleInfo&) = delete;
-        ~ModuleInfo() noexcept;
-    };
 
     struct SequencePoint {
         int32_t startLine;
