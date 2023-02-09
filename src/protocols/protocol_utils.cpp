@@ -57,6 +57,7 @@ HRESULT BreakpointsHandle::SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedD
 
     auto &breakpointsInSource = m_lineBreakpoints[filename];
     std::vector<LineBreakpoint> lineBreakpoints;
+    lineBreakpoints.reserve(breakpointsInSource.size() + 1); // size + new element
     for (auto it : breakpointsInSource)
         lineBreakpoints.push_back(it.second);
 
@@ -78,6 +79,7 @@ HRESULT BreakpointsHandle::SetFuncBreakpoint(std::shared_ptr<IDebugger> &sharedD
     HRESULT Status;
 
     std::vector<FuncBreakpoint> funcBreakpoints;
+    funcBreakpoints.reserve(m_funcBreakpoints.size() + 1); // size + new element
     for (const auto &it : m_funcBreakpoints)
         funcBreakpoints.push_back(it.second);
 
@@ -100,6 +102,7 @@ HRESULT BreakpointsHandle::SetExceptionBreakpoints(std::shared_ptr<IDebugger> &s
     HRESULT Status;
 
     std::vector<ExceptionBreakpoint> excBreakpoints;
+    excBreakpoints.reserve(m_exceptionBreakpoints.size() + exceptionBreakpoints.size()); // size + new elements size
     for (const auto &it : m_exceptionBreakpoints)
         excBreakpoints.push_back(it.second);
 

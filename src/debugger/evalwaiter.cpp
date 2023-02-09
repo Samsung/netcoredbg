@@ -37,8 +37,19 @@ void EvalWaiter::NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEv
 bool EvalWaiter::IsEvalRunning()
 {
     std::lock_guard<std::mutex> lock(m_evalResultMutex);
+
     return !!m_evalResult;
 }
+
+#ifdef INTEROP_DEBUGGING
+// Return thread ID for running evaluation, or 0 in case no evaluation running now.
+DWORD EvalWaiter::GetEvalRunningThreadID()
+{
+    std::lock_guard<std::mutex> lock(m_evalResultMutex);
+
+    return !!m_evalResult ? m_evalResult->threadId : 0;
+}
+#endif // INTEROP_DEBUGGING
 
 void EvalWaiter::CancelEvalRunning()
 {

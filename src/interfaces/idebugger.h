@@ -17,13 +17,8 @@ namespace netcoredbg
 {
 using Utility::string_view;
 
-class IProtocol;
-
 class IDebugger
 {
-protected:
-    std::shared_ptr<IProtocol> m_sharedProtocol;
-
 public:
 
     enum StepType
@@ -67,7 +62,6 @@ public:
     virtual IDebugger::AsyncResult ProcessStdin(InStream &) { return IDebugger::AsyncResult::Eof; }
 
 
-    void SetProtocol(std::shared_ptr<IProtocol> &sharedProtocol)  { m_sharedProtocol = sharedProtocol; }
     virtual ~IDebugger() {}
     virtual bool IsJustMyCode() const = 0;
     virtual void SetJustMyCode(bool enable) = 0;

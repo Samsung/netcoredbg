@@ -464,7 +464,7 @@ int
     std::shared_ptr<IDebugger> debugger;
     try
     {
-        debugger.reset(new ManagedDebugger);
+        debugger.reset(new ManagedDebugger(protocol));
     }
     catch (const std::exception &e)
     {
@@ -473,7 +473,6 @@ int
     }
 
     protocol->SetDebugger(debugger);
-    debugger->SetProtocol(protocol);
     if (needHotReload)
     {
         if (pidDebuggee == 0)

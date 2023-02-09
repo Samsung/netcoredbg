@@ -3,7 +3,7 @@
 // See the LICENSE file in the project root for more information.
 #pragma once
 
-#include "cor.h"
+#ifdef INTEROP_DEBUGGING
 
 #include <sys/types.h>
 #include <string>
@@ -12,18 +12,18 @@
 
 namespace netcoredbg
 {
-
-#ifdef INTEROP_DEBUGGING
 namespace InteropDebugging
 {
     typedef std::function<void(const std::string&, std::uintptr_t)> RendListCallback;
 
-    HRESULT ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr);
+    bool ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr);
     void GetProcessLibs(pid_t pid, std::uintptr_t rendezvousAddr, RendListCallback cb);
     std::uintptr_t GetRendezvousBrkAddr(pid_t pid, std::uintptr_t rendezvousAddr);
     int GetRendezvousBrkState(pid_t pid, std::uintptr_t rendezvousAddr);
 
-} // namespace InteropDebugging
-#endif // INTEROP_DEBUGGING
+    std::uintptr_t GetLibEndAddrAndRealName(pid_t TGID, pid_t pid, std::string &realLibName, std::uintptr_t libAddr);
 
+} // namespace InteropDebugging
 } // namespace netcoredbg
+
+#endif // INTEROP_DEBUGGING

@@ -19,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <functional>
 
 DWARFPP_BEGIN_NAMESPACE
 
@@ -1151,6 +1152,8 @@ public:
          * index is out of range, throws out_of_range.
          */
         const file *get_file(unsigned index) const;
+
+        void iterate_file_names(std::function<bool(file*)> cb) const;
 
 private:
         friend class iterator;

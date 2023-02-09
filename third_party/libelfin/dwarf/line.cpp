@@ -202,6 +202,15 @@ line_table::get_file(unsigned index) const
         return &m->file_names[index];
 }
 
+void line_table::iterate_file_names(std::function<bool(file*)> cb) const
+{
+        for (auto &entry : m->file_names)
+        {
+                if (!cb(&entry))
+                        break;
+        }
+}
+
 bool
 line_table::impl::read_file_entry(cursor *cur, bool in_header)
 {

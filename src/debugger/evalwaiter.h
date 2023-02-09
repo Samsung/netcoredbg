@@ -23,6 +23,9 @@ public:
     EvalWaiter() : m_evalCanceled(false), m_evalCrossThreadDependency(false) {}
 
     bool IsEvalRunning();
+#ifdef INTEROP_DEBUGGING
+    DWORD GetEvalRunningThreadID();
+#endif // INTEROP_DEBUGGING
     void CancelEvalRunning();
     ICorDebugEval *FindEvalForThread(ICorDebugThread *pThread);
 

@@ -33,7 +33,6 @@ public:
                 if (base == MAP_FAILED)
                         throw std::system_error(errno, std::system_category(),
                                                 "mmap'ing file");
-                close(fd);
         }
 
         ~mmap_loader()

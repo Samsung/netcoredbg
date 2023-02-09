@@ -87,6 +87,7 @@ set(netcoredbg_SRC
     debugger/breakpoints_line.cpp
     debugger/breakpoints.cpp
     debugger/breakpointutils.cpp
+    debugger/callbacksqueue.cpp
     debugger/evalhelpers.cpp
     debugger/evalstackmachine.cpp
     debugger/evaluator.cpp
@@ -154,12 +155,16 @@ if (NOT CLR_CMAKE_TARGET_TIZEN_LINUX)
 endif()
 
 if (INTEROP_DEBUGGING)
-    list(APPEND netcoredbg_SRC 
+    list(APPEND netcoredbg_SRC
+            debugger/breakpoint_interop_rendezvous.cpp
+            debugger/breakpoints_interop.cpp
+            debugger/breakpoints_interop_line.cpp
             debugger/interop_brk_helpers.cpp
             debugger/interop_debugging.cpp
             debugger/interop_mem_helpers.cpp
             debugger/interop_ptrace_helpers.cpp
             debugger/sigaction.cpp
+            metadata/interop_libraries.cpp
         )
 endif (INTEROP_DEBUGGING)
 

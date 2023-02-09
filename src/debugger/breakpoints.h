@@ -12,10 +12,14 @@
 #include <memory>
 #include <unordered_set>
 #include "interfaces/idebugger.h"
+#include "debugger/interop_ptrace_helpers.h"
 
 namespace netcoredbg
 {
 
+class Evaluator;
+class EvalHelpers;
+class Variables;
 class Modules;
 class BreakBreakpoint;
 class EntryBreakpoint;
@@ -23,26 +27,27 @@ class ExceptionBreakpoints;
 class FuncBreakpoints;
 class LineBreakpoints;
 class HotReloadBreakpoint;
+#ifdef INTEROP_DEBUGGING
+namespace InteropDebugging
+{
+class InteropRendezvousBreakpoint;
+class InteropBreakpoints;
+class InteropLineBreakpoints;
+class InteropLibraries;
+} // namespace InteropDebugging
+#endif // INTEROP_DEBUGGING
 
 class Breakpoints
 {
 public:
 
-    Breakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Variables> &sharedVariables) :
-        m_uniqueBreakBreakpoint(new BreakBreakpoint(sharedModules)),
-        m_uniqueEntryBreakpoint(new EntryBreakpoint(sharedModules)),
-        m_uniqueExceptionBreakpoints(new ExceptionBreakpoints(sharedEvaluator)),
-        m_uniqueFuncBreakpoints(new FuncBreakpoints(sharedModules, sharedVariables)),
-        m_uniqueLineBreakpoints(new LineBreakpoints(sharedModules, sharedVariables)),
-        m_uniqueHotReloadBreakpoint(new HotReloadBreakpoint(sharedModules, sharedEvaluator, sharedEvalHelpers)),
-        m_nextBreakpointId(1)
-    {}
+    Breakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Variables> &sharedVariables);
 
     void SetJustMyCode(bool enable);
     void SetLastStoppedIlOffset(ICorDebugProcess *pProcess, const ThreadId &lastStoppedThreadId);
     void SetStopAtEntry(bool enable);
-    void DeleteAll();
-    HRESULT DisableAll(ICorDebugProcess *pProcess);
+    void DeleteAllManaged();
+    HRESULT DisableAllManaged(ICorDebugProcess *pProcess);
 
     HRESULT UpdateLineBreakpoint(bool haveProcess, int id, int linenum, Breakpoint &breakpoint);
     HRESULT SetFuncBreakpoints(bool haveProcess, const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints);
@@ -76,6 +81,35 @@ public:
     HRESULT CheckApplicationReload(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
     void CheckApplicationReload(ICorDebugThread *pThread);
 
+#ifdef INTEROP_DEBUGGING
+    HRESULT InteropSetLineBreakpoints(pid_t pid, InteropDebugging::InteropLibraries *pInteropLibraries, const std::string& filename,
+                                      const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints,
+                                      std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads);
+    HRESULT InteropAllBreakpointsActivate(pid_t pid, bool act, std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads);
+    HRESULT InteropBreakpointActivate(pid_t pid, uint32_t id, bool act, std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads);
+    // In case of error - return `false`.
+    typedef std::function<void(pid_t, const std::string&, std::uintptr_t, std::uintptr_t)> LoadLibCallback;
+    typedef std::function<void(const std::string&)> UnloadLibCallback;
+    typedef std::function<bool(std::uintptr_t)> IsThumbCodeCallback;
+    bool InteropSetupRendezvousBrk(pid_t pid, LoadLibCallback loadLibCB, UnloadLibCallback unloadLibCB, IsThumbCodeCallback isThumbCode, int &err_code);
+    // Return true, if execution stop at user's native breakpoint (fast check).
+    bool IsInteropBreakpoint(std::uintptr_t brkAddr);
+    bool IsInteropRendezvousBreakpoint(std::uintptr_t brkAddr);
+    void InteropChangeRendezvousState(pid_t TGID, pid_t pid);
+    bool IsInteropLineBreakpoint(std::uintptr_t brkAddr, Breakpoint &breakpoint);
+    // In case we stop at breakpoint and need just move PC before breakpoint.
+    // Note, this method will reset PC in case thread stop at breakpoint and alter `regs`.
+    bool InteropStepPrevToBrk(pid_t pid, std::uintptr_t brkAddr);
+    // Execute real breakpoint's code with single step.
+    void InteropStepOverBrk(pid_t pid, std::uintptr_t brkAddr);
+    // Remove all native breakpoints at interop detach.
+    void InteropRemoveAllAtDetach(pid_t pid);
+    // Resolve breakpoints for module.
+    void InteropLoadModule(pid_t pid, std::uintptr_t startAddr, InteropDebugging::InteropLibraries *pInteropLibraries, std::vector<BreakpointEvent> &events);
+    // Remove all related to unloaded library breakpoints entries in data structures.
+    void InteropUnloadModule(std::uintptr_t startAddr, std::uintptr_t endAddr, std::vector<BreakpointEvent> &events);
+#endif // INTEROP_DEBUGGING
+
 private:
 
     std::unique_ptr<BreakBreakpoint> m_uniqueBreakBreakpoint;
@@ -84,6 +118,17 @@ private:
     std::unique_ptr<FuncBreakpoints> m_uniqueFuncBreakpoints;
     std::unique_ptr<LineBreakpoints> m_uniqueLineBreakpoints;
     std::unique_ptr<HotReloadBreakpoint> m_uniqueHotReloadBreakpoint;
+#ifdef INTEROP_DEBUGGING
+    // "Low level" native breakpoints layer (related to memory patch).
+    std::shared_ptr<InteropDebugging::InteropBreakpoints> m_sharedInteropBreakpoints;
+    // "Up level" rendezvous breakpoint connected to libs load/unload routine.
+    std::unique_ptr<InteropDebugging::InteropRendezvousBreakpoint> m_uniqueInteropRendezvousBreakpoint;
+    // "Up level" line breakpoints implementation.
+    // m_sharedInteropBreakpoints is "low level" layer for work with memory directly. m_sharedInteropLineBreakpoints is top of m_sharedInteropBreakpoints
+    // implementation for line breakpoint logic (close to managed line breakpoints we already have). In case of managed line breakpoints,
+    // "low level" layer is CoreCLR debug API itself.
+    std::unique_ptr<InteropDebugging::InteropLineBreakpoints> m_sharedInteropLineBreakpoints;
+#endif // INTEROP_DEBUGGING
 
     std::mutex m_nextBreakpointIdMutex;
     uint32_t m_nextBreakpointId;

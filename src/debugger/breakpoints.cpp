@@ -8,8 +8,12 @@
 #include "debugger/breakpoints_func.h"
 #include "debugger/breakpoints_line.h"
 #include "debugger/breakpoint_hotreload.h"
+#include "debugger/breakpoint_interop_rendezvous.h"
+#include "debugger/breakpoints_interop.h"
+#include "debugger/breakpoints_interop_line.h"
 #include "debugger/breakpoints.h"
 #include "debugger/breakpointutils.h"
+#include "debugger/interop_brk_helpers.h"
 
 #include <mutex>
 #include <unordered_set>
@@ -28,6 +32,21 @@
 
 namespace netcoredbg
 {
+
+Breakpoints::Breakpoints(std::shared_ptr<Modules> &sharedModules, std::shared_ptr<Evaluator> &sharedEvaluator, std::shared_ptr<EvalHelpers> &sharedEvalHelpers, std::shared_ptr<Variables> &sharedVariables) :
+        m_uniqueBreakBreakpoint(new BreakBreakpoint(sharedModules)),
+        m_uniqueEntryBreakpoint(new EntryBreakpoint(sharedModules)),
+        m_uniqueExceptionBreakpoints(new ExceptionBreakpoints(sharedEvaluator)),
+        m_uniqueFuncBreakpoints(new FuncBreakpoints(sharedModules, sharedVariables)),
+        m_uniqueLineBreakpoints(new LineBreakpoints(sharedModules, sharedVariables)),
+        m_uniqueHotReloadBreakpoint(new HotReloadBreakpoint(sharedModules, sharedEvaluator, sharedEvalHelpers)),
+#ifdef INTEROP_DEBUGGING
+        m_sharedInteropBreakpoints(new InteropDebugging::InteropBreakpoints()),
+        m_uniqueInteropRendezvousBreakpoint(new InteropDebugging::InteropRendezvousBreakpoint(m_sharedInteropBreakpoints)),
+        m_sharedInteropLineBreakpoints(new InteropDebugging::InteropLineBreakpoints(m_sharedInteropBreakpoints)),
+#endif // INTEROP_DEBUGGING
+        m_nextBreakpointId(1)
+    {}
 
 void Breakpoints::SetJustMyCode(bool enable)
 {
@@ -51,7 +70,7 @@ HRESULT Breakpoints::ManagedCallbackBreak(ICorDebugThread *pThread, const Thread
     return m_uniqueBreakBreakpoint->ManagedCallbackBreak(pThread, lastStoppedThreadId);
 }
 
-void Breakpoints::DeleteAll()
+void Breakpoints::DeleteAllManaged()
 {
     m_uniqueEntryBreakpoint->Delete();
     m_uniqueFuncBreakpoints->DeleteAll();
@@ -60,7 +79,7 @@ void Breakpoints::DeleteAll()
     m_uniqueHotReloadBreakpoint->Delete();
 }
 
-HRESULT Breakpoints::DisableAll(ICorDebugProcess *pProcess)
+HRESULT Breakpoints::DisableAllManaged(ICorDebugProcess *pProcess)
 {
     HRESULT Status;
     ToRelease<ICorDebugAppDomainEnum> domains;
@@ -202,6 +221,7 @@ HRESULT Breakpoints::AllBreakpointsActivate(bool act)
 {
     HRESULT Status1 = m_uniqueLineBreakpoints->AllBreakpointsActivate(act);
     HRESULT Status2 = m_uniqueFuncBreakpoints->AllBreakpointsActivate(act);
+
     return FAILED(Status1) ? Status1 : Status2;
 }
 
@@ -221,6 +241,9 @@ void Breakpoints::EnumerateBreakpoints(std::function<bool (const IDebugger::Brea
     m_uniqueLineBreakpoints->AddAllBreakpointsInfo(list);
     m_uniqueFuncBreakpoints->AddAllBreakpointsInfo(list);
     m_uniqueExceptionBreakpoints->AddAllBreakpointsInfo(list);
+#ifdef INTEROP_DEBUGGING
+    m_sharedInteropLineBreakpoints->AddAllBreakpointsInfo(list);
+#endif // INTEROP_DEBUGGING
 
     // sort breakpoint list by ascending order, preserve order of elements with same number
     std::stable_sort(list.begin(), list.end());
@@ -255,5 +278,92 @@ HRESULT Breakpoints::SetHotReloadBreakpoint(const std::string &updatedDLL, const
 {
     return m_uniqueHotReloadBreakpoint->SetHotReloadBreakpoint(updatedDLL, updatedTypeTokens);
 }
+
+#ifdef INTEROP_DEBUGGING
+
+HRESULT Breakpoints::InteropSetLineBreakpoints(pid_t pid, InteropDebugging::InteropLibraries *pInteropLibraries, const std::string& filename,
+                                               const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints,
+                                               std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads)
+{
+    // NOTE interop code provide 'true' on success, we must convert it into HRESULT
+    return m_sharedInteropLineBreakpoints->SetLineBreakpoints(pid, pInteropLibraries, filename, lineBreakpoints, breakpoints,
+                                                              StopAllThreads, FixAllThreads, [&]() -> uint32_t
+    {
+        std::lock_guard<std::mutex> lock(m_nextBreakpointIdMutex);
+        return m_nextBreakpointId++;
+    }) ? S_OK : E_FAIL;
+}
+
+bool Breakpoints::InteropSetupRendezvousBrk(pid_t pid, LoadLibCallback loadLibCB, UnloadLibCallback unloadLibCB, IsThumbCodeCallback isThumbCode, int &err_code)
+{
+    return m_uniqueInteropRendezvousBreakpoint->SetupRendezvousBrk(pid, loadLibCB, unloadLibCB, isThumbCode, err_code);
+}
+
+bool Breakpoints::IsInteropBreakpoint(std::uintptr_t brkAddr)
+{
+    // Make sure we ignore all "internal" breakpoints here.
+    if (m_uniqueInteropRendezvousBreakpoint->IsRendezvousBreakpoint(brkAddr))
+        return false;
+
+    return m_sharedInteropBreakpoints->IsBreakpoint(brkAddr);
+}
+
+bool Breakpoints::IsInteropRendezvousBreakpoint(std::uintptr_t brkAddr)
+{
+    return m_uniqueInteropRendezvousBreakpoint->IsRendezvousBreakpoint(brkAddr);
+}
+
+void Breakpoints::InteropChangeRendezvousState(pid_t TGID, pid_t pid)
+{
+    m_uniqueInteropRendezvousBreakpoint->ChangeRendezvousState(TGID, pid);
+}
+
+bool Breakpoints::IsInteropLineBreakpoint(std::uintptr_t brkAddr, Breakpoint &breakpoint)
+{
+    return m_sharedInteropLineBreakpoints->IsLineBreakpoint(brkAddr, breakpoint);
+}
+
+bool Breakpoints::InteropStepPrevToBrk(pid_t pid, std::uintptr_t brkAddr)
+{
+    return m_sharedInteropBreakpoints->StepPrevToBrk(pid, brkAddr);
+}
+
+void Breakpoints::InteropStepOverBrk(pid_t pid, std::uintptr_t brkAddr)
+{
+    m_sharedInteropBreakpoints->StepOverBrk(pid, brkAddr);
+}
+
+// Must be called only in case all threads stopped and fixed (see InteropDebugger::StopAndDetach()).
+void Breakpoints::InteropRemoveAllAtDetach(pid_t pid)
+{
+    m_sharedInteropBreakpoints->RemoveAllAtDetach(pid);
+    m_uniqueInteropRendezvousBreakpoint->RemoveAtDetach(pid);
+    m_sharedInteropLineBreakpoints->RemoveAllAtDetach(pid);
+}
+
+void Breakpoints::InteropLoadModule(pid_t pid, std::uintptr_t startAddr, InteropDebugging::InteropLibraries *pInteropLibraries, std::vector<BreakpointEvent> &events)
+{
+    m_sharedInteropLineBreakpoints->LoadModule(pid, startAddr, pInteropLibraries, events);
+}
+
+void Breakpoints::InteropUnloadModule(std::uintptr_t startAddr, std::uintptr_t endAddr, std::vector<BreakpointEvent> &events)
+{
+    m_sharedInteropBreakpoints->UnloadModule(startAddr, endAddr);
+    m_sharedInteropLineBreakpoints->UnloadModule(startAddr, endAddr, events);
+}
+
+HRESULT Breakpoints::InteropAllBreakpointsActivate(pid_t pid, bool act, std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads)
+{
+    // NOTE interop code provide error as `errno` code, we must convert it into HRESULT
+    return m_sharedInteropLineBreakpoints->AllBreakpointsActivate(pid, act, StopAllThreads, FixAllThreads) == 0 ? S_OK : E_FAIL;
+}
+
+HRESULT Breakpoints::InteropBreakpointActivate(pid_t pid, uint32_t id, bool act, std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads)
+{
+    // NOTE interop code provide error as `errno` code, we must convert it into HRESULT
+    return m_sharedInteropLineBreakpoints->BreakpointActivate(pid, id, act, StopAllThreads, FixAllThreads) == 0 ? S_OK : E_FAIL;
+}
+
+#endif // INTEROP_DEBUGGING
 
 } // namespace netcoredbg

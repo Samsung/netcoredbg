@@ -458,7 +458,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
                     breakpoint.message = "The breakpoint will not currently be hit. No symbols have been loaded for this document.";
             }
 
-            breakpointsInSource.insert(breakpointsInSource.begin(), std::move(initialBreakpoint));
+            breakpointsInSource.push_back(std::move(initialBreakpoint));
         }
         else
         {

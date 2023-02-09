@@ -90,13 +90,13 @@ static bool GetExecName(pid_t pid, std::string &execName)
 }
 
 // Note, we need only this process executable file name + start address.
-static HRESULT GetProcData(pid_t pid, std::string &execName, std::uintptr_t &startAddr)
+static bool GetProcData(pid_t pid, std::string &execName, std::uintptr_t &startAddr)
 {
     execName.clear();
     startAddr = 0;
 
     if (!GetExecName(pid, execName))
-        return E_FAIL;
+        return false;
 
     char mapFileName[256];
     snprintf(mapFileName, sizeof(mapFileName), "/proc/%d/task/%d/maps", pid, pid);
@@ -105,7 +105,7 @@ static HRESULT GetProcData(pid_t pid, std::string &execName, std::uintptr_t &sta
     if (mapsFile == nullptr)
     {
         LOGE("fopen error for %s file: %s\n", mapFileName, strerror(errno));
-        return E_FAIL;
+        return false;
     }
 
     ssize_t read;
@@ -133,24 +133,24 @@ static HRESULT GetProcData(pid_t pid, std::string &execName, std::uintptr_t &sta
     if (startAddr == 0)
     {
         LOGE("GetProcData error, can't find in %s start address for %s\n", mapFileName, execName.c_str());
-        return E_FAIL;
+        return false;
     }
 
-    return S_OK;
+    return true;
 }
 
-HRESULT ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr)
+bool ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr)
 {
-    HRESULT Status;
     std::uintptr_t startAddr;
     std::string elfFileName;
-    IfFailRet(GetProcData(pid, elfFileName, startAddr));
+    if (!GetProcData(pid, elfFileName, startAddr))
+        return false;
 
-    int fd = open(elfFileName.c_str(), O_RDONLY); // elf::create_mmap_loader() will close it
+    int fd = open(elfFileName.c_str(), O_RDONLY);
     if (fd == -1)
     {
         LOGE("open error for %s file: %s\n", elfFileName.c_str(), strerror(errno));
-        return E_FAIL;
+        return false;
     }
 
     std::unique_ptr<elf::elf> elfFile;
@@ -160,10 +160,12 @@ HRESULT ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr)
     }
     catch(const std::exception &e)
     {
+        close(fd);
         LOGE("ResolveRendezvous error at elf parsing: %s\n", e.what());
-        return E_FAIL;
+        return false;
     }
     assert(elfFile != nullptr); // in case of error must throw exception and don't reach this line
+    close(fd);
 
     // find `DYNAMIC` segment:
     std::uintptr_t dynamicAddr = 0;
@@ -183,7 +185,7 @@ HRESULT ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr)
         if (dynamicData == DT_DEBUG)
         {
             rendezvousAddr = ReadWord(pid, dynamicAddr);
-            return S_OK;
+            return true;
         }
         else
             ReadWord(pid, dynamicAddr); // value or address for current tag
@@ -191,7 +193,7 @@ HRESULT ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr)
         dynamicData = ReadWord(pid, dynamicAddr);
     }
 
-    return E_FAIL;
+    return false;
 }
 
 void GetProcessLibs(pid_t pid, std::uintptr_t rendezvousAddr, RendListCallback cb)
@@ -222,6 +224,52 @@ int GetRendezvousBrkState(pid_t pid, std::uintptr_t rendezvousAddr)
 {
     r_debug rendezvousData = ReadFromAddr<r_debug>(pid, rendezvousAddr);
     return rendezvousData.r_state;
+}
+
+std::uintptr_t GetLibEndAddrAndRealName(pid_t TGID, pid_t pid, std::string &realLibName, std::uintptr_t libAddr)
+{
+    char mapFileName[256];
+    if (pid)
+        snprintf(mapFileName, sizeof(mapFileName), "/proc/%d/task/%d/maps", TGID, pid);
+    else
+        snprintf(mapFileName, sizeof(mapFileName), "/proc/%d/maps", TGID);
+
+    FILE *mapsFile = fopen(mapFileName, "r");
+    if (mapsFile == nullptr)
+        return 0;
+
+    std::uintptr_t endAddr = 0;
+    assert(realLibName.empty());
+
+    ssize_t read;
+    char *line = nullptr;
+    size_t lineLen = 0;
+    while ((read = getline(&line, &lineLen, mapsFile)) != -1)
+    {
+        void *startAddress, *endAddress, *offset;
+        int devHi, devLo, inode;
+        char moduleName[PATH_MAX];
+
+        if (sscanf(line, "%p-%p %*[-rwxsp] %p %x:%x %d %s\n", &startAddress, &endAddress, &offset, &devHi, &devLo, &inode, moduleName) == 7)
+        {
+            if (inode == 0)
+                continue;
+
+            if (endAddr != 0 && realLibName != moduleName)
+                break;
+
+            if ((std::uintptr_t)startAddress == libAddr)
+                realLibName = moduleName;
+
+            if (!realLibName.empty())
+                endAddr = (std::uintptr_t)endAddress;
+        }
+    }
+
+    free(line); // Note, we did not allocate this, but as per contract of getline we should free it
+    fclose(mapsFile);
+
+    return endAddr;
 }
 
 } // namespace InteropDebugging

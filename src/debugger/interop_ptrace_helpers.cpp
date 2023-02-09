@@ -4,39 +4,119 @@
 
 #include "debugger/interop_ptrace_helpers.h"
 
-#include <sys/ptrace.h>
-#if DEBUGGER_UNIX_ARM64
-#include <sys/uio.h> // iovec
-#include <elf.h> // NT_PRSTATUS
-#endif
+#include <mutex>
+#include <thread>
+#include <condition_variable>
+
 
 namespace netcoredbg
 {
 namespace InteropDebugging
 {
 
-long ptrace_GETREGS(pid_t pid, user_regs_struct &regs)
+namespace
 {
-#if DEBUGGER_UNIX_ARM64
-    iovec iov;
-    iov.iov_base = &regs;
-    iov.iov_len = sizeof(regs);
-    return ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov);
-#else
-    return ptrace(PTRACE_GETREGS, pid, nullptr, &regs);
-#endif
+
+    std::mutex g_ptraceCommandMutex; // prevent more than 1 command execution
+    std::mutex g_ptraceMutex; // condition_variable related
+    std::condition_variable g_ptraceCV;
+
+    std::thread g_ptraceWorker;
+    enum class PtraceThreadStatus
+    {
+        UNKNOWN,
+        WORK,
+        FINISHED
+    };
+    PtraceThreadStatus g_ptraceThreadStatus = PtraceThreadStatus::UNKNOWN;
+    bool g_exitPtraceWorker = false;
+
+    struct ptrace_args_t
+    {
+        __ptrace_request request;
+        pid_t pid;
+        void *addr;
+        void *data;
+        void Set(__ptrace_request request_, pid_t pid_, void *addr_, void *data_)
+        {
+            request = request_;
+            pid = pid_;
+            addr = addr_;
+            data = data_;
+        }
+    };
+    ptrace_args_t g_ptraceArgs;
+    long g_ptraceResult = 0;
+    int g_errno = 0;
+
+} // unnamed namespace
+
+
+static void PtraceWorker()
+{
+    std::unique_lock<std::mutex> lock(g_ptraceMutex);
+    g_ptraceCV.notify_one(); // notify async_ptrace_init(), that thread init complete
+
+    while (true)
+    {
+        g_ptraceCV.wait(lock); // wait for ptrace call request from async_ptrace() or exit request from async_ptrace_shutdown()
+
+        if (g_exitPtraceWorker)
+            break;
+
+        errno = 0;
+        g_ptraceResult = ptrace(g_ptraceArgs.request, g_ptraceArgs.pid, g_ptraceArgs.addr, g_ptraceArgs.data);
+        g_errno = errno;
+        g_ptraceCV.notify_one(); // notify async_ptrace(), that result is ready
+    }
+
+    g_ptraceCV.notify_one(); // notify async_ptrace_shutdown(), that execution exit from PtraceWorker()
 }
 
-long ptrace_SETREGS(pid_t pid, user_regs_struct &regs)
+void async_ptrace_init()
 {
-#if DEBUGGER_UNIX_ARM64
-    iovec iov;
-    iov.iov_base = &regs;
-    iov.iov_len = sizeof(regs);
-    return ptrace(PTRACE_SETREGSET, pid, (void*)NT_PRSTATUS, &iov);
-#else
-    return ptrace(PTRACE_SETREGS, pid, nullptr, &regs);
-#endif
+    std::lock_guard<std::mutex> lockCommand(g_ptraceCommandMutex);
+    std::unique_lock<std::mutex> lock(g_ptraceMutex);
+
+    if (g_ptraceThreadStatus == PtraceThreadStatus::WORK)
+        return;
+
+    g_exitPtraceWorker = false;
+    g_ptraceThreadStatus = PtraceThreadStatus::WORK;
+    g_ptraceWorker = std::thread(&PtraceWorker);
+    g_ptraceCV.wait(lock); // wait for init complete from PtraceWorker
+}
+
+void async_ptrace_shutdown()
+{
+    std::lock_guard<std::mutex> lockCommand(g_ptraceCommandMutex);
+    std::unique_lock<std::mutex> lock(g_ptraceMutex);
+
+    if (g_ptraceThreadStatus != PtraceThreadStatus::WORK)
+        return;
+
+    g_exitPtraceWorker = true;
+    g_ptraceCV.notify_one(); // notify PtraceWorker for exit from infinite loop
+    g_ptraceCV.wait(lock); // wait for exit from infinite loop
+    g_ptraceThreadStatus = PtraceThreadStatus::FINISHED;
+    g_ptraceWorker.join();
+}
+
+long async_ptrace(__ptrace_request request, pid_t pid, void *addr, void *data)
+{
+    std::lock_guard<std::mutex> lockCommand(g_ptraceCommandMutex);
+    std::unique_lock<std::mutex> lock(g_ptraceMutex);
+
+    if (g_ptraceThreadStatus != PtraceThreadStatus::WORK)
+        return EAGAIN;
+
+    g_ptraceArgs.Set(request, pid, addr, data);
+
+    g_ptraceCV.notify_one(); // notify PtraceWorker for call real ptrace
+    g_ptraceCV.wait(lock); // wait for result in g_ptraceResult
+
+    errno = g_errno;
+    return g_ptraceResult;
 }
 
 } // namespace InteropDebugging

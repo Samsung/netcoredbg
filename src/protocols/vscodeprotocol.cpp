@@ -257,17 +257,20 @@ void VSCodeProtocol::EmitModuleEvent(const ModuleEvent &event)
     module["name"] = event.module.name;
     module["path"] = event.module.path;
 
-    switch(event.module.symbolStatus)
+    if (event.reason != ModuleRemoved)
     {
-        case SymbolsSkipped:
-            module["symbolStatus"] = "Skipped loading symbols.";
-            break;
-        case SymbolsLoaded:
-            module["symbolStatus"] = "Symbols loaded.";
-            break;
-        case SymbolsNotFound:
-            module["symbolStatus"] = "Symbols not found.";
-            break;
+        switch(event.module.symbolStatus)
+        {
+            case SymbolsSkipped:
+                module["symbolStatus"] = "Skipped loading symbols.";
+                break;
+            case SymbolsLoaded:
+                module["symbolStatus"] = "Symbols loaded.";
+                break;
+            case SymbolsNotFound:
+                module["symbolStatus"] = "Symbols not found.";
+                break;
+        }
     }
 
     EmitEvent("module", body);

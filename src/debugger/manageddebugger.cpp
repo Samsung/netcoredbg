@@ -31,15 +31,19 @@
 #include "debugger/breakpoints_func.h"
 #include "debugger/breakpoints_line.h"
 #include "debugger/breakpoint_hotreload.h"
+#include "debugger/breakpoint_interop_rendezvous.h"
+#include "debugger/breakpoints_interop.h"
+#include "debugger/breakpoints_interop_line.h"
 #include "debugger/breakpoints.h"
 #include "debugger/hotreloadhelpers.h"
-#include "debugger/interop_debugging.h"
 #include "debugger/manageddebugger.h"
 #include "debugger/managedcallback.h"
+#include "debugger/callbacksqueue.h"
 #include "debugger/stepper_simple.h"
 #include "debugger/stepper_async.h"
 #include "debugger/steppers.h"
 #include "managed/interop.h"
+#include "metadata/interop_libraries.h"
 #include "utils/utf.h"
 #include "utils/dynlibs.h"
 #include "metadata/modules.h"
@@ -47,6 +51,11 @@
 #include "utils/logger.h"
 #include "debugger/waitpid.h"
 #include "utils/iosystem.h"
+
+#ifdef INTEROP_DEBUGGING
+#include "elf++.h"
+#include "dwarf++.h"
+#endif // INTEROP_DEBUGGING
 
 #include "palclr.h"
 
@@ -126,7 +135,7 @@ void ManagedDebugger::NotifyProcessCreated()
 #ifdef INTEROP_DEBUGGING
     // Note, in case `attach` CoreCLR also call CreateProcess() that call this method.
     int error_n = 0;
-    if (m_interopDebugging && FAILED(InteropDebugging::Init((pid_t)m_processId, error_n)))
+    if (m_interopDebugging && FAILED(m_uniqueInteropDebugger->Init((pid_t)m_processId, m_sharedCallbacksQueue, error_n)))
     {
         LOGE("Interop debugging disabled due to initialization fail: %s", strerror(error_n));
         m_sharedProtocol->EmitInteropDebuggingErrorEvent(error_n);
@@ -152,8 +161,8 @@ void ManagedDebugger::NotifyProcessExited()
 void ManagedDebugger::DisableAllBreakpointsAndSteppers()
 {
     m_uniqueSteppers->DisableAllSteppers(m_iCorProcess); // Async stepper could have breakpoints active, disable them first.
-    m_uniqueBreakpoints->DeleteAll();
-    m_uniqueBreakpoints->DisableAll(m_iCorProcess); // Last one, disable all breakpoints on all domains, even if we don't hold them.
+    m_sharedBreakpoints->DeleteAllManaged();
+    m_sharedBreakpoints->DisableAllManaged(m_iCorProcess); // Last one, disable all breakpoints on all domains, even if we don't hold them.
 }
 
 void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
@@ -168,7 +177,7 @@ void ManagedDebugger::SetLastStoppedThreadId(ThreadId threadId)
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
 
-    m_uniqueBreakpoints->SetLastStoppedIlOffset(m_iCorProcess, m_lastStoppedThreadId);
+    m_sharedBreakpoints->SetLastStoppedIlOffset(m_iCorProcess, m_lastStoppedThreadId);
 }
 
 void ManagedDebugger::InvalidateLastStoppedThreadId()
@@ -184,11 +193,12 @@ ThreadId ManagedDebugger::GetLastStoppedThreadId()
     return m_lastStoppedThreadId;
 }
 
-ManagedDebugger::ManagedDebugger() :
+ManagedDebugger::ManagedDebugger(std::shared_ptr<IProtocol> &sharedProtocol) :
     m_processAttachedState(ProcessAttachedState::Unattached),
     m_lastStoppedThreadId(ThreadId::AllThreads),
     m_startMethod(StartNone),
     m_isConfigurationDone(false),
+    m_sharedProtocol(sharedProtocol),
     m_sharedThreads(new Threads),
     m_sharedModules(new Modules),
     m_sharedEvalWaiter(new EvalWaiter),
@@ -197,8 +207,12 @@ ManagedDebugger::ManagedDebugger() :
     m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers, m_sharedEvalStackMachine)),
     m_sharedVariables(new Variables(m_sharedEvalHelpers, m_sharedEvaluator, m_sharedEvalStackMachine)),
     m_uniqueSteppers(new Steppers(m_sharedModules, m_sharedEvalHelpers)),
-    m_uniqueBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator, m_sharedEvalHelpers, m_sharedVariables)),
-    m_managedCallback(nullptr),
+    m_sharedBreakpoints(new Breakpoints(m_sharedModules, m_sharedEvaluator, m_sharedEvalHelpers, m_sharedVariables)),
+    m_sharedCallbacksQueue(nullptr),
+    m_uniqueManagedCallback(nullptr),
+#ifdef INTEROP_DEBUGGING
+    m_uniqueInteropDebugger(new InteropDebugging::InteropDebugger(m_sharedProtocol, m_sharedBreakpoints, m_sharedEvalWaiter)),
+#endif // INTEROP_DEBUGGING
     m_justMyCode(true),
     m_stepFiltering(true),
     m_hotReload(false),
@@ -268,7 +282,7 @@ HRESULT ManagedDebugger::Launch(const std::string &fileExec, const std::vector<s
     m_execArgs = execArgs;
     m_cwd = cwd;
     m_env = env;
-    m_uniqueBreakpoints->SetStopAtEntry(stopAtEntry);
+    m_sharedBreakpoints->SetStopAtEntry(stopAtEntry);
     return RunIfReady();
 }
 
@@ -318,7 +332,7 @@ HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
 
 #ifdef INTEROP_DEBUGGING
     if (m_interopDebugging)
-        InteropDebugging::Shutdown();
+        m_uniqueInteropDebugger->Shutdown();
 #endif
 
     if (!terminate)
@@ -349,7 +363,7 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
         return E_UNEXPECTED;
     }
 
-    if (m_managedCallback->IsRunning())
+    if (m_sharedCallbacksQueue->IsRunning())
     {
         LOGW("Can't 'Step', process already running.");
         return E_FAIL;
@@ -364,7 +378,7 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
     m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
 
     // Note, process continue must be after event emitted, since we could get new stop event from queue here.
-    if (FAILED(Status = m_managedCallback->Continue(m_iCorProcess)))
+    if (FAILED(Status = m_sharedCallbacksQueue->Continue(m_iCorProcess)))
         LOGE("Continue failed: %s", errormessage(Status));
 
     return Status;
@@ -385,7 +399,7 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
         return E_UNEXPECTED;
     }
 
-    if (m_managedCallback->IsRunning())
+    if (m_sharedCallbacksQueue->IsRunning())
     {
         LOGI("Can't 'Continue', process already running.");
         return S_OK; // Send 'OK' response, but don't generate continue event.
@@ -396,7 +410,7 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
 
     // Note, process continue must be after event emitted, since we could get new stop event from queue here.
-    if (FAILED(Status = m_managedCallback->Continue(m_iCorProcess)))
+    if (FAILED(Status = m_sharedCallbacksQueue->Continue(m_iCorProcess)))
         LOGE("Continue failed: %s", errormessage(Status));
 
     return Status;
@@ -410,7 +424,7 @@ HRESULT ManagedDebugger::Pause(ThreadId lastStoppedThread)
     HRESULT Status;
     IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
-    return m_managedCallback->Pause(m_iCorProcess, lastStoppedThread);
+    return m_sharedCallbacksQueue->Pause(m_iCorProcess, lastStoppedThread);
 }
 
 HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
@@ -537,12 +551,15 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     if (m_clrPath.empty())
         m_clrPath = GetCLRPath(m_dbgshim, pid);
 
-    m_managedCallback.reset(new ManagedCallback(*this));
-    Status = iCorDebug->SetManagedHandler(m_managedCallback.get());
+    m_sharedCallbacksQueue.reset(new CallbacksQueue(*this));
+    m_uniqueManagedCallback.reset(new ManagedCallback(*this, m_sharedCallbacksQueue));
+    Status = iCorDebug->SetManagedHandler(m_uniqueManagedCallback.get());
+
     if (FAILED(Status))
     {
         iCorDebug->Terminate();
-        m_managedCallback.reset(nullptr);
+        m_uniqueManagedCallback.reset(nullptr);
+        m_sharedCallbacksQueue = nullptr;
         return Status;
     }
 
@@ -551,7 +568,8 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     if (FAILED(Status))
     {
         iCorDebug->Terminate();
-        m_managedCallback.reset(nullptr);
+        m_uniqueManagedCallback.reset(nullptr);
+        m_sharedCallbacksQueue = nullptr;
         return Status;
     }
 
@@ -806,8 +824,8 @@ void ManagedDebugger::Cleanup()
 
     std::lock_guard<Utility::RWLock::Writer> guardProcessRWLock(m_debugProcessRWLock.writer);
 
-    assert((m_iCorProcess && m_iCorDebug && m_managedCallback) ||
-           (!m_iCorProcess && !m_iCorDebug && !m_managedCallback));
+    assert((m_iCorProcess && m_iCorDebug && m_uniqueManagedCallback && m_sharedCallbacksQueue) ||
+           (!m_iCorProcess && !m_iCorDebug && !m_uniqueManagedCallback && !m_sharedCallbacksQueue));
 
     if (!m_iCorProcess)
         return;
@@ -817,11 +835,12 @@ void ManagedDebugger::Cleanup()
     m_iCorDebug->Terminate();
     m_iCorDebug.Free();
 
-    if (m_managedCallback->GetRefCount() > 0)
+    if (m_uniqueManagedCallback->GetRefCount() > 0)
     {
         LOGW("ManagedCallback was not properly released by ICorDebug");
     }
-    m_managedCallback.reset(nullptr);
+    m_uniqueManagedCallback.reset(nullptr);
+    m_sharedCallbacksQueue = nullptr;
 }
 
 HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
@@ -867,13 +886,13 @@ HRESULT ManagedDebugger::GetExceptionInfo(ThreadId threadId, ExceptionInfo &exce
 
     ToRelease<ICorDebugThread> iCorThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &iCorThread));
-    return m_uniqueBreakpoints->GetExceptionInfo(iCorThread, exceptionInfo);
+    return m_sharedBreakpoints->GetExceptionInfo(iCorThread, exceptionInfo);
 }
 
 HRESULT ManagedDebugger::SetExceptionBreakpoints(const std::vector<ExceptionBreakpoint> &exceptionBreakpoints, std::vector<Breakpoint> &breakpoints)
 {
     LogFuncEntry();
-    return m_uniqueBreakpoints->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints);
+    return m_sharedBreakpoints->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::UpdateLineBreakpoint(int id, int linenum, Breakpoint &breakpoint)
@@ -881,8 +900,34 @@ HRESULT ManagedDebugger::UpdateLineBreakpoint(int id, int linenum, Breakpoint &b
     LogFuncEntry();
 
     bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
-    return m_uniqueBreakpoints->UpdateLineBreakpoint(haveProcess, id, linenum, breakpoint);
+    return m_sharedBreakpoints->UpdateLineBreakpoint(haveProcess, id, linenum, breakpoint);
 }
+
+#ifdef INTEROP_DEBUGGING
+
+static bool isNativeSource(const std::string &filename)
+{
+    // Detect native code breakpoint by extension:
+    // https://gcc.gnu.org/onlinedocs/gcc-12.2.0/gcc/Overall-Options.html
+    static std::unordered_set<std::string> fileExtension{"c", "C", "cc", "cp", "cxx", "cpp", "CPP", "c++",
+                                                         "i", "ii", "m", "M", "mi", "mm", "mii",
+                                                         "h", "H", "hh", "hp", "hxx", "hpp", "HPP", "h++", "tpp"};
+
+    std::size_t lastDotPos = filename.rfind('.');
+    if (lastDotPos != std::string::npos)
+    {
+        std::string fileExt = filename.substr(lastDotPos + 1);
+        auto find = fileExtension.find(fileExt);
+        if (find != fileExtension.end())
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+#endif // INTEROP_DEBUGGING
 
 HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
                                             const std::vector<LineBreakpoint> &lineBreakpoints,
@@ -890,8 +935,13 @@ HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
 {
     LogFuncEntry();
 
+#ifdef INTEROP_DEBUGGING
+    if (isNativeSource(filename))
+        return m_uniqueInteropDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints);
+#endif // INTEROP_DEBUGGING
+
     bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
-    return m_uniqueBreakpoints->SetLineBreakpoints(haveProcess, filename, lineBreakpoints, breakpoints);
+    return m_sharedBreakpoints->SetLineBreakpoints(haveProcess, filename, lineBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints)
@@ -899,17 +949,31 @@ HRESULT ManagedDebugger::SetFuncBreakpoints(const std::vector<FuncBreakpoint> &f
     LogFuncEntry();
 
     bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
-    return m_uniqueBreakpoints->SetFuncBreakpoints(haveProcess, funcBreakpoints, breakpoints);
+    return m_sharedBreakpoints->SetFuncBreakpoints(haveProcess, funcBreakpoints, breakpoints);
 }
 
 HRESULT ManagedDebugger::BreakpointActivate(int id, bool act)
 {
-    return m_uniqueBreakpoints->BreakpointActivate(id, act);
+    if (SUCCEEDED(m_sharedBreakpoints->BreakpointActivate(id, act)))
+        return S_OK;
+
+#ifdef INTEROP_DEBUGGING
+    return m_uniqueInteropDebugger->BreakpointActivate(id, act);
+#else
+    return E_FAIL;
+#endif // INTEROP_DEBUGGING
 }
 
 HRESULT ManagedDebugger::AllBreakpointsActivate(bool act)
 {
-    return m_uniqueBreakpoints->AllBreakpointsActivate(act);
+    HRESULT Status1 = m_sharedBreakpoints->AllBreakpointsActivate(act);
+
+#ifdef INTEROP_DEBUGGING
+    HRESULT Status2 = m_uniqueInteropDebugger->AllBreakpointsActivate(act);
+    return FAILED(Status1) ? Status1 : Status2;
+#else
+    return Status1;
+#endif // INTEROP_DEBUGGING
 }
 
 static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModules, bool hotReload, ThreadId threadId, FrameLevel level, StackFrame &stackFrame, bool hotReloadAwareCaller)
@@ -1253,7 +1317,7 @@ void ManagedDebugger::InputCallback(IORedirectHelper::StreamType type, span<char
 void ManagedDebugger::EnumerateBreakpoints(std::function<bool (const BreakpointInfo&)>&& callback)
 {
     LogFuncEntry();
-    return m_uniqueBreakpoints->EnumerateBreakpoints(std::move(callback));
+    return m_sharedBreakpoints->EnumerateBreakpoints(std::move(callback));
 }
 
 static HRESULT GetModuleOfCurrentThreadCode(ICorDebugProcess *pProcess, int lastStoppedThreadId, ICorDebugModule **ppModule)
@@ -1301,7 +1365,7 @@ void ManagedDebugger::SetJustMyCode(bool enable)
 {
     m_justMyCode = enable;
     m_uniqueSteppers->SetJustMyCode(enable);
-    m_uniqueBreakpoints->SetJustMyCode(enable);
+    m_sharedBreakpoints->SetJustMyCode(enable);
 }
 
 void ManagedDebugger::SetStepFiltering(bool enable)
@@ -1386,7 +1450,7 @@ HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileN
 
     // Since we could have new code lines and new methods added, check all breakpoints again.
     std::vector<BreakpointEvent> events;
-    m_uniqueBreakpoints->UpdateBreakpointsOnHotReload(pModule, pdbMethodTokens, events);
+    m_sharedBreakpoints->UpdateBreakpointsOnHotReload(pModule, pdbMethodTokens, events);
     for (const BreakpointEvent &event : events)
         m_sharedProtocol->EmitBreakpointEvent(event);
 
@@ -1433,8 +1497,8 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
 
     // Deltas can be applied only on stopped debuggee process. For Hot Reload scenario we temporary stop it and continue after deltas applied.
     HRESULT Status;
-    IfFailRet(m_managedCallback->Stop(m_iCorProcess));
-    bool continueProcess = (Status == S_OK); // Was stopped by m_managedCallback->Stop() call.
+    IfFailRet(m_sharedCallbacksQueue->Stop(m_iCorProcess));
+    bool continueProcess = (Status == S_OK); // Was stopped by m_sharedCallbacksQueue->Stop() call.
 
     IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
     std::string updatedDLL;
@@ -1445,10 +1509,10 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
     if (SUCCEEDED(FindEvalCapableThread(pThread)))
         IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get(), updatedDLL, updatedTypeTokens));
     else
-        IfFailRet(m_uniqueBreakpoints->SetHotReloadBreakpoint(updatedDLL, updatedTypeTokens));
+        IfFailRet(m_sharedBreakpoints->SetHotReloadBreakpoint(updatedDLL, updatedTypeTokens));
 
     if (continueProcess)
-        IfFailRet(m_managedCallback->Continue(m_iCorProcess));
+        IfFailRet(m_sharedCallbacksQueue->Continue(m_iCorProcess));
 
     return S_OK;
 }

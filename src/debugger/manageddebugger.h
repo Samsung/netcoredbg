@@ -11,6 +11,7 @@
 #include <set>
 #include "interfaces/idebugger.h"
 #include "debugger/dbgshim.h"
+#include "debugger/interop_debugging.h"
 #include "utils/string_view.h"
 #include "utils/span.h"
 #include "utils/ioredirect.h"
@@ -23,6 +24,7 @@ namespace netcoredbg
 using Utility::string_view;
 template <typename T> using span = Utility::span<T>;
 
+class IProtocol;
 class Threads;
 class Steppers;
 class Evaluator;
@@ -31,6 +33,7 @@ class EvalHelpers;
 class EvalStackMachine;
 class Variables;
 class ManagedCallback;
+class CallbacksQueue;
 class Breakpoints;
 class Modules;
 
@@ -44,6 +47,7 @@ class ManagedDebugger : public IDebugger
 {
 private:
     friend class ManagedCallback;
+    friend class CallbacksQueue;
 
     std::mutex m_processAttachedMutex; // Note, in case m_debugProcessRWLock+m_processAttachedMutex, m_debugProcessRWLock must be locked first.
     std::condition_variable m_processAttachedCV;
@@ -72,6 +76,7 @@ private:
     std::map<std::string, std::string> m_env;
     bool m_isConfigurationDone;
 
+    std::shared_ptr<IProtocol> m_sharedProtocol;
     std::shared_ptr<Threads> m_sharedThreads;
     std::shared_ptr<Modules> m_sharedModules;
     std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
@@ -80,8 +85,12 @@ private:
     std::shared_ptr<Evaluator> m_sharedEvaluator;
     std::shared_ptr<Variables> m_sharedVariables;
     std::unique_ptr<Steppers> m_uniqueSteppers;
-    std::unique_ptr<Breakpoints> m_uniqueBreakpoints;
-    std::unique_ptr<ManagedCallback> m_managedCallback;
+    std::shared_ptr<Breakpoints> m_sharedBreakpoints;
+    std::shared_ptr<CallbacksQueue> m_sharedCallbacksQueue;
+    std::unique_ptr<ManagedCallback> m_uniqueManagedCallback;
+#ifdef INTEROP_DEBUGGING
+    std::unique_ptr<InteropDebugging::InteropDebugger> m_uniqueInteropDebugger;
+#endif // INTEROP_DEBUGGING
 
     Utility::RWLock m_debugProcessRWLock;
     ToRelease<ICorDebug> m_iCorDebug;
@@ -122,7 +131,7 @@ private:
                                         std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens);
 
 public:
-    ManagedDebugger();
+    ManagedDebugger(std::shared_ptr<IProtocol> &sharedProtocol);
     ~ManagedDebugger() override;
 
     bool IsJustMyCode() const override { return m_justMyCode; }

@@ -919,6 +919,9 @@ void CLIProtocol::EmitModuleEvent(const ModuleEvent &event)
             printf("\nlibrary loaded: %s\n", ss.str().c_str());
             break;
         }
+        case ModuleRemoved:
+            printf("\nlibrary unloaded: %s\n", event.module.path.c_str());
+            break;
         default:
             break;
     }

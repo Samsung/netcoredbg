@@ -11,91 +11,20 @@
 namespace netcoredbg
 {
 
-// https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/debugging/icordebugcontroller-hasqueuedcallbacks-method
-//
-// Callbacks will be dispatched one at a time, each time ICorDebugController::Continue is called.
-// The debugger can check this flag if it wants to report multiple debugging events that occur simultaneously.
-// 
-// When debugging events are queued, they have already occurred, so the debugger must drain the entire queue
-// to be sure of the state of the debuggee. (Call ICorDebugController::Continue to drain the queue.) For example,
-// if the queue contains two debugging events on thread X, and the debugger suspends thread X after the first debugging
-// event and then calls ICorDebugController::Continue, the second debugging event for thread X will be dispatched although
-// the thread has been suspended.
-
 class ManagedCallback final : public ICorDebugManagedCallback, ICorDebugManagedCallback2, ICorDebugManagedCallback3
 {
+private:
+
     std::mutex m_refCountMutex;
     ULONG m_refCount;
     ManagedDebugger &m_debugger;
-
-    enum class CallbackQueueCall
-    {
-        FinishWorker = 0,
-        Breakpoint,
-        StepComplete,
-        Break,
-        Exception,
-        CreateProcess
-    };
-
-    struct CallbackQueueEntry
-    {
-        CallbackQueueCall Call;
-        ToRelease<ICorDebugAppDomain> iCorAppDomain;
-        ToRelease<ICorDebugThread> iCorThread;
-        ToRelease<ICorDebugBreakpoint> iCorBreakpoint;
-        CorDebugStepReason Reason;
-        ExceptionCallbackType EventType;
-        std::string ExcModule;
-
-        CallbackQueueEntry(CallbackQueueCall call,
-                           ICorDebugAppDomain *pAppDomain,
-                           ICorDebugThread *pThread,
-                           ICorDebugBreakpoint *pBreakpoint,
-                           CorDebugStepReason reason,
-                           ExceptionCallbackType eventType,
-                           const std::string &excModule = "") :
-            Call(call),
-            iCorAppDomain(pAppDomain),
-            iCorThread(pThread),
-            iCorBreakpoint(pBreakpoint),
-            Reason(reason),
-            EventType(eventType),
-            ExcModule(excModule)
-        {}
-    };
-
-    std::mutex m_callbacksMutex;
-    std::condition_variable m_callbacksCV;
-    std::list<CallbackQueueEntry> m_callbacksQueue; // Make sure this one initialized before m_callbacksWorker.
-    bool m_stopEventInProcess; // Make sure this one initialized before m_callbacksWorker.
-    std::thread m_callbacksWorker;
-
-    void CallbacksWorker();
-    bool CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint);
-    bool CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, CorDebugStepReason reason);
-    bool CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread);
-    bool CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, ICorDebugThread *pThread, ExceptionCallbackType eventType, const std::string &excModule);
-    bool CallbacksWorkerCreateProcess();
-    HRESULT AddCallbackToQueue(ICorDebugAppDomain *pAppDomain, std::function<void()> callback);
-    bool HasQueuedCallbacks(ICorDebugProcess *pProcess);
-    HRESULT ContinueAppDomainWithCallbacksQueue(ICorDebugAppDomain *pAppDomain);
-    HRESULT ContinueProcessWithCallbacksQueue(ICorDebugProcess *pProcess);
+    std::shared_ptr<CallbacksQueue> m_sharedCallbacksQueue;
 
 public:
 
-    ManagedCallback(ManagedDebugger &debugger) :
-        m_refCount(0), m_debugger(debugger), m_stopEventInProcess(false), m_callbacksWorker{&ManagedCallback::CallbacksWorker, this} {}
-    ~ManagedCallback();
+    ManagedCallback(ManagedDebugger &debugger, std::shared_ptr<CallbacksQueue> &sharedCallbacksQueue) :
+        m_refCount(0), m_debugger(debugger), m_sharedCallbacksQueue(sharedCallbacksQueue){}
     ULONG GetRefCount();
-
-    // Called from ManagedDebugger by protocol request (Continue/Pause).
-    bool IsRunning();
-    HRESULT Continue(ICorDebugProcess *pProcess);
-    // Stop process and set last stopped thread. If `lastStoppedThread` not passed value from protocol, find best thread.
-    HRESULT Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedThread);
-    // Analog of "pProcess->Stop(0)" call that also care about callbacks.
-    HRESULT Stop(ICorDebugProcess *pProcess);
 
     // IUnknown
 

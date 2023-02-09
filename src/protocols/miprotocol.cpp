@@ -493,6 +493,15 @@ void MIProtocol::EmitModuleEvent(const ModuleEvent &event)
             Printf("=library-loaded,%s\n", ss.str().c_str());
             break;
         }
+        case ModuleRemoved:
+        {
+            std::ostringstream ss;
+            ss << "id=\"{" << event.module.id << "}\","
+               << "target-name=\"" << MIProtocol::EscapeMIValue(event.module.path) << "\","
+               << "host-name=\"" << MIProtocol::EscapeMIValue(event.module.path) << "\"";
+            Printf("=library-unloaded,%s\n", ss.str().c_str());
+            break;
+        }
         default:
             break;
     }
