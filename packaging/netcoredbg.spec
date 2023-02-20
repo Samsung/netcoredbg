@@ -146,7 +146,7 @@ find lib/netstandard1.3/ -name '*.dll' -exec %{_datarootdir}/%{netcoreappalias}/
 %endif
 
 install -p -m 644 lib/netstandard1.3/*.dll %{buildroot}%{sdk_install_prefix}
-touch %{buildroot}%{sdk_install_prefix}/version-%{version}
+touch %{buildroot}%{sdk_install_prefix}/version-%{version}-%{release}
 
 %files
 %manifest netcoredbg.manifest
