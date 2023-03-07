@@ -1072,7 +1072,6 @@ namespace
 
     HRESULT InvocationExpression(std::list<EvalStackEntry> &evalStack, PVOID pArguments, std::string &output, EvalData &ed)
     {
-        // todo:        static const char* extensionAttributeName = "System.Runtime.CompilerServices.ExtensionAttribute..ctor";
         int32_t Int = ((FormatFI*)pArguments)->Int;
 
         if (Int < 0)
@@ -1206,7 +1205,12 @@ namespace
         });
 
         if (!iCorFunc)
-            return E_FAIL;
+        {
+            if(SUCCEEDED(ed.pEvaluator->LookupExtensionMethods(iCorType, funcName, funcArgs, methodGenerics, &iCorFunc)))
+                isInstance = true; // Extension methods always require "this" as their first parameter
+            else
+                return E_FAIL;
+        }
 
         size_t typeArgsCount = evalStack.front().genericTypeCache.size();
         ULONG32 realArgsCount = Int + (isInstance ? 1 : 0);
@@ -1215,7 +1219,7 @@ namespace
         iCorValueArgs.reserve(realArgsCount);
         iCorTypeArgs.reserve(typeArgsCount);
 
-        // Place instance value ("this") if not static
+        // Place instance value ("this") if extension or not static method
         if (isInstance)
         {
             iCorValueArgs.emplace_back(iCorValue.GetPtr());

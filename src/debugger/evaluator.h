@@ -131,6 +131,13 @@ public:
         std::string &methodClass,
         bool &thisParam);
 
+    HRESULT Evaluator::LookupExtensionMethods(
+        ICorDebugType *pType,
+        const std::string &methodName,
+        std::vector<Evaluator::ArgElementType> &methodArgs,
+        std::vector<Evaluator::ArgElementType> &methodGenerics,
+        ICorDebugFunction** ppCorFunc);
+
     HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
     HRESULT WalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, WalkMethodsCallback cb);
     HRESULT WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallback cb);

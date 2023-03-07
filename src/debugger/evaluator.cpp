@@ -481,6 +481,10 @@ HRESULT Evaluator::WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallb
     return WalkMethods(iCorType, methodGenerics, cb);
 }
 
+// https://github.com/dotnet/runtime/blob/57bfe474518ab5b7cfe6bf7424a79ce3af9d6657/docs/design/coreclr/profiling/davbr-blog-archive/samples/sigparse.cpp
+static const ULONG SIG_METHOD_VARARG = 0x5; // vararg calling convention
+static const ULONG SIG_METHOD_GENERIC = 0x10; // used to indicate that the method has one or more generic parameters.
+
 static HRESULT InternalWalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, Evaluator::WalkMethodsCallback cb)
 {
     HRESULT Status;
@@ -513,10 +517,6 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, std::vector<Evalua
             pCurrentTypeParam.Free();
         }
     }
-
-    // https://github.com/dotnet/runtime/blob/57bfe474518ab5b7cfe6bf7424a79ce3af9d6657/docs/design/coreclr/profiling/davbr-blog-archive/samples/sigparse.cpp
-    static const ULONG SIG_METHOD_VARARG = 0x5; // vararg calling convention
-    static const ULONG SIG_METHOD_GENERIC = 0x10; // used to indicate that the method has one or more generic parameters.
 
     ULONG numMethods = 0;
     HCORENUM fEnum = NULL;
@@ -1749,6 +1749,218 @@ HRESULT Evaluator::ResolveIdentifiers(ICorDebugThread *pThread, FrameLevel frame
 {
     return InternalResolveIdentifiers(m_sharedModules.get(), m_sharedEvalHelpers.get(), pThread, frameLevel, pInputValue,
                                       inputSetterData, identifiers, ppResultValue, resultSetterData, ppResultType, evalFlags);
+}
+
+HRESULT Evaluator::LookupExtensionMethods(ICorDebugType *pType,
+                                          const std::string &methodName,
+                                          std::vector<Evaluator::ArgElementType> &methodArgs,
+                                          std::vector<Evaluator::ArgElementType> &methodGenerics,
+                                          ICorDebugFunction** ppCorFunc)
+{
+    static const char* attributeName = "System.Runtime.CompilerServices.ExtensionAttribute..ctor";
+    HRESULT Status;
+    std::vector<Evaluator::ArgElementType> typeGenerics;
+    ToRelease<ICorDebugTypeEnum> paramTypes;
+
+    if (SUCCEEDED(pType->EnumerateTypeParameters(&paramTypes)))
+    {
+        ULONG fetched = 0;
+        ToRelease<ICorDebugType> pCurrentTypeParam;
+
+        while (SUCCEEDED(paramTypes->Next(1, &pCurrentTypeParam, &fetched)) && fetched == 1)
+        {
+            Evaluator::ArgElementType argElType;
+            pCurrentTypeParam->GetType(&argElType.corType);
+            if(argElType.corType == ELEMENT_TYPE_VALUETYPE || argElType.corType == ELEMENT_TYPE_CLASS)
+                IfFailRet(TypePrinter::NameForTypeByType(pCurrentTypeParam, argElType.typeName));
+            typeGenerics.emplace_back(argElType);
+            pCurrentTypeParam.Free();
+        }
+    }
+
+    m_sharedModules->ForEachModule([&](ICorDebugModule *pModule)->HRESULT {
+        ULONG typesCnt = 0;
+        HCORENUM fTypeEnum = NULL;
+        mdTypeDef mdType = mdTypeDefNil;
+
+        ToRelease<IUnknown> pMDUnknown;
+        IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+        ToRelease<IMetaDataImport> pMD;
+        IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+        while (SUCCEEDED(pMD->EnumTypeDefs(&fTypeEnum, &mdType, 1, &typesCnt)) && typesCnt != 0)
+        {
+            std::string typeName;
+            if (!HasAttribute(pMD, mdType, attributeName))
+                continue;
+            if(FAILED(TypePrinter::NameForToken(mdType, pMD, typeName, false, nullptr)))
+                continue;
+            HCORENUM fFuncEnum = NULL;
+            mdMethodDef mdMethod = mdMethodDefNil;
+            ULONG methodsCnt = 0;
+
+            while (SUCCEEDED(pMD->EnumMethods(&fFuncEnum, mdType, &mdMethod, 1, &methodsCnt)) && methodsCnt != 0)
+            {
+                mdTypeDef memTypeDef;
+                ULONG nameLen;
+                WCHAR szFuncName[mdNameLen] = {0};
+                PCCOR_SIGNATURE pSig = NULL;
+                ULONG cbSig = 0;
+
+                if(FAILED(pMD->GetMethodProps(mdMethod, &memTypeDef, szFuncName, _countof(szFuncName), &nameLen,
+                                                nullptr, &pSig, &cbSig, nullptr, nullptr)))
+                    continue;
+                if (!HasAttribute(pMD, mdMethod, attributeName))
+                    continue;
+                std::string fullName = to_utf8(szFuncName);
+                if (fullName != methodName)
+                    continue;
+                ULONG cParams; // Count of signature parameters.
+                ULONG gParams; // count of generic parameters;
+                ULONG elementSize;
+                ULONG convFlags;
+
+                // 1. calling convention for MethodDefSig:
+                // [[HASTHIS] [EXPLICITTHIS]] (DEFAULT|VARARG|GENERIC GenParamCount)
+                elementSize = CorSigUncompressData(pSig, &convFlags);
+                pSig += elementSize;
+
+                // 2. if method has generic params, count them
+                if (convFlags & SIG_METHOD_GENERIC)
+                {
+                    elementSize = CorSigUncompressData(pSig, &gParams);
+                    pSig += elementSize;
+                }
+
+                // 3. count of params
+                elementSize = CorSigUncompressData(pSig, &cParams);
+                pSig += elementSize;
+
+                // 4. return type
+                Evaluator::ArgElementType returnElementType;
+                if(FAILED(ParseElementType(pMD, &pSig, returnElementType, typeGenerics, methodGenerics)))
+                    continue;
+
+                // 5. get next element from method signature
+                std::vector<Evaluator::ArgElementType> argElementTypes(cParams);
+                for (ULONG i = 0; i < cParams; ++i)
+                {
+                    if(FAILED(ParseElementType(pMD, &pSig, argElementTypes[i], typeGenerics, methodGenerics)))
+                        break;
+                }
+
+                std::string typeName;
+                CorElementType ty;
+
+                if(FAILED(pType->GetType(&ty)))
+                    continue;
+                if(FAILED(TypePrinter::NameForTypeByType(pType, typeName)))
+                    continue;
+                if (ty == ELEMENT_TYPE_CLASS || ty == ELEMENT_TYPE_VALUETYPE)
+                {
+                    if (typeName != argElementTypes[0].typeName)
+                    {
+                        // if type names don't match check implemented interfaces names
+
+                        ToRelease<ICorDebugClass> iCorClass;
+                        if(FAILED(pType->GetClass(&iCorClass)))
+                            continue;
+
+                        ToRelease<ICorDebugModule> iCorModule;
+                        if(FAILED(iCorClass->GetModule(&iCorModule)))
+                            continue;
+
+                        mdTypeDef metaTypeDef;
+                        if(FAILED(iCorClass->GetToken(&metaTypeDef)))
+                            continue;
+
+                        ToRelease<IUnknown> pMDUnk;
+                        if(FAILED(iCorModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnk)))
+                            continue;
+
+                        ToRelease<IMetaDataImport> pMDI;
+                        if(FAILED(pMDUnk->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMDI)))
+                            continue;
+
+                        HCORENUM ifEnum = NULL;
+                        mdInterfaceImpl ifaceImpl;
+                        ULONG pcImpls = 0;
+                        while (SUCCEEDED(pMDI->EnumInterfaceImpls(&ifEnum, metaTypeDef, &ifaceImpl, 1, &pcImpls)) && pcImpls != 0)
+                        {
+                            mdTypeDef tkClass;
+                            mdToken tkIface;
+                            PCCOR_SIGNATURE pSig = NULL;
+                            ULONG pcbSig;
+                            Evaluator::ArgElementType ifaceElementType;
+                            if(FAILED(pMDI->GetInterfaceImplProps(ifaceImpl, &tkClass, &tkIface)))
+                                continue;
+                            if(TypeFromToken(tkIface) == mdtTypeSpec)
+                            {
+                                if(FAILED(pMDI->GetTypeSpecFromToken(tkIface, &pSig, &pcbSig)))
+                                    continue;
+                                if(FAILED(ParseElementType(pMDI, &pSig, ifaceElementType, typeGenerics, methodGenerics, false)))
+                                    continue;
+                            }
+                            else
+                            {
+                                if (FAILED(TypePrinter::NameForToken(tkIface, pMDI, ifaceElementType.typeName, true, nullptr)))
+                                    continue;
+                            }
+
+                            if(ifaceElementType.typeName == argElementTypes[0].typeName &&  methodArgs.size() + 1 == argElementTypes.size())
+                            {
+                                bool found = true;
+                                for(unsigned int i = 0; i < methodArgs.size(); i++)
+                                {
+                                    if(methodArgs[i].corType != argElementTypes[i+1].corType)
+                                    {
+                                        found = false;
+                                        break;
+                                    }
+                                }
+                                if(found)
+                                {
+                                    pModule->GetFunctionFromToken(mdMethod, ppCorFunc);
+                                    pMDI->CloseEnum(ifEnum);
+                                    pMD->CloseEnum(fFuncEnum);
+                                    pMD->CloseEnum(fTypeEnum);
+                                    return E_ABORT;
+                                }
+                            }
+                        }
+                        pMDI->CloseEnum(ifEnum);
+                    }
+                }
+                else if (ty != argElementTypes[0].corType || (methodArgs.size() + 1  != argElementTypes.size()))
+                {
+                    continue;
+                }
+                else
+                {
+                    bool found = true;
+                    for(unsigned int i = 0; i < methodArgs.size(); i++)
+                    {
+                        if(methodArgs[i].corType != argElementTypes[i+1].corType)
+                        {
+                            found = false;
+                            break;
+                        }
+                    }
+                    if(found)
+                    {
+                        pModule->GetFunctionFromToken(mdMethod, ppCorFunc);
+                        pMD->CloseEnum(fFuncEnum);
+                        pMD->CloseEnum(fTypeEnum);
+                        return E_ABORT;
+                    }
+                }
+            }
+            pMD->CloseEnum(fFuncEnum);
+        }
+        pMD->CloseEnum(fTypeEnum);
+        return S_OK;
+    });
+    return S_OK;
 }
 
 } // namespace netcoredbg

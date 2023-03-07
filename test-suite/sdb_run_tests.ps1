@@ -18,6 +18,7 @@ $ALL_TEST_NAMES = @(
     "MITestExecInt"
     "MITestHandshake"
     "MITestExceptionBreakpoint"
+    "MITestExtensionMethods"
     "MITestExitCode"
     "MITestEvalNotEnglish"
     "MITestEnum"
@@ -57,6 +58,7 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestAsyncLambdaEvaluate"
     "VSCodeTestGeneric"
     "VSCodeTestEvalArraysIndexers"
+    "VSCodeTestExtensionMethods"
     "VSCodeTestBreakpointWithoutStop"
 )
 

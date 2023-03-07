@@ -30,6 +30,7 @@ ALL_TEST_NAMES=(
     "MITestHandshake"
     "MITestTarget"
     "MITestExceptionBreakpoint"
+    "MITestExtensionMethods"
     "MITestExitCode"
     "MITestEvalNotEnglish"
     "MITest中文目录"
@@ -75,6 +76,7 @@ ALL_TEST_NAMES=(
     "VSCodeTestAsyncLambdaEvaluate"
     "VSCodeTestGeneric"
     "VSCodeTestEvalArraysIndexers"
+    "VSCodeTestExtensionMethods"
     "VSCodeTestBreakpointWithoutStop"
 )
 
