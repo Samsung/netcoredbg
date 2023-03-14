@@ -60,7 +60,7 @@ namespace netcoredbg
         sf->text = fileBuff;
 
         sf->lines.push_back(NULL); // The lines count begins from 1, the 0th line is empty
-        for(char* bufptr = sf->text; bufptr <= sf->text + fileLen; )
+        for(char* bufptr = sf->text; bufptr < sf->text + fileLen; )
         {
             sf->lines.push_back(bufptr);
             while(*bufptr != '\r')

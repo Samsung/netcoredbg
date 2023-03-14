@@ -1553,6 +1553,10 @@ namespace NetCoreDbg
 
                 stream = decompressed;
             }
+            else
+            {
+                docSize = bytes.Length - sizeof(int);
+            }
             return stream;
         }
     }

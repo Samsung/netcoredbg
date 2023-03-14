@@ -1486,6 +1486,8 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
                 else
                     printf("   %d\t%s\n", line,  toPrint);
             }
+            else
+                break; // end of file
         }
         m_sourceLine = line;
     }
