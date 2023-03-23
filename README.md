@@ -80,6 +80,8 @@ You need install homebrew from here: https://brew.sh/
 
 After this, build instructions are same as for Unix (including prerequisites).
 
+**Note: MacOS arm64 build (M1) is community supported and may not work as expected, plus some tests might fail.**
+
 
 ### Windows
 
