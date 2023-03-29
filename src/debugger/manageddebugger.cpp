@@ -554,7 +554,6 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     m_sharedCallbacksQueue.reset(new CallbacksQueue(*this));
     m_uniqueManagedCallback.reset(new ManagedCallback(*this, m_sharedCallbacksQueue));
     Status = iCorDebug->SetManagedHandler(m_uniqueManagedCallback.get());
-
     if (FAILED(Status))
     {
         iCorDebug->Terminate();
@@ -936,6 +935,7 @@ HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
     LogFuncEntry();
 
 #ifdef INTEROP_DEBUGGING
+    // Note, we don't care about m_interopDebugging here, since breakpoint setup could be start before m_interopDebugging changes with env parsing
     if (isNativeSource(filename))
         return m_uniqueInteropDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints);
 #endif // INTEROP_DEBUGGING
@@ -980,6 +980,10 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
 {
     HRESULT Status;
 
+    stackFrame = StackFrame(threadId, level, "");
+    if (FAILED(TypePrinter::GetMethodName(pFrame, stackFrame.methodName)))
+        stackFrame.methodName = "Unnamed method in optimized code";
+
     ToRelease<ICorDebugFunction> pFunc;
     IfFailRet(pFrame->GetFunction(&pFunc));
 
@@ -1012,16 +1016,12 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
                 moduleNamePrefix += "!";
             }
 
-            std::string methodName;
-            TypePrinter::GetMethodName(pFrame, methodName);
             // [Outdated Code] module.dll!MethodName()
-            stackFrame = StackFrame(threadId, level, "[Outdated Code] " + moduleNamePrefix + methodName);
+            stackFrame.methodName = "[Outdated Code] " + moduleNamePrefix + stackFrame.methodName;
 
             return S_OK;
         }
     }
-
-    stackFrame = StackFrame(threadId, level, "");
 
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
@@ -1049,7 +1049,7 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
     stackFrame.clrAddr.nativeOffset = nOffset;
     stackFrame.clrAddr.methodVersion = methodVersion;
 
-    stackFrame.addr = GetFrameAddr(pFrame);
+    stackFrame.addr = 0; // This method used for managed stop events only, but all implemented protocols don't use `addr` in managed stop events outputs.
 
     if (stackFrame.clrAddr.ilOffset != 0)
         stackFrame.activeStatementFlags |= StackFrame::ActiveStatementFlags::PartiallyExecuted;
@@ -1057,8 +1057,6 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
         stackFrame.activeStatementFlags |= StackFrame::ActiveStatementFlags::MethodUpToDate;
     else
         stackFrame.activeStatementFlags |= StackFrame::ActiveStatementFlags::Stale;
-
-    TypePrinter::GetMethodName(pFrame, stackFrame.name);
 
     return S_OK;
 }
@@ -1068,17 +1066,30 @@ HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threa
     return InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, level, stackFrame, false);
 }
 
-static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebugThread *pThread, FrameLevel startFrame,
+static std::string GetModuleNameForFrame(ICorDebugFrame *pFrame)
+{
+    ToRelease<ICorDebugFunction> pFunc;
+    if (!pFrame || FAILED(pFrame->GetFunction(&pFunc)))
+        return std::string{};
+
+    ToRelease<ICorDebugModule> pModule;
+    if (FAILED(pFunc->GetModule(&pModule)))
+        return std::string{};
+
+    WCHAR name[mdNameLen];
+    ULONG32 name_len = 0;
+    if (FAILED(pModule->GetName(_countof(name), &name_len, name)))
+        return std::string{};
+
+    return GetBasename(to_utf8(name));
+}
+
+static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, bool interopDebugging, ICorDebugThread *pThread, ThreadId threadId, FrameLevel startFrame,
                                      unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller)
 {
     LogFuncEntry();
 
     HRESULT Status;
-
-    DWORD tid = 0;
-    pThread->GetID(&tid);
-    ThreadId threadId{tid};
-
     int currentFrame = -1;
 
     auto AddFrameStatementFlag = [&] ()
@@ -1089,11 +1100,19 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
             stackFrames.back().activeStatementFlags |= StackFrame::ActiveStatementFlags::NonLeafFrame;
     };
 
+#ifdef INTEROP_DEBUGGING
+    // In case debug session without interop, we merge "[CoreCLR Native Frame]" and "user's native frame" into "[Native Frames]".
+    const std::string FrameCLRNativeText = interopDebugging ? "[CoreCLR Native Frame]" : "[Native Frames]";
+#else
+    // CoreCLR native frame + at least one user's native frame (note, `FrameNative` case should never happen for not interop build)
+    static const std::string FrameCLRNativeText = "[Native Frames]";
+#endif // INTEROP_DEBUGGING
+
     IfFailRet(WalkFrames(pThread, [&](
         FrameType frameType,
+        std::uintptr_t addr,
         ICorDebugFrame *pFrame,
-        NativeFrame *pNative,
-        ICorDebugFunction *pFunction)
+        NativeFrame *pNative)
     {
         currentFrame++;
 
@@ -1106,19 +1125,22 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
         {
             case FrameUnknown:
                 stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "?");
-                stackFrames.back().addr = GetFrameAddr(pFrame);
+                stackFrames.back().addr = addr;
                 AddFrameStatementFlag();
                 break;
             case FrameNative:
-                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, pNative->symbol);
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, pNative->procName);
                 stackFrames.back().addr = pNative->addr;
-                stackFrames.back().source = Source(pNative->file);
-                stackFrames.back().line = pNative->linenum;
+                stackFrames.back().unknownFrameAddr = pNative->unknownFrameAddr;
+                stackFrames.back().moduleOrLibName = pNative->libName;
+                stackFrames.back().source = Source(pNative->fullSourcePath);
+                stackFrames.back().line = pNative->lineNum;
                 AddFrameStatementFlag();
                 break;
             case FrameCLRNative:
-                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, "[Native Frame]");
-                stackFrames.back().addr = GetFrameAddr(pFrame);
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, FrameCLRNativeText);
+                stackFrames.back().addr = addr;
+                stackFrames.back().unknownFrameAddr = !addr; // Could be 0 here only in case some CoreCLR registers context issue.
                 AddFrameStatementFlag();
                 break;
             case FrameCLRInternal:
@@ -1131,7 +1153,8 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
                     name += GetInternalTypeName(corFrameType);
                     name += "]";
                     stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, name);
-                    stackFrames.back().addr = GetFrameAddr(pFrame);
+                    stackFrames.back().addr = addr;
+                    stackFrames.back().unknownFrameAddr = !addr; // Could be 0 here only in case some CoreCLR registers context issue.
                     AddFrameStatementFlag();
                 }
                 break;
@@ -1140,6 +1163,9 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
                     StackFrame stackFrame;
                     InternalGetFrameLocation(pFrame, pModules, hotReload, threadId, FrameLevel{currentFrame}, stackFrame, hotReloadAwareCaller);
                     stackFrames.push_back(stackFrame);
+                    stackFrames.back().addr = addr;
+                    stackFrames.back().unknownFrameAddr = !addr; // Could be 0 here only in case some CoreCLR registers context issue.
+                    stackFrames.back().moduleOrLibName = GetModuleNameForFrame(pFrame);
                     AddFrameStatementFlag();
                 }
                 break;
@@ -1153,7 +1179,46 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, ICorDebu
     return S_OK;
 }
 
-HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller)
+#ifdef INTEROP_DEBUGGING
+static HRESULT InternalGetNativeStackTrace(InteropDebugging::InteropDebugger *pInteropDebugger, ThreadId threadId, FrameLevel startFrame,
+                                           unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
+{
+    LogFuncEntry();
+
+    HRESULT Status;
+    int currentFrame = -1;
+
+    Status = pInteropDebugger->UnwindNativeFrames(int(threadId), true, 0, nullptr, [&](NativeFrame &nativeFrame)
+    {
+        currentFrame++;
+
+        if (currentFrame < int(startFrame))
+            return S_OK;
+        if (maxFrames != 0 && currentFrame >= int(startFrame) + int(maxFrames))
+            return S_OK;
+
+        stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, nativeFrame.procName);
+        stackFrames.back().addr = nativeFrame.addr;
+        stackFrames.back().unknownFrameAddr = nativeFrame.unknownFrameAddr;
+        stackFrames.back().moduleOrLibName = nativeFrame.libName;
+        stackFrames.back().source = Source(nativeFrame.fullSourcePath);
+        stackFrames.back().line = nativeFrame.lineNum;
+
+        if (currentFrame == 0)
+            stackFrames.back().activeStatementFlags |= StackFrame::ActiveStatementFlags::LeafFrame;
+        else
+            stackFrames.back().activeStatementFlags |= StackFrame::ActiveStatementFlags::NonLeafFrame;
+
+        return S_OK;
+    });
+
+    totalFrames = currentFrame + 1;
+    
+    return Status;
+}
+#endif // INTEROP_DEBUGGING
+
+HRESULT ManagedDebugger::GetStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller)
 {
     LogFuncEntry();
 
@@ -1162,8 +1227,16 @@ HRESULT ManagedDebugger::GetStackTrace(ThreadId  threadId, FrameLevel startFrame
     IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
 
     ToRelease<ICorDebugThread> pThread;
-    IfFailRet(m_iCorProcess->GetThread(int(threadId), &pThread));
-    return InternalGetStackTrace(m_sharedModules.get(), m_hotReload, pThread, startFrame, maxFrames, stackFrames, totalFrames, hotReloadAwareCaller);
+    if (SUCCEEDED(Status = m_iCorProcess->GetThread(int(threadId), &pThread)))
+        return InternalGetStackTrace(m_sharedModules.get(), m_hotReload, m_interopDebugging, pThread, threadId, startFrame, maxFrames, stackFrames, totalFrames, hotReloadAwareCaller);
+
+#ifdef INTEROP_DEBUGGING
+    // E_INVALIDARG for ICorDebugProcess::GetThread() mean thread is not managed (can't found ICorDebugThread object that represents the thread)
+    if (m_interopDebugging && Status == E_INVALIDARG)
+        return InternalGetNativeStackTrace(m_uniqueInteropDebugger.get(), threadId, startFrame, maxFrames, stackFrames, totalFrames);
+#endif // INTEROP_DEBUGGING
+
+    return Status;
 }
 
 int ManagedDebugger::GetNamedVariables(uint32_t variablesReference)

@@ -77,7 +77,7 @@ void to_json(json &j, const Breakpoint &b) {
 void to_json(json &j, const StackFrame &f) {
     j = json{
         {"id",        int(f.id)},
-        {"name",      f.name},
+        {"name",      f.methodName},
         {"line",      f.line},
         {"column",    f.column},
         {"endLine",   f.endLine},

@@ -722,7 +722,7 @@ HRESULT CLIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::strin
 {
     std::ostringstream ss;
 
-    ss << stackFrame.name;
+    ss << stackFrame.methodName;
     if (!stackFrame.source.IsNull())
     {
         ss << " at "  << stackFrame.source.path << ":" << stackFrame.line;
@@ -751,7 +751,20 @@ HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLe
 
     for (const StackFrame &stackFrame : stackFrames)
     {
-        ss << "#" << currentFrame;
+        ss << "#" << currentFrame << ": ";
+        if (stackFrame.unknownFrameAddr)
+        {
+            // Note, `AddrToString()` return string with proper amount of symbols for current arch.
+            // For now, this is 2 ("0x") + number of symbols that need for print max address for current arch.
+            std::string tmpString = ProtocolUtils::AddrToString(stackFrame.addr);
+            std::fill(tmpString.begin(), tmpString.end(), '?');
+            ss << tmpString;
+        }
+        else
+            ss << ProtocolUtils::AddrToString(stackFrame.addr);
+
+        if (!stackFrame.moduleOrLibName.empty())
+            ss << " " << stackFrame.moduleOrLibName << "`";
 
         std::string frameLocation;
         PrintFrameLocation(stackFrame, frameLocation);

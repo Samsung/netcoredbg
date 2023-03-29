@@ -88,7 +88,7 @@ public:
     HRESULT InteropAllBreakpointsActivate(pid_t pid, bool act, std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads);
     HRESULT InteropBreakpointActivate(pid_t pid, uint32_t id, bool act, std::function<void()> StopAllThreads, std::function<void(std::uintptr_t)> FixAllThreads);
     // In case of error - return `false`.
-    typedef std::function<void(pid_t, const std::string&, std::uintptr_t, std::uintptr_t)> LoadLibCallback;
+    typedef std::function<void(pid_t, const std::string&, const std::string&, std::uintptr_t, std::uintptr_t)> LoadLibCallback;
     typedef std::function<void(const std::string&)> UnloadLibCallback;
     typedef std::function<bool(std::uintptr_t)> IsThumbCodeCallback;
     bool InteropSetupRendezvousBrk(pid_t pid, LoadLibCallback loadLibCB, UnloadLibCallback unloadLibCB, IsThumbCodeCallback isThumbCode, int &err_code);

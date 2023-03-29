@@ -462,8 +462,12 @@ bool CallbacksQueue::CallbacksWorkerInteropBreakpoint(pid_t pid, std::uintptr_t 
 
     m_debugger.SetLastStoppedThreadId(ThreadId(pid));
 
-    event.frame.source = event.breakpoint.source;
-    event.frame.line = event.breakpoint.line;
+    if (FAILED(m_debugger.m_uniqueInteropDebugger->GetFrameForAddr(brkAddr, event.frame)))
+    {
+        event.frame.source = event.breakpoint.source;
+        event.frame.line = event.breakpoint.line;
+    }
+
     m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return true;
@@ -473,15 +477,15 @@ HRESULT CallbacksQueue::AddInteropCallbackToQueue(std::function<void()> callback
 {
     std::unique_lock<std::mutex> lock(m_callbacksMutex);
 
-    callback();
+    callback(); // Caller could add entries into m_callbacksQueue (this is why m_callbacksMutex cover this call).
 
     if (!m_callbacksQueue.empty())
     {
-        // NOTE in case `m_stopEventInProcess` is `true` process have "stopped" status for sure, but could already execute some eval (that mean managed process is running).
+        // NOTE
+        // In case `m_stopEventInProcess` is `true`, process have "stopped" status for sure, but could already execute some eval (this is OK, do not stop managed part!).
+        // No need to check `IsEvalRunning()` here, since this code covered by `m_callbacksMutex` (that mean, breakpoint condition check with eval not running now for sure).
         if (!m_stopEventInProcess)
         {
-            // NOTE in case managed callbacks we are safe with managed process continue, since as soon as `m_callbacksQueue` is not empty,
-            // no one will continue
             BOOL procRunning = FALSE;
             m_debugger.m_debugProcessRWLock.reader.lock();
             if (m_debugger.m_iCorProcess && SUCCEEDED(m_debugger.m_iCorProcess->IsRunning(&procRunning)) && procRunning == TRUE)

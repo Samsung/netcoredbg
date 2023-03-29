@@ -448,10 +448,10 @@ bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
     return true;
 }
 
-std::string AddrToString(uint64_t addr)
+std::string AddrToString(std::uintptr_t addr)
 {
     std::ostringstream ss;
-    ss << "0x" << std::setw(2 * sizeof(void*)) << std::setfill('0') << std::hex << addr;
+    ss << "0x" << std::setw(2 * sizeof(std::uintptr_t)) << std::setfill('0') << std::hex << addr;
     return ss.str();
 }
 

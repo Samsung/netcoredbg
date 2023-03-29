@@ -17,7 +17,7 @@ namespace InteropDebugging
     std::uintptr_t GetBrkAddrByPC(const user_regs_struct &regs);
     word_t EncodeBrkOpcode(word_t data, bool thumbCode);
     word_t RestoredOpcode(word_t dataWithBrk, word_t restoreData);
-    void StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData);
+    bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData);
 
 } // namespace InteropDebugging
 } // namespace netcoredbg

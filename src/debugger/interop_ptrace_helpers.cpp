@@ -108,7 +108,10 @@ long async_ptrace(__ptrace_request request, pid_t pid, void *addr, void *data)
     std::unique_lock<std::mutex> lock(g_ptraceMutex);
 
     if (g_ptraceThreadStatus != PtraceThreadStatus::WORK)
-        return EAGAIN;
+    {
+        errno = EPERM;
+        return -1;
+    }
 
     g_ptraceArgs.Set(request, pid, addr, data);
 

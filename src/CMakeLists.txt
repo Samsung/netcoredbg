@@ -163,6 +163,7 @@ if (INTEROP_DEBUGGING)
             debugger/interop_debugging.cpp
             debugger/interop_mem_helpers.cpp
             debugger/interop_ptrace_helpers.cpp
+            debugger/interop_unwind.cpp
             debugger/sigaction.cpp
             metadata/interop_libraries.cpp
         )
@@ -199,6 +200,10 @@ if (NCDB_DOTNET_STARTUP_HOOK)
 endif (NCDB_DOTNET_STARTUP_HOOK)
 
 if (INTEROP_DEBUGGING)
+    if (NOT CLR_CMAKE_PLATFORM_LINUX)
+        message(FATAL_ERROR "Interop debugging feature not implemented for this OS.")
+    endif()
+
     add_definitions(-DINTEROP_DEBUGGING)
 
     if (CLR_CMAKE_PLATFORM_UNIX_AMD64)
@@ -209,10 +214,46 @@ if (INTEROP_DEBUGGING)
         add_definitions(-DDEBUGGER_UNIX_ARM64)
     elseif (CLR_CMAKE_PLATFORM_UNIX_ARM)
         add_definitions(-DDEBUGGER_UNIX_ARM)
+    else()
+        message(FATAL_ERROR "Interop debugging feature not implemented for this CPU architecture.")
     endif()
 
     target_link_libraries(netcoredbg elf++ dwarf++)
     include_directories(${PROJECT_SOURCE_DIR}/third_party/libelfin/elf ${PROJECT_SOURCE_DIR}/third_party/libelfin/dwarf)
+
+
+    # libunwind
+    find_path(LIBUNWIND_INCLUDE_DIRS NAMES libunwind.h)
+    find_library(LIBUNWIND_LIBRARY unwind)
+    find_library(LIBUNWIND_PTRACE_LIBRARY unwind-ptrace)
+    if (CLR_CMAKE_PLATFORM_UNIX_AMD64)
+        find_library(LIBUNWIND_LIBRARY_ARCH unwind-x86_64)
+    elseif (CLR_CMAKE_PLATFORM_UNIX_X86)
+        find_library(LIBUNWIND_LIBRARY_ARCH unwind-x86)
+    elseif (CLR_CMAKE_PLATFORM_UNIX_ARM64)
+        find_library(LIBUNWIND_LIBRARY_ARCH unwind-aarch64)
+    elseif (CLR_CMAKE_PLATFORM_UNIX_ARM)
+        find_library(LIBUNWIND_LIBRARY_ARCH unwind-arm)
+    endif()
+
+    if (${LIBUNWIND_INCLUDE_DIRS} STREQUAL "LIBUNWIND_INCLUDE_DIRS-NOTFOUND")
+        message(FATAL_ERROR "Libunwind headers not found")
+    endif()
+
+    if (${LIBUNWIND_LIBRARY} STREQUAL "LIBUNWIND_LIBRARY-NOTFOUND")
+        message(FATAL_ERROR "Libunwind lib not found")
+    endif()
+
+    if (${LIBUNWIND_PTRACE_LIBRARY} STREQUAL "LIBUNWIND_PTRACE_LIBRARY-NOTFOUND")
+        message(FATAL_ERROR "Libunwind-ptrace libs not found")
+    endif()
+
+    if (${LIBUNWIND_LIBRARY_ARCH} STREQUAL "LIBUNWIND_LIBRARY_ARCH-NOTFOUND")
+        message(FATAL_ERROR "Libunwind libs for this arch not found")
+    endif()
+
+    target_link_libraries(netcoredbg ${LIBUNWIND_LIBRARY} ${LIBUNWIND_PTRACE_LIBRARY} ${LIBUNWIND_LIBRARY_ARCH})
+    include_directories(${LIBUNWIND_INCLUDE_DIRS})
 endif (INTEROP_DEBUGGING)
 
 if (CLR_CMAKE_TARGET_TIZEN_LINUX)

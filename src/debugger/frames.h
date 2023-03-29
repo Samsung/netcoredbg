@@ -23,22 +23,30 @@ enum FrameType
 
 struct NativeFrame
 {
-    uint64_t addr;
-    std::string symbol;
-    std::string file;
-    std::string fullname;
-    int linenum;
-    int tid;
-    NativeFrame() : addr(0), linenum(0), tid(0) {}
+    std::uintptr_t addr = 0;
+    bool unknownFrameAddr = false;
+    std::string libName;
+    std::string procName;
+    std::string fullSourcePath;
+    int lineNum = 0;
 };
 
-typedef std::function<HRESULT(FrameType,ICorDebugFrame*,NativeFrame*,ICorDebugFunction*)> WalkFramesCallback;
+typedef std::function<HRESULT(FrameType,std::uintptr_t,ICorDebugFrame*,NativeFrame*)> WalkFramesCallback;
 
 struct Thread;
 
 HRESULT GetFrameAt(ICorDebugThread *pThread, FrameLevel level, ICorDebugFrame **ppFrame);
-uint64_t GetFrameAddr(ICorDebugFrame *pFrame);
 const char *GetInternalTypeName(CorDebugInternalFrameType frameType);
 HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb);
+
+#ifdef INTEROP_DEBUGGING
+namespace InteropDebugging
+{
+class InteropDebugger;
+}
+
+void InitNativeFramesUnwind(InteropDebugging::InteropDebugger *pInteropDebugger);
+void ShutdownNativeFramesUnwind();
+#endif // INTEROP_DEBUGGING
 
 } // namespace netcoredbg

@@ -34,7 +34,7 @@ bool InteropRendezvousBreakpoint::SetupRendezvousBrk(pid_t pid, LoadLibCallback 
         std::uintptr_t endAddr = GetLibEndAddrAndRealName(pid, 0, realLibName, startAddr);
         if (endAddr == 0 || realLibName.empty()) // ignore in case error or linux-vdso.so
             return;
-        m_loadLibCB(pid, realLibName, startAddr, endAddr);
+        m_loadLibCB(pid, libName, realLibName, startAddr, endAddr);
         m_libsNameToRealNameMap.emplace(libName, std::move(realLibName));
     });
 
@@ -70,7 +70,7 @@ void InteropRendezvousBreakpoint::ChangeRendezvousState(pid_t TGID, pid_t pid)
                 std::uintptr_t endAddr = GetLibEndAddrAndRealName(TGID, pid, realLibName, startAddr);
                 if (endAddr == 0 || realLibName.empty()) // ignore in case error or linux-vdso.so
                     return;
-                m_loadLibCB(pid, realLibName, startAddr, endAddr);
+                m_loadLibCB(pid, libName, realLibName, startAddr, endAddr);
                 m_libsNameToRealNameMap.emplace(libName, std::move(realLibName));
             });
         }

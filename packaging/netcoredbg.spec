@@ -29,6 +29,7 @@ BuildRequires: dotnet-build-tools
 BuildRequires: unzip
 BuildRequires: corefx-managed
 BuildRequires: libdlog-devel
+BuildRequires: libunwind-devel
 Requires: coreclr
 
 %{!?build_type:%define build_type Release}

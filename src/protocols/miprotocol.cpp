@@ -130,7 +130,7 @@ static HRESULT PrintFrameLocation(const StackFrame &stackFrame, std::string &out
            << "\",native-offset=\"" << stackFrame.clrAddr.nativeOffset << "\"},";
     }
 
-    ss << "func=\"" << stackFrame.name << "\"";
+    ss << "func=\"" << stackFrame.methodName << "\"";
     if (stackFrame.id)
         ss << ",addr=\"" << ProtocolUtils::AddrToString(stackFrame.addr) << "\"";
 

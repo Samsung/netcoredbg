@@ -177,8 +177,8 @@ private:
     mutable Optional<FrameLevel> level;
 
 public:
-    FrameId id;         // should be assigned only once, befor calls to GetLevel or GetThreadId.
-    std::string name;
+    FrameId id;         // should be assigned only once, before calls to GetLevel or GetThreadId.
+    std::string methodName;
     Source source;
     int line;
     int column;
@@ -187,7 +187,9 @@ public:
     std::string moduleId;
 
     ClrAddr clrAddr; // exposed for MI protocol
-    uint64_t addr; // exposed for MI protocol
+    std::uintptr_t addr; // exposed for MI and CLI protocols
+    bool unknownFrameAddr; // exposed for CLI protocol
+    std::string moduleOrLibName; // exposed for CLI protocol
 
     enum ActiveStatementFlags : uint16_t
     {
@@ -202,16 +204,16 @@ public:
 
     StackFrame() :
         thread(ThreadId{}, true), level(FrameLevel{}, true), id(),
-        line(0), column(0), endLine(0), endColumn(0), addr(0), activeStatementFlags(0) {}
+        line(0), column(0), endLine(0), endColumn(0), addr(0), unknownFrameAddr(false), activeStatementFlags(0) {}
 
-    StackFrame(ThreadId threadId, FrameLevel level, const std::string& name) :
-        thread(threadId, true), level(level, true), id(FrameId(threadId, level)),
-        name(name), line(0), column(0), endLine(0), endColumn(0), addr(0), activeStatementFlags(0)
+    StackFrame(ThreadId threadId, FrameLevel level_, const std::string& methodName_) :
+        thread(threadId, true), level(level_, true), id(FrameId(threadId, level_)),
+        methodName(methodName_), line(0), column(0), endLine(0), endColumn(0), addr(0), unknownFrameAddr(false), activeStatementFlags(0)
     {}
 
     StackFrame(FrameId id) :
         thread(ThreadId{}, false), level(FrameLevel{}, false), id(id),
-        line(0), column(0), endLine(0), endColumn(0), addr(0), activeStatementFlags(0)
+        line(0), column(0), endLine(0), endColumn(0), addr(0), unknownFrameAddr(false), activeStatementFlags(0)
     {}
 
     FrameLevel GetLevel() const

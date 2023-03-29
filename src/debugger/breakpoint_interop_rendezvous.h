@@ -23,7 +23,7 @@ class InteropRendezvousBreakpoint
 {
 public:
 
-    typedef std::function<void(pid_t, const std::string&, std::uintptr_t, std::uintptr_t)> LoadLibCallback;
+    typedef std::function<void(pid_t, const std::string&, const std::string&, std::uintptr_t, std::uintptr_t)> LoadLibCallback;
     typedef std::function<void(const std::string&)> UnloadLibCallback;
     typedef std::function<bool(std::uintptr_t)> IsThumbCodeCallback;
 

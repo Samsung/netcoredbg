@@ -104,12 +104,13 @@ void InteropBreakpoints::RemoveAllAtDetach(pid_t pid)
             if (errno != 0)
             {
                 LOGE("Ptrace peekdata error: %s", strerror(errno));
+                continue;
             }
             word_t restoredData = RestoredOpcode(brkData, entry.second.m_savedData);
 
             if (async_ptrace(PTRACE_POKEDATA, pid, (void*)entry.first, (void*)restoredData) == -1)
             {
-                LOGW("Ptrace pokedata error: %s\n", strerror(errno));
+                LOGE("Ptrace pokedata error: %s\n", strerror(errno));
             }
         }
     }
@@ -134,7 +135,8 @@ void InteropBreakpoints::StepOverBrk(pid_t pid, std::uintptr_t brkAddr)
     if (find == m_currentBreakpointsInMemory.end())
         return;
 
-    InteropDebugging::StepOverBrk(pid, brkAddr, find->second.m_savedData);
+    if (!InteropDebugging::StepOverBrk(pid, brkAddr, find->second.m_savedData))
+        std::abort(); // Fatal error, we already logged all data about this error.
 }
 
 bool InteropBreakpoints::StepPrevToBrk(pid_t pid, std::uintptr_t brkAddr)
@@ -153,12 +155,18 @@ bool InteropBreakpoints::StepPrevToBrk(pid_t pid, std::uintptr_t brkAddr)
     iov.iov_base = &regs;
     iov.iov_len = sizeof(user_regs_struct);
     if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
-        LOGW("Ptrace getregset error: %s\n", strerror(errno));
+    {
+        LOGE("Ptrace getregset error: %s\n", strerror(errno));
+        std::abort(); // Fatal error, we already logged all data about this error.
+    }
 
     SetPrevBrkPC(regs);
 
     if (async_ptrace(PTRACE_SETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
-        LOGW("Ptrace setregset error: %s\n", strerror(errno));
+    {
+        LOGE("Ptrace setregset error: %s\n", strerror(errno));
+        std::abort(); // Fatal error, we already logged all data about this error.
+    }
 
     return true;
 }

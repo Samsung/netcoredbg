@@ -68,7 +68,7 @@ namespace ProtocolUtils
     std::string GetConditionPrepareArgs(std::vector<std::string> &args);
     bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb);
     bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb);
-    std::string AddrToString(uint64_t addr);
+    std::string AddrToString(std::uintptr_t addr);
 
 } // namespace ProtocolUtils
 

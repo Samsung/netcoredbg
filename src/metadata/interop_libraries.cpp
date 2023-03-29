@@ -9,9 +9,9 @@
 #include "elf++.h"
 #include "dwarf++.h"
 #include "utils/logger.h"
-#if DEBUGGER_UNIX_ARM
 #include <elf.h>
-#endif
+#include "utils/filesystem.h"
+#include <cxxabi.h> // demangle
 
 
 namespace netcoredbg
@@ -26,11 +26,86 @@ namespace
 
 } // unnamed namespace
 
+static bool OpenElf(const std::string &file, std::unique_ptr<elf::elf> &ef)
+{
+    int fd = open(file.c_str(), O_RDONLY);
+    if (fd == -1)
+    {
+        LOGI("Load elf failed at file open %s: %s\n", file.c_str(), strerror(errno));
+        return false;
+    }
+
+    try
+    {
+        ef.reset(new elf::elf(elf::create_mmap_loader(fd)));
+    }
+    catch(const std::exception& e)
+    {
+        close(fd);
+        LOGI("Load elf failed at elf::elf() for file %s: %s\n", file.c_str(), e.what());
+        return false;
+    }
+    close(fd);
+    return true;
+}
 
 #if DEBUGGER_UNIX_ARM
-void InteropLibraries::CollectThumbCodeRegions(std::uintptr_t startAddr, LibraryInfo &info)
+static bool CollectThumbCodeRegionsBySymtab(std::uintptr_t startAddr, InteropLibraries::LibraryInfo &info, std::unique_ptr<elf::elf> &ef)
 {
-    for (auto &sec : info.ef->sections())
+    std::map<std::uintptr_t, char> blocksByTypes;
+    bool symtabDetected = false;
+    for (auto &sec : ef->sections())
+    {
+        if (sec.get_name() != ".symtab")
+            continue;
+
+        symtabDetected = true;
+        elf::symtab symTab = sec.as_symtab();
+
+        for (auto sym : symTab)
+        {
+            auto data = sym.get_data();
+            if (ELF32_ST_TYPE(data.info) != STT_NOTYPE ||
+                data.size != 0)
+                continue;
+
+            std::string symName = sym.get_name();
+            if (symName.size() < 2 || symName[0] != '$')
+                continue;
+
+            std::uintptr_t addrStart = data.value + startAddr; // address is even, no need to convert
+            blocksByTypes[addrStart] = symName[1];
+        }
+    }
+
+    if (!symtabDetected)
+        return false;
+
+    // At this point we have blocksByTypes ordered by address and data will be looks like: `d`, `a`, `a`, `a`, `t`, `a`, `t`, `t`, `a`, `t`, `d`, `d`, ...
+    std::uintptr_t thumbStart = 0;
+    for (auto &entry : blocksByTypes)
+    {
+        if (entry.second == 't')
+        {
+            if (!thumbStart)
+                thumbStart = entry.first;
+        }
+        else if (thumbStart)
+        {
+            info.thumbRegions[thumbStart] = entry.first;
+            thumbStart = 0;
+        }
+    }
+    if (thumbStart)
+        info.thumbRegions[thumbStart] = info.libEndAddr;
+
+    info.thumbRegionsValid = true;
+    return true;
+}
+
+static void CollectThumbCodeRegionsByDynsymtab(std::uintptr_t startAddr, InteropLibraries::LibraryInfo &info, std::unique_ptr<elf::elf> &ef)
+{
+    for (auto &sec : ef->sections())
     {
         if (sec.get_name() != ".dynsym")
             continue;
@@ -78,36 +153,67 @@ void InteropLibraries::CollectThumbCodeRegions(std::uintptr_t startAddr, Library
             info.thumbRegions[addrStart] = addrEnd;
         }
     }
+
+    info.thumbRegionsValid = true;
+}
+
+static void CollectThumbCodeRegions(std::uintptr_t startAddr, InteropLibraries::LibraryInfo &info)
+{
+    std::unique_ptr<elf::elf> ef;
+    if (!OpenElf(info.fullName, ef))
+        return;
+
+    // Note, in case of thumb code, ".symtab" provide more info than ".dynsym", since in this case we have all thumb code blocks, even for code without symbol name.
+    if (CollectThumbCodeRegionsBySymtab(startAddr, info, ef))
+        return;
+
+    CollectThumbCodeRegionsByDynsymtab(startAddr, info, ef);
 }
 #endif
 
-bool InteropLibraries::LoadDebuginfoFromFile(std::uintptr_t startAddr, const std::string &fileName, LibraryInfo &info, bool collectElfData)
+static void CollectProcDataFromElf(std::uintptr_t startAddr, InteropLibraries::LibraryInfo &info)
 {
-    int fd = open(fileName.c_str(), O_RDONLY);
-    if (fd == -1)
-    {
-        LOGI("Load debuginfo failed at file open %s: %s\n", fileName.c_str(), strerror(errno));
-        return false;
-    }
+    std::unique_ptr<elf::elf> ef;
+    if (!OpenElf(info.fullName, ef))
+        return;
 
-    try
+    for (auto &sec : ef->sections())
     {
-        info.ef.reset(new elf::elf(elf::create_mmap_loader(fd)));
-    }
-    catch(const std::exception& e)
-    {
-        close(fd);
-        LOGI("Load debuginfo failed at elf::elf() for file %s: %s\n", fileName.c_str(), e.what());
-        return false;
-    }
-    close(fd);
+        if (sec.get_name() != ".dynsym" &&
+            sec.get_name() != ".symtab")
+            continue;
 
-    if (collectElfData)
-    {
+        elf::symtab symTab = sec.as_symtab();
+
+        for (auto sym : symTab)
+        {
+            auto data = sym.get_data();
+            // Both Elf32_Sym and Elf64_Sym use the same one-byte st_info field.
+            if (ELF32_ST_TYPE(data.info) != STT_FUNC || // we need executed code only
+                data.size == 0)
+                continue;
+
+            std::uintptr_t addrStart = data.value + startAddr;
+
+            if (info.proceduresData.find(addrStart) != info.proceduresData.end())
+                continue;
+
 #if DEBUGGER_UNIX_ARM
-        CollectThumbCodeRegions(startAddr, info);
+            addrStart = addrStart & ~((std::uintptr_t)1); // convert to proper (even) address of code block start
 #endif
+            std::uintptr_t addrEnd = addrStart + data.size;
+
+            info.proceduresData.emplace(std::make_pair(addrStart, InteropLibraries::LibraryInfo::proc_data_t(addrEnd, sym.get_name())));
+        }
     }
+
+    info.proceduresDataValid = true;
+}
+
+static bool LoadDebuginfoFromFile(const std::string &fileName, InteropLibraries::LibraryInfo &info)
+{
+    if (!OpenElf(fileName, info.ef))
+        return false;
 
     try
     {
@@ -136,7 +242,7 @@ static bool GetFileNameAndPath(const std::string &path, std::string &fileName, s
     return true;
 }
 
-SymbolStatus InteropLibraries::LoadDebuginfo(std::uintptr_t startAddr, LibraryInfo &info)
+static SymbolStatus LoadDebuginfo(const std::string &libLoadName, InteropLibraries::LibraryInfo &info)
 {
     // Debuginfo search sequence:
     // 1. Check debuginfo section in target file itself;
@@ -145,7 +251,7 @@ SymbolStatus InteropLibraries::LoadDebuginfo(std::uintptr_t startAddr, LibraryIn
     // 4. Check file with same location as target file inside `/usr/lib/debug/` directory and with `.debug` extension.
 
     // Note, in case `.so` we also need collect all elf data we could need.
-    if (LoadDebuginfoFromFile(startAddr, info.fullName, info, true))
+    if (LoadDebuginfoFromFile(info.fullName, info))
         return SymbolStatus::SymbolsLoaded;
 
     std::string fileName;
@@ -153,19 +259,48 @@ SymbolStatus InteropLibraries::LoadDebuginfo(std::uintptr_t startAddr, LibraryIn
     if (!GetFileNameAndPath(info.fullName, fileName, filePath))
         return SymbolStatus::SymbolsNotFound;
 
-    if (LoadDebuginfoFromFile(startAddr, filePath + fileName + ".debug", info))
+    if (LoadDebuginfoFromFile(filePath + fileName + ".debug", info))
         return SymbolStatus::SymbolsLoaded;
 
-    if (LoadDebuginfoFromFile(startAddr, filePath + ".debug/"+ fileName + ".debug", info))
+    if (LoadDebuginfoFromFile(filePath + ".debug/"+ fileName + ".debug", info))
         return SymbolStatus::SymbolsLoaded;
 
-    if (LoadDebuginfoFromFile(startAddr, "/usr/lib/debug/" + filePath + fileName + ".debug", info))
+    if (LoadDebuginfoFromFile("/usr/lib/debug/" + filePath + fileName + ".debug", info))
         return SymbolStatus::SymbolsLoaded;
+
+    // In case lib installed into directory that is symlink to another directory on target system,
+    // but `/usr/lib/debug/_lib_path_` with related to this lib debug info is not symlink.
+    std::size_t i = libLoadName.find_last_of("/");
+    if (i != std::string::npos)
+    {
+        filePath = libLoadName.substr(0, i + 1);
+        if (LoadDebuginfoFromFile("/usr/lib/debug/" + filePath + fileName + ".debug", info))
+            return SymbolStatus::SymbolsLoaded;
+    }
 
     return SymbolStatus::SymbolsNotFound;
 }
 
-void InteropLibraries::AddLibrary(const std::string &fullName, std::uintptr_t startAddr, std::uintptr_t endAddr, SymbolStatus &symbolStatus)
+static bool IsCoreCLRLibrary(const std::string &fullName)
+{
+    static const std::vector<std::string> clrLibs{
+        "libclrjit.so",
+        "libcoreclr.so",
+        "libcoreclrtraceptprovider.so",
+        "libhostpolicy.so",
+        "libclrgc.so"
+    };
+
+    for (auto &clrLibName : clrLibs)
+    {
+        if (clrLibName.size() <= fullName.size() &&
+            std::equal(clrLibName.rbegin(), clrLibName.rend(), fullName.rbegin())) // "end with"
+            return true;
+    }
+    return false;
+}
+
+void InteropLibraries::AddLibrary(const std::string &libLoadName, const std::string &fullName, std::uintptr_t startAddr, std::uintptr_t endAddr, SymbolStatus &symbolStatus)
 {
     if (endAddr <= startAddr)
     {
@@ -178,7 +313,8 @@ void InteropLibraries::AddLibrary(const std::string &fullName, std::uintptr_t st
     LibraryInfo &info = m_librariesInfo[startAddr];
     info.fullName = fullName;
     info.libEndAddr = endAddr;
-    symbolStatus = LoadDebuginfo(startAddr, info);
+    symbolStatus = LoadDebuginfo(libLoadName, info);
+    info.isCoreCLR = IsCoreCLRLibrary(fullName);
 
     m_librariesInfoMutex.unlock();
 }
@@ -223,7 +359,8 @@ static std::uintptr_t FindOffsetBySourceAndLineForDwarf(const std::unique_ptr<dw
         bool nameFound = false;
         cu.get_line_table().iterate_file_names([&fileName, &nameFound](dwarf::line_table::file* sourceFile)
         {
-            if (std::equal(fileName.rbegin(), fileName.rend(), sourceFile->path.rbegin())) // "end with"
+            if (fileName.size() <= sourceFile->path.size() &&
+                std::equal(fileName.rbegin(), fileName.rend(), sourceFile->path.rbegin())) // "end with"
             {
                 nameFound = true;
                 return false;
@@ -280,12 +417,15 @@ std::uintptr_t InteropLibraries::FindAddrBySourceAndLineForLib(std::uintptr_t li
     if (find == m_librariesInfo.end())
         return NOT_FOUND;
 
+    if (find->second.isCoreCLR) // NOTE we don't allow setup breakpoint in CoreCLR native code
+        return NOT_FOUND;
+
     std::uintptr_t offset = FindOffsetBySourceAndLineForDwarf(find->second.dw, fileName, lineNum, resolvedLineNum, resolvedFullPath);
     if (offset == NOT_FOUND)
         return NOT_FOUND;
 
     std::uintptr_t addr = libStartAddr + offset; // lib address + offset for line's code
-    resolvedIsThumbCode = IsThumbCode(find->second, addr);
+    resolvedIsThumbCode = IsThumbCode(libStartAddr, find->second, addr);
     return addr;
 }
 
@@ -294,43 +434,216 @@ std::uintptr_t InteropLibraries::FindAddrBySourceAndLine(const std::string &file
 {
     std::lock_guard<std::mutex> lock(m_librariesInfoMutex);
 
-    for (const auto &debugInfo : m_librariesInfo)
+    for (auto &debugInfo : m_librariesInfo)
     {
+        if (debugInfo.second.isCoreCLR) // NOTE we don't allow setup breakpoint in CoreCLR native code
+            continue;
+
         std::uintptr_t offset = FindOffsetBySourceAndLineForDwarf(debugInfo.second.dw, fileName, lineNum, resolvedLineNum, resolvedFullPath);
         if (offset == NOT_FOUND)
             continue;
 
         std::uintptr_t addr = debugInfo.first + offset; // lib address + offset for line's code
-        resolvedIsThumbCode = IsThumbCode(debugInfo.second, addr);
+        resolvedIsThumbCode = IsThumbCode(debugInfo.first, debugInfo.second, addr);
         return addr;
     }
 
     return NOT_FOUND;
 }
 
-bool InteropLibraries::IsThumbCode(std::uintptr_t addr)
+void InteropLibraries::FindLibraryInfoForAddr(std::uintptr_t addr, std::function<void(std::uintptr_t startAddr, LibraryInfo&)> cb)
 {
-#if DEBUGGER_UNIX_ARM
     std::lock_guard<std::mutex> lock(m_librariesInfoMutex);
 
     if (m_librariesInfo.empty() ||
         addr >= m_librariesInfo.rbegin()->second.libEndAddr)
-        return false;
+        return;
 
     auto upper_bound = m_librariesInfo.upper_bound(addr);
     if (upper_bound != m_librariesInfo.begin())
     {
         auto closest_lower = std::prev(upper_bound);
         if (closest_lower->first <= addr && addr < closest_lower->second.libEndAddr)
-            return IsThumbCode(closest_lower->second, addr);
+            cb(closest_lower->first, closest_lower->second);
     }
-#endif
+}
+
+static bool FindDwarfDieByAddr(const dwarf::die &d, dwarf::taddr addr, dwarf::die &node)
+{
+    // Scan children first to find most specific DIE
+    for (const auto &child : d)
+    {
+        if (FindDwarfDieByAddr(child, addr, node))
+                return true;
+    }
+
+    switch (d.tag)
+    {
+    case dwarf::DW_TAG::subprogram:
+    case dwarf::DW_TAG::inlined_subroutine:
+        try
+        {
+            if (die_pc_range(d).contains(addr))
+            {
+                node = d;
+                return true;
+            }
+        }
+        catch (std::out_of_range &e) {}
+        catch (dwarf::value_type_mismatch &e) {}
+        break;
+    default:
+        break;
+    }
+
     return false;
 }
 
-bool InteropLibraries::IsThumbCode(const LibraryInfo &info, std::uintptr_t addr)
+static void ParseDwarfDie(const dwarf::die &node, std::string &methodName, std::string &methodLinkageName)
+{
+    for (auto &attr : node.attributes())
+    {
+        switch (attr.first)
+        {
+        case dwarf::DW_AT::specification:
+            ParseDwarfDie(attr.second.as_reference(), methodName, methodLinkageName);
+            break;
+        case dwarf::DW_AT::abstract_origin:
+            ParseDwarfDie(attr.second.as_reference(), methodName, methodLinkageName);
+            break;
+        case dwarf::DW_AT::name:
+            assert(methodName.empty());
+            methodName = to_string(attr.second);
+            break;
+        case dwarf::DW_AT::linkage_name:
+            assert(methodLinkageName.empty());
+            methodLinkageName = to_string(attr.second);
+        default:
+            break;
+        }
+    }
+}
+
+static bool DemangleCXXABI(const char *mangledName, std::string &realName)
+{
+    // CXX ABI demangle only supported now
+    // https://gcc.gnu.org/onlinedocs/libstdc++/libstdc++-html-USERS-4.3/a01696.html
+    // https://gcc.gnu.org/onlinedocs/libstdc++/manual/ext_demangling.html
+    int demangleStatus;
+    char *demangledName;
+    demangledName = abi::__cxa_demangle(mangledName, 0, 0, &demangleStatus);
+    if (demangledName) // could be not CXX ABI mangle name (for example, plane `C` name)
+    {
+        realName = demangledName;
+        free(demangledName);
+        return true;
+    }
+    return false;
+}
+
+static void FindDataForAddrInDebugInfo(dwarf::dwarf *dw, std::uintptr_t addr, std::string &procName, std::string &fullSourcePath, int &lineNum)
+{
+    if (!dw)
+        return;
+
+    // TODO use `.debug_aranges`
+
+    for (auto &cu : dw->compilation_units())
+    {
+        try
+        {
+            if (!die_pc_range(cu.root()).contains(addr))
+                continue;
+        }
+        catch (std::out_of_range &e) {continue;}
+        catch (dwarf::value_type_mismatch &e) {continue;}
+
+        // Map address to source file and line
+        auto &lt = cu.get_line_table();
+        auto it = lt.find_address(addr);
+        if (it == lt.end())
+            return;
+
+        fullSourcePath = it->file->path;
+        lineNum = it->line;
+
+        // Map address to method name
+        // TODO index/helper/something for looking up address
+        dwarf::die node;
+        if (FindDwarfDieByAddr(cu.root(), addr, node))
+        {
+            std::string methodName;
+            std::string methodLinkageName;
+            ParseDwarfDie(node, methodName, methodLinkageName);
+
+            if (!methodLinkageName.empty())
+            {
+                if (!DemangleCXXABI(methodLinkageName.c_str(), procName))
+                    procName = methodLinkageName + "()";
+            }
+            else if (!methodName.empty())
+                procName = methodName + "()";
+            else
+                procName = "unknown";
+
+            break;
+        }
+    }
+}
+
+void InteropLibraries::FindDataForAddr(std::uintptr_t addr, std::string &libName, std::uintptr_t &libStartAddr, std::string &procName,
+                                       std::uintptr_t &procStartAddr, std::string &fullSourcePath, int &lineNum)
+{
+    FindLibraryInfoForAddr(addr, [&](std::uintptr_t startAddr, LibraryInfo &info)
+    {
+        libName = GetBasename(info.fullName);
+        libStartAddr = startAddr;
+
+        FindDataForAddrInDebugInfo(info.dw.get(), addr - startAddr, procName, fullSourcePath, lineNum);
+        if (!procName.empty())
+            return;
+
+        if (!info.proceduresDataValid)
+            CollectProcDataFromElf(startAddr, info);
+
+        if (info.proceduresData.empty() ||
+            addr >= info.proceduresData.rbegin()->second.endAddr)
+            return;
+
+        auto upper_bound = info.proceduresData.upper_bound(addr);
+        if (upper_bound != info.proceduresData.begin())
+        {
+            auto closest_lower = std::prev(upper_bound);
+            if (closest_lower->first <= addr && addr < closest_lower->second.endAddr)
+            {
+                procStartAddr = closest_lower->first;
+                if (!DemangleCXXABI(closest_lower->second.procName.c_str(), procName))
+                    procName = closest_lower->second.procName + "()";
+            }
+        }
+    });
+}
+
+bool InteropLibraries::IsThumbCode(std::uintptr_t addr)
 {
 #if DEBUGGER_UNIX_ARM
+    bool result = false;
+    FindLibraryInfoForAddr(addr, [&](std::uintptr_t startAddr, LibraryInfo &info)
+    {
+        result = IsThumbCode(startAddr, info, addr);
+    });
+    return result;
+#else
+    return false;
+#endif // DEBUGGER_UNIX_ARM
+}
+
+bool InteropLibraries::IsThumbCode(std::uintptr_t libStartAddr, LibraryInfo &info, std::uintptr_t addr)
+{
+#if DEBUGGER_UNIX_ARM
+    if (!info.thumbRegionsValid)
+        CollectThumbCodeRegions(libStartAddr, info);
+
     if (info.thumbRegions.empty() ||
         addr >= info.thumbRegions.rbegin()->second)
         return false;
@@ -342,7 +655,7 @@ bool InteropLibraries::IsThumbCode(const LibraryInfo &info, std::uintptr_t addr)
         if (closest_lower->first <= addr && addr < closest_lower->second)
             return true;
     }
-#endif
+#endif // DEBUGGER_UNIX_ARM
     return false;
 }
 

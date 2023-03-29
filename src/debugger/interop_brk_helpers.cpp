@@ -124,7 +124,7 @@ word_t RestoredOpcode(word_t dataWithBrk, word_t restoreData)
 #endif
 }
 
-void StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData)
+bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData)
 {
     // We have 2 cases here (at breakpoint stop):
     //   * x86/amd64 already changed PC (executed 0xCC code), so, SetPrevBrkPC() call will change PC in our stored registers
@@ -138,36 +138,65 @@ void StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData)
         iov.iov_base = &regs;
         iov.iov_len = sizeof(user_regs_struct);
         if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
-            LOGW("Ptrace getregset error: %s\n", strerror(errno));
+        {
+            LOGE("Ptrace getregset error: %s\n", strerror(errno));
+            return false;
+        }
 
         SetPrevBrkPC(regs);
 
         if (async_ptrace(PTRACE_SETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
-            LOGW("Ptrace setregset error: %s\n", strerror(errno));
+        {
+            LOGE("Ptrace setregset error: %s\n", strerror(errno));
+            return false;
+        }
     }
 
     errno = 0;
     word_t brkData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)addr, nullptr);
     if (errno != 0)
-        LOGW("Ptrace peekdata error: %s", strerror(errno));
+    {
+        LOGE("Ptrace peekdata error: %s", strerror(errno));
+        return false;
+    }
 
     restoreData = RestoredOpcode(brkData, restoreData);
 
     // restore data
     if (async_ptrace(PTRACE_POKEDATA, pid, (void*)addr, (void*)restoreData) == -1)
-        LOGW("Ptrace pokedata error: %s\n", strerror(errno));
+    {
+        LOGE("Ptrace pokedata error: %s\n", strerror(errno));
+        return false;
+    }
 
     // single step
     if (async_ptrace(PTRACE_SINGLESTEP, pid, nullptr, nullptr) == -1)
-        LOGW("Ptrace singlestep error: %s\n", strerror(errno));
+    {
+        LOGE("Ptrace singlestep error: %s\n", strerror(errno));
+        return false;
+    }
 
     int wait_status;
-    GetWaitpid()(pid, &wait_status, __WALL);
-    // TODO check that we get SIGTRAP + TRAP_TRACE here before continue
+    if (GetWaitpid()(pid, &wait_status, 0) == -1)
+    {
+        LOGE("Waitpid error: %s\n", strerror(errno));
+        return false;
+    }
+
+    if (WSTOPSIG(wait_status) != SIGTRAP)
+    {
+        LOGE("Failed with single step, stop signal=%u", WSTOPSIG(wait_status));
+        return false;
+    }
 
     // setup bp again
     if (async_ptrace(PTRACE_POKEDATA, pid, (void*)addr, (void*)brkData) == -1)
-        LOGW("Ptrace pokedata error: %s\n", strerror(errno));
+    {
+        LOGE("Ptrace pokedata error: %s\n", strerror(errno));
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace InteropDebugging

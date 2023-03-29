@@ -12,10 +12,11 @@
 #include <thread>
 #include <vector>
 #include <list>
+#include <functional>
 #include <condition_variable>
 #include <unordered_map>
 #include "interfaces/types.h"
-
+#include "debugger/frames.h"
 
 namespace netcoredbg
 {
@@ -38,17 +39,32 @@ enum class thread_stat_e
     running
 };
 
+struct stop_event_data_t
+{
+    std::uintptr_t addr = 0;
+};
+
 struct thread_status_t
 {
     thread_stat_e stat = thread_stat_e::running;
-    unsigned int stop_signal = 0;
+    unsigned stop_signal = 0;
     unsigned event = 0;
 
     // Data, that should be stored in order to create stop event (CallbacksQueue) and/or continue thread execution.
-    struct
-    {
-        std::uintptr_t addr = 0;
-    } stop_event_data;
+    stop_event_data_t stop_event_data;
+};
+
+struct callback_event_t
+{
+    pid_t pid;
+    thread_stat_e stat;
+    stop_event_data_t stop_event_data;
+
+    callback_event_t(pid_t pid_, thread_stat_e stat_, const stop_event_data_t &data_) :
+        pid(pid_),
+        stat(stat_),
+        stop_event_data(data_)
+    {}
 };
 
 class InteropDebugger
@@ -70,6 +86,10 @@ public:
     HRESULT AllBreakpointsActivate(bool act);
     HRESULT BreakpointActivate(uint32_t id, bool act);
 
+    HRESULT GetFrameForAddr(std::uintptr_t addr, StackFrame &frame);
+    HRESULT UnwindNativeFrames(pid_t pid, bool firstFrame, std::uintptr_t endAddr, CONTEXT *pStartContext,
+                               std::function<HRESULT(NativeFrame &nativeFrame)> nativeFramesCallback);
+
 private:
 
     std::shared_ptr<IProtocol> m_sharedProtocol;
@@ -86,6 +106,16 @@ private:
         FINISHED_AND_JOINED
     };
 
+    // NOTE we can't setup callbacks in waitpid thread, since CoreCLR could use native breakpoints in managed threads, some managed threads
+    //      could be stopped at CoreCLR's breakpoint and wait for waitpid, but we wait for managed process `Stop()` in the same time.
+    std::mutex m_callbackEventMutex;
+    std::thread m_callbackEventWorker;
+    bool m_callbackEventNeedExit = false;
+    std::condition_variable m_callbackEventCV;
+    std::list<callback_event_t> m_callbackEvents;
+
+    void CallbackEventWorker();
+
     std::mutex m_waitpidMutex;
     std::thread m_waitpidWorker;
     bool m_waitpidNeedExit = false;
@@ -99,11 +129,11 @@ private:
 
     void WaitpidWorker();
 
-    void LoadLib(pid_t pid, const std::string &realLibName, std::uintptr_t startAddr, std::uintptr_t endAddr);
+    void LoadLib(pid_t pid, const std::string &libLoadName, const std::string &realLibName, std::uintptr_t startAddr, std::uintptr_t endAddr);
     void UnloadLib(const std::string &realLibName);
 
     void StopAllRunningThreads();
-    void WaitAllThreadsStop();
+    void WaitThreadStop(pid_t stoppedPid);
     void StopAndDetach(pid_t tgid);
     void Detach(pid_t tgid);
     void ParseThreadsChanges();
