@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information.
 
 #include "debugger/evalwaiter.h"
-#include "debugger/threads.h"
 
 namespace netcoredbg
 {
@@ -115,30 +114,31 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
     IfFailRet(pThread->GetProcess(&iCorProcess));
     if (!iCorProcess)
         return E_FAIL;
-    std::vector<ThreadId> userThreadIds;
-    IfFailRet(m_sharedThreads->GetThreadIds(userThreadIds));
-    ThreadId threadId(getThreadId(pThread));
-    if (!threadId)
-        return E_FAIL;
+    DWORD evalThreadId = 0;
+    IfFailRet(pThread->GetID(&evalThreadId));
 
-    // Note, we need suspend during eval only user's threads, that not used for eval.
+    // Note, we need suspend during eval all managed threads, that not used for eval (delegates, reverse pinvokes, managed threads).
     auto ChangeThreadsState = [&](CorDebugThreadState state)
     {
-        for (const auto &userThreadId : userThreadIds)
+        ToRelease<ICorDebugThreadEnum> iCorThreadEnum;
+        iCorProcess->EnumerateThreads(&iCorThreadEnum);
+        ULONG fetched = 0;
+        ToRelease<ICorDebugThread> iCorThread;
+        while (SUCCEEDED(iCorThreadEnum->Next(1, &iCorThread, &fetched)) && fetched == 1)
         {
-            if (threadId == userThreadId)
-                continue;
-
-            ToRelease<ICorDebugThread> iCorThread;
-            if (FAILED(iCorProcess->GetThread(int(userThreadId), &iCorThread)) ||
-                FAILED(iCorThread->SetDebugState(state)))
+            DWORD tid = 0;
+            if (SUCCEEDED(iCorThread->GetID(&tid)) && evalThreadId != tid)
             {
-                if (state == THREAD_SUSPEND)
-                    LOGW("%s %s", "SetDebugState(THREAD_SUSPEND) during eval setup failed.",
-                         "This may change the state of the process and any breakpoints and exceptions encountered will be skipped.");
-                else
-                    LOGW("SetDebugState(THREAD_RUN) during eval failed. Process state was not restored.");
+                if (FAILED(iCorThread->SetDebugState(state)))
+                {
+                    if (state == THREAD_SUSPEND)
+                        LOGW("%s %s", "SetDebugState(THREAD_SUSPEND) during eval setup failed.",
+                            "This may change the state of the process and any breakpoints and exceptions encountered will be skipped.");
+                    else
+                        LOGW("SetDebugState(THREAD_RUN) during eval failed. Process state was not restored.");
+                }
             }
+            iCorThread.Free();
         }
     };
 
@@ -175,7 +175,7 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
                 // All CoreCLR releases at least till version 3.1.3, don't have proper x86 implementation for ICorDebugEval::Abort().
                 // This issue looks like CoreCLR terminate managed process execution instead of abort evaluation.
 
-                // In this case we have same behaviour as MS vsdbg and MSVS C# debugger - run all user threads and try to abort eval by any cost.
+                // In this case we have same behaviour as MS vsdbg and MSVS C# debugger - run all managed threads and try to abort eval by any cost.
                 // Ignore errors here, this our last chance prevent debugger hangs.
                 iCorProcess->Stop(0);
                 ChangeThreadsState(THREAD_RUN);

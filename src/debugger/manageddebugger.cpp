@@ -175,7 +175,7 @@ ManagedDebugger::ManagedDebugger() :
     m_isConfigurationDone(false),
     m_sharedThreads(new Threads),
     m_sharedModules(new Modules),
-    m_sharedEvalWaiter(new EvalWaiter(m_sharedThreads)),
+    m_sharedEvalWaiter(new EvalWaiter),
     m_sharedEvalHelpers(new EvalHelpers(m_sharedModules, m_sharedEvalWaiter)),
     m_sharedEvalStackMachine(new EvalStackMachine),
     m_sharedEvaluator(new Evaluator(m_sharedModules, m_sharedEvalHelpers, m_sharedEvalStackMachine)),
