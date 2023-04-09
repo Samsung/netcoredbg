@@ -269,7 +269,16 @@ namespace MITestAsyncStepping
             // check step-in and step-out before await blocks (async step-out magic test)
             await test_func1();                                  Label.Breakpoint("step_func1");
 
-            Label.Checkpoint("step_out_func1_check", "step_in_func2", (Object context) => {
+            Label.Checkpoint("step_out_func1_check", "step_in_func4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func4");
+                Context.StepIn(@"__FILE__:__LINE__");
+            });
+
+            // check Task<TResult>
+            await test_func4();                                  Label.Breakpoint("step_func4");
+
+            Label.Checkpoint("step_out_func4_check", "step_in_func2", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "step_func2");
                 Context.StepIn(@"__FILE__:__LINE__");
@@ -477,6 +486,34 @@ namespace MITestAsyncStepping
                 Context.WasStep(@"__FILE__:__LINE__", "test_func3_step4");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
+        }
+
+        static async Task<int> test_func4()
+        {                                                       Label.Breakpoint("test_func4_step1");
+
+            Label.Checkpoint("step_in_func4", "step_over_func4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func4_step1");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            await Task.Delay(1500);                             Label.Breakpoint("test_func4_step2");
+
+            Label.Checkpoint("step_over_func4", "step_out_func4", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func4_step2");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            await Task.Delay(1500);                             Label.Breakpoint("test_func4_step3");
+
+            Label.Checkpoint("step_out_func4", "step_out_func4_check", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_func4_step3");
+                Context.StepOut(@"__FILE__:__LINE__");
+            });
+
+            return 5;
         }
 
         static string AddWord(string Word)
