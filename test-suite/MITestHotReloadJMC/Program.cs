@@ -291,7 +291,10 @@ namespace MITestHotReloadJMC
                 Context.CheckHostOS(@"__FILE__:__LINE__");
                 Context.Prepare(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit("TestAppHotReload", @"__FILE__:__LINE__");
-                // Note, target Hot Reload check must be after debuggee process start and stop at entry breakpoint.
+                // Note, target Hot Reload check must be after debuggee process start and stop at breakpoint.
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 8);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 8);
                 Context.CheckTargetRuntimeVersion(@"__FILE__:__LINE__");
                 Context.StartGenDeltaSession(@"__FILE__:__LINE__");
 

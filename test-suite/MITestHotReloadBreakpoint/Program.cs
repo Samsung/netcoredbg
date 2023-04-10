@@ -261,13 +261,16 @@ namespace MITestHotReloadBreakpoint
                 Context.CheckHostOS(@"__FILE__:__LINE__");
                 Context.Prepare(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit("TestAppHotReload", @"__FILE__:__LINE__");
-                // Note, target Hot Reload check must be after debuggee process start and stop at entry breakpoint.
+                // Note, target Hot Reload check must be after debuggee process start and stop at breakpoint.
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 8);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 8);
                 Context.CheckTargetRuntimeVersion(@"__FILE__:__LINE__");
                 Context.StartGenDeltaSession(@"__FILE__:__LINE__");
 
                 // Debugger should remove breakpoint from old code and we never stop on it during old code execution.
                 // Note, at `Main()` update we execute `Main()` code (we stopped at entry point), so, we continue old `Main()` code execution.
-                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 8);
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 9);
 
                 Context.GetDelta(@"__FILE__:__LINE__",
                 @"using System;
@@ -277,8 +280,8 @@ namespace MITestHotReloadBreakpoint
                     {
                         static void Main(string[] args)
                         {
-                            Console.WriteLine(""Hello World! Main updated."");                               // line 8
-                            HotReloadTest();
+                            Console.WriteLine(""Hello World! Main updated."");
+                            HotReloadTest();                                                                 // line 9
                         }
                         static void HotReloadTest()
                         {

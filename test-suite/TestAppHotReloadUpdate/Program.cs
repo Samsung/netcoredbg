@@ -11,7 +11,7 @@
                         static public int i_test6 = 0;
 
                         static void Main(string[] args)
-                        {
+                        {   System.Threading.Thread.Sleep(500);
                             Console.WriteLine("Hello World!");
                             HotReloadTest();
                         }

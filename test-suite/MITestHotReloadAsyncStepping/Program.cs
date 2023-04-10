@@ -326,7 +326,10 @@ namespace MITestHotReloadAsyncStepping
                 Context.CheckHostOS(@"__FILE__:__LINE__");
                 Context.Prepare(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit("TestAppHotReloadAsync", @"__FILE__:__LINE__");
-                // Note, target Hot Reload check must be after debuggee process start and stop at entry breakpoint.
+                // Note, target Hot Reload check must be after debuggee process start and stop at breakpoint.
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 9);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 9);
                 Context.CheckTargetRuntimeVersion(@"__FILE__:__LINE__");
                 Context.StartGenDeltaSession(@"__FILE__:__LINE__");
 

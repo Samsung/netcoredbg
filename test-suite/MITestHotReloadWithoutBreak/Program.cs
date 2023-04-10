@@ -143,6 +143,43 @@ namespace NetcoreDbgTest.Script
                          @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void EnableBreakpoint(string caller_trace, string bpFileName, int bpNumLine)
+        {
+            Assert.Equal(MIResultClass.Done,
+                         MIDebugger.Request("-break-insert -f " + bpFileName + ":" + bpNumLine).Class,
+                         @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasBreakpointHit(string caller_trace, string bpFileName, int bpNumLine)
+        {
+            Func<MIOutOfBandRecord, bool> filter = (record) => {
+                if (!IsStoppedEvent(record)) {
+                    return false;
+                }
+
+                var output = ((MIAsyncRecord)record).Output;
+                var reason = (MIConst)output["reason"];
+
+                if (reason.CString != "breakpoint-hit") {
+                    return false;
+                }
+
+                var frame = (MITuple)output["frame"];
+                var fileName = (MIConst)frame["file"];
+                var line = ((MIConst)frame["line"]).Int;
+
+                if (fileName.CString == bpFileName &&
+                    line == bpNumLine) {
+                    return true;
+                }
+
+                return false;
+            };
+
+            Assert.True(MIDebugger.IsEventReceived(filter),
+                        @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
         public void CheckHostRuntimeVersion(string caller_trace)
         {
             Assert.True(GetDeltaApi.CheckRuntimeVersion(), @"__FILE__:__LINE__"+"\n"+caller_trace);
@@ -253,7 +290,10 @@ namespace MITestHotReloadWithoutBreak
                 Context.CheckHostOS(@"__FILE__:__LINE__");
                 Context.Prepare(@"__FILE__:__LINE__");
                 Context.WasEntryPointHit("TestAppHotReload", @"__FILE__:__LINE__");
-                // Note, target Hot Reload check must be after debuggee process start and stop at entry breakpoint.
+                // Note, target Hot Reload check must be after debuggee process start and stop at breakpoint.
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", @"Program.cs", 8);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", @"Program.cs", 8);
                 Context.CheckTargetRuntimeVersion(@"__FILE__:__LINE__");
                 Context.StartGenDeltaSession(@"__FILE__:__LINE__");
 
