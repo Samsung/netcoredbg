@@ -142,6 +142,7 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
         }
     };
 
+    bool evalTimeOut = false;
     auto WaitResult = [&]() -> HRESULT
     {
         ChangeThreadsState(THREAD_SUSPEND);
@@ -187,7 +188,18 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
                         iCorEval2->RudeAbort();
                 }
 
+                evalTimeOut = true;
                 iCorProcess->Continue(0);
+            }
+            // Wait for 5 more seconds, give `Abort()` a chance.
+            timeoutStatus = f.wait_for(std::chrono::milliseconds(5000));
+            if (timeoutStatus == std::future_status::timeout)
+            {
+                // Looks like can't be aborted, this is fatal error for debugger (debuggee have inconsistent state now).
+                iCorProcess->Stop(0);
+                m_evalResult.reset(nullptr);
+                LOGE("Fatal error, eval abort failed.");
+                return E_UNEXPECTED;
             }
 
             auto evalResult = f.get();
@@ -215,6 +227,11 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
             ret = CORDBG_E_CANT_CALL_ON_THIS_THREAD;
         else
             ret = m_evalCanceled ? COR_E_OPERATIONCANCELED : COR_E_TIMEOUT;
+    }
+    // In this case we have same behaviour as MS vsdbg and MSVS C# debugger - in case it was aborted with timeout, show proper error.
+    else if (evalTimeOut)
+    {
+        ret = (ret == E_UNEXPECTED) ? E_UNEXPECTED : COR_E_TIMEOUT;
     }
 
     ChangeThreadsState(THREAD_RUN);
