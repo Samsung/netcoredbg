@@ -554,7 +554,17 @@ namespace VSCodeTestVariables
         {
             get
             {
-                System.Threading.Thread.Sleep(5000000);
+                // CoreCLR 7.0 have issue with abortable internal native code.
+                // https://github.com/dotnet/runtime/issues/82422
+                if (System.Environment.Version.Major == 7)
+                {
+                    while (true)
+                    {
+                        System.Threading.Thread.Sleep(100);
+                    }
+                }
+                else
+                    System.Threading.Thread.Sleep(5000000);
                 return 999; 
             }
         }
