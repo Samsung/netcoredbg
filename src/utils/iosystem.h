@@ -68,6 +68,7 @@ template <typename Traits> struct IOSystemImpl
 
         const Operations& ops;
 
+#if defined(WIN32) && defined(_TARGET_X86_)
         // Note, we can't use `alignas(alignof(std::max_align_t))` here, since at least MSVC 32bit (VS2019) compiler can't
         // generate proper code and ASAN detect "ERROR: AddressSanitizer: stack - buffer - underflow on address...".
         union data_align_t
@@ -77,13 +78,20 @@ template <typename Traits> struct IOSystemImpl
         };
         data_align_t data_align_tmp;
         char * const data;
+#else
+        mutable char data alignas(alignof(std::max_align_t)) [MaxIteratorSize];
+#endif
 
     public:
         /// Iterator might be created from any other iterator or pointer type,
         /// for which `operator*` returns reference to `AsyncHandle`.
         template <typename Iterator,
             typename = typename std::enable_if<std::is_convertible<decltype(*std::declval<Iterator>()), AsyncHandle&>::value>::type>
+#if defined(WIN32) && defined(_TARGET_X86_)
         AsyncHandleIterator(Iterator it) : ops(OpsImpl<Iterator>::ops), data(data_align_tmp.data) { new (data) Iterator(it); }
+#else
+        AsyncHandleIterator(Iterator it) : ops(OpsImpl<Iterator>::ops) { new (data) Iterator(it); }
+#endif
 
         ~AsyncHandleIterator() { ops.destr(data); }
 

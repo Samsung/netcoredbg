@@ -518,6 +518,7 @@ Class::IOSystem::StdFiles Class::get_std_files()
 {
     using Handles = std::tuple<IOSystem::FileHandle, IOSystem::FileHandle, IOSystem::FileHandle>;
 
+#if defined(WIN32) && defined(_TARGET_X86_)
     // Note, we can't use `alignas(alignof(std::max_align_t))` here, since at least MSVC 32bit (VS2019) compiler can't
     // generate proper code and ASAN detect "ERROR: AddressSanitizer: stack - buffer - underflow on address...".
     union mem_align_t
@@ -527,6 +528,9 @@ Class::IOSystem::StdFiles Class::get_std_files()
     };
     static mem_align_t mem_align_tmp;
     char * const mem = mem_align_tmp.mem;
+#else
+    /*thread_local*/ static alignas(alignof(Handles)) char mem[sizeof(Handles)]; // TODO
+#endif
 
     Handles& handles = *new (mem) Handles {
         FileHandle(GetStdHandle(STD_INPUT_HANDLE)),
