@@ -515,11 +515,6 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     if (m_clrPath.empty())
         m_clrPath = GetCLRPath(m_dbgshim, pid);
 
-    // Note, ManagedPart must be initialized before callbacks setup, since callbacks use it.
-    // ManagedPart must be initialized only once for process, since CoreCLR don't support unload and reinit
-    // for global variables. coreclr_shutdown only should be called on process exit.
-    Interop::Init(m_clrPath);
-
     m_managedCallback.reset(new ManagedCallback(*this));
     Status = iCorDebug->SetManagedHandler(m_managedCallback.get());
     if (FAILED(Status))

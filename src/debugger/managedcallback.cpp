@@ -26,6 +26,7 @@
 #include "metadata/typeprinter.h"
 #include "interfaces/iprotocol.h"
 #include "utils/utf.h"
+#include "managed/interop.h"
 
 #include <algorithm>
 
@@ -545,6 +546,10 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::EvalException(ICorDebugAppDomain *pAp
 HRESULT STDMETHODCALLTYPE ManagedCallback::CreateProcess(ICorDebugProcess *pProcess)
 {
     LogFuncEntry();
+
+    // ManagedPart must be initialized only once for process, since CoreCLR don't support unload and reinit
+    // for global variables. coreclr_shutdown only should be called on process exit.
+    Interop::Init(m_debugger.m_clrPath);
 
     // Important! Care about callback queue before NotifyProcessCreated() call.
     // In case of `attach`, NotifyProcessCreated() call will notify debugger that debuggee process attached and debugger
