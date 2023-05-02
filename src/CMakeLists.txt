@@ -219,17 +219,21 @@ if (BUILD_MANAGED)
         set(USE_DBGSHIM_DEPENDENCY "/p:UseDbgShimDependency=true")
     endif()
 
-    if (CLR_CMAKE_PLATFORM_UNIX)
-        if (CLR_CMAKE_PLATFORM_DARWIN)
-            set(RID_NAME "osx")
+    if (NOT RID_NAME)
+        if (CLR_CMAKE_PLATFORM_UNIX)
+            if (CLR_CMAKE_PLATFORM_DARWIN)
+                set(RID_NAME "osx")
+            elseif (EXISTS "/etc/alpine-release") # Alpine use musl only.
+                set(RID_NAME "linux-musl")
+            else()
+                set(RID_NAME "linux")
+            endif()
+        elseif (WIN32)
+            set(RID_NAME "win")
         else()
-            set(RID_NAME "linux")
+            message(FATAL_ERROR "Unsupported platform")
         endif()
-    elseif (WIN32)
-        set(RID_NAME "win")
-    else()
-        message(FATAL_ERROR "Unsupported platform")
-    endif()
+    endif() # NOT RID_NAME
 
     add_custom_command(OUTPUT ${DOTNET_BUILD_RESULT}
       COMMAND ${DOTNETCLI} publish ${MANAGEDPART_PROJECT} -r ${RID_NAME}-${CLR_CMAKE_TARGET_ARCH} --self-contained -c ${MANAGEDPART_BUILD_TYPE} -o ${CMAKE_CURRENT_BINARY_DIR} /p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/ /p:BaseOutputPath=${CMAKE_CURRENT_BINARY_DIR}/bin/ ${USE_DBGSHIM_DEPENDENCY}
