@@ -846,45 +846,6 @@ HRESULT ManagedDebugger::SetExceptionBreakpoints(const std::vector<ExceptionBrea
     return m_uniqueBreakpoints->SetExceptionBreakpoints(exceptionBreakpoints, breakpoints);
 }
 
-static HRESULT InternalSetEnableCustomNotification(Modules *pModules, BOOL fEnable)
-{
-    HRESULT Status = S_OK;
-
-    ToRelease<ICorDebugModule> pModule;
-    IfFailRet(pModules->GetModuleWithName("System.Private.CoreLib.dll", &pModule));
-
-    ToRelease<IUnknown> pMDUnknown;
-    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
-
-    ToRelease<IMetaDataImport> pMD;
-    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
-
-    // in order to make code simple and clear, we don't check enclosing classes with recursion here
-    // since we know behaviour for sure, just find "System.Diagnostics.Debugger" first
-    mdTypeDef typeDefParent = mdTypeDefNil;
-    static const WCHAR strParentTypeDef[] = W("System.Diagnostics.Debugger");
-    IfFailRet(pMD->FindTypeDefByName(strParentTypeDef, mdTypeDefNil, &typeDefParent));
-
-    mdTypeDef typeDef = mdTypeDefNil;
-    static const WCHAR strTypeDef[] = W("CrossThreadDependencyNotification");
-    IfFailRet(pMD->FindTypeDefByName(strTypeDef, typeDefParent, &typeDef));
-
-    ToRelease<ICorDebugClass> pClass;
-    IfFailRet(pModule->GetClassFromToken(typeDef, &pClass));
-
-    ToRelease<ICorDebugProcess> pProcess;
-    IfFailRet(pModule->GetProcess(&pProcess));
-
-    ToRelease<ICorDebugProcess3> pProcess3;
-    IfFailRet(pProcess->QueryInterface(IID_ICorDebugProcess3, (LPVOID*) &pProcess3));
-    return pProcess3->SetEnableCustomNotification(pClass, fEnable);
-}
-
-HRESULT ManagedDebugger::SetEnableCustomNotification(BOOL fEnable)
-{
-    return InternalSetEnableCustomNotification(m_sharedModules.get(), fEnable);
-}
-
 HRESULT ManagedDebugger::UpdateLineBreakpoint(int id, int linenum, Breakpoint &breakpoint)
 {
     LogFuncEntry();

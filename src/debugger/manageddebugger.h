@@ -116,8 +116,6 @@ private:
 
     HRESULT RunIfReady();
 
-    HRESULT SetEnableCustomNotification(BOOL fEnable);
-
     HRESULT FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread);
     HRESULT ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
                                         std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens);

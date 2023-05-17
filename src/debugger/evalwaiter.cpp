@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include "debugger/evalwaiter.h"
+#include "utils/platform.h"
 
 namespace netcoredbg
 {
@@ -92,6 +93,8 @@ std::future<std::unique_ptr<EvalWaiter::evalResultData_t> > EvalWaiter::RunEval(
 
 ICorDebugEval *EvalWaiter::FindEvalForThread(ICorDebugThread *pThread)
 {
+    std::lock_guard<std::mutex> lock(m_evalResultMutex);
+
     DWORD threadId = 0;
     if (FAILED(pThread->GetID(&threadId)) || !m_evalResult)
         return nullptr;
@@ -197,7 +200,9 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
             {
                 // Looks like can't be aborted, this is fatal error for debugger (debuggee have inconsistent state now).
                 iCorProcess->Stop(0);
+                m_evalResultMutex.lock();
                 m_evalResult.reset(nullptr);
+                m_evalResultMutex.unlock();
                 LOGE("Fatal error, eval abort failed.");
                 return E_UNEXPECTED;
             }
@@ -217,9 +222,13 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
         }
     };
 
+    SetEnableCustomNotification(iCorProcess, TRUE);
+
     m_evalCanceled = false;
     m_evalCrossThreadDependency = false;
     HRESULT ret = WaitResult();
+
+    SetEnableCustomNotification(iCorProcess, FALSE);
 
     if (ret == CORDBG_S_FUNC_EVAL_ABORTED)
     {
@@ -240,9 +249,6 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
 
 HRESULT EvalWaiter::ManagedCallbackCustomNotification(ICorDebugThread *pThread)
 {
-    if (!IsEvalRunning())
-        return S_OK;
-
     // NOTE
     // All CoreCLR releases at least till version 3.1.3, don't have proper x86 implementation for ICorDebugEval::Abort().
     // This issue looks like CoreCLR terminate managed process execution instead of abort evaluation.
@@ -265,6 +271,36 @@ HRESULT EvalWaiter::ManagedCallbackCustomNotification(ICorDebugThread *pThread)
 
     m_evalCrossThreadDependency = true;
     return S_OK;
+}
+
+HRESULT EvalWaiter::SetupCrossThreadDependencyNotificationClass(ICorDebugModule *pModule)
+{
+    HRESULT Status;
+    ToRelease<IUnknown> pMDUnknown;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    // in order to make code simple and clear, we don't check enclosing classes with recursion here
+    // since we know behaviour for sure, just find "System.Diagnostics.Debugger" first
+    mdTypeDef typeDefParent = mdTypeDefNil;
+    static const WCHAR strParentTypeDef[] = W("System.Diagnostics.Debugger");
+    IfFailRet(pMD->FindTypeDefByName(strParentTypeDef, mdTypeDefNil, &typeDefParent));
+
+    mdTypeDef typeDef = mdTypeDefNil;
+    static const WCHAR strTypeDef[] = W("CrossThreadDependencyNotification");
+    IfFailRet(pMD->FindTypeDefByName(strTypeDef, typeDefParent, &typeDef));
+
+    m_iCorCrossThreadDependencyNotification.Free(); // allow re-setup if need
+    return pModule->GetClassFromToken(typeDef, &m_iCorCrossThreadDependencyNotification);
+}
+
+HRESULT EvalWaiter::SetEnableCustomNotification(ICorDebugProcess *pProcess, BOOL fEnable)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugProcess3> pProcess3;
+    IfFailRet(pProcess->QueryInterface(IID_ICorDebugProcess3, (LPVOID*) &pProcess3));
+    return pProcess3->SetEnableCustomNotification(m_iCorCrossThreadDependencyNotification, fEnable);
 }
 
 } // namespace netcoredbg

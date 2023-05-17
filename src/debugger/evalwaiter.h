@@ -33,11 +33,15 @@ public:
     // Should be called by ICorDebugManagedCallback.
     void NotifyEvalComplete(ICorDebugThread *pThread, ICorDebugEval *pEval);
     HRESULT ManagedCallbackCustomNotification(ICorDebugThread *pThread);
+    HRESULT SetupCrossThreadDependencyNotificationClass(ICorDebugModule *pModule);
 
 private:
 
     bool m_evalCanceled;
     bool m_evalCrossThreadDependency;
+
+    ToRelease<ICorDebugClass> m_iCorCrossThreadDependencyNotification;
+    HRESULT SetEnableCustomNotification(ICorDebugProcess *pProcess, BOOL fEnable);
 
     struct evalResultData_t
     {
