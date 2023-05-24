@@ -108,10 +108,9 @@ static bool GetProcData(pid_t pid, std::string &execName, std::uintptr_t &startA
         return false;
     }
 
-    ssize_t read;
     char *line = nullptr;
     size_t lineLen = 0;
-    while ((read = getline(&line, &lineLen, mapsFile)) != -1)
+    while (getline(&line, &lineLen, mapsFile) != -1)
     {
         void *startAddress, *endAddress, *offset;
         int devHi, devLo, inode;
@@ -241,10 +240,9 @@ std::uintptr_t GetLibEndAddrAndRealName(pid_t TGID, pid_t pid, std::string &real
     std::uintptr_t endAddr = 0;
     assert(realLibName.empty());
 
-    ssize_t read;
     char *line = nullptr;
     size_t lineLen = 0;
-    while ((read = getline(&line, &lineLen, mapsFile)) != -1)
+    while (getline(&line, &lineLen, mapsFile) != -1)
     {
         void *startAddress, *endAddress, *offset;
         int devHi, devLo, inode;

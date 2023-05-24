@@ -464,7 +464,7 @@ int
     std::shared_ptr<IDebugger> debugger;
     try
     {
-        debugger.reset(new ManagedDebugger(protocol));
+        debugger.reset(new ManagedDebugger(protocol.get()));
     }
     catch (const std::exception &e)
     {

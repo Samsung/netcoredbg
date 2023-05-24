@@ -43,11 +43,19 @@ enum class ProcessAttachedState
     Unattached
 };
 
-class ManagedDebugger : public IDebugger
+enum StartMethod
 {
-private:
-    friend class ManagedCallback;
-    friend class CallbacksQueue;
+    StartNone,
+    StartLaunch,
+    StartAttach
+    //StartAttachForSuspendedLaunch
+};
+
+class ManagedDebuggerBase : public IDebugger
+{
+protected:
+    ManagedDebuggerBase(IProtocol *pProtocol);
+    ~ManagedDebuggerBase() override;
 
     std::mutex m_processAttachedMutex; // Note, in case m_debugProcessRWLock+m_processAttachedMutex, m_debugProcessRWLock must be locked first.
     std::condition_variable m_processAttachedCV;
@@ -62,21 +70,16 @@ private:
 
     void SetLastStoppedThread(ICorDebugThread *pThread);
     void SetLastStoppedThreadId(ThreadId threadId);
+    void InvalidateLastStoppedThreadId();
 
-    enum StartMethod
-    {
-        StartNone,
-        StartLaunch,
-        StartAttach
-        //StartAttachForSuspendedLaunch
-    } m_startMethod;
+    StartMethod m_startMethod;
     std::string m_execPath;
     std::vector<std::string> m_execArgs;
     std::string m_cwd;
     std::map<std::string, std::string> m_env;
     bool m_isConfigurationDone;
 
-    std::shared_ptr<IProtocol> m_sharedProtocol;
+    IProtocol *pProtocol;
     std::shared_ptr<Threads> m_sharedThreads;
     std::shared_ptr<Modules> m_sharedModules;
     std::shared_ptr<EvalWaiter> m_sharedEvalWaiter;
@@ -89,7 +92,7 @@ private:
     std::shared_ptr<CallbacksQueue> m_sharedCallbacksQueue;
     std::unique_ptr<ManagedCallback> m_uniqueManagedCallback;
 #ifdef INTEROP_DEBUGGING
-    std::unique_ptr<InteropDebugging::InteropDebugger> m_uniqueInteropDebugger;
+    std::shared_ptr<InteropDebugging::InteropDebugger> m_sharedInteropDebugger;
 #endif // INTEROP_DEBUGGING
 
     Utility::RWLock m_debugProcessRWLock;
@@ -108,31 +111,47 @@ private:
 
     IORedirectHelper m_ioredirect;
 
+    HRESULT CheckDebugProcess();
+    bool HaveDebugProcess();
+
     void InputCallback(IORedirectHelper::StreamType, span<char> text);
 
-    static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
-    HRESULT Startup(IUnknown *punk, DWORD pid);
-
     void Cleanup();
-
     void DisableAllBreakpointsAndSteppers();
 
-    HRESULT GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame);
-
-    HRESULT RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs);
-    HRESULT AttachToProcess(DWORD pid);
-    HRESULT DetachFromProcess();
-    HRESULT TerminateProcess();
-
-    HRESULT RunIfReady();
+    HRESULT GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame, bool hotReloadAwareCaller = false);
+    HRESULT GetManagedStackTrace(ICorDebugThread *pThread, ThreadId threadId, FrameLevel startFrame, unsigned maxFrames,
+                                 std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller);
+#ifdef INTEROP_DEBUGGING
+    HRESULT GetNativeStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames);
+#endif // INTEROP_DEBUGGING
 
     HRESULT FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread);
     HRESULT ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
                                         std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens);
+};
 
+class ManagedDebuggerHelpers : public ManagedDebuggerBase
+{
+protected:
+    friend class ManagedCallback;
+    friend class CallbacksQueue;
+
+    ManagedDebuggerHelpers(IProtocol *pProtocol);
+
+    static VOID StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr);
+    HRESULT Startup(IUnknown *punk);
+    HRESULT RunIfReady();
+    HRESULT RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs);
+    HRESULT AttachToProcess();
+    HRESULT DetachFromProcess();
+    HRESULT TerminateProcess();
+};
+
+class ManagedDebugger final : public ManagedDebuggerHelpers
+{
 public:
-    ManagedDebugger(std::shared_ptr<IProtocol> &sharedProtocol);
-    ~ManagedDebugger() override;
+    ManagedDebugger(IProtocol *pProtocol);
 
     bool IsJustMyCode() const override { return m_justMyCode; }
     void SetJustMyCode(bool enable) override;
@@ -153,10 +172,9 @@ public:
     HRESULT Disconnect(DisconnectAction action = DisconnectDefault) override;
 
     ThreadId GetLastStoppedThreadId() override;
-    void InvalidateLastStoppedThreadId();
     HRESULT Continue(ThreadId threadId) override;
-    HRESULT Pause(ThreadId lastStoppedThread) override;
-    HRESULT GetThreads(std::vector<Thread> &threads) override;
+    HRESULT Pause(ThreadId lastStoppedThread, EventFormat eventFormat) override;
+    HRESULT GetThreads(std::vector<Thread> &threads, bool withNativeThreads = false) override;
     HRESULT UpdateLineBreakpoint(int id, int linenum, Breakpoint &breakpoint) override;
     HRESULT SetLineBreakpoints(const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints) override;
     HRESULT SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) override;

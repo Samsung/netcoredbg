@@ -80,8 +80,8 @@ public:
     virtual HRESULT Disconnect(DisconnectAction action = DisconnectDefault) = 0;
     virtual ThreadId GetLastStoppedThreadId() = 0;
     virtual HRESULT Continue(ThreadId threadId) = 0;
-    virtual HRESULT Pause(ThreadId lastStoppedThread) = 0;
-    virtual HRESULT GetThreads(std::vector<Thread> &threads) = 0;
+    virtual HRESULT Pause(ThreadId lastStoppedThread, EventFormat eventFormat) = 0;
+    virtual HRESULT GetThreads(std::vector<Thread> &threads, bool withNativeThreads = false) = 0;
     virtual HRESULT UpdateLineBreakpoint(int id, int linenum, Breakpoint &breakpoint) = 0;
     virtual HRESULT SetLineBreakpoints(const std::string& filename, const std::vector<LineBreakpoint> &lineBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;
     virtual HRESULT SetFuncBreakpoints(const std::vector<FuncBreakpoint> &funcBreakpoints, std::vector<Breakpoint> &breakpoints) = 0;

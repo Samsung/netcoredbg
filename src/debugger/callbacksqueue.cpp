@@ -48,8 +48,12 @@ bool CallbacksQueue::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, I
     if (SUCCEEDED(pThread->GetActiveFrame(&pFrame)) && pFrame != nullptr)
         m_debugger.GetFrameLocation(pFrame, threadId, FrameLevel(0), event.frame);
 
+#ifdef INTEROP_DEBUGGING
+    StopAllNativeThreads();
+#endif // INTEROP_DEBUGGING
+
     m_debugger.SetLastStoppedThread(pThread);
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.pProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return true;
 }
@@ -71,8 +75,12 @@ bool CallbacksQueue::CallbacksWorkerStepComplete(ICorDebugAppDomain *pAppDomain,
     StoppedEvent event(StopStep, threadId);
     event.frame = stackFrame;
 
+#ifdef INTEROP_DEBUGGING
+    StopAllNativeThreads();
+#endif // INTEROP_DEBUGGING
+
     m_debugger.SetLastStoppedThread(pThread);
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.pProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return true;
 }
@@ -96,9 +104,13 @@ bool CallbacksQueue::CallbacksWorkerBreak(ICorDebugAppDomain *pAppDomain, ICorDe
     if (SUCCEEDED(pThread->GetActiveFrame(&iCorFrame)) && iCorFrame != nullptr)
         m_debugger.GetFrameLocation(iCorFrame, threadId, FrameLevel(0), stackFrame);
 
+#ifdef INTEROP_DEBUGGING
+    StopAllNativeThreads();
+#endif // INTEROP_DEBUGGING
+
     StoppedEvent event(StopPause, threadId);
     event.frame = stackFrame;
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.pProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return true;
 }
@@ -121,9 +133,12 @@ bool CallbacksQueue::CallbacksWorkerException(ICorDebugAppDomain *pAppDomain, IC
     // Disable all steppers if we stop during step.
     m_debugger.m_uniqueSteppers->DisableAllSteppers(pAppDomain);
 
-    m_debugger.SetLastStoppedThread(pThread);
+#ifdef INTEROP_DEBUGGING
+    StopAllNativeThreads();
+#endif // INTEROP_DEBUGGING
 
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.SetLastStoppedThread(pThread);
+    m_debugger.pProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return true;
 }
@@ -170,6 +185,9 @@ void CallbacksQueue::CallbacksWorker()
         case CallbackQueueCall::InteropBreakpoint:
             m_stopEventInProcess = CallbacksWorkerInteropBreakpoint(c.pid, c.addr);
             break;
+        case CallbackQueueCall::InteropSignal:
+            m_stopEventInProcess = CallbacksWorkerInteropSignal(c.pid, c.addr, c.signal);
+            break;
 #endif // INTEROP_DEBUGGING
         default:
             // finish loop
@@ -187,7 +205,7 @@ void CallbacksQueue::CallbacksWorker()
         {
 #ifdef INTEROP_DEBUGGING
             if (m_debugger.m_interopDebugging)
-                m_debugger.m_uniqueInteropDebugger->ContinueAllThreadsWithEvents();
+                m_debugger.m_sharedInteropDebugger->ContinueAllThreadsWithEvents();
 
             if (iCorAppDomain) // last stop event was managed
             {
@@ -309,7 +327,7 @@ HRESULT CallbacksQueue::Continue(ICorDebugProcess *pProcess)
     {
 #ifdef INTEROP_DEBUGGING
         if (m_debugger.m_interopDebugging)
-            m_debugger.m_uniqueInteropDebugger->ContinueAllThreadsWithEvents();
+            m_debugger.m_sharedInteropDebugger->ContinueAllThreadsWithEvents();
 #endif // INTEROP_DEBUGGING
 
         return pProcess->Continue(0);
@@ -319,7 +337,7 @@ HRESULT CallbacksQueue::Continue(ICorDebugProcess *pProcess)
     return S_OK;
 }
 
-// Caller should care about m_callbacksMutex.
+// NOTE caller must care about m_callbacksMutex.
 // Check stop status and stop, if need.
 // Return S_FALSE in case already was stopped, S_OK in case stopped by this call.
 static HRESULT InternalStop(ICorDebugProcess *pProcess, bool &stopEventInProcess)
@@ -342,7 +360,7 @@ HRESULT CallbacksQueue::Stop(ICorDebugProcess *pProcess)
 }
 
 // Stop process and set last stopped thread. If `lastStoppedThread` not passed value from protocol, find best thread.
-HRESULT CallbacksQueue::Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedThread)
+HRESULT CallbacksQueue::Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedThread, EventFormat eventFormat)
 {
     // Must be real thread ID or ThreadId::AllThreads.
     if (!lastStoppedThread)
@@ -355,6 +373,11 @@ HRESULT CallbacksQueue::Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedTh
     IfFailRet(InternalStop(pProcess, m_stopEventInProcess));
     if (Status == S_FALSE) // Already stopped.
         return S_OK;
+
+#ifdef INTEROP_DEBUGGING
+    if (m_debugger.m_interopDebugging)
+        IfFailRet(m_debugger.m_sharedInteropDebugger->StopAllNativeThreads(pProcess));
+#endif // INTEROP_DEBUGGING
 
     // Same logic as provide vsdbg in case of pause during stepping.
     m_debugger.m_uniqueSteppers->DisableAllSteppers(pProcess);
@@ -372,14 +395,30 @@ HRESULT CallbacksQueue::Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedTh
         {
             // VSCode protocol event must provide thread only (VSCode count on this), even if this thread don't have user code.
             m_debugger.SetLastStoppedThreadId(lastStoppedThread);
-            m_debugger.m_sharedProtocol->EmitStoppedEvent(StoppedEvent(StopPause, lastStoppedThread));
+            m_debugger.pProtocol->EmitStoppedEvent(StoppedEvent(StopPause, lastStoppedThread));
+            m_debugger.m_ioredirect.async_cancel();
+            return S_OK;
+        }
+    }
+    else if (eventFormat == EventFormat::CLI)
+    {
+        // CLI protocol provide ThreadId::AllThreads as lastStoppedThread, stop at main thread with real top frame in event.
+        m_debugger.SetLastStoppedThreadId(threads[0].id);
+
+        int totalFrames = 0;
+        std::vector<StackFrame> stackFrames;
+        if (SUCCEEDED(m_debugger.GetStackTrace(threads[0].id, FrameLevel(0), 1, stackFrames, totalFrames)))
+        {
+            StoppedEvent event(StopPause, threads[0].id);
+            event.frame = stackFrames[0];
+            m_debugger.pProtocol->EmitStoppedEvent(event);
             m_debugger.m_ioredirect.async_cancel();
             return S_OK;
         }
     }
     else
     {
-        // MI and CLI protocols provide ThreadId::AllThreads as lastStoppedThread, this protocols require thread and frame with user code.
+        // MI protocol provide ThreadId::AllThreads as lastStoppedThread, this protocols require thread and frame with user code.
         // Note, MIEngine (MI/GDB) require frame connected to user source or it will crash Visual Studio.
 
         ThreadId lastStoppedId = m_debugger.GetLastStoppedThreadId();
@@ -411,7 +450,7 @@ HRESULT CallbacksQueue::Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedTh
                 StoppedEvent event(StopPause, thread.id);
                 event.frame = stackFrame;
                 m_debugger.SetLastStoppedThreadId(thread.id);
-                m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+                m_debugger.pProtocol->EmitStoppedEvent(event);
                 m_debugger.m_ioredirect.async_cancel();
                 return S_OK;
             }
@@ -462,13 +501,40 @@ bool CallbacksQueue::CallbacksWorkerInteropBreakpoint(pid_t pid, std::uintptr_t 
 
     m_debugger.SetLastStoppedThreadId(ThreadId(pid));
 
-    if (FAILED(m_debugger.m_uniqueInteropDebugger->GetFrameForAddr(brkAddr, event.frame)))
+    if (FAILED(m_debugger.m_sharedInteropDebugger->GetFrameForAddr(brkAddr, event.frame)))
     {
         event.frame.source = event.breakpoint.source;
         event.frame.line = event.breakpoint.line;
     }
 
-    m_debugger.m_sharedProtocol->EmitStoppedEvent(event);
+    m_debugger.pProtocol->EmitStoppedEvent(event);
+    m_debugger.m_ioredirect.async_cancel();
+    return true;
+}
+
+bool CallbacksQueue::CallbacksWorkerInteropSignal(pid_t pid, std::uintptr_t breakAddr, const std::string &signal)
+{
+    ThreadId threadId(pid);
+    StoppedEvent event(StopPause, threadId);
+
+    // Disable all steppers if we stop at breakpoint during step.
+    m_debugger.m_debugProcessRWLock.reader.lock();
+    if (m_debugger.m_iCorProcess)
+    {
+        m_debugger.m_uniqueSteppers->DisableAllSteppers(m_debugger.m_iCorProcess);
+    }
+    m_debugger.m_debugProcessRWLock.reader.unlock();
+
+    m_debugger.SetLastStoppedThreadId(ThreadId(pid));
+
+    if (FAILED(m_debugger.m_sharedInteropDebugger->GetFrameForAddr(breakAddr, event.frame)))
+    {
+        event.frame.source = event.breakpoint.source;
+        event.frame.line = event.breakpoint.line;
+    }
+
+    event.signal_name = signal;
+    m_debugger.pProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return true;
 }
@@ -477,34 +543,49 @@ HRESULT CallbacksQueue::AddInteropCallbackToQueue(std::function<void()> callback
 {
     std::unique_lock<std::mutex> lock(m_callbacksMutex);
 
-    callback(); // Caller could add entries into m_callbacksQueue (this is why m_callbacksMutex cover this call).
+    callback(); // Caller should add entries into m_callbacksQueue (this is why m_callbacksMutex cover this call).
+    assert(!m_callbacksQueue.empty());
 
-    if (!m_callbacksQueue.empty())
+    // NOTE
+    // In case `m_stopEventInProcess` is `true`, process have "stopped" status for sure, but could already execute some eval (this is OK, do not stop managed part!).
+    // No need to check `IsEvalRunning()` here, since this code covered by `m_callbacksMutex` (that mean, breakpoint condition check with eval not running now for sure).
+    if (!m_stopEventInProcess)
     {
-        // NOTE
-        // In case `m_stopEventInProcess` is `true`, process have "stopped" status for sure, but could already execute some eval (this is OK, do not stop managed part!).
-        // No need to check `IsEvalRunning()` here, since this code covered by `m_callbacksMutex` (that mean, breakpoint condition check with eval not running now for sure).
-        if (!m_stopEventInProcess)
+        BOOL procRunning = FALSE;
+        m_debugger.m_debugProcessRWLock.reader.lock();
+        if (m_debugger.m_iCorProcess)
         {
-            BOOL procRunning = FALSE;
-            m_debugger.m_debugProcessRWLock.reader.lock();
-            if (m_debugger.m_iCorProcess && SUCCEEDED(m_debugger.m_iCorProcess->IsRunning(&procRunning)) && procRunning == TRUE)
-            {
+            if (SUCCEEDED(m_debugger.m_iCorProcess->IsRunning(&procRunning)) && procRunning == TRUE)
                 m_debugger.m_iCorProcess->Stop(0);
-            }
-            m_debugger.m_debugProcessRWLock.reader.unlock();
-        }
 
-        m_callbacksCV.notify_one(); // notify_one with lock
+            // Early stop of native code at native event, in case this will be not stop event - we will silently continue native code execution.
+            m_debugger.m_sharedInteropDebugger->StopAllNativeThreads(m_debugger.m_iCorProcess);
+        }
+        m_debugger.m_debugProcessRWLock.reader.unlock();
     }
 
+    m_callbacksCV.notify_one(); // notify_one with lock
     return S_OK;
 }
 
 // NOTE caller must care about m_callbacksMutex.
-void CallbacksQueue::EmplaceBackInterop(CallbackQueueCall Call, pid_t pid, std::uintptr_t addr)
+void CallbacksQueue::EmplaceBackInterop(CallbackQueueCall Call, pid_t pid, std::uintptr_t addr, const std::string &signal)
 {
-    m_callbacksQueue.emplace_back(Call, pid, addr);
+    m_callbacksQueue.emplace_back(Call, pid, addr, signal);
+}
+
+// NOTE caller must care about m_callbacksMutex.
+void CallbacksQueue::StopAllNativeThreads()
+{
+    if (!m_debugger.m_interopDebugging || m_stopEventInProcess)
+        return;
+
+    m_debugger.m_debugProcessRWLock.reader.lock();
+    if (m_debugger.m_iCorProcess)
+    {
+        m_debugger.m_sharedInteropDebugger->StopAllNativeThreads(m_debugger.m_iCorProcess);
+    }
+    m_debugger.m_debugProcessRWLock.reader.unlock();
 }
 #endif // INTEROP_DEBUGGING
 

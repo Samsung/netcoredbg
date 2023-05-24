@@ -28,7 +28,7 @@ public:
     // Remove all native breakpoints at interop detach.
     void RemoveAllAtDetach(pid_t pid);
     bool IsBreakpoint(std::uintptr_t brkAddr);
-    void StepOverBrk(pid_t pid, std::uintptr_t brkAddr);
+    void StepOverBrk(pid_t pid, std::uintptr_t brkAddr, std::function<bool(pid_t, std::uintptr_t)> SingleStepOnBrk);
     // Return `false` in case no breakpoint with this PC was found (step is not possible).
     bool StepPrevToBrk(pid_t pid, std::uintptr_t brkAddr);
     // Remove all related to unloaded library breakpoints entries in data structures.

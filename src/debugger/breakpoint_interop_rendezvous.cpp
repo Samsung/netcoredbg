@@ -102,7 +102,10 @@ bool InteropRendezvousBreakpoint::IsRendezvousBreakpoint(std::uintptr_t brkAddr)
 // Must be called only in case all threads stopped and fixed (see InteropDebugger::StopAndDetach()).
 void InteropRendezvousBreakpoint::RemoveAtDetach(pid_t pid)
 {
-    m_sharedInteropBreakpoints->Remove(pid, m_brkAddr, [](){}, [](std::uintptr_t){});
+    if (pid != 0)
+    {
+        m_sharedInteropBreakpoints->Remove(pid, m_brkAddr, [](){}, [](std::uintptr_t){});
+    }
 
     m_rendezvousAddr = 0;
     m_rendezvousBrkState = 0;

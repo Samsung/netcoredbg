@@ -101,7 +101,7 @@ public:
     // Note, this method will reset PC in case thread stop at breakpoint and alter `regs`.
     bool InteropStepPrevToBrk(pid_t pid, std::uintptr_t brkAddr);
     // Execute real breakpoint's code with single step.
-    void InteropStepOverBrk(pid_t pid, std::uintptr_t brkAddr);
+    void InteropStepOverBrk(pid_t pid, std::uintptr_t brkAddr, std::function<bool(pid_t, std::uintptr_t)> SingleStepOnBrk);
     // Remove all native breakpoints at interop detach.
     void InteropRemoveAllAtDetach(pid_t pid);
     // Resolve breakpoints for module.

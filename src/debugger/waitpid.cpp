@@ -91,7 +91,20 @@ void waitpid_t::SetPidExitedStatus(pid_t pid, int status)
 
     pidExited = true;
     pidStatus = status;
-    SetExitCode(pid, WEXITSTATUS(pidStatus));
+
+    if (WIFEXITED(pidStatus))
+    {
+        SetExitCode(pid, WEXITSTATUS(pidStatus));
+    }
+    else if (WIFSIGNALED(pidStatus))
+    {
+        LOGW("Process terminated without exiting, can't get exit code. Killed by signal %d. Assuming EXIT_FAILURE.", WTERMSIG(pidStatus));
+        SetExitCode(pid, EXIT_FAILURE);
+    }
+    else
+    {
+        SetExitCode(pid, 0);
+    }
 }
 
 bool waitpid_t::GetPidExitedStatus(pid_t &pid, int &status)
@@ -113,7 +126,7 @@ hook::waitpid_t &GetWaitpid()
     return hook::waitpid;
 }
 
-// Note, we guaranty waitpid hook works only during debuggee process execution, it aimed to work only for PAL's waitpid calls interception.
+// Note, we guaranty `waitpid()` hook works only during debuggee process execution, it aimed to work only for PAL's `waitpid()` calls interception.
 extern "C" pid_t waitpid(pid_t pid, int *status, int options)
 {
 #ifdef INTEROP_DEBUGGING
@@ -162,12 +175,18 @@ extern "C" pid_t waitpid(pid_t pid, int *status, int options)
         }
         else if (WIFSIGNALED(*status))
         {
-            LOGW("Process terminated without exiting; can't get exit code. Killed by signal %d. Assuming EXIT_FAILURE.", WTERMSIG(*status));
+            LOGW("Process terminated without exiting, can't get exit code. Killed by signal %d. Assuming EXIT_FAILURE.", WTERMSIG(*status));
             netcoredbg::hook::waitpid.SetExitCode(pid, EXIT_FAILURE);
         }
     }
 
     return pidWaitRetval;
+}
+
+// Note, liblttng-ust may call `wait()` at CoreCLR global/static initialization at dlopen() (debugger managed part related).
+extern "C" pid_t wait(int *status)
+{
+    return waitpid(-1, status, 0);
 }
 
 } // namespace netcoredbg

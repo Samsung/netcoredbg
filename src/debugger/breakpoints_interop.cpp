@@ -127,7 +127,7 @@ bool InteropBreakpoints::IsBreakpoint(std::uintptr_t brkAddr)
     return m_currentBreakpointsInMemory.find(brkAddr) != m_currentBreakpointsInMemory.end();
 }
 
-void InteropBreakpoints::StepOverBrk(pid_t pid, std::uintptr_t brkAddr)
+void InteropBreakpoints::StepOverBrk(pid_t pid, std::uintptr_t brkAddr, std::function<bool(pid_t, std::uintptr_t)> SingleStepOnBrk)
 {
     std::lock_guard<std::recursive_mutex> lock(m_breakpointsMutex);
 
@@ -135,7 +135,7 @@ void InteropBreakpoints::StepOverBrk(pid_t pid, std::uintptr_t brkAddr)
     if (find == m_currentBreakpointsInMemory.end())
         return;
 
-    if (!InteropDebugging::StepOverBrk(pid, brkAddr, find->second.m_savedData))
+    if (!InteropDebugging::StepOverBrk(pid, brkAddr, find->second.m_savedData, SingleStepOnBrk))
         std::abort(); // Fatal error, we already logged all data about this error.
 }
 

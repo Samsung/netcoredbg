@@ -30,12 +30,15 @@ void InteropLineBreakpoints::RemoveAllAtDetach(pid_t pid)
 {
     m_breakpointsMutex.lock();
 
-    for (const auto &entry : m_lineResolvedBreakpoints)
+    if (pid != 0)
     {
-        for (const auto &bp : entry.second)
+        for (const auto &entry : m_lineResolvedBreakpoints)
         {
-            if (bp.m_enabled)
-                m_sharedInteropBreakpoints->Remove(pid, entry.first, [](){}, [](std::uintptr_t){});
+            for (const auto &bp : entry.second)
+            {
+                if (bp.m_enabled)
+                    m_sharedInteropBreakpoints->Remove(pid, entry.first, [](){}, [](std::uintptr_t){});
+            }
         }
     }
     m_lineResolvedBreakpoints.clear();

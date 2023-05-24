@@ -6,6 +6,9 @@
 #include "debugger/evaluator.h"
 #include "debugger/valueprint.h"
 #include "utils/torelease.h"
+#ifdef INTEROP_DEBUGGING
+#include "debugger/interop_debugging.h"
+#endif // INTEROP_DEBUGGING
 
 namespace netcoredbg
 {
@@ -56,7 +59,7 @@ std::string Threads::GetThreadName(ICorDebugProcess *pProcess, const ThreadId &u
             m_sharedEvaluator->WalkMembers(iCorThreadObject, nullptr, FrameLevel{0}, false, [&](
                 ICorDebugType *,
                 bool,
-                const std::string  &memberName,
+                const std::string &memberName,
                 Evaluator::GetValueCallback getValue,
                 Evaluator::SetterData*)
             {
@@ -95,11 +98,48 @@ HRESULT Threads::GetThreadsWithState(ICorDebugProcess *pProcess, std::vector<Thr
     for (auto &userThread : m_userThreads)
     {
         // ICorDebugThread::GetUserState not available for running thread.
-        threads.emplace_back(userThread, GetThreadName(pProcess, userThread), procRunning);
+        threads.emplace_back(userThread, GetThreadName(pProcess, userThread), procRunning == TRUE);
     }
 
     return S_OK;
 }
+
+#ifdef INTEROP_DEBUGGING
+// Caller should guarantee, that pProcess is not null.
+HRESULT Threads::GetInteropThreadsWithState(ICorDebugProcess *pProcess, InteropDebugging::InteropDebugger *pInteropDebugger, std::vector<Thread> &threads)
+{
+    HRESULT Status;
+    BOOL managedProcRunning = FALSE;
+    IfFailRet(pProcess->IsRunning(&managedProcRunning));
+
+    std::unordered_set<DWORD> managedThreads;
+    ToRelease<ICorDebugThreadEnum> iCorThreadEnum;
+    pProcess->EnumerateThreads(&iCorThreadEnum);
+    ULONG fetched = 0;
+    ToRelease<ICorDebugThread> iCorThread;
+    while (SUCCEEDED(iCorThreadEnum->Next(1, &iCorThread, &fetched)) && fetched == 1)
+    {
+        DWORD tid = 0;
+        if (SUCCEEDED(iCorThread->GetID(&tid)))
+        {
+            managedThreads.emplace(tid);
+        }
+        iCorThread.Free();
+    }
+
+    pInteropDebugger->WalkAllThreads([&](pid_t tid, bool isRunning)
+    {
+        ThreadId threadId(tid);
+
+        if (managedThreads.find((DWORD)tid) != managedThreads.end())
+            threads.emplace_back(threadId, GetThreadName(pProcess, threadId), managedProcRunning == TRUE, true);
+        else
+            threads.emplace_back(threadId, "<No name>", isRunning, false);
+    });
+
+    return S_OK;
+}
+#endif // INTEROP_DEBUGGING
 
 HRESULT Threads::GetThreadIds(std::vector<ThreadId> &threads)
 {
@@ -116,6 +156,11 @@ HRESULT Threads::GetThreadIds(std::vector<ThreadId> &threads)
 void Threads::SetEvaluator(std::shared_ptr<Evaluator> &sharedEvaluator)
 {
     m_sharedEvaluator = sharedEvaluator;
+}
+
+void Threads::ResetEvaluator()
+{
+    m_sharedEvaluator.reset();
 }
 
 } // namespace netcoredbg

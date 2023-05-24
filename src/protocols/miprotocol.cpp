@@ -465,12 +465,14 @@ void MIProtocol::EmitThreadEvent(const ThreadEvent &event)
     const char *reasonText = "";
     switch(event.reason)
     {
-        case ThreadStarted:
+        case ManagedThreadStarted:
             reasonText = "thread-created";
             break;
-        case ThreadExited:
+        case ManagedThreadExited:
             reasonText = "thread-exited";
             break;
+        default:
+            return;
     }
     MIProtocol::Printf("=%s,id=\"%i\"\n", reasonText, int(event.threadId));
 }
@@ -567,7 +569,7 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, Breakpo
     } },
     { "exec-interrupt", [&](const std::vector<std::string> &, std::string &output){
         HRESULT Status;
-        IfFailRet(sharedDebugger->Pause(ThreadId::AllThreads));
+        IfFailRet(sharedDebugger->Pause(ThreadId::AllThreads, EventFormat::Default));
         output = "^done";
         return S_OK;
     } },

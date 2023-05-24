@@ -49,38 +49,154 @@ namespace
 } // unnamed namespace
 
 
-InteropDebugger::InteropDebugger(std::shared_ptr<IProtocol> &sharedProtocol,
-                                 std::shared_ptr<Breakpoints> &sharedBreakpoints,
-                                 std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
-    m_sharedProtocol(sharedProtocol),
+InteropDebuggerBase::InteropDebuggerBase(IProtocol *pProtocol_,
+                                         std::shared_ptr<Breakpoints> &sharedBreakpoints,
+                                         std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
+    pProtocol(pProtocol_),
     m_sharedBreakpoints(sharedBreakpoints),
     m_uniqueInteropLibraries(new InteropLibraries()),
     m_sharedEvalWaiter(sharedEvalWaiter)
 {}
 
+InteropDebuggerSignals::InteropDebuggerSignals(IProtocol *pProtocol_,
+                                               std::shared_ptr<Breakpoints> &sharedBreakpoints,
+                                               std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
+    InteropDebuggerBase(pProtocol_, sharedBreakpoints, sharedEvalWaiter)
+{}
+
+InteropDebuggerHelpers::InteropDebuggerHelpers(IProtocol *pProtocol_,
+                                               std::shared_ptr<Breakpoints> &sharedBreakpoints,
+                                               std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
+    InteropDebuggerSignals(pProtocol_, sharedBreakpoints, sharedEvalWaiter)
+{}
+
+InteropDebugger::InteropDebugger(IProtocol *pProtocol_,
+                                 std::shared_ptr<Breakpoints> &sharedBreakpoints,
+                                 std::shared_ptr<EvalWaiter> &sharedEvalWaiter) :
+    InteropDebuggerHelpers(pProtocol_, sharedBreakpoints, sharedEvalWaiter)
+{}
+
 // NOTE caller must care about m_waitpidMutex.
-void InteropDebugger::WaitThreadStop(pid_t stoppedPid)
+bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
 {
-    if (stoppedPid == g_waitForAllThreads)
+    // We may have situation, when we check thread status with internal structure, but thread already stopped at breakpoint
+    // and we send to this thread PTRACE_INTERRUPT (since internal structure was not updated yet at next waitpid() cycle).
+    // In this case, at ptrace(PTRACE_SINGLESTEP) thread will be stopped by PTRACE_INTERRUPT and ptrace(PTRACE_SINGLESTEP)
+    // call must be repeated in oreder to finally make single step.
+
+    // Another case is signal that landed on stopped thread. For example SIGKILL from user or SIGILL
+    // due to wrong instruction that was covered by breakpoint opcode and now executed on single step.
+
+    if (async_ptrace(PTRACE_SINGLESTEP, pid, nullptr, nullptr) == -1)
     {
-        if (std::find_if(m_TIDs.begin(), m_TIDs.end(), [](std::pair<pid_t, thread_status_t> entry){return entry.second.stat == thread_stat_e::running;}) == m_TIDs.end())
-            return;
+        LOGE("Ptrace singlestep error: %s\n", strerror(errno));
+        return false;
     }
     else
     {
-        if (m_TIDs[stoppedPid].stat != thread_stat_e::running)
-            return;
+        m_TIDs[pid].stat = thread_stat_e::running;
+        m_TIDs[pid].stop_signal = 0;
     }
+
+    WaitThreadStop(pid);
+
+    // Check that we still have this thread alive.
+    if (m_TIDs.find(pid) == m_TIDs.end())
+        return false;
+
+    if (m_TIDs[pid].stop_signal == SIGTRAP &&
+        m_TIDs[pid].event == 0) // not ptrace event (breakpoint, step)
+    {
+        siginfo_t ptrace_info;
+        if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
+        {
+            LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+            return false;
+        }
+
+        switch (ptrace_info.si_code)
+        {
+        case SI_KERNEL:
+        case TRAP_BRKPT:
+            // Care about `__builtin_debugtrap()` in user code.
+            m_TIDs[pid].stat = thread_stat_e::stopped_signal_event_detected;
+            m_TIDs[pid].stop_event_data.signal = "SIGTRAP";
+            m_eventedThreads.emplace_back(pid);
+            return true;
+
+        case TRAP_TRACE: // single step
+            m_TIDs[pid].stop_signal = 0;
+            return true;
+        }
+    }
+    else if (m_TIDs[pid].stop_signal == SIGILL)
+    {
+        siginfo_t ptrace_info;
+        if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
+        {
+            LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+            return false;
+        }
+
+        if (ptrace_info.si_code == TRAP_TRACE)
+        {
+            // Care about `__builtin_trap()` in user code.
+            m_TIDs[pid].stat = thread_stat_e::stopped_signal_event_detected;
+            m_TIDs[pid].stop_event_data.signal = "SIGILL";
+            m_eventedThreads.emplace_back(pid);
+            return true;
+        }
+    }
+
+    // Got some signal, that must be handled first.
+    // In this case we don't execute sigle step again, since this could be SIGILL for initial wrong opcode, but restore breakoint in memory.
+    // We will care about this signal and after that will step over breakpoint if this breakpoint happens again on this thread at next code
+    // execution continue (take into account, that breakpoint could be removed before next continue, for example).
+    m_TIDs[pid].addrStepOverBreakpointFailed = addr;
+    return true;
+}
+
+// NOTE caller must care about m_waitpidMutex.
+void InteropDebuggerBase::WaitThreadStop(pid_t stoppedPid, std::vector<pid_t> *stoppedTreads)
+{
+    auto AllRequestedThreadsNotRunning = [&]() -> bool
+    {
+        if (stoppedTreads != nullptr)
+        {
+            if (std::find_if(stoppedTreads->begin(), stoppedTreads->end(), [this](pid_t entry)
+                                                                            {// NOTE some threads could exit, don't create m_TIDs entry by m_TIDs[] request.
+                                                                                auto find = m_TIDs.find(entry);
+                                                                                return find == m_TIDs.end() ? false : find->second.stat == thread_stat_e::running;
+                                                                            }) == stoppedTreads->end())
+                return true;
+        }
+        else if (stoppedPid == g_waitForAllThreads)
+        {
+            if (std::find_if(m_TIDs.begin(), m_TIDs.end(), [](std::pair<pid_t, thread_status_t> entry){return entry.second.stat == thread_stat_e::running;}) == m_TIDs.end())
+                return true;
+        }
+        else
+        {
+            // NOTE thread could exit, don't create m_TIDs entry by m_TIDs[] request.
+            auto find = m_TIDs.find(stoppedPid);
+            if (find == m_TIDs.end() || find->second.stat != thread_stat_e::running)
+                return true;
+        }
+        return false;
+    };
+    if (AllRequestedThreadsNotRunning())
+        return;
 
     // At this point all threads must be stopped or interrupted, we need parse all signals now.
     pid_t pid = 0;
     int status = 0;
-    // Note, we ignore errors here and don't check is m_TGID exit or not, since in case m_TGID exited `waitpid` return error and break loop.
+    // Note, we ignore errors here and don't check is m_TGID exit or not, since in case m_TGID exited `AllRequestedThreadsNotRunning()` break loop.
     while ((pid = GetWaitpid()(-1, &status, __WALL)) > 0)
     {
         if (!WIFSTOPPED(status))
         {
             m_TIDs.erase(pid);
+            pProtocol->EmitThreadEvent(ThreadEvent(NativeThreadExited, ThreadId(pid), true));
 
             // Tracee exited or was killed by signal.
             if (pid == m_TGID)
@@ -88,9 +204,10 @@ void InteropDebugger::WaitThreadStop(pid_t stoppedPid)
                 assert(m_TIDs.empty());
                 m_TGID = 0;
                 GetWaitpid().SetPidExitedStatus(pid, status);
+                m_NotifyLastThreadExited(status);
             }
 
-            if (stoppedPid == pid)
+            if (AllRequestedThreadsNotRunning())
                 break;
 
             continue;
@@ -114,22 +231,21 @@ void InteropDebugger::WaitThreadStop(pid_t stoppedPid)
                 stop_signal = 0;
         }
 
+        if (m_TIDs.find(pid) == m_TIDs.end())
+            pProtocol->EmitThreadEvent(ThreadEvent(NativeThreadStarted, ThreadId(pid), true));
+
         m_TIDs[pid].stat = thread_stat_e::stopped; // if we here, this mean we get some stop signal for this thread
         m_TIDs[pid].stop_signal = stop_signal;
         m_TIDs[pid].event = (unsigned)status >> 16;
         m_changedThreads.emplace_back(pid);
 
-        if (stoppedPid == pid ||
-            (stoppedPid == g_waitForAllThreads &&
-             std::find_if(m_TIDs.begin(), m_TIDs.end(), [](std::pair<pid_t, thread_status_t> entry){return entry.second.stat == thread_stat_e::running;}) == m_TIDs.end()))
-        {
+        if (AllRequestedThreadsNotRunning())
             break;
-        }
     }
 }
 
 // NOTE caller must care about m_waitpidMutex.
-void InteropDebugger::StopAndDetach(pid_t tgid)
+void InteropDebuggerHelpers::StopAndDetach(pid_t tgid)
 {
     WaitThreadStop(g_waitForAllThreads);
 
@@ -172,9 +288,9 @@ void InteropDebugger::StopAndDetach(pid_t tgid)
 }
 
 // NOTE caller must care about m_waitpidMutex.
-void InteropDebugger::StopAllRunningThreads()
+static void StopAllRunningThreads(const std::unordered_map<pid_t, thread_status_t> &TIDs)
 {
-    for (const auto &tid : m_TIDs)
+    for (const auto &tid : TIDs)
     {
         if (tid.second.stat == thread_stat_e::running &&
             async_ptrace(PTRACE_INTERRUPT, tid.first, nullptr, nullptr) == -1)
@@ -185,9 +301,9 @@ void InteropDebugger::StopAllRunningThreads()
 }
 
 // NOTE caller must care about m_waitpidMutex.
-void InteropDebugger::Detach(pid_t tgid)
+void InteropDebuggerHelpers::Detach(pid_t tgid)
 {
-    StopAllRunningThreads();
+    StopAllRunningThreads(m_TIDs);
     StopAndDetach(tgid);
 }
 
@@ -202,13 +318,13 @@ void InteropDebugger::Shutdown()
         if (m_waitpidThreadStatus == WaitpidThreadStatus::WORK)
         {
             m_waitpidNeedExit = true;
-            m_waitpidCV.notify_one(); // notify for exit from infinite loop (thread may stay and unlock mutex on wait() or usleep())
             m_waitpidCV.wait(lock); // wait for exit from infinite loop
         }
 
         m_waitpidWorker.join();
         Detach(m_TGID);
         m_TGID = 0;
+        m_NotifyLastThreadExited = std::function<void(int)>{};
         m_sharedCallbacksQueue = nullptr;
         GetWaitpid().SetInteropWaitpidMode(false);
         m_waitpidThreadStatus = WaitpidThreadStatus::FINISHED_AND_JOINED;
@@ -220,7 +336,7 @@ void InteropDebugger::Shutdown()
     async_ptrace_shutdown();
 }
 
-static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_status_t> &TIDs, const pid_t pid, int &error_n)
+static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_status_t> &TIDs, const pid_t pid, bool attach, int &error_n, IProtocol *pProtocol)
 {
     char dirname[128];
     if (snprintf(dirname, sizeof dirname, "/proc/%d/task/", pid) >= (int)sizeof(dirname))
@@ -264,6 +380,8 @@ static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_stat
             closedir(dir);
             return E_FAIL;
         }
+
+        pProtocol->EmitThreadEvent(ThreadEvent(attach ? NativeThreadAttached : NativeThreadStarted, ThreadId(tid), true));
         TIDs[tid].stat = thread_stat_e::running; // seize - attach without stop
 
         if (async_ptrace(PTRACE_INTERRUPT, tid, nullptr, nullptr) == -1)
@@ -288,10 +406,8 @@ static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_stat
     return S_OK;
 }
 
-void InteropDebugger::LoadLib(pid_t pid, const std::string &libLoadName, const std::string &realLibName, std::uintptr_t startAddr, std::uintptr_t endAddr)
+void InteropDebuggerHelpers::LoadLib(pid_t pid, const std::string &libLoadName, const std::string &realLibName, std::uintptr_t startAddr, std::uintptr_t endAddr)
 {
-    // TODO setup related to this lib native breakpoints
-
     Module module;
     module.id = ""; // TODO add "The `id` field is an opaque identifier of the library"
     module.name = GetBasename(realLibName);
@@ -305,19 +421,19 @@ void InteropDebugger::LoadLib(pid_t pid, const std::string &libLoadName, const s
         std::vector<BreakpointEvent> events;
         m_sharedBreakpoints->InteropLoadModule(pid, startAddr, m_uniqueInteropLibraries.get(), events);
         for (const BreakpointEvent &event : events)
-            m_sharedProtocol->EmitBreakpointEvent(event);
+            pProtocol->EmitBreakpointEvent(event);
     }
 
-    m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
+    pProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
 }
 
-void InteropDebugger::UnloadLib(const std::string &realLibName)
+void InteropDebuggerHelpers::UnloadLib(const std::string &realLibName)
 {
     Module module;
     module.id = ""; // TODO add "The `id` field is an opaque identifier of the library"
     module.name = GetBasename(realLibName);
     module.path = realLibName;
-    m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleRemoved, module));
+    pProtocol->EmitModuleEvent(ModuleEvent(ModuleRemoved, module));
     std::uintptr_t startAddr = 0;
     std::uintptr_t endAddr = 0;
     if (m_uniqueInteropLibraries->RemoveLibrary(realLibName, startAddr, endAddr))
@@ -325,108 +441,240 @@ void InteropDebugger::UnloadLib(const std::string &realLibName)
         std::vector<BreakpointEvent> events;
         m_sharedBreakpoints->InteropUnloadModule(startAddr, endAddr, events);
         for (const BreakpointEvent &event : events)
-            m_sharedProtocol->EmitBreakpointEvent(event);
+            pProtocol->EmitBreakpointEvent(event);
+    }
+}
+
+static bool AddSignalEventForUserCode(pid_t pid, InteropLibraries *pInteropLibraries, const std::string &signal, thread_status_t &threadStatus)
+{
+    // get registers (we need real breakpoint address for check)
+    user_regs_struct regs;
+    iovec iov;
+    iov.iov_base = &regs;
+    iov.iov_len = sizeof(user_regs_struct);
+    if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
+    {
+        LOGW("Ptrace getregset error: %s\n", strerror(errno));
+        return false;
+    }
+
+    // Should be user code only with debug info and ignore CoreCLR libs.
+    std::uintptr_t breakAddr = GetBreakAddrByPC(regs);
+    if (!pInteropLibraries->IsUserDebuggingCode(breakAddr))
+        return false;
+
+    // We need stop event and only at "continue" sent this signal to CoreCLR (let CoreCLR decide).
+    threadStatus.stat = thread_stat_e::stopped_signal_event_detected;
+    threadStatus.stop_event_data.addr = breakAddr;
+    threadStatus.stop_event_data.signal = signal;
+    return true;
+}
+
+static bool AddSignalEventForCallerInUserCode(pid_t pid, pid_t TGID, InteropLibraries *pInteropLibraries, const std::string &signal, thread_status_t &threadStatus)
+{
+    // Check, that debuggee send this to itself by PID.
+    siginfo_t siginfo;
+    memset(&siginfo, 0, sizeof(siginfo_t));
+    if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &siginfo) == -1)
+    {
+        LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+        return false;
+    }
+    if (siginfo.si_pid != TGID)
+        return false;
+
+    // Should be user code only with debug info and ignore CoreCLR libs.
+    // Find second frame - raise()/kill() caller.
+    // NOTE in case we can't get second frame data we can't guarantee that stop event will not broke CoreCLR debug API.
+    int frameCount = 0;
+    bool isUserDebuggingCode = false;
+    std::uintptr_t breakAddr = 0;
+    ThreadStackUnwind(pid, nullptr, [&](std::uintptr_t addr)
+    {
+        frameCount++;
+
+        // TODO care about case when one thread could send signal to another inside process:
+        // kill(getpid(), SIGTRAP);
+        // and that thread's second frame will be in user code it the same time.
+
+        // (?) check that top frame is user code / not CoreCLR (but skip frames with "system" libs like libc, libpthread, ...)
+
+        // (?) check lib + method name for first frame:
+        // raise(SIGTRAP)                                   -> libpthread-2.31.so` raise()
+        // kill(syscall(SYS_gettid), SIGTRAP)               -> libc-2.31.so` kill()
+        // tgkill(getpid(), syscall(SYS_gettid), SIGTRAP)   -> libc-2.31.so` tgkill()
+        // syscall(SYS_tkill, syscall(SYS_gettid), SIGTRAP) -> libc-2.31.so` syscall()
+
+        if (frameCount == 1)
+            breakAddr = addr;
+        else
+            isUserDebuggingCode = pInteropLibraries->IsUserDebuggingCode(addr);
+
+        return frameCount < 2;
+    });
+    if (!isUserDebuggingCode)
+        return false;
+
+    // We need stop event and only at "continue" sent this signal to CoreCLR (let CoreCLR decide).
+    threadStatus.stat = thread_stat_e::stopped_signal_event_detected;
+    threadStatus.stop_event_data.addr = breakAddr;
+    threadStatus.stop_event_data.signal = signal;
+    return true;
+}
+
+void InteropDebuggerSignals::Parse_SIGILL(pid_t pid)
+{
+    siginfo_t ptrace_info;
+    if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
+    {
+        LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+    }
+    else
+    {
+        switch (ptrace_info.si_code)
+        {
+        case TRAP_TRACE:
+            // Care about `__builtin_trap()` in user code.
+            if (AddSignalEventForUserCode(pid, m_uniqueInteropLibraries.get(), "SIGILL", m_TIDs[pid]))
+                m_eventedThreads.emplace_back(pid);
+            break;
+        case SI_USER:
+        case SI_TKILL:
+            // Care about `raise()` and `kill()` for SIGILL in user code.
+            if (AddSignalEventForCallerInUserCode(pid, m_TGID, m_uniqueInteropLibraries.get(), "SIGILL", m_TIDs[pid]))
+                m_eventedThreads.emplace_back(pid);
+            break;
+        }
+    }
+}
+
+void InteropDebuggerSignals::Parse_SIGTRAP__PTRACE_EVENT_EXEC(pid_t pid)
+{
+    if (pid == m_TGID)
+    {
+        m_TIDs[pid].stop_signal = 0;
+        return;
+    }
+
+    if (async_ptrace(PTRACE_DETACH, pid, nullptr, nullptr) == -1)
+        LOGW("Ptrace detach at exec error: %s\n", strerror(errno));
+    else
+        m_TIDs.erase(pid);
+}
+
+void InteropDebuggerSignals::Parse_SIGTRAP__NOT_PTRACE_EVENT(pid_t pid)
+{
+    siginfo_t ptrace_info;
+    if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
+    {
+        LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+    }
+    else
+    {
+        switch (ptrace_info.si_code)
+        {
+            case SI_KERNEL:
+            case TRAP_BRKPT:
+            {
+                // get registers (we need real breakpoint address for check)
+                user_regs_struct regs;
+                iovec iov;
+                iov.iov_base = &regs;
+                iov.iov_len = sizeof(user_regs_struct);
+                if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
+                    LOGW("Ptrace getregset error: %s\n", strerror(errno));
+
+                std::uintptr_t brkAddr = GetBrkAddrByPC(regs);
+
+                // Step over breakpoint (that previously was failed, since some signal at single step was received).
+                // Note, breakpoint with this address could be already deleted and we stop at another breakpoint, make sure addrStepOverBreakpointFailed is reset.
+                if (m_TIDs[pid].addrStepOverBreakpointFailed != 0)
+                {
+                    // Reset must be before `InteropStepOverBrk()` call, since it could change it again.
+                    std::uintptr_t addrStepOverBreakpointFailed = m_TIDs[pid].addrStepOverBreakpointFailed;
+                    m_TIDs[pid].addrStepOverBreakpointFailed = 0;
+                    if (addrStepOverBreakpointFailed == brkAddr)
+                    {
+                        StopAllRunningThreads(m_TIDs);
+                        WaitThreadStop(g_waitForAllThreads);
+                        m_sharedBreakpoints->InteropStepOverBrk(pid, brkAddr, [&](pid_t step_pid, std::uintptr_t step_addr) {return SingleStepOnBrk(step_pid, step_addr);});
+                        break;
+                    }
+                }
+
+                if (m_sharedBreakpoints->IsInteropRendezvousBreakpoint(brkAddr))
+                {
+                    m_sharedBreakpoints->InteropChangeRendezvousState(m_TGID, pid);
+                    m_sharedBreakpoints->InteropStepOverBrk(pid, brkAddr, [&](pid_t step_pid, std::uintptr_t step_addr) {return SingleStepOnBrk(step_pid, step_addr);});
+                }
+                else if (m_sharedBreakpoints->IsInteropBreakpoint(brkAddr))
+                {
+                    // Ignore breakpoints during managed evaluation.
+                    if (m_sharedEvalWaiter->GetEvalRunningThreadID() == (DWORD)pid)
+                    {
+                        StopAllRunningThreads(m_TIDs);
+                        WaitThreadStop(g_waitForAllThreads);
+                        m_sharedBreakpoints->InteropStepOverBrk(pid, brkAddr, [&](pid_t step_pid, std::uintptr_t step_addr) {return SingleStepOnBrk(step_pid, step_addr);});
+                        break;
+                    }
+
+                    m_TIDs[pid].stop_signal = 0;
+                    m_TIDs[pid].stat = thread_stat_e::stopped_breakpoint_event_detected;
+                    m_TIDs[pid].stop_event_data.addr = brkAddr;
+                    m_eventedThreads.emplace_back(pid);
+                }
+                else
+                {
+                    // Care about `__builtin_debugtrap()` in user code.
+                    if (AddSignalEventForUserCode(pid, m_uniqueInteropLibraries.get(), "SIGTRAP", m_TIDs[pid]))
+                        m_eventedThreads.emplace_back(pid);
+                }
+
+                break;
+            }
+            case SI_USER:
+            case SI_TKILL:
+                // Care about `raise()` and `kill()` for SIGTRAP in user code.
+                if (AddSignalEventForCallerInUserCode(pid, m_TGID, m_uniqueInteropLibraries.get(), "SIGTRAP", m_TIDs[pid]))
+                    m_eventedThreads.emplace_back(pid);
+                break;
+            case TRAP_TRACE:
+                // TODO check all native steppers
+                // m_TIDs[pid].stop_signal = 0;
+                // Reset m_TIDs[pid].addrStepOverBreakpointFailed
+                break;
+        }
     }
 }
 
 // NOTE caller must care about m_waitpidMutex.
-void InteropDebugger::ParseThreadsChanges()
+void InteropDebuggerBase::ParseThreadsChanges()
 {
     if (m_changedThreads.empty())
         return;
 
-    for (auto it = m_changedThreads.begin(); it != m_changedThreads.end(); ++it)
+    static std::unordered_map<unsigned, std::function<void(pid_t pid)>> signalActions
     {
-        pid_t &pid = *it;
-
-        // TODO (CoreCLR have sigaction for this signals):
-        // SIGSTOP
-        // SIGILL
-        // SIGFPE
-        // SIGSEGV
-        // SIGBUS
-        // SIGABRT
-        // SIGINT - Note, in CLI set to SIG_IGN.
-        // SIGQUIT
-        // SIGTERM
-
-        if (m_TIDs[pid].stop_signal == SIGTRAP)
-        {
+        { 0 , [&](pid_t pid) {
+            // From man 2 kill:
+            //    If sig is 0, then no signal is sent, but existence and permission
+            //    checks are still performed; this can be used to check for the
+            //    existence of a process ID or process group ID that the caller is
+            //    permitted to signal.
+            // Note, we  also use it as previous signal "reset" (signal, that was parsed by debugger and should not be send to debuggee).
+        } },
+        { SIGILL , [&](pid_t pid) {
+            Parse_SIGILL(pid);
+        } },
+        { SIGTRAP , [&](pid_t pid) {
             switch (m_TIDs[pid].event)
             {
             case PTRACE_EVENT_EXEC:
-                if (pid != m_TGID)
-                {
-                    if (async_ptrace(PTRACE_DETACH, pid, nullptr, nullptr) == -1)
-                        LOGW("Ptrace detach at exec error: %s\n", strerror(errno));
-                    else
-                        m_TIDs.erase(pid);
-
-                    continue;
-                }
-
-                m_TIDs[pid].stop_signal = 0;
+                Parse_SIGTRAP__PTRACE_EVENT_EXEC(pid);
                 break;
             
             case 0: // not ptrace-related event
-                {
-                    siginfo_t ptrace_info;
-                    if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
-                    {
-                        LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
-                    }
-                    else
-                    {
-                        switch (ptrace_info.si_code)
-                        {
-#ifdef SI_KERNEL
-                            case SI_KERNEL:
-#endif
-                            case SI_USER:
-                            case TRAP_BRKPT:
-                            {
-                                // get registers (we need real breakpoint address for check)
-                                user_regs_struct regs;
-                                iovec iov;
-                                iov.iov_base = &regs;
-                                iov.iov_len = sizeof(user_regs_struct);
-                                if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
-                                    LOGW("Ptrace getregset error: %s\n", strerror(errno));
-
-                                std::uintptr_t brkAddr = GetBrkAddrByPC(regs);
-
-                                if (m_sharedBreakpoints->IsInteropRendezvousBreakpoint(brkAddr))
-                                {
-                                    m_sharedBreakpoints->InteropChangeRendezvousState(m_TGID, pid);
-                                    m_sharedBreakpoints->InteropStepOverBrk(pid, brkAddr);
-                                    m_TIDs[pid].stop_signal = 0;
-                                }
-                                else if (m_sharedBreakpoints->IsInteropBreakpoint(brkAddr))
-                                {
-                                    // Ignore breakpoints during managed evaluation.
-                                    if (m_sharedEvalWaiter->GetEvalRunningThreadID() == (DWORD)pid)
-                                    {
-                                        StopAllRunningThreads();
-                                        WaitThreadStop(g_waitForAllThreads);
-                                        m_sharedBreakpoints->InteropStepOverBrk(pid, brkAddr);
-                                        m_TIDs[pid].stop_signal = 0;
-                                        break;
-                                    }
-
-                                    m_TIDs[pid].stop_signal = 0;
-                                    m_TIDs[pid].stat = thread_stat_e::stopped_breakpoint_event_detected;
-                                    m_TIDs[pid].stop_event_data.addr = brkAddr;
-                                    m_eventedThreads.emplace_back(pid);
-                                }
-                                break;
-                            }
-                            case TRAP_TRACE:
-                                // TODO check all native steppers
-                                // m_TIDs[pid].stop_signal = 0;
-                                break;
-                        }
-                    }
-                }
+                Parse_SIGTRAP__NOT_PTRACE_EVENT(pid);
                 break;
 
             //case PTRACE_EVENT_FORK:
@@ -440,13 +688,38 @@ void InteropDebugger::ParseThreadsChanges()
                 m_TIDs[pid].stop_signal = 0;
                 break;
             }
+        } }
+
+        // TODO (CoreCLR have sigaction for this signals):
+        // SIGSTOP
+        // SIGFPE
+        // SIGSEGV
+        // SIGBUS
+        // SIGABRT
+        // SIGINT - Note, in CLI set to SIG_IGN.
+        // SIGQUIT
+        // SIGTERM
+    };
+
+    for (auto it = m_changedThreads.begin(); it != m_changedThreads.end(); ++it)
+    {
+        pid_t &pid = *it;
+
+        if (m_TIDs[pid].stat != thread_stat_e::stopped)
+            continue;
+
+        auto find = signalActions.find(m_TIDs[pid].stop_signal);
+        if (find != signalActions.end())
+        {
+            find->second(pid);
         }
     }
 
     // NOTE we use second cycle, since during first (parsing) we may need stop all running threads (for example, in case user breakpoint during eval).
     for (const auto &pid : m_changedThreads)
     {
-        if (m_TIDs[pid].stat != thread_stat_e::stopped)
+        if (m_TIDs[pid].stat != thread_stat_e::stopped &&
+            m_TIDs[pid].stat != thread_stat_e::stopped_on_event_need_continue)
             continue;
 
         if (async_ptrace(PTRACE_CONT, pid, nullptr, (void*)((word_t)m_TIDs[pid].stop_signal)) == -1)
@@ -462,7 +735,7 @@ void InteropDebugger::ParseThreadsChanges()
 }
 
 // Separate thread for callbacks setup in order to make waitpid and CoreCLR debug API work in the same time.
-void InteropDebugger::CallbackEventWorker()
+void InteropDebuggerBase::CallbackEventWorker()
 {
     std::unique_lock<std::mutex> lock(m_callbackEventMutex);
     m_callbackEventCV.notify_one(); // notify WaitpidWorker(), that thread init complete
@@ -474,6 +747,7 @@ void InteropDebugger::CallbackEventWorker()
         if (m_callbackEventNeedExit)
             break;
 
+        // m_sharedCallbacksQueue's wrapper that care about m_callbacksMutex lock before code execution in lambda.
         m_sharedCallbacksQueue->AddInteropCallbackToQueue([&]()
         {
             for (const auto &entry : m_callbackEvents)
@@ -481,15 +755,27 @@ void InteropDebugger::CallbackEventWorker()
                 switch (entry.stat)
                 {
                 case thread_stat_e::stopped_breakpoint_event_detected:
-                    m_sharedCallbacksQueue->EmplaceBackInterop(CallbackQueueCall::InteropBreakpoint, entry.pid, entry.stop_event_data.addr);
+                    m_sharedCallbacksQueue->EmplaceBackInterop(CallbackQueueCall::InteropBreakpoint, entry.pid, entry.stop_event_data.addr, "");
                     {
+                        // Important! Lock sequence must be (1)m_callbackEventMutex -> (2)m_waitpidMutex only!
+                        // Important! Lock sequence must be (1)m_callbacksMutex -> (2)m_waitpidMutex only!
                         std::lock_guard<std::mutex> lock(m_waitpidMutex);
                         auto find = m_TIDs.find(entry.pid);
                         if (find != m_TIDs.end())
                            find->second.stat = thread_stat_e::stopped_breakpoint_event_in_progress;
                     }
                     break;
-
+                case thread_stat_e::stopped_signal_event_detected:
+                    m_sharedCallbacksQueue->EmplaceBackInterop(CallbackQueueCall::InteropSignal, entry.pid, entry.stop_event_data.addr, entry.stop_event_data.signal);
+                    {
+                        // Important! Lock sequence must be (1)m_callbackEventMutex -> (2)m_waitpidMutex only!
+                        // Important! Lock sequence must be (1)m_callbacksMutex -> (2)m_waitpidMutex only!
+                        std::lock_guard<std::mutex> lock(m_waitpidMutex);
+                        auto find = m_TIDs.find(entry.pid);
+                        if (find != m_TIDs.end())
+                           find->second.stat = thread_stat_e::stopped_signal_event_in_progress;
+                    }
+                    break;
                 default:
                     LOGW("This event type is not stop event: %d", entry.stat);
                     break;
@@ -503,10 +789,9 @@ void InteropDebugger::CallbackEventWorker()
     m_callbackEventCV.notify_one(); // notify WaitpidWorker(), that execution exit from CallbackEventWorker()
 }
 
-void InteropDebugger::ParseThreadsEvents()
+// Caller must care about m_waitpidMutex.
+void InteropDebuggerBase::ParseThreadsEvents()
 {
-    std::lock_guard<std::mutex> lock(m_waitpidMutex);
-
     if (m_eventedThreads.empty())
         return;
 
@@ -514,6 +799,7 @@ void InteropDebugger::ParseThreadsEvents()
     //      could be stopped at CoreCLR's breakpoint and wait for waitpid, but we wait for managed process `Stop()` in the same time.
 
     // In case m_callbackEventMutex is locked, return to waitpid loop for next cycle.
+    // Important! Lock sequence must be (1)m_callbackEventMutex -> (2)m_waitpidMutex only, but with `try_lock()` we fine here.
     if (!m_callbackEventMutex.try_lock())
         return;
 
@@ -524,7 +810,9 @@ void InteropDebugger::ParseThreadsEvents()
         case thread_stat_e::stopped_breakpoint_event_detected:
             m_callbackEvents.emplace_back(pid, m_TIDs[pid].stat, m_TIDs[pid].stop_event_data);
             break;
-
+        case thread_stat_e::stopped_signal_event_detected:
+            m_callbackEvents.emplace_back(pid, m_TIDs[pid].stat, m_TIDs[pid].stop_event_data);
+            break;
         default:
             LOGW("This event type is not stop event: %d", m_TIDs[pid].stat);
             break;
@@ -551,37 +839,228 @@ void InteropDebugger::ContinueAllThreadsWithEvents()
         {
         case thread_stat_e::stopped_breakpoint_event_in_progress:
             BrkStopAllThreads(allThreadsWereStopped);
-            m_sharedBreakpoints->InteropStepOverBrk(tid.first, tid.second.stop_event_data.addr);
+            m_sharedBreakpoints->InteropStepOverBrk(tid.first, tid.second.stop_event_data.addr, 
+                                                    [&](pid_t step_pid, std::uintptr_t step_addr) {return SingleStepOnBrk(step_pid, step_addr);});
+            break;
+        case thread_stat_e::stopped_signal_event_in_progress:
+            tid.second.stat = thread_stat_e::stopped_on_event_need_continue;
+            m_changedThreads.emplace_back(tid.first);
+            break;
+        case thread_stat_e::stopped_on_event_as_native_thread:
+            tid.second.stat = thread_stat_e::stopped;
+            tid.second.stop_signal = 0;
+            m_changedThreads.emplace_back(tid.first);
             break;
         default:
             continue;
         }
-
-        if (async_ptrace(PTRACE_CONT, tid.first, nullptr, nullptr) == -1)
-            LOGW("Ptrace cont error: %s", strerror(errno));
-        else
-        {
-            tid.second.stat = thread_stat_e::running;
-            tid.second.stop_signal = 0;
-        }
     }
 
-    // Continue threads execution with care about stop events (CallbacksQueue).
-    if (allThreadsWereStopped)
-        ParseThreadsChanges();
+    // Continue native code execution with care about stop events (CallbacksQueue).
+    // Ignore allThreadsWereStopped status here, since we could have different events not only breakpoints.
+    ParseThreadsChanges();
 }
 
-void InteropDebugger::WaitpidWorker()
+static void GetAllManagedThreads(ICorDebugProcess *pProcess, std::map<pid_t, ToRelease<ICorDebugThread>> &allManagedTreads)
+{
+    ToRelease<ICorDebugThreadEnum> iCorThreadEnum;
+    pProcess->EnumerateThreads(&iCorThreadEnum);
+    ULONG fetched = 0;
+    ToRelease<ICorDebugThread> iCorThread;
+    while (SUCCEEDED(iCorThreadEnum->Next(1, &iCorThread, &fetched)) && fetched == 1)
+    {
+        DWORD tid = 0;
+        if (SUCCEEDED(iCorThread->GetID(&tid)))
+            allManagedTreads[tid] = iCorThread.Detach();
+        else
+            iCorThread.Free();
+    }
+}
+
+static void StopAllManagedThreads(std::unordered_map<pid_t, thread_status_t> &TIDs, std::map<pid_t, ToRelease<ICorDebugThread>> &allManagedTreads,
+                                  std::vector<pid_t> &stoppedManagedTreads)
+{
+    for (const auto &managedThread : allManagedTreads)
+    {
+        if (TIDs[managedThread.first].stat != thread_stat_e::running)
+            continue;
+
+        if (async_ptrace(PTRACE_INTERRUPT, managedThread.first, nullptr, nullptr) == -1)
+            LOGW("Ptrace interrupt error: %s\n", strerror(errno));
+        else
+            stoppedManagedTreads.emplace_back(managedThread.first);
+    }
+}
+
+static void AnalyzeAllManagedThreadsTopFrame(std::unordered_map<pid_t, thread_status_t> &TIDs,
+                                             std::map<pid_t, ToRelease<ICorDebugThread>> &allManagedTreads)
+{
+    for (const auto &managedThread : allManagedTreads)
+    {
+        // Note, we could already have some stop event here, that should be parsed separately.
+        if (TIDs[managedThread.first].stat != thread_stat_e::stopped)
+            continue;
+
+        HRESULT Status;
+        ToRelease<ICorDebugThread3> iCorThread3;
+        ToRelease<ICorDebugStackWalk> iCorStackWalk;
+        ToRelease<ICorDebugFrame> iCorFrame;
+        if (FAILED(managedThread.second->QueryInterface(IID_ICorDebugThread3, (LPVOID *) &iCorThread3)) ||
+            FAILED(iCorThread3->CreateStackWalk(&iCorStackWalk)) ||
+            FAILED(Status = iCorStackWalk->GetFrame(&iCorFrame)))
+            continue;
+
+        if (Status == S_FALSE) // S_FALSE - The current frame is a native stack frame.
+        {
+            TIDs[managedThread.first].stat = thread_stat_e::stopped_on_event_as_native_thread;
+            continue;
+        }
+
+        // At this point (Status == S_OK).
+        // Accordingly to CoreCLR sources, S_OK could be with nulled iCorFrame, that must be skipped.
+        // Related to `FrameType::kExplicitFrame` in runtime (skipped frame function with no-frame transition represents)
+        if (iCorFrame == NULL)
+            continue;
+
+        // Managed frame.
+        ToRelease<ICorDebugFunction> iCorFunction;
+        if (SUCCEEDED(iCorFrame->GetFunction(&iCorFunction)))
+        {
+            // In case of optimized managed code, top frame could be native (optimized code could have inlined pinvoke).
+            // Note, breakpoint can't be set in optimized managed code and step can't stop here, since this code is not JMC for sure.
+            BOOL bJustMyCode;
+            ToRelease<ICorDebugFunction2> iCorFunction2;
+            if (SUCCEEDED(iCorFunction->QueryInterface(IID_ICorDebugFunction2, (LPVOID *) &iCorFunction2)) &&
+                SUCCEEDED(iCorFunction2->GetJMCStatus(&bJustMyCode)) &&
+                // Check for optimized code. In case of optimized code, JMC status can't be set to TRUE.
+                // https://github.com/dotnet/runtime/blob/main/src/coreclr/debug/ee/debugger.cpp#L11257-L11260
+                SUCCEEDED(iCorFunction2->SetJMCStatus(TRUE)))
+            {
+                // Revert back JMC status if need.
+                if (bJustMyCode != TRUE)
+                    iCorFunction2->SetJMCStatus(bJustMyCode);
+
+                continue; // not optimized code for sure, don't stop thread.
+            }
+
+            // Prevent thread native stop in case thread stopped by managed exception.
+            ToRelease<ICorDebugThread> iCorThread;
+            ToRelease<ICorDebugValue> iCorExceptionValue;
+            if (SUCCEEDED(iCorThread3->QueryInterface(IID_ICorDebugThread, (LPVOID *) &iCorThread)) &&
+                SUCCEEDED(iCorThread->GetCurrentException(&iCorExceptionValue)) && iCorExceptionValue != nullptr)
+                continue;
+
+            TIDs[managedThread.first].stat = thread_stat_e::stopped_on_event_as_native_thread;
+            continue;
+        }
+
+        ToRelease<ICorDebugNativeFrame> iCorNativeFrame;
+        if (SUCCEEDED(iCorFrame->QueryInterface(IID_ICorDebugNativeFrame, (LPVOID*) &iCorNativeFrame)))
+            TIDs[managedThread.first].stat = thread_stat_e::stopped_on_event_as_native_thread;
+        //else
+        //    Some unknown frame, don't stop it during stop event.
+    }
+}
+
+HRESULT InteropDebugger::StopAllNativeThreads(ICorDebugProcess *pProcess)
+{
+    if (!pProcess)
+        return E_INVALIDARG;
+
+    std::lock_guard<std::mutex> lock(m_waitpidMutex);
+
+    if (m_TIDs.empty())
+        return S_OK;
+
+    std::map<pid_t, ToRelease<ICorDebugThread>> allManagedTreads;
+    GetAllManagedThreads(pProcess, allManagedTreads);
+
+    std::vector<pid_t> stoppedManagedTreads;
+    stoppedManagedTreads.reserve(allManagedTreads.size());
+    StopAllManagedThreads(m_TIDs, allManagedTreads, stoppedManagedTreads);
+    WaitThreadStop(g_waitForAllThreads, &stoppedManagedTreads);
+
+    AnalyzeAllManagedThreadsTopFrame(m_TIDs, allManagedTreads);
+    // At this point we have all managed threads stopped by `ptrace`:
+    //    thread_stat_e::stopped                           - execution will continue in ParseThreadsChanges() call in this method
+    //    thread_stat_e::stopped_on_event_as_native_thread - execution will continue only after stop event ends
+
+    // Stop all native treads and analyze them (we need stop all not CoreCLR related treads now).
+
+    StopAllRunningThreads(m_TIDs);
+    WaitThreadStop(g_waitForAllThreads);
+
+    static std::unordered_set<std::string> unwindStopFrames{
+        "libstdc++.so`execute_native_thread_routine()",
+        "libpthread.so`start_thread()",
+        "libc.so`__libc_start_main()",
+        "libc.so`clone()"
+    };
+
+    for (auto &nativeThread : m_TIDs)
+    {
+        // Skip managed threads, we analyzed all of them early.
+        if (allManagedTreads.find(nativeThread.first) != allManagedTreads.end())
+            continue;
+
+        // Note, we could already have some stop event here, that should be parsed separately.
+        if (m_TIDs[nativeThread.first].stat != thread_stat_e::stopped)
+            continue;
+
+        bool skipThread = false;
+        bool reachedStopFrames = false;
+        ThreadStackUnwind(nativeThread.first, nullptr, [&](std::uintptr_t addr)
+        {
+#if defined(DEBUGGER_UNIX_ARM)
+            addr = addr & ~((std::uintptr_t)1); // convert to proper (even) address (debug info use only even addresses)
+#endif
+
+            // Note, in this case we don't need info for address that is part of previous (already executed) code (we need only procedure name).
+            // This mean, no need address correction here for all frames.
+
+            std::string libLoadName;
+            std::string procName;
+            if (!m_uniqueInteropLibraries->FindDataForNotClrAddr(addr, libLoadName, procName))
+            {
+                skipThread = true;
+                return false;
+            }
+
+            // Case when lib name and/or procedure name can't be gathered, considered to be "user" code (frame should be skipped).
+            if (libLoadName.empty() || procName.empty())
+                return true;
+
+            // Note, in order to unwind successfully (and detect all user's code related threads), debug info for all user's code should be installed, plus,
+            // some arches could miss dynsyms for `start_thread()` or `clone()`, that mean debug info for libc/glibc and libstdc++ should be installed.
+            std::string unwindFrame = libLoadName + "`" + procName;
+            reachedStopFrames = unwindStopFrames.find(unwindFrame) != unwindStopFrames.end();
+            return !reachedStopFrames;
+        });
+
+        if (!skipThread && reachedStopFrames)
+            m_TIDs[nativeThread.first].stat = thread_stat_e::stopped_on_event_as_native_thread;
+    }
+
+    ParseThreadsChanges();
+    return S_OK;
+}
+
+void InteropDebuggerBase::InitWaitpidWorkerThread()
+{
+    m_waitpidWorker = std::thread(&InteropDebuggerBase::WaitpidWorker, this);
+}
+
+void InteropDebuggerBase::WaitpidWorker()
 {
     std::unique_lock<std::mutex> lockEvent(m_callbackEventMutex);
     m_callbackEventNeedExit = false;
-    m_callbackEventWorker = std::thread(&InteropDebugger::CallbackEventWorker, this);
+    m_callbackEventWorker = std::thread(&InteropDebuggerBase::CallbackEventWorker, this);
     m_callbackEventCV.wait(lockEvent); // wait for init complete from CallbackEventWorker()
     lockEvent.unlock();
 
-    std::unique_lock<std::mutex> lock(m_waitpidMutex);
+    std::unique_lock<std::mutex> lockWaitpid(m_waitpidMutex);
     m_waitpidCV.notify_one(); // notify Init(), that WaitpidWorker() thread init complete
-    m_waitpidCV.wait(lock); // wait for "respond" and mutex unlock from Init()
+    m_waitpidCV.wait(lockWaitpid); // wait for "respond" and mutex unlock from Init()
 
     pid_t pid = 0;
     int status = 0;
@@ -616,12 +1095,11 @@ void InteropDebugger::WaitpidWorker()
             }
 
             ParseThreadsChanges();
-
-            lock.unlock();
-            // NOTE mutexes lock sequence must be CallbacksQueue->InteropDebugger.
             ParseThreadsEvents();
+
+            lockWaitpid.unlock();
             usleep(10*1000); // sleep 10 ms before next waitpid call
-            lock.lock();
+            lockWaitpid.lock();
 
             if (m_waitpidNeedExit)
                 break;
@@ -632,6 +1110,7 @@ void InteropDebugger::WaitpidWorker()
         if (!WIFSTOPPED(status))
         {
             m_TIDs.erase(pid);
+            pProtocol->EmitThreadEvent(ThreadEvent(NativeThreadExited, ThreadId(pid), true));
 
             // Tracee exited or was killed by signal.
             if (pid == m_TGID)
@@ -639,6 +1118,7 @@ void InteropDebugger::WaitpidWorker()
                 assert(m_TIDs.empty());
                 m_TGID = 0;
                 GetWaitpid().SetPidExitedStatus(pid, status);
+                m_NotifyLastThreadExited(status);
             }
 
             continue;
@@ -678,11 +1158,17 @@ void InteropDebugger::WaitpidWorker()
             }
         }
 
+        if (m_TIDs.find(pid) == m_TIDs.end())
+            pProtocol->EmitThreadEvent(ThreadEvent(NativeThreadStarted, ThreadId(pid), true));
+
         m_TIDs[pid].stat = thread_stat_e::stopped; // if we here, this mean we get some stop signal for this thread
         m_TIDs[pid].stop_signal = stop_signal;
         m_TIDs[pid].event = (unsigned)status >> 16;
         m_changedThreads.emplace_back(pid);
     }
+
+    m_waitpidThreadStatus = WaitpidThreadStatus::FINISHED;
+    lockWaitpid.unlock(); // Important! Lock sequence must be (1)m_callbackEventMutex -> (2)m_waitpidMutex only!
 
     lockEvent.lock();
     m_callbackEventNeedExit = true;
@@ -691,10 +1177,9 @@ void InteropDebugger::WaitpidWorker()
     m_callbackEventWorker.join();
 
     m_waitpidCV.notify_one(); // notify Shutdown(), that execution exit from WaitpidWorker()
-    m_waitpidThreadStatus = WaitpidThreadStatus::FINISHED;
 }
 
-HRESULT InteropDebugger::Init(pid_t pid, std::shared_ptr<CallbacksQueue> &sharedCallbacksQueue, int &error_n)
+HRESULT InteropDebugger::Init(pid_t pid, std::shared_ptr<CallbacksQueue> &sharedCallbacksQueue, bool attach, std::function<void(int)> NotifyLastThreadExited, int &error_n)
 {
     async_ptrace_init();
     GetWaitpid().SetInteropWaitpidMode(true);
@@ -712,7 +1197,7 @@ HRESULT InteropDebugger::Init(pid_t pid, std::shared_ptr<CallbacksQueue> &shared
         return E_FAIL;
     };
 
-    if (FAILED(SeizeAndInterruptAllThreads(m_TIDs, pid, error_n)))
+    if (FAILED(SeizeAndInterruptAllThreads(m_TIDs, pid, attach, error_n, pProtocol)))
         return ExitWithError();
 
     WaitThreadStop(g_waitForAllThreads);
@@ -734,32 +1219,36 @@ HRESULT InteropDebugger::Init(pid_t pid, std::shared_ptr<CallbacksQueue> &shared
     if (!m_sharedBreakpoints->InteropSetupRendezvousBrk(pid, loadLib, unloadLib, isThumbCode, error_n))
         return ExitWithError();
 
+    // At this point all threads are stopped, continue execution for all not event-related stopped threads.
+    ParseThreadsChanges();
+
     m_waitpidNeedExit = false;
-    m_waitpidWorker = std::thread(&InteropDebugger::WaitpidWorker, this);
+    InitWaitpidWorkerThread();
     m_waitpidCV.wait(lock); // wait for init complete from WaitpidWorker()
     m_waitpidThreadStatus = WaitpidThreadStatus::WORK;
     m_TGID = pid;
     m_sharedCallbacksQueue = sharedCallbacksQueue;
     m_waitpidCV.notify_one(); // notify WaitpidWorker() to start infinite loop
 
+    m_NotifyLastThreadExited = NotifyLastThreadExited;
     InitNativeFramesUnwind(this);
     return S_OK;
 }
 
 // In order to add or remove breakpoint we must stop all threads first.
-void InteropDebugger::BrkStopAllThreads(bool &allThreadsWereStopped)
+void InteropDebuggerHelpers::BrkStopAllThreads(bool &allThreadsWereStopped)
 {
     if (allThreadsWereStopped)
         return;
 
-    StopAllRunningThreads();
+    StopAllRunningThreads(m_TIDs);
     WaitThreadStop(g_waitForAllThreads);
     allThreadsWereStopped = true;
 }
 
 // In case we need remove breakpoint from address, we must care about all threads first, since some threads could break on this breakpoint already.
 // Note, at this point we don't need step over breakpoint, since we don't need "fix, step and restore" logic here.
-void InteropDebugger::BrkFixAllThreads(std::uintptr_t checkAddr)
+void InteropDebuggerHelpers::BrkFixAllThreads(std::uintptr_t checkAddr)
 {
     for (auto &entry : m_TIDs)
     {
@@ -1070,6 +1559,36 @@ HRESULT InteropDebugger::GetFrameForAddr(std::uintptr_t addr, StackFrame &frame)
     frame.source = Source(fullSourcePath);
     frame.line = lineNum;
     return S_OK;
+}
+
+bool InteropDebugger::IsNativeThreadStopped(pid_t pid)
+{
+    std::lock_guard<std::mutex> lock(m_waitpidMutex);
+
+    if (m_TIDs.empty())
+        return S_OK;
+
+    auto tid = m_TIDs.find(pid);
+    if (tid == m_TIDs.end())
+        return E_INVALIDARG;
+
+    assert(tid->second.stat != thread_stat_e::stopped);
+    return tid->second.stat != thread_stat_e::running;
+}
+
+void InteropDebugger::WalkAllThreads(std::function<void(pid_t, bool)> cb)
+{
+    std::lock_guard<std::mutex> lock(m_waitpidMutex);
+
+    if (m_TIDs.empty())
+        return;
+
+    std::map<pid_t, thread_status_t> orderedTIDs(m_TIDs.begin(), m_TIDs.end());
+
+    for (auto &tid : orderedTIDs)
+    {
+        cb(tid.first, tid.second.stat == thread_stat_e::running);
+    }
 }
 
 } // namespace InteropDebugging

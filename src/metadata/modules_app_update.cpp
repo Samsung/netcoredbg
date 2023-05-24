@@ -60,7 +60,7 @@ static HRESULT GetUpdateHandlerTypesForModule(IMetaDataImport *pMD, std::vector<
 // Comma (,)         Precedes the Assembly name.
 // Period (.)        Denotes namespace identifiers.
 // Plus sign (+)     Precedes a nested class.
-static void ParceTypeName(const std::string &fullName, std::string &mainTypeName, std::vector<std::string> &nestedClasses)
+static void ParseTypeName(const std::string &fullName, std::string &mainTypeName, std::vector<std::string> &nestedClasses)
 {
     std::string::size_type genericDelimiterPos = fullName.find("`");
     std::string fullTypeName;
@@ -109,7 +109,7 @@ HRESULT ModulesAppUpdate::AddUpdateHandlerTypesForModule(ICorDebugModule *pModul
     {
         std::string mainTypeName;
         std::vector<std::string> nestedClasses;
-        ParceTypeName(entry, mainTypeName, nestedClasses);
+        ParseTypeName(entry, mainTypeName, nestedClasses);
 
         // Resolve main type part.
         mdTypeDef typeToken = mdTypeDefNil;

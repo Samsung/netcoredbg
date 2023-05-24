@@ -108,6 +108,16 @@ public:
         m_evalData.pEvalWaiter = m_sharedEvalWaiter.get();
     }
 
+    void ResetEval()
+    {
+        m_sharedEvaluator.reset();
+        m_sharedEvalHelpers.reset();
+        m_sharedEvalWaiter.reset();
+        m_evalData.pEvaluator = nullptr;
+        m_evalData.pEvalHelpers = nullptr;
+        m_evalData.pEvalWaiter = nullptr;
+    }
+
     // Evaluate expression. Optional, return `editable` state and in case result is property - setter related information.
     HRESULT EvaluateExpression(ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags, const std::string &expression, ICorDebugValue **ppResultValue,
                                std::string &output, bool *editable = nullptr, std::unique_ptr<Evaluator::SetterData> *resultSetterData = nullptr);

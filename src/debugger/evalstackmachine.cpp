@@ -2039,6 +2039,8 @@ HRESULT EvalStackMachine::Run(ICorDebugThread *pThread, FrameLevel frameLevel, i
         case E_UNEXPECTED:
             output = "Evaluation timed out, but function evaluation can't be completed or aborted. Debuggee have inconsistent state now.";
             break;
+        case COR_E_THREADSTATE:
+            output = "Thread is in an invalid state for this operation.";
         default:
             break;
     }

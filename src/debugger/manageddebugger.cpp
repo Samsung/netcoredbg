@@ -55,6 +55,7 @@
 #ifdef INTEROP_DEBUGGING
 #include "elf++.h"
 #include "dwarf++.h"
+#include "debugger/sigaction.h"
 #endif // INTEROP_DEBUGGING
 
 #include "palclr.h"
@@ -106,71 +107,60 @@ namespace
 
         return 0;
     }
-
-    // Caller must care about m_debugProcessRWLock.
-    HRESULT CheckDebugProcess(ICorDebugProcess *pProcess, std::mutex &processAttachedMutex, ProcessAttachedState processAttachedState)
-    {
-        if (!pProcess)
-            return E_FAIL;
-
-        // We might have case, when process was exited/detached, but m_iCorProcess still not free and hold invalid object.
-        // Note, we can't hold this lock, since this could deadlock execution at ICorDebugManagedCallback::ExitProcess call.
-        std::unique_lock<std::mutex> lockAttachedMutex(processAttachedMutex);
-        if (processAttachedState == ProcessAttachedState::Unattached)
-            return E_FAIL;
-        lockAttachedMutex.unlock();
-
-        return S_OK;
-    }
-
-    bool HaveDebugProcess(Utility::RWLock &debugProcessRWLock, ICorDebugProcess *pProcess, std::mutex &processAttachedMutex, ProcessAttachedState processAttachedState)
-    {
-        std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(debugProcessRWLock.reader);
-        return SUCCEEDED(CheckDebugProcess(pProcess, processAttachedMutex, processAttachedState));
-    }
 }
 
-void ManagedDebugger::NotifyProcessCreated()
+// Caller must care about m_debugProcessRWLock.
+HRESULT ManagedDebuggerBase::CheckDebugProcess()
 {
-#ifdef INTEROP_DEBUGGING
-    // Note, in case `attach` CoreCLR also call CreateProcess() that call this method.
-    int error_n = 0;
-    if (m_interopDebugging && FAILED(m_uniqueInteropDebugger->Init((pid_t)m_processId, m_sharedCallbacksQueue, error_n)))
-    {
-        LOGE("Interop debugging disabled due to initialization fail: %s", strerror(error_n));
-        m_sharedProtocol->EmitInteropDebuggingErrorEvent(error_n);
-        m_interopDebugging = false;
-    }
-#endif // INTEROP_DEBUGGING
+    if (!m_iCorProcess)
+        return E_FAIL;
 
+    // We might have case, when process was exited/detached, but m_iCorProcess still not free and hold invalid object.
+    // Note, we can't hold this lock, since this could deadlock execution at ICorDebugManagedCallback::ExitProcess call.
+    std::unique_lock<std::mutex> lockAttachedMutex(m_processAttachedMutex);
+    if (m_processAttachedState == ProcessAttachedState::Unattached)
+        return E_FAIL;
+    lockAttachedMutex.unlock();
+
+    return S_OK;
+}
+
+bool ManagedDebuggerBase::HaveDebugProcess()
+{
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    return SUCCEEDED(CheckDebugProcess());
+}
+
+void ManagedDebuggerBase::NotifyProcessCreated()
+{
     std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessAttachedState::Attached;
     lock.unlock();
     m_processAttachedCV.notify_one();
 }
 
-void ManagedDebugger::NotifyProcessExited()
+void ManagedDebuggerBase::NotifyProcessExited()
 {
     std::unique_lock<std::mutex> lock(m_processAttachedMutex);
     m_processAttachedState = ProcessAttachedState::Unattached;
     lock.unlock();
-    m_processAttachedCV.notify_one();
+    m_processAttachedCV.notify_all();
 }
 
 // Caller must care about m_debugProcessRWLock.
-void ManagedDebugger::DisableAllBreakpointsAndSteppers()
+void ManagedDebuggerBase::DisableAllBreakpointsAndSteppers()
 {
     m_uniqueSteppers->DisableAllSteppers(m_iCorProcess); // Async stepper could have breakpoints active, disable them first.
     m_sharedBreakpoints->DeleteAllManaged();
     m_sharedBreakpoints->DisableAllManaged(m_iCorProcess); // Last one, disable all breakpoints on all domains, even if we don't hold them.
 }
 
-void ManagedDebugger::SetLastStoppedThread(ICorDebugThread *pThread)
+void ManagedDebuggerBase::SetLastStoppedThread(ICorDebugThread *pThread)
 {
     SetLastStoppedThreadId(getThreadId(pThread));
 }
 
-void ManagedDebugger::SetLastStoppedThreadId(ThreadId threadId)
+void ManagedDebuggerBase::SetLastStoppedThreadId(ThreadId threadId)
 {
     std::lock_guard<std::mutex> lock(m_lastStoppedMutex);
     m_lastStoppedThreadId = threadId;
@@ -180,7 +170,7 @@ void ManagedDebugger::SetLastStoppedThreadId(ThreadId threadId)
     m_sharedBreakpoints->SetLastStoppedIlOffset(m_iCorProcess, m_lastStoppedThreadId);
 }
 
-void ManagedDebugger::InvalidateLastStoppedThreadId()
+void ManagedDebuggerBase::InvalidateLastStoppedThreadId()
 {
     SetLastStoppedThreadId(ThreadId::AllThreads);
 }
@@ -193,12 +183,12 @@ ThreadId ManagedDebugger::GetLastStoppedThreadId()
     return m_lastStoppedThreadId;
 }
 
-ManagedDebugger::ManagedDebugger(std::shared_ptr<IProtocol> &sharedProtocol) :
+ManagedDebuggerBase::ManagedDebuggerBase(IProtocol *pProtocol_) :
     m_processAttachedState(ProcessAttachedState::Unattached),
     m_lastStoppedThreadId(ThreadId::AllThreads),
     m_startMethod(StartNone),
     m_isConfigurationDone(false),
-    m_sharedProtocol(sharedProtocol),
+    pProtocol(pProtocol_),
     m_sharedThreads(new Threads),
     m_sharedModules(new Modules),
     m_sharedEvalWaiter(new EvalWaiter),
@@ -211,7 +201,7 @@ ManagedDebugger::ManagedDebugger(std::shared_ptr<IProtocol> &sharedProtocol) :
     m_sharedCallbacksQueue(nullptr),
     m_uniqueManagedCallback(nullptr),
 #ifdef INTEROP_DEBUGGING
-    m_uniqueInteropDebugger(new InteropDebugging::InteropDebugger(m_sharedProtocol, m_sharedBreakpoints, m_sharedEvalWaiter)),
+    m_sharedInteropDebugger(new InteropDebugging::InteropDebugger(pProtocol, m_sharedBreakpoints, m_sharedEvalWaiter)),
 #endif // INTEROP_DEBUGGING
     m_justMyCode(true),
     m_stepFiltering(true),
@@ -226,10 +216,28 @@ ManagedDebugger::ManagedDebugger(std::shared_ptr<IProtocol> &sharedProtocol) :
 {
     m_sharedEvalStackMachine->SetupEval(m_sharedEvaluator, m_sharedEvalHelpers, m_sharedEvalWaiter);
     m_sharedThreads->SetEvaluator(m_sharedEvaluator);
+#ifdef INTEROP_DEBUGGING
+    // Note, we don't care about m_interopDebugging here, since m_interopDebugging could be changed with env parsing before real start/attach.
+    m_sharedEvalWaiter->SetInteropDebugger(m_sharedInteropDebugger);
+#endif // INTEROP_DEBUGGING
 }
 
-ManagedDebugger::~ManagedDebugger()
+ManagedDebuggerHelpers::ManagedDebuggerHelpers(IProtocol *pProtocol_) :
+    ManagedDebuggerBase(pProtocol_)
+{}
+
+ManagedDebugger::ManagedDebugger(IProtocol *pProtocol_) :
+    ManagedDebuggerHelpers(pProtocol_)
+{}
+
+ManagedDebuggerBase::~ManagedDebuggerBase()
 {
+#ifdef INTEROP_DEBUGGING
+    // Note, we don't care about m_interopDebugging here, since m_interopDebugging could be changed with env parsing before real start/attach.
+    m_sharedEvalWaiter->ResetInteropDebugger();
+#endif // INTEROP_DEBUGGING
+    m_sharedThreads->ResetEvaluator();
+    m_sharedEvalStackMachine->ResetEval();
 }
 
 HRESULT ManagedDebugger::Initialize()
@@ -238,11 +246,11 @@ HRESULT ManagedDebugger::Initialize()
 
     // TODO: Report capabilities and check client support
     m_startMethod = StartNone;
-    m_sharedProtocol->EmitInitializedEvent();
+    pProtocol->EmitInitializedEvent();
     return S_OK;
 }
 
-HRESULT ManagedDebugger::RunIfReady()
+HRESULT ManagedDebuggerHelpers::RunIfReady()
 {
     FrameId::invalidate();
 
@@ -254,7 +262,7 @@ HRESULT ManagedDebugger::RunIfReady()
         case StartLaunch:
             return RunProcess(m_execPath, m_execArgs);
         case StartAttach:
-            return AttachToProcess(m_processId);
+            return AttachToProcess();
         default:
             return E_FAIL;
     }
@@ -332,14 +340,14 @@ HRESULT ManagedDebugger::Disconnect(DisconnectAction action)
 
 #ifdef INTEROP_DEBUGGING
     if (m_interopDebugging)
-        m_uniqueInteropDebugger->Shutdown();
+        m_sharedInteropDebugger->Shutdown();
 #endif
 
     if (!terminate)
     {
         HRESULT Status = DetachFromProcess();
         if (SUCCEEDED(Status))
-            m_sharedProtocol->EmitTerminatedEvent();
+            pProtocol->EmitTerminatedEvent();
 
         m_ioredirect.async_cancel();
         return Status;
@@ -354,7 +362,7 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     if (m_sharedEvalWaiter->IsEvalRunning())
     {
@@ -375,7 +383,7 @@ HRESULT ManagedDebugger::StepCommand(ThreadId threadId, StepType stepType)
 
     m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
     FrameId::invalidate(); // Clear all created during break frames.
-    m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
+    pProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
 
     // Note, process continue must be after event emitted, since we could get new stop event from queue here.
     if (FAILED(Status = m_sharedCallbacksQueue->Continue(m_iCorProcess)))
@@ -390,7 +398,7 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     if (m_sharedEvalWaiter->IsEvalRunning())
     {
@@ -407,7 +415,7 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
 
     m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
     FrameId::invalidate(); // Clear all created during break frames.
-    m_sharedProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
+    pProtocol->EmitContinuedEvent(threadId); // VSCode protocol need thread ID.
 
     // Note, process continue must be after event emitted, since we could get new stop event from queue here.
     if (FAILED(Status = m_sharedCallbacksQueue->Continue(m_iCorProcess)))
@@ -416,33 +424,37 @@ HRESULT ManagedDebugger::Continue(ThreadId threadId)
     return Status;
 }
 
-HRESULT ManagedDebugger::Pause(ThreadId lastStoppedThread)
+HRESULT ManagedDebugger::Pause(ThreadId lastStoppedThread, EventFormat eventFormat)
 {
     LogFuncEntry();
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
-    return m_sharedCallbacksQueue->Pause(m_iCorProcess, lastStoppedThread);
+    return m_sharedCallbacksQueue->Pause(m_iCorProcess, lastStoppedThread, eventFormat);
 }
 
-HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads)
+HRESULT ManagedDebugger::GetThreads(std::vector<Thread> &threads, bool withNativeThreads)
 {
     LogFuncEntry();
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
+#ifdef INTEROP_DEBUGGING
+    if (m_interopDebugging && withNativeThreads)
+        return m_sharedThreads->GetInteropThreadsWithState(m_iCorProcess, m_sharedInteropDebugger.get(), threads);
+#endif // INTEROP_DEBUGGING
     return m_sharedThreads->GetThreadsWithState(m_iCorProcess, threads);
 }
 
-VOID ManagedDebugger::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
+VOID ManagedDebuggerHelpers::StartupCallback(IUnknown *pCordb, PVOID parameter, HRESULT hr)
 {
     ManagedDebugger *self = static_cast<ManagedDebugger*>(parameter);
 
-    self->Startup(pCordb, self->m_processId);
+    self->Startup(pCordb);
 
     if (self->m_unregisterToken)
     {
@@ -465,7 +477,7 @@ static bool AreAllHandlesValid(HANDLE *handleArray, DWORD arrayLength)
     return true;
 }
 
-static HRESULT InternalEnumerateCLRs(dbgshim_t &dbgshim, DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength, int tryCount)
+static HRESULT EnumerateCLRs(dbgshim_t &dbgshim, DWORD pid, HANDLE **ppHandleArray, LPWSTR **ppStringArray, DWORD *pdwArrayLength, int tryCount)
 {
     int numTries = 0;
     HRESULT hr;
@@ -529,7 +541,7 @@ static std::string GetCLRPath(dbgshim_t &dbgshim, DWORD pid, int timeoutSec = 3)
     LPWSTR* pStringArray;
     DWORD dwArrayLength;
     const int tryCount = timeoutSec * 10; // 100ms interval between attempts
-    if (FAILED(InternalEnumerateCLRs(dbgshim, pid, &pHandleArray, &pStringArray, &dwArrayLength, tryCount)) || dwArrayLength == 0)
+    if (FAILED(EnumerateCLRs(dbgshim, pid, &pHandleArray, &pStringArray, &dwArrayLength, tryCount)) || dwArrayLength == 0)
         return std::string();
 
     std::string result = to_utf8(pStringArray[0]);
@@ -539,7 +551,7 @@ static std::string GetCLRPath(dbgshim_t &dbgshim, DWORD pid, int timeoutSec = 3)
     return result;
 }
 
-HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
+HRESULT ManagedDebuggerHelpers::Startup(IUnknown *punk)
 {
     HRESULT Status;
 
@@ -549,7 +561,7 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     IfFailRet(iCorDebug->Initialize());
 
     if (m_clrPath.empty())
-        m_clrPath = GetCLRPath(m_dbgshim, pid);
+        m_clrPath = GetCLRPath(m_dbgshim, m_processId);
 
     m_sharedCallbacksQueue.reset(new CallbacksQueue(*this));
     m_uniqueManagedCallback.reset(new ManagedCallback(*this, m_sharedCallbacksQueue));
@@ -557,18 +569,18 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     if (FAILED(Status))
     {
         iCorDebug->Terminate();
-        m_uniqueManagedCallback.reset(nullptr);
-        m_sharedCallbacksQueue = nullptr;
+        m_uniqueManagedCallback.reset();
+        m_sharedCallbacksQueue.reset();
         return Status;
     }
 
     ToRelease<ICorDebugProcess> iCorProcess;
-    Status = iCorDebug->DebugActiveProcess(pid, FALSE, &iCorProcess);
+    Status = iCorDebug->DebugActiveProcess(m_processId, FALSE, &iCorProcess);
     if (FAILED(Status))
     {
         iCorDebug->Terminate();
-        m_uniqueManagedCallback.reset(nullptr);
-        m_sharedCallbacksQueue = nullptr;
+        m_uniqueManagedCallback.reset();
+        m_sharedCallbacksQueue.reset();
         return Status;
     }
 
@@ -578,8 +590,6 @@ HRESULT ManagedDebugger::Startup(IUnknown *punk, DWORD pid)
     m_iCorDebug = iCorDebug.Detach();
 
     lockProcessRWLock.unlock();
-
-    m_processId = pid;
 
 #ifdef FEATURE_PAL
     GetWaitpid().SetupTrackingPID(m_processId);
@@ -680,7 +690,7 @@ static void PrepareSystemEnvironmentArg(const std::map<std::string, std::string>
         outEnv.push_back('\0');
 }
 
-HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs)
+HRESULT ManagedDebuggerHelpers::RunProcess(const std::string& fileExec, const std::vector<std::string>& execArgs)
 {
     HRESULT Status;
 
@@ -697,8 +707,21 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
 
     HANDLE resumeHandle = 0; // Fake thread handle for the process resume
 
+#ifdef INTEROP_DEBUGGING
+    bool prevInteropDebuggingStatus = !!m_interopDebugging;
+#endif INTEROP_DEBUGGING
+
     std::vector<char> outEnv;
     PrepareSystemEnvironmentArg(m_env, outEnv, m_hotReload, m_interopDebugging);
+
+#ifdef INTEROP_DEBUGGING
+    if ((!!m_interopDebugging) != prevInteropDebuggingStatus)
+    {
+        // In case of interop debugging we depend on SIGCHLD set to SIG_DFL by init code.
+        // Note, debugger include corhost (CoreCLR) that could setup sigaction for SIGCHLD and ruin interop debugger work.
+        SetSigactionMode(!!m_interopDebugging);
+    }
+#endif INTEROP_DEBUGGING
 
     // cwd in launch.json set working directory for debugger https://code.visualstudio.com/docs/python/debugging#_cwd
     if (!m_cwd.empty())
@@ -733,12 +756,12 @@ HRESULT ManagedDebugger::RunProcess(const std::string& fileExec, const std::vect
     if (!m_processAttachedCV.wait_for(lockAttachedMutex, startupWaitTimeout, [this]{return m_processAttachedState == ProcessAttachedState::Attached;}))
         return E_FAIL;
 
-    m_sharedProtocol->EmitExecEvent(PID{m_processId}, fileExec);
+    pProtocol->EmitExecEvent(PID{m_processId}, fileExec);
 
     return S_OK;
 }
 
-HRESULT ManagedDebugger::CheckNoProcess()
+HRESULT ManagedDebuggerBase::CheckNoProcess()
 {
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
 
@@ -754,7 +777,7 @@ HRESULT ManagedDebugger::CheckNoProcess()
     return S_OK;
 }
 
-HRESULT ManagedDebugger::DetachFromProcess()
+HRESULT ManagedDebuggerHelpers::DetachFromProcess()
 {
     do {
         std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
@@ -782,7 +805,7 @@ HRESULT ManagedDebugger::DetachFromProcess()
     return S_OK;
 }
 
-HRESULT ManagedDebugger::TerminateProcess()
+HRESULT ManagedDebuggerHelpers::TerminateProcess()
 {
     do {
         std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
@@ -814,12 +837,12 @@ HRESULT ManagedDebugger::TerminateProcess()
     return S_OK;
 }
 
-void ManagedDebugger::Cleanup()
+void ManagedDebuggerBase::Cleanup()
 {
     m_sharedModules->CleanupAllModules();
     m_sharedEvalHelpers->Cleanup();
     m_sharedVariables->Clear(); // Important, must be sync with MIProtocol m_vars.clear()
-    m_sharedProtocol->Cleanup();
+    pProtocol->Cleanup();
 
     std::lock_guard<Utility::RWLock::Writer> guardProcessRWLock(m_debugProcessRWLock.writer);
 
@@ -842,20 +865,20 @@ void ManagedDebugger::Cleanup()
     m_sharedCallbacksQueue = nullptr;
 }
 
-HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
+HRESULT ManagedDebuggerHelpers::AttachToProcess()
 {
     HRESULT Status;
 
     IfFailRet(CheckNoProcess());
 
-    m_clrPath = GetCLRPath(m_dbgshim, pid);
+    m_clrPath = GetCLRPath(m_dbgshim, m_processId);
     if (m_clrPath.empty())
         return E_INVALIDARG; // Unable to find libcoreclr.so
 
     WCHAR pBuffer[100];
     DWORD dwLength;
     IfFailRet(m_dbgshim.CreateVersionStringFromModule(
-        pid,
+        m_processId,
         reinterpret_cast<LPCWSTR>(to_utf16(m_clrPath).c_str()),
         pBuffer,
         _countof(pBuffer),
@@ -866,7 +889,7 @@ HRESULT ManagedDebugger::AttachToProcess(DWORD pid)
     IfFailRet(m_dbgshim.CreateDebuggingInterfaceFromVersionEx(CorDebugVersion_4_0, pBuffer, &pCordb));
 
     m_unregisterToken = nullptr;
-    IfFailRet(Startup(pCordb, pid));
+    IfFailRet(Startup(pCordb));
 
     std::unique_lock<std::mutex> lockAttachedMutex(m_processAttachedMutex);
     if (!m_processAttachedCV.wait_for(lockAttachedMutex, startupWaitTimeout, [this]{return m_processAttachedState == ProcessAttachedState::Attached;}))
@@ -881,7 +904,7 @@ HRESULT ManagedDebugger::GetExceptionInfo(ThreadId threadId, ExceptionInfo &exce
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     ToRelease<ICorDebugThread> iCorThread;
     IfFailRet(m_iCorProcess->GetThread(int(threadId), &iCorThread));
@@ -898,7 +921,7 @@ HRESULT ManagedDebugger::UpdateLineBreakpoint(int id, int linenum, Breakpoint &b
 {
     LogFuncEntry();
 
-    bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
+    bool haveProcess = HaveDebugProcess();
     return m_sharedBreakpoints->UpdateLineBreakpoint(haveProcess, id, linenum, breakpoint);
 }
 
@@ -935,12 +958,12 @@ HRESULT ManagedDebugger::SetLineBreakpoints(const std::string& filename,
     LogFuncEntry();
 
 #ifdef INTEROP_DEBUGGING
-    // Note, we don't care about m_interopDebugging here, since breakpoint setup could be start before m_interopDebugging changes with env parsing
+    // Note, we don't care about m_interopDebugging here, since breakpoint setup could be start before m_interopDebugging changes with env parsing.
     if (isNativeSource(filename))
-        return m_uniqueInteropDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints);
+        return m_sharedInteropDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints);
 #endif // INTEROP_DEBUGGING
 
-    bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
+    bool haveProcess = HaveDebugProcess();
     return m_sharedBreakpoints->SetLineBreakpoints(haveProcess, filename, lineBreakpoints, breakpoints);
 }
 
@@ -948,7 +971,7 @@ HRESULT ManagedDebugger::SetFuncBreakpoints(const std::vector<FuncBreakpoint> &f
 {
     LogFuncEntry();
 
-    bool haveProcess = HaveDebugProcess(m_debugProcessRWLock, m_iCorProcess, m_processAttachedMutex, m_processAttachedState);
+    bool haveProcess = HaveDebugProcess();
     return m_sharedBreakpoints->SetFuncBreakpoints(haveProcess, funcBreakpoints, breakpoints);
 }
 
@@ -958,7 +981,8 @@ HRESULT ManagedDebugger::BreakpointActivate(int id, bool act)
         return S_OK;
 
 #ifdef INTEROP_DEBUGGING
-    return m_uniqueInteropDebugger->BreakpointActivate(id, act);
+    // Note, we don't care about m_interopDebugging here, since breakpoint setup could be start before m_interopDebugging changes with env parsing.
+    return m_sharedInteropDebugger->BreakpointActivate(id, act);
 #else
     return E_FAIL;
 #endif // INTEROP_DEBUGGING
@@ -969,14 +993,15 @@ HRESULT ManagedDebugger::AllBreakpointsActivate(bool act)
     HRESULT Status1 = m_sharedBreakpoints->AllBreakpointsActivate(act);
 
 #ifdef INTEROP_DEBUGGING
-    HRESULT Status2 = m_uniqueInteropDebugger->AllBreakpointsActivate(act);
+    // Note, we don't care about m_interopDebugging here, since breakpoint setup could be start before m_interopDebugging changes with env parsing.
+    HRESULT Status2 = m_sharedInteropDebugger->AllBreakpointsActivate(act);
     return FAILED(Status1) ? Status1 : Status2;
 #else
     return Status1;
 #endif // INTEROP_DEBUGGING
 }
 
-static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModules, bool hotReload, ThreadId threadId, FrameLevel level, StackFrame &stackFrame, bool hotReloadAwareCaller)
+HRESULT ManagedDebuggerBase::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame, bool hotReloadAwareCaller)
 {
     HRESULT Status;
 
@@ -992,7 +1017,7 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
 
     ULONG32 methodVersion = 1;
     ULONG32 currentVersion = 1;
-    if (hotReload)
+    if (m_hotReload)
     {
         // In case current (top) code version is 1, executed in this frame method version can't be not 1.
         if (SUCCEEDED(pFunc->GetCurrentVersionNumber(&currentVersion)) && currentVersion != 1)
@@ -1025,7 +1050,7 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
 
     ULONG32 ilOffset;
     Modules::SequencePoint sp;
-    if (SUCCEEDED(pModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
+    if (SUCCEEDED(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ilOffset, sp)))
     {
         stackFrame.source = Source(sp.document);
         stackFrame.line = sp.startLine;
@@ -1061,11 +1086,6 @@ static HRESULT InternalGetFrameLocation(ICorDebugFrame *pFrame, Modules *pModule
     return S_OK;
 }
 
-HRESULT ManagedDebugger::GetFrameLocation(ICorDebugFrame *pFrame, ThreadId threadId, FrameLevel level, StackFrame &stackFrame)
-{
-    return InternalGetFrameLocation(pFrame, m_sharedModules.get(), m_hotReload, threadId, level, stackFrame, false);
-}
-
 static std::string GetModuleNameForFrame(ICorDebugFrame *pFrame)
 {
     ToRelease<ICorDebugFunction> pFunc;
@@ -1084,8 +1104,8 @@ static std::string GetModuleNameForFrame(ICorDebugFrame *pFrame)
     return GetBasename(to_utf8(name));
 }
 
-static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, bool interopDebugging, ICorDebugThread *pThread, ThreadId threadId, FrameLevel startFrame,
-                                     unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller)
+HRESULT ManagedDebuggerBase::GetManagedStackTrace(ICorDebugThread *pThread, ThreadId threadId, FrameLevel startFrame, unsigned maxFrames,
+                                                  std::vector<StackFrame> &stackFrames, int &totalFrames, bool hotReloadAwareCaller)
 {
     LogFuncEntry();
 
@@ -1102,7 +1122,7 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, bool int
 
 #ifdef INTEROP_DEBUGGING
     // In case debug session without interop, we merge "[CoreCLR Native Frame]" and "user's native frame" into "[Native Frames]".
-    const std::string FrameCLRNativeText = interopDebugging ? "[CoreCLR Native Frame]" : "[Native Frames]";
+    const std::string FrameCLRNativeText = m_interopDebugging ? "[CoreCLR Native Frame]" : "[Native Frames]";
 #else
     // CoreCLR native frame + at least one user's native frame (note, `FrameNative` case should never happen for not interop build)
     static const std::string FrameCLRNativeText = "[Native Frames]";
@@ -1161,7 +1181,7 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, bool int
             case FrameCLRManaged:
                 {
                     StackFrame stackFrame;
-                    InternalGetFrameLocation(pFrame, pModules, hotReload, threadId, FrameLevel{currentFrame}, stackFrame, hotReloadAwareCaller);
+                    GetFrameLocation(pFrame, threadId, FrameLevel{currentFrame}, stackFrame, hotReloadAwareCaller);
                     stackFrames.push_back(stackFrame);
                     stackFrames.back().addr = addr;
                     stackFrames.back().unknownFrameAddr = !addr; // Could be 0 here only in case some CoreCLR registers context issue.
@@ -1180,15 +1200,14 @@ static HRESULT InternalGetStackTrace(Modules *pModules, bool hotReload, bool int
 }
 
 #ifdef INTEROP_DEBUGGING
-static HRESULT InternalGetNativeStackTrace(InteropDebugging::InteropDebugger *pInteropDebugger, ThreadId threadId, FrameLevel startFrame,
-                                           unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
+HRESULT ManagedDebuggerBase::GetNativeStackTrace(ThreadId threadId, FrameLevel startFrame, unsigned maxFrames, std::vector<StackFrame> &stackFrames, int &totalFrames)
 {
     LogFuncEntry();
 
     HRESULT Status;
     int currentFrame = -1;
 
-    Status = pInteropDebugger->UnwindNativeFrames(int(threadId), true, 0, nullptr, [&](NativeFrame &nativeFrame)
+    Status = m_sharedInteropDebugger->UnwindNativeFrames(int(threadId), true, 0, nullptr, [&](NativeFrame &nativeFrame)
     {
         currentFrame++;
 
@@ -1224,16 +1243,16 @@ HRESULT ManagedDebugger::GetStackTrace(ThreadId threadId, FrameLevel startFrame,
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     ToRelease<ICorDebugThread> pThread;
     if (SUCCEEDED(Status = m_iCorProcess->GetThread(int(threadId), &pThread)))
-        return InternalGetStackTrace(m_sharedModules.get(), m_hotReload, m_interopDebugging, pThread, threadId, startFrame, maxFrames, stackFrames, totalFrames, hotReloadAwareCaller);
+        return GetManagedStackTrace(pThread, threadId, startFrame, maxFrames, stackFrames, totalFrames, hotReloadAwareCaller);
 
 #ifdef INTEROP_DEBUGGING
     // E_INVALIDARG for ICorDebugProcess::GetThread() mean thread is not managed (can't found ICorDebugThread object that represents the thread)
     if (m_interopDebugging && Status == E_INVALIDARG)
-        return InternalGetNativeStackTrace(m_uniqueInteropDebugger.get(), threadId, startFrame, maxFrames, stackFrames, totalFrames);
+        return GetNativeStackTrace(threadId, startFrame, maxFrames, stackFrames, totalFrames);
 #endif // INTEROP_DEBUGGING
 
     return Status;
@@ -1257,7 +1276,7 @@ HRESULT ManagedDebugger::GetVariables(
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     return m_sharedVariables->GetVariables(m_iCorProcess, variablesReference, filter, start, count, variables);
 }
@@ -1268,7 +1287,7 @@ HRESULT ManagedDebugger::GetScopes(FrameId frameId, std::vector<Scope> &scopes)
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     return m_sharedVariables->GetScopes(m_iCorProcess, frameId, scopes);
 }
@@ -1279,7 +1298,7 @@ HRESULT ManagedDebugger::Evaluate(FrameId frameId, const std::string &expression
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     return m_sharedVariables->Evaluate(m_iCorProcess, frameId, expression, variable, output);
 }
@@ -1297,7 +1316,7 @@ HRESULT ManagedDebugger::SetVariable(const std::string &name, const std::string 
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     return m_sharedVariables->SetVariable(m_iCorProcess, name, value, ref, output);
 }
@@ -1308,7 +1327,7 @@ HRESULT ManagedDebugger::SetExpression(FrameId frameId, const std::string &expre
 
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     return m_sharedVariables->SetExpression(m_iCorProcess, frameId, expression, evalFlags, value, output);
 }
@@ -1326,14 +1345,18 @@ void ManagedDebugger::FindFunctions(string_view pattern, unsigned limit, SearchC
     m_sharedModules->FindFunctions(pattern, limit, cb);
 }
 
-static void InternalFindVariables(ICorDebugProcess *pProcess, Variables *pVariables, ThreadId thread, FrameLevel framelevel,
-                                  string_view pattern, unsigned limit, ManagedDebugger::SearchCallback cb)
+void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, string_view pattern, unsigned limit, SearchCallback cb)
 {
     LogFuncEntry();
+
+    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
+    if (FAILED(CheckDebugProcess()))
+        return;
+
     StackFrame frame{thread, framelevel, ""};
     std::vector<Scope> scopes;
     std::vector<Variable> variables;
-    HRESULT status = pVariables->GetScopes(pProcess, frame.id, scopes);
+    HRESULT status = m_sharedVariables->GetScopes(m_iCorProcess, frame.id, scopes);
     if (FAILED(status))
     {
         LOGW("GetScopes failed: %s", errormessage(status));
@@ -1346,7 +1369,7 @@ static void InternalFindVariables(ICorDebugProcess *pProcess, Variables *pVariab
         return;
     }
 
-    status = pVariables->GetVariables(pProcess, scopes[0].variablesReference, VariablesNamed, 0, 0, variables);
+    status = m_sharedVariables->GetVariables(m_iCorProcess, scopes[0].variablesReference, VariablesNamed, 0, 0, variables);
     if (FAILED(status))
     {
         LOGW("GetVariables failed: %s", errormessage(status));
@@ -1369,21 +1392,10 @@ static void InternalFindVariables(ICorDebugProcess *pProcess, Variables *pVariab
     }
 }
 
-void ManagedDebugger::FindVariables(ThreadId thread, FrameLevel framelevel, string_view pattern, unsigned limit, SearchCallback cb)
+
+void ManagedDebuggerBase::InputCallback(IORedirectHelper::StreamType type, span<char> text)
 {
-    LogFuncEntry();
-
-    std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
-    if (FAILED(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState)))
-        return;
-
-    InternalFindVariables(m_iCorProcess, m_sharedVariables.get(), thread, framelevel, pattern, limit, cb);
-}
-
-
-void ManagedDebugger::InputCallback(IORedirectHelper::StreamType type, span<char> text)
-{
-    m_sharedProtocol->EmitOutputEvent(type == IOSystem::Stderr ? OutputStdErr : OutputStdOut, {text.begin(), text.size()});
+    pProtocol->EmitOutputEvent(type == IOSystem::Stderr ? OutputStdErr : OutputStdOut, {text.begin(), text.size()});
 }
 
 
@@ -1415,7 +1427,7 @@ HRESULT ManagedDebugger::GetSourceFile(const std::string &sourcePath, char** fil
 {
     std::lock_guard<Utility::RWLock::Reader> guardProcessRWLock(m_debugProcessRWLock.reader);
     HRESULT Status;
-    IfFailRet(CheckDebugProcess(m_iCorProcess, m_processAttachedMutex, m_processAttachedState));
+    IfFailRet(CheckDebugProcess());
 
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(GetModuleOfCurrentThreadCode(m_iCorProcess, int(GetLastStoppedThreadId()), &pModule));
@@ -1499,8 +1511,8 @@ static HRESULT ApplyMetadataAndILDeltas(Modules *pModules, const std::string &dl
     return S_OK;
 }
 
-HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
-                                                     std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens)
+HRESULT ManagedDebuggerBase::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileName, const std::string &deltaPDB, const std::string &lineUpdates,
+                                                         std::string &updatedDLL, std::unordered_set<mdTypeDef> &updatedTypeTokens)
 {
     HRESULT Status;
     ToRelease<ICorDebugModule> pModule;
@@ -1525,12 +1537,12 @@ HRESULT ManagedDebugger::ApplyPdbDeltaAndLineUpdates(const std::string &dllFileN
     std::vector<BreakpointEvent> events;
     m_sharedBreakpoints->UpdateBreakpointsOnHotReload(pModule, pdbMethodTokens, events);
     for (const BreakpointEvent &event : events)
-        m_sharedProtocol->EmitBreakpointEvent(event);
+        pProtocol->EmitBreakpointEvent(event);
 
     return S_OK;
 }
 
-HRESULT ManagedDebugger::FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread)
+HRESULT ManagedDebuggerBase::FindEvalCapableThread(ToRelease<ICorDebugThread> &pThread)
 {
     ThreadId lastStoppedId = GetLastStoppedThreadId();
     std::vector<ThreadId> threadIds;

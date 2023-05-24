@@ -32,6 +32,7 @@ enum class CallbackQueueCall
     CreateProcess
 #ifdef INTEROP_DEBUGGING
     , InteropBreakpoint
+    , InteropSignal
 #endif // INTEROP_DEBUGGING
 };
 
@@ -39,7 +40,7 @@ class CallbacksQueue
 {
 public:
 
-    CallbacksQueue(ManagedDebugger &debugger) :
+    CallbacksQueue(ManagedDebuggerHelpers &debugger) :
         m_debugger(debugger), m_stopEventInProcess(false), m_callbacksWorker{&CallbacksQueue::CallbacksWorker, this} {}
     ~CallbacksQueue();
 
@@ -47,7 +48,7 @@ public:
     bool IsRunning();
     HRESULT Continue(ICorDebugProcess *pProcess);
     // Stop process and set last stopped thread. If `lastStoppedThread` not passed value from protocol, find best thread.
-    HRESULT Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedThread);
+    HRESULT Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedThread, EventFormat eventFormat);
     // Analog of "pProcess->Stop(0)" call that also care about callbacks.
     HRESULT Stop(ICorDebugProcess *pProcess);
 
@@ -58,12 +59,12 @@ public:
                      CorDebugStepReason Reason, ExceptionCallbackType EventType, const std::string &ExcModule = std::string{});
 #ifdef INTEROP_DEBUGGING
     HRESULT AddInteropCallbackToQueue(std::function<void()> callback);
-    void EmplaceBackInterop(CallbackQueueCall Call, pid_t pid, std::uintptr_t addr);
+    void EmplaceBackInterop(CallbackQueueCall Call, pid_t pid, std::uintptr_t addr, const std::string &signal);
 #endif // INTEROP_DEBUGGING
 
 private:
 
-    ManagedDebugger &m_debugger;
+    ManagedDebuggerHelpers &m_debugger;
 
     // NOTE we have one entry type for both (managed and interop) callbacks (stop events),
     //      since almost all the time we have CallbackQueue with 1 entry only, no reason complicate code.
@@ -98,13 +99,16 @@ private:
 #ifdef INTEROP_DEBUGGING
         pid_t pid = 0; // Initial value in order to suppress static analyzer warnings.
         std::uintptr_t addr = 0; // Initial value in order to suppress static analyzer warnings.
+        std::string signal;
 
         CallbackQueueEntry(CallbackQueueCall call,
                            pid_t pid_,
-                           std::uintptr_t addr_) :
+                           std::uintptr_t addr_,
+                           const std::string &signal_) :
             Call(call),
             pid(pid_),
-            addr(addr_)
+            addr(addr_),
+            signal(signal_)
         {}
 #endif // INTEROP_DEBUGGING
     };
@@ -125,6 +129,8 @@ private:
 
 #ifdef INTEROP_DEBUGGING
     bool CallbacksWorkerInteropBreakpoint(pid_t pid, std::uintptr_t brkAddr);
+    bool CallbacksWorkerInteropSignal(pid_t pid, std::uintptr_t breakAddr, const std::string &signal);
+    void StopAllNativeThreads();
 #endif // INTEROP_DEBUGGING
 
 };

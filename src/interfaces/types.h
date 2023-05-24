@@ -144,7 +144,13 @@ struct Thread
     std::string name;
     bool running;
 
-    Thread(ThreadId id, const std::string& name, bool running) : id(id), name(name), running(running) {}
+#ifdef INTEROP_DEBUGGING
+    bool managed ;// exposed for CLI protocols
+    Thread(ThreadId id_, const std::string &name_, bool running_) : id(id_), name(name_), running(running_), managed(true) {}
+    Thread(ThreadId id_, const std::string &name_, bool running_, bool managed_) : id(id_), name(name_), running(running_), managed(managed_) {}
+#else
+    Thread(ThreadId id_, const std::string &name_, bool running_) : id(id_), name(name_), running(running_) {}
+#endif // INTEROP_DEBUGGING
 };
 
 struct Source
@@ -297,6 +303,10 @@ struct StoppedEvent
     StackFrame frame; // exposed for MI and CLI protocols
     Breakpoint breakpoint; // exposed for MI and CLI protocols
 
+#ifdef INTEROP_DEBUGGING
+    std::string signal_name; // exposed for CLI protocols
+#endif // INTEROP_DEBUGGING
+
     StoppedEvent(StopReason reason, ThreadId threadId = ThreadId::Invalid)
         :reason(reason), threadId(threadId), allThreadsStopped(true)
     {}
@@ -319,16 +329,20 @@ struct ExitedEvent
 
 enum ThreadReason
 {
-    ThreadStarted,
-    ThreadExited
+    ManagedThreadStarted,
+    ManagedThreadExited,
+    NativeThreadAttached,
+    NativeThreadStarted,
+    NativeThreadExited
 };
 
 struct ThreadEvent
 {
     ThreadReason reason;
     ThreadId threadId;
+    bool interopDebugging;
 
-    ThreadEvent(ThreadReason reason, ThreadId threadId) : reason(reason), threadId(threadId) {}
+    ThreadEvent(ThreadReason reason_, ThreadId id_, bool interop_) : reason(reason_), threadId(id_), interopDebugging(interop_) {}
 };
 
 enum OutputCategory
@@ -524,6 +538,12 @@ struct ExceptionBreakpoint
     {
         return filterId == id;
     }
+};
+
+enum class EventFormat
+{
+    Default,
+    CLI
 };
 
 } // namespace netcoredbg

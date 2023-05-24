@@ -156,6 +156,44 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CreateProcess(ICorDebugProcess *pProc
     // for global variables. coreclr_shutdown only should be called on process exit.
     Interop::Init(m_debugger.m_clrPath);
 
+#ifdef INTEROP_DEBUGGING
+    // Note, in case `attach` CoreCLR also call CreateProcess() that call this method.
+    int error_n = 0;
+    bool attach = m_debugger.m_startMethod == StartAttach;
+    auto NotifyLastThreadExited = [&](int status)
+    {
+        // In case debuggee process rude terminated by some signal, we may have situation when
+        // `ManagedCallback::ExitProcess()` will be newer called by dbgshim.
+        if (!WIFSIGNALED(status))
+            return;
+
+        // If we still `Attached` here, `ManagedCallback::ExitProcess()` was not called.
+        std::unique_lock<std::mutex> lockAttachedMutex(m_debugger.m_processAttachedMutex);
+        if (m_debugger.m_processAttachedState == ProcessAttachedState::Attached)
+            m_debugger.m_processAttachedCV.wait_for(lockAttachedMutex, std::chrono::milliseconds(3000));
+        if (m_debugger.m_processAttachedState == ProcessAttachedState::Unattached)
+            return;
+        lockAttachedMutex.unlock();
+
+        if (m_debugger.m_sharedEvalWaiter->IsEvalRunning())
+            LOGW("The target process exited while evaluating the function.");
+
+        m_debugger.m_sharedEvalWaiter->NotifyEvalComplete(nullptr, nullptr);
+
+        m_debugger.pProtocol->EmitExitedEvent(ExitedEvent(GetWaitpid().GetExitCode()));
+        m_debugger.NotifyProcessExited();
+        m_debugger.pProtocol->EmitTerminatedEvent();
+        m_debugger.m_ioredirect.async_cancel();
+    };
+    if (m_debugger.m_interopDebugging &&
+        FAILED(m_debugger.m_sharedInteropDebugger->Init((pid_t)m_debugger.m_processId, m_sharedCallbacksQueue, attach, NotifyLastThreadExited, error_n)))
+    {
+        LOGE("Interop debugging disabled due to initialization fail: %s", strerror(error_n));
+        m_debugger.pProtocol->EmitInteropDebuggingErrorEvent(error_n);
+        m_debugger.m_interopDebugging = false;
+    }
+#endif // INTEROP_DEBUGGING
+
     // Important! Care about callback queue before NotifyProcessCreated() call.
     // In case of `attach`, NotifyProcessCreated() call will notify debugger that debuggee process attached and debugger
     // should stop debuggee process by dirrect `Pause()` call. From another side, callback queue have bunch of asynchronous
@@ -206,9 +244,9 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitProcess(ICorDebugProcess *pProces
     }
 #endif // FEATURE_PAL
 
-    m_debugger.m_sharedProtocol->EmitExitedEvent(ExitedEvent(exitCode));
+    m_debugger.pProtocol->EmitExitedEvent(ExitedEvent(exitCode));
     m_debugger.NotifyProcessExited();
-    m_debugger.m_sharedProtocol->EmitTerminatedEvent();
+    m_debugger.pProtocol->EmitTerminatedEvent();
     m_debugger.m_ioredirect.async_cancel();
     return S_OK;
 }
@@ -223,7 +261,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CreateThread(ICorDebugAppDomain *pApp
     ThreadId threadId(getThreadId(pThread));
     m_debugger.m_sharedThreads->Add(threadId);
 
-    m_debugger.m_sharedProtocol->EmitThreadEvent(ThreadEvent(ThreadStarted, threadId));
+    m_debugger.pProtocol->EmitThreadEvent(ThreadEvent(ManagedThreadStarted, threadId, m_debugger.m_interopDebugging));
     return m_sharedCallbacksQueue->ContinueAppDomain(pAppDomain);
 }
 
@@ -240,7 +278,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::ExitThread(ICorDebugAppDomain *pAppDo
 
     m_debugger.m_sharedBreakpoints->ManagedCallbackExitThread(pThread);
 
-    m_debugger.m_sharedProtocol->EmitThreadEvent(ThreadEvent(ThreadExited, threadId));
+    m_debugger.pProtocol->EmitThreadEvent(ThreadEvent(ManagedThreadExited, threadId, m_debugger.m_interopDebugging));
     return m_sharedCallbacksQueue->ContinueAppDomain(pAppDomain);
 }
 
@@ -252,15 +290,19 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(ICorDebugAppDomain *pAppDo
     std::string outputText;
     m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode(), m_debugger.IsHotReload(), outputText);
     if (!outputText.empty())
-        m_debugger.m_sharedProtocol->EmitOutputEvent(OutputStdErr, outputText);
-    m_debugger.m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
+    {
+        m_debugger.pProtocol->EmitOutputEvent(OutputStdErr, outputText);
+    }
+    m_debugger.pProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
 
     if (module.symbolStatus == SymbolsLoaded)
     {
         std::vector<BreakpointEvent> events;
         m_debugger.m_sharedBreakpoints->ManagedCallbackLoadModule(pModule, events);
         for (const BreakpointEvent &event : events)
-            m_debugger.m_sharedProtocol->EmitBreakpointEvent(event);
+        {
+            m_debugger.pProtocol->EmitBreakpointEvent(event);
+        }
     }
     m_debugger.m_sharedBreakpoints->ManagedCallbackLoadModuleAll(pModule);
 
@@ -321,7 +363,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(ICorDebugAppDomain *pAppDo
         src = "Debugger.Log";
     }
 
-    m_debugger.m_sharedProtocol->EmitOutputEvent(OutputConsole, to_utf8(pMessage), src);
+    m_debugger.pProtocol->EmitOutputEvent(OutputConsole, to_utf8(pMessage), src);
     return m_sharedCallbacksQueue->ContinueAppDomain(pAppDomain);
 }
 

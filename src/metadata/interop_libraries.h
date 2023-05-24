@@ -34,6 +34,7 @@ public:
     struct LibraryInfo
     {
         std::string fullName;
+        std::string fullLoadName;
         std::uintptr_t libEndAddr; // have same logic as STL `end()` iterator - "first address after"
         // debuginfo related
         std::unique_ptr<elf::elf> ef;
@@ -70,6 +71,8 @@ public:
 
     void FindDataForAddr(std::uintptr_t addr, std::string &libName, std::uintptr_t &libStartAddr, std::string &procName,
                          std::uintptr_t &procStartAddr, std::string &fullSourcePath, int &lineNum);
+    bool FindDataForNotClrAddr(std::uintptr_t addr, std::string &libLoadName, std::string &procName);
+    bool IsUserDebuggingCode(std::uintptr_t addr);
     bool IsThumbCode(std::uintptr_t addr);
 
 private:

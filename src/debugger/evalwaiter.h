@@ -14,6 +14,15 @@
 namespace netcoredbg
 {
 
+class Threads;
+#ifdef INTEROP_DEBUGGING
+namespace InteropDebugging
+{
+class InteropDebugger;
+}
+#endif // INTEROP_DEBUGGING
+
+
 class EvalWaiter
 {
 public:
@@ -25,6 +34,8 @@ public:
     bool IsEvalRunning();
 #ifdef INTEROP_DEBUGGING
     DWORD GetEvalRunningThreadID();
+    void SetInteropDebugger(std::shared_ptr<InteropDebugging::InteropDebugger> &sharedInteropDebugger);
+    void ResetInteropDebugger();
 #endif // INTEROP_DEBUGGING
     void CancelEvalRunning();
     ICorDebugEval *FindEvalForThread(ICorDebugThread *pThread);
@@ -45,6 +56,10 @@ private:
 
     ToRelease<ICorDebugClass> m_iCorCrossThreadDependencyNotification;
     HRESULT SetEnableCustomNotification(ICorDebugProcess *pProcess, BOOL fEnable);
+
+#ifdef INTEROP_DEBUGGING
+    std::shared_ptr<InteropDebugging::InteropDebugger> m_sharedInteropDebugger;
+#endif // INTEROP_DEBUGGING
 
     struct evalResultData_t
     {

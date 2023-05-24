@@ -13,11 +13,11 @@ Note: to debug Release build of dlls with pdbs Just-My-Code should be disabled, 
 ```
 command    alias  args   
 --------------------------
-backtrace  bt              Print backtrace info.
+backtrace  bt     [all]    Print backtrace info.
 break      b      <loc>    Set breakpoint at specified location, where the
-                           location might be filename.cs:line or function name.
+                           location might be source_file_name:line or function name.
                            Optional, module name also could be provided as part
-                           of location: module.dll!filename.cs:line
+                           of location: module.dll!source_file_name:line
 catch                      Set exception breakpoints.
 continue   c               Continue debugging after stop/pause.
 delete     clear  <num>    Delete breakpoint with specified number.

@@ -799,6 +799,10 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
 
     std::string frameLocation;
     PrintFrameLocation(event.frame, frameLocation);
+    if (!event.frame.moduleOrLibName.empty())
+    {
+        frameLocation = event.frame.moduleOrLibName + "` " + frameLocation;
+    }
     m_sourcePath = event.frame.source.path;
     m_sourceLine = event.frame.line - m_listSize / 2;
     m_stoppedAt = event.frame.line;
@@ -835,8 +839,18 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
         }
         case StopPause:
         {
-            printf("\nstopped, reason: interrupted, thread id: %i, stopped threads: all, frame={%s}\n",
-                  int(event.threadId), frameLocation.c_str());
+#ifdef INTEROP_DEBUGGING
+            if (!event.signal_name.empty())
+            {
+                printf("\nstopped, reason: interrupted, signal-name=\"%s\", thread id: %i, stopped threads: all, frame={%s}\n",
+                       event.signal_name.c_str(), int(event.threadId), frameLocation.c_str());
+            }
+            else
+#endif INTEROP_DEBUGGING
+            {
+                printf("\nstopped, reason: interrupted, thread id: %i, stopped threads: all, frame={%s}\n",
+                       int(event.threadId), frameLocation.c_str());
+            }
             break;
         }
         default:
@@ -903,12 +917,23 @@ void CLIProtocol::EmitThreadEvent(const ThreadEvent &event)
     const char *reasonText = "";
     switch(event.reason)
     {
-        case ThreadStarted:
-            reasonText = "thread created";
+        case ManagedThreadStarted:
+            reasonText = event.interopDebugging ? "managed thread created" : "thread created";
             break;
-        case ThreadExited:
-            reasonText = "thread exited";
+        case ManagedThreadExited:
+            reasonText = event.interopDebugging ? "managed thread exited" : "thread exited";
             break;
+        case NativeThreadAttached:
+            reasonText = "native thread attached";
+            break;
+        case NativeThreadStarted:
+            reasonText = "native thread created";
+            break;
+        case NativeThreadExited:
+            reasonText = "native thread exited";
+            break;
+        default:
+            return;
     }
     printf("\n%s, id: %i\n", reasonText, int(event.threadId));
 }
@@ -981,11 +1006,53 @@ HRESULT CLIProtocol::doCommand<CommandTag::Backtrace>(const std::vector<std::str
     }
 
     std::vector<std::string> args = args_orig;
-    ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(tid)) };
+    ProtocolUtils::StripArgs(args);
     int lowFrame = 0;
     int highFrame = FrameLevel::MaxFrameLevel;
-    ProtocolUtils::StripArgs(args);
     ProtocolUtils::GetIndices(args, lowFrame, highFrame);
+
+    // command "bt all"
+    if (!args.empty() && args[0] == "all")
+    {
+        std::vector<Thread> threads;
+        if (FAILED(m_sharedDebugger->GetThreads(threads, true)))
+        {
+            output = "No threads.";
+            return E_FAIL;
+        }
+
+        std::ostringstream ss;
+        int number = 1;
+
+        for (const auto &thread : threads)
+        {
+            std::string stackTrace;
+            if (SUCCEEDED(PrintFrames(thread.id, stackTrace, FrameLevel{lowFrame}, FrameLevel{highFrame})))
+            {
+                ss << "\nThread " << number << ", id=\"" << int(thread.id)
+                << "\", name=\"" << thread.name << "\", state=\""
+                << (thread.running ? "running" : "stopped") << "\"";
+#ifdef INTEROP_DEBUGGING
+                ss << ", type=\"" << (thread.managed ? "managed" : "native") << "\"";
+#endif // INTEROP_DEBUGGING
+                number++;
+
+                ss << "\n" << stackTrace;
+            }
+        }
+
+        if (ss.str().empty())
+        {
+            output = "No stacktraces.";
+            return E_FAIL;
+        }
+
+        output = ss.str();
+        return S_OK;
+    }
+
+    // command "bt [--thread TID]"
+    ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(tid)) };
     return PrintFrames(threadId, output, FrameLevel{lowFrame}, FrameLevel{highFrame});
 }
 
@@ -1327,25 +1394,26 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoThreads>(const std::vector<std::s
     }
 
     std::vector<Thread> threads;
-    if (FAILED(m_sharedDebugger->GetThreads(threads)))
+    if (FAILED(m_sharedDebugger->GetThreads(threads, true)))
     {
         output = "No threads.";
         return E_FAIL;
     }
     std::ostringstream ss;
 
-    ss << "\nthreads=[\n";
+    ss << "Threads:";
 
-    const char *sep = "";
+    int number = 1;
     for (const Thread& thread : threads)
     {
-        ss << sep << "{id=\"" << int(thread.id)
+        ss << "\n" << number << ": id=\"" << int(thread.id)
            << "\", name=\"" << thread.name << "\", state=\""
-           << (thread.running ? "running" : "stopped") << "\"}";
-        sep = ",\n";
+           << (thread.running ? "running" : "stopped") << "\"";
+#ifdef INTEROP_DEBUGGING
+        ss << ", type=\"" << (thread.managed ? "managed" : "native") << "\"";
+#endif // INTEROP_DEBUGGING
+        number++;
     }
-
-    ss << "]";
     output = ss.str();
     return S_OK;
 }
@@ -1459,7 +1527,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::str
     }
 
     HRESULT Status;
-    IfFailRet(m_sharedDebugger->Pause(ThreadId::AllThreads));
+    IfFailRet(m_sharedDebugger->Pause(ThreadId::AllThreads, EventFormat::CLI));
     output = "^stopped";
     return S_OK;
 }
@@ -1731,7 +1799,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::vector<std::string
     lock.unlock();
 
     IfFailRet(m_sharedDebugger->ConfigurationDone());
-    IfFailRet(m_sharedDebugger->Pause(ThreadId::AllThreads));
+    IfFailRet(m_sharedDebugger->Pause(ThreadId::AllThreads, EventFormat::CLI));
     return S_OK;
 }
 
@@ -2442,7 +2510,7 @@ void CLIProtocol::Pause()
     if (m_processStatus == Running)
     {
         lock.unlock();
-        m_sharedDebugger->Pause(ThreadId::AllThreads);
+        m_sharedDebugger->Pause(ThreadId::AllThreads, EventFormat::CLI);
     }
 }
 

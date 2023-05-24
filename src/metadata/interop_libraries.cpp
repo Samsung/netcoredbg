@@ -283,12 +283,30 @@ static SymbolStatus LoadDebuginfo(const std::string &libLoadName, InteropLibrari
 
 static bool IsCoreCLRLibrary(const std::string &fullName)
 {
+    // Could be part of SDK, but will be never part of debuggee process:
+    // libdbgshim.so      // 2.1 - 6.0
+    // libmscordaccore.so // 2.1+
+    // libmscordbi.so     // 2.1+
+    // libsos.so          // 2.1
+    // libsosplugin.so    // 2.1
+
     static const std::vector<std::string> clrLibs{
-        "libclrjit.so",
-        "libcoreclr.so",
-        "libcoreclrtraceptprovider.so",
-        "libhostpolicy.so",
-        "libclrgc.so"
+        "libclrjit.so",                                      // 2.1+
+        "libcoreclr.so",                                     // 2.1+
+        "libcoreclrtraceptprovider.so",                      // 2.1+
+        "libhostpolicy.so",                                  // 2.1+
+        "System.Globalization.Native.so",                    // 2.1 - 3.1
+        "System.Security.Cryptography.Native.OpenSsl.so",    // 2.1 - 3.1
+        "System.IO.Compression.Native.so",                   // 2.1 - 3.1
+        "System.Net.Security.Native.so",                     // 2.1 - 3.1
+        "System.Native.so",                                  // 2.1 - 3.1
+        "System.Net.Http.Native.so",                         // 2.1 - 3.1
+        "libSystem.Native.so",                               // 5.0+
+        "libSystem.IO.Compression.Native.so",                // 5.0+
+        "libSystem.Net.Security.Native.so",                  // 5.0+
+        "libSystem.Security.Cryptography.Native.OpenSsl.so", // 5.0+
+        "libSystem.Globalization.Native.so",                 // 6.0+
+        "libclrgc.so",                                       // 7.0+
     };
 
     for (auto &clrLibName : clrLibs)
@@ -312,6 +330,7 @@ void InteropLibraries::AddLibrary(const std::string &libLoadName, const std::str
 
     LibraryInfo &info = m_librariesInfo[startAddr];
     info.fullName = fullName;
+    info.fullLoadName = libLoadName;
     info.libEndAddr = endAddr;
     symbolStatus = LoadDebuginfo(libLoadName, info);
     info.isCoreCLR = IsCoreCLRLibrary(fullName);
@@ -624,6 +643,18 @@ void InteropLibraries::FindDataForAddr(std::uintptr_t addr, std::string &libName
     });
 }
 
+bool InteropLibraries::IsUserDebuggingCode(std::uintptr_t addr)
+{
+    bool isUserCode = false;
+    FindLibraryInfoForAddr(addr, [&](std::uintptr_t startAddr, LibraryInfo &info)
+    {
+        if (!info.isCoreCLR && info.dw != nullptr)
+            isUserCode = true;
+    });
+
+    return isUserCode;
+}
+
 bool InteropLibraries::IsThumbCode(std::uintptr_t addr)
 {
 #if DEBUGGER_UNIX_ARM
@@ -657,6 +688,58 @@ bool InteropLibraries::IsThumbCode(std::uintptr_t libStartAddr, LibraryInfo &inf
     }
 #endif // DEBUGGER_UNIX_ARM
     return false;
+}
+
+bool InteropLibraries::FindDataForNotClrAddr(std::uintptr_t addr, std::string &libLoadName, std::string &procName)
+{
+    bool isUserCode = true;
+    FindLibraryInfoForAddr(addr, [&](std::uintptr_t startAddr, LibraryInfo &info)
+    {
+        if (info.isCoreCLR)
+        {
+            isUserCode = false;
+            return;
+        }
+
+        libLoadName = GetBasename(info.fullLoadName);
+        // Remove version after ".so" (if load name have it)
+        static std::string versionDetect(".so.");
+        constexpr size_t versionDetectSize = 4;
+        if (libLoadName.size() > versionDetectSize)
+        {
+            size_t i = libLoadName.rfind(versionDetect);
+            if (i != std::string::npos)
+                libLoadName = libLoadName.substr(0, i + 3);
+        }
+
+        if (info.dw != nullptr)
+        {
+            std::string fullSourcePath;
+            int lineNum;
+            FindDataForAddrInDebugInfo(info.dw.get(), addr - startAddr, procName, fullSourcePath, lineNum);
+            return;
+        }
+
+        if (!info.proceduresDataValid)
+            CollectProcDataFromElf(startAddr, info);
+
+        if (info.proceduresData.empty() ||
+            addr >= info.proceduresData.rbegin()->second.endAddr)
+            return;
+
+        auto upper_bound = info.proceduresData.upper_bound(addr);
+        if (upper_bound != info.proceduresData.begin())
+        {
+            auto closest_lower = std::prev(upper_bound);
+            if (closest_lower->first <= addr && addr < closest_lower->second.endAddr)
+            {
+                if (!DemangleCXXABI(closest_lower->second.procName.c_str(), procName))
+                    procName = closest_lower->second.procName + "()";
+            }
+        }
+    });
+
+    return isUserCode;
 }
 
 } // namespace InteropDebugging

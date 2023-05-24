@@ -67,6 +67,23 @@ std::uintptr_t GetBrkAddrByPC(const user_regs_struct &regs)
 #endif
 }
 
+// Return break address by current PC.
+std::uintptr_t GetBreakAddrByPC(const user_regs_struct &regs)
+{
+#if DEBUGGER_UNIX_AMD64
+    return std::uintptr_t(regs.rip);
+#elif DEBUGGER_UNIX_X86
+    return std::uintptr_t(regs.eip);
+#elif DEBUGGER_UNIX_ARM64
+    return std::uintptr_t(regs.pc);
+#elif DEBUGGER_UNIX_ARM
+    const static int REG_PC = 15;
+    return std::uintptr_t(regs.uregs[REG_PC]);
+#else
+#error "Unsupported platform"
+#endif
+}
+
 #if DEBUGGER_UNIX_ARM
 static bool IsThumbOpcode32Bits(word_t data)
 {
@@ -124,7 +141,7 @@ word_t RestoredOpcode(word_t dataWithBrk, word_t restoreData)
 #endif
 }
 
-bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData)
+bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData, std::function<bool(pid_t, std::uintptr_t)> SingleStepOnBrk)
 {
     // We have 2 cases here (at breakpoint stop):
     //   * x86/amd64 already changed PC (executed 0xCC code), so, SetPrevBrkPC() call will change PC in our stored registers
@@ -169,25 +186,8 @@ bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData)
         return false;
     }
 
-    // single step
-    if (async_ptrace(PTRACE_SINGLESTEP, pid, nullptr, nullptr) == -1)
-    {
-        LOGE("Ptrace singlestep error: %s\n", strerror(errno));
+    if (!SingleStepOnBrk(pid, addr))
         return false;
-    }
-
-    int wait_status;
-    if (GetWaitpid()(pid, &wait_status, 0) == -1)
-    {
-        LOGE("Waitpid error: %s\n", strerror(errno));
-        return false;
-    }
-
-    if (WSTOPSIG(wait_status) != SIGTRAP)
-    {
-        LOGE("Failed with single step, stop signal=%u", WSTOPSIG(wait_status));
-        return false;
-    }
 
     // setup bp again
     if (async_ptrace(PTRACE_POKEDATA, pid, (void*)addr, (void*)brkData) == -1)

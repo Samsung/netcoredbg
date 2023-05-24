@@ -305,6 +305,9 @@ void ThreadStackUnwind(pid_t pid, std::array<unw_word_t, UNW_REG_LAST + 1> *cont
                 break;
             }
 
+            if (pc == 0)
+                break;
+
 #if defined(UNW_TARGET_AARCH64)
             if (prev_pc == pc)
                 break;

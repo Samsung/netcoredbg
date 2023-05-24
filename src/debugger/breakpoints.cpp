@@ -328,9 +328,9 @@ bool Breakpoints::InteropStepPrevToBrk(pid_t pid, std::uintptr_t brkAddr)
     return m_sharedInteropBreakpoints->StepPrevToBrk(pid, brkAddr);
 }
 
-void Breakpoints::InteropStepOverBrk(pid_t pid, std::uintptr_t brkAddr)
+void Breakpoints::InteropStepOverBrk(pid_t pid, std::uintptr_t brkAddr, std::function<bool(pid_t, std::uintptr_t)> SingleStepOnBrk)
 {
-    m_sharedInteropBreakpoints->StepOverBrk(pid, brkAddr);
+    m_sharedInteropBreakpoints->StepOverBrk(pid, brkAddr, SingleStepOnBrk);
 }
 
 // Must be called only in case all threads stopped and fixed (see InteropDebugger::StopAndDetach()).
