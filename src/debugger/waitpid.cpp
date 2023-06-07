@@ -6,6 +6,9 @@
 
 #ifdef FEATURE_PAL
 #include <dlfcn.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "utils/logger.h"
 
