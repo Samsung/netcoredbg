@@ -438,8 +438,14 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp18");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp19");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp20");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp20_1");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp20_2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp21");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp21_1");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp21_2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp22");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp22_1");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp22_2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp23");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp24");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp25");
@@ -495,6 +501,19 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
             };                                                                      Label.Breakpoint("bp22");
             nested_func14();                                                        Label.Breakpoint("bp21");
 
+            List<string> numbers = new List<string>();
+            numbers.Add("1");
+            numbers.Add("2");
+
+Label.Breakpoint("bp20_1");            numbers.ForEach((string number) => {
+                Console.WriteLine(number);                                          Label.Breakpoint("bp21_1");
+            });                                                                     Label.Breakpoint("bp22_1");
+
+Label.Breakpoint("bp20_2");            numbers.ForEach(delegate(string number) {
+                                                                                    Label.Breakpoint("bp21_2");
+                Console.WriteLine(number);                                          Label.Breakpoint("bp21_2_resolved");
+            });                                                                     Label.Breakpoint("bp22_2");
+
             Label.Checkpoint("bp_test_nested", "bp_test_constructor", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "resloved_bp10");
@@ -522,6 +541,28 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22");
+                Context.Continue(@"__FILE__:__LINE__");
+
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp20_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_1");
+                Context.Continue(@"__FILE__:__LINE__");
+
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp20_2");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_2_resolved");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_2");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_2_resolved");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_2");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

@@ -816,6 +816,9 @@ namespace NetCoreDbg
                             break;
                         }
 
+                        // Note, sequence points can't partially overlap each other, since same lemmas can't belong to 2 different sequence points for sure.
+                        // In this case we could check not "line" (start line - end line datas) but only "point" (end line data) for
+                        // current method sequence point and first nested method sequence point.
                         if (current_p.EndLine > nested_start_p.EndLine || (current_p.EndLine == nested_start_p.EndLine && current_p.EndColumn > nested_start_p.EndColumn))
                         {
                             list.Add(new resolved_bp_t(nested_start_p.StartLine, nested_start_p.EndLine, nested_start_p.Offset, nestedToken));

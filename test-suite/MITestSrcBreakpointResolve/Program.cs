@@ -1,6 +1,6 @@
 ﻿using System;
 using System.IO;
-
+using System.Collections.Generic;
 using NetcoreDbgTest;
 using NetcoreDbgTest.MI;
 using NetcoreDbgTest.Script;
@@ -354,8 +354,14 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp18");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp19");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp20");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp20_1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp20_2");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp21");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp21_1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp21_2");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp22");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp22_1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp22_2");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp23");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp24");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp25");
@@ -398,7 +404,7 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
             }; void nested_func10() { };                                            Label.Breakpoint("bp18");
             nested_func9();
 
-            void nested_func11() { void nested_func12() { void nested_func13() { 
+            void nested_func11() { void nested_func12() { void nested_func13() {
                                                                                     Label.Breakpoint("bp19");
             };                                                                      Label.Breakpoint("resloved_bp19");
             nested_func13(); }; 
@@ -409,6 +415,19 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
             Console.WriteLine("2222Hello World!");
             };                                                                      Label.Breakpoint("bp22");
             nested_func14();                                                        Label.Breakpoint("bp21");
+
+            List<string> numbers = new List<string>();
+            numbers.Add("1");
+            numbers.Add("2");
+
+Label.Breakpoint("bp20_1");            numbers.ForEach((string number) => {
+                Console.WriteLine(number);                                          Label.Breakpoint("bp21_1");
+            });                                                                     Label.Breakpoint("bp22_1");
+
+Label.Breakpoint("bp20_2");            numbers.ForEach(delegate(string number) {
+                                                                                    Label.Breakpoint("bp21_2");
+                Console.WriteLine(number);                                          Label.Breakpoint("bp21_2_resolved");
+            });                                                                     Label.Breakpoint("bp22_2");
 
             Label.Checkpoint("bp_test_nested", "bp_test_constructor", (Object context) => {
                 Context Context = (Context)context;
@@ -437,6 +456,28 @@ Label.Breakpoint("resolved_bp4");       Console.WriteLine(
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22");
+                Context.Continue(@"__FILE__:__LINE__");
+
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp20_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_1");
+                Context.Continue(@"__FILE__:__LINE__");
+
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp20_2");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_2_resolved");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_2");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp21_2_resolved");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp22_2");
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
