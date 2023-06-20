@@ -707,6 +707,10 @@ namespace NetCoreDbg
             }
         }
 
+        enum Position {
+            First, Last
+        };
+
         /// <summary>
         /// Resolve breakpoints.
         /// </summary>
@@ -742,7 +746,7 @@ namespace NetCoreDbg
                 // We need check if nestedToken's method code closer to sourceLine than code from methodToken's method.
                 // If sourceLine closer to nestedToken's method code - setup breakpoint in nestedToken's method.
 
-                SequencePoint FirstSequencePointForSourceLine(ref MetadataReader reader, int methodToken)
+                SequencePoint SequencePointForSourceLine(Position reqPos, ref MetadataReader reader, int methodToken)
                 {
                     // Note, SequencePoints ordered by IL offsets, not by line numbers.
                     // For example, infinite loop `while(true)` will have IL offset after cycle body's code.
@@ -767,12 +771,14 @@ namespace NetCoreDbg
 
                         if (p.EndLine != nearestSP.EndLine)
                         {
-                            if (p.EndLine < nearestSP.EndLine)
+                            if ((reqPos == Position.First && p.EndLine < nearestSP.EndLine) ||
+                                (reqPos == Position.Last && p.EndLine > nearestSP.EndLine))
                                 nearestSP = p;
                         }
                         else
                         {
-                            if (p.EndColumn < nearestSP.EndColumn)
+                            if ((reqPos == Position.First && p.EndColumn < nearestSP.EndColumn) ||
+                                (reqPos == Position.Last && p.EndColumn > nearestSP.EndColumn))
                                 nearestSP = p;
                         }
                     }
@@ -788,16 +794,31 @@ namespace NetCoreDbg
                     MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
                     int methodToken = Marshal.ReadInt32(Tokens, i * elementSize);
-                    SequencePoint current_p = FirstSequencePointForSourceLine(ref reader, methodToken);
+                    SequencePoint current_p = SequencePointForSourceLine(Position.First, ref reader, methodToken);
                     // Note, we don't check that current_p was found or not, since we know for sure, that sourceLine could be resolved in method.
                     // Same idea for nested_p below, if we have nestedToken - it will be resolved for sure.
 
                     if (nestedToken != 0)
                     {
-                        SequencePoint nested_p = FirstSequencePointForSourceLine(ref reader, nestedToken);
-                        if (current_p.EndLine > nested_p.EndLine || (current_p.EndLine == nested_p.EndLine && current_p.EndColumn > nested_p.EndColumn))
+                        // Check if nestedToken is within range of current_p. Example -
+                        //     await Parallel.ForEachAsync(userHandlers, parallelOptions, async (uri, token) =>   <- breakpoint at this line
+                        //     {
+                        //        await new HttpClient().GetAsync("https://google.com");
+                        //     });
+                        // nesetedToken here is the annonymous async func, and having a breakpoing at the 1st line should
+                        // break on the outer call.
+                        SequencePoint nested_start_p = SequencePointForSourceLine(Position.First, ref reader, nestedToken);
+                        SequencePoint nested_end_p = SequencePointForSourceLine(Position.Last, ref reader, nestedToken);
+                        if ((nested_start_p.StartLine > current_p.StartLine || (nested_start_p.StartLine == current_p.StartLine && nested_start_p.StartColumn > current_p.StartColumn)) &&
+                            (nested_end_p.EndLine < current_p.EndLine || (nested_end_p.EndLine == current_p.EndLine && nested_end_p.EndColumn < current_p.EndColumn ))
+                        ) {
+                            list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.Offset, methodToken));
+                            break;
+                        }
+
+                        if (current_p.EndLine > nested_start_p.EndLine || (current_p.EndLine == nested_start_p.EndLine && current_p.EndColumn > nested_start_p.EndColumn))
                         {
-                            list.Add(new resolved_bp_t(nested_p.StartLine, nested_p.EndLine, nested_p.Offset, nestedToken));
+                            list.Add(new resolved_bp_t(nested_start_p.StartLine, nested_start_p.EndLine, nested_start_p.Offset, nestedToken));
                             // (tokenNum > 1) can have only lines, that added to multiple constructors, in this case - we will have same for all Tokens,
                             // we need unique tokens only for breakpoints, prevent adding nestedToken multiple times.
                             break;
