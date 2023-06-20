@@ -771,16 +771,14 @@ namespace NetCoreDbg
 
                         if (p.EndLine != nearestSP.EndLine)
                         {
-                            if (reqPos == Position.First && p.EndLine < nearestSP.EndLine)
-                                nearestSP = p;
-                            else if (reqPos == Position.Last && p.EndLine > nearestSP.EndLine)
+                            if ((reqPos == Position.First && p.EndLine < nearestSP.EndLine) ||
+                                (reqPos == Position.Last && p.EndLine > nearestSP.EndLine))
                                 nearestSP = p;
                         }
                         else
                         {
-                            if (reqPos == Position.First && p.EndColumn < nearestSP.EndColumn)
-                                nearestSP = p;
-                            else if (reqPos == Position.Last && p.EndColumn > nearestSP.EndColumn)
+                            if ((reqPos == Position.First && p.EndColumn < nearestSP.EndColumn) ||
+                                (reqPos == Position.Last && p.EndColumn > nearestSP.EndColumn))
                                 nearestSP = p;
                         }
                     }
@@ -811,8 +809,8 @@ namespace NetCoreDbg
                         // break on the outer call.
                         SequencePoint nested_start_p = SequencePointForSourceLine(Position.First, ref reader, nestedToken);
                         SequencePoint nested_end_p = SequencePointForSourceLine(Position.Last, ref reader, nestedToken);
-                        if (nested_start_p.StartLine > current_p.StartLine || (nested_start_p.StartLine == current_p.StartLine && nested_start_p.StartColumn > current_p.StartColumn)
-                             && nested_end_p.EndLine < current_p.EndLine || (nested_end_p.EndLine == current_p.EndLine && nested_end_p.EndColumn < current_p.EndColumn )
+                        if ((nested_start_p.StartLine > current_p.StartLine || (nested_start_p.StartLine == current_p.StartLine && nested_start_p.StartColumn > current_p.StartColumn)) &&
+                            (nested_end_p.EndLine < current_p.EndLine || (nested_end_p.EndLine == current_p.EndLine && nested_end_p.EndColumn < current_p.EndColumn ))
                         ) {
                             list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.Offset, methodToken));
                             break;
