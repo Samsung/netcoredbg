@@ -359,6 +359,24 @@ namespace VSCodeTestGeneric
             {
                 return arg1;
             }
+
+            public int retm()
+            {
+                return m;
+            }
+        }
+
+        public class CHILDOFMY<T> : MY
+        {
+            public T rett(T arg)
+            {
+                return arg;
+            }
+
+            public U retu<U>(U arg)
+            {
+                return arg;
+            }
         }
 
         public class TestNested<X,Y>
@@ -520,6 +538,11 @@ namespace VSCodeTestGeneric
             public void test_func()
             {
                 MY my = new MY();
+                CHILDOFMY<int> ichofmy = new CHILDOFMY<int>();
+                CHILDOFMY<string> schofmy = new CHILDOFMY<string>();
+                ichofmy.m = 15;
+                schofmy.m = 15;
+
                 Console.WriteLine("test_func()");                                                            Label.Breakpoint("BREAK2");
 
                 Label.Checkpoint("test_func", "test_set_value", (Object context) => {
@@ -582,6 +605,21 @@ namespace VSCodeTestGeneric
                     Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "static_test44<string,char,bool>('a',true,\"string\", 41)", "error");
                     Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "static_test44<bool,char,string>('a',true,\"string\", 41)", "error");
 
+                    // Inherited methods
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "ichofmy.rett(15)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "ichofmy.retu<int>(15)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "97 'a'", "char", "ichofmy.retu<char>('a')");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"abc\"", "string", "ichofmy.retu<string>(\"abc\")");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "ichofmy.retm()");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestGeneric.Program+CHILDOFMY`1[System.Int32]\"", "string", "ichofmy.ToString()");
+
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"abc\"", "string", "schofmy.rett(\"abc\")");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "schofmy.retu<int>(15)");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "97 'a'", "char", "schofmy.retu<char>('a')");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"abc\"", "string", "schofmy.retu<string>(\"abc\")");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "schofmy.retm()");
+                    Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestGeneric.Program+CHILDOFMY`1[System.String]\"", "string", "schofmy.ToString()");
+
                     // Test set value.
 
                     Context.SetExpression(@"__FILE__:__LINE__", frameId, "i1", "55");
@@ -635,6 +673,10 @@ namespace VSCodeTestGeneric
             TestGeneric<int,string>.static_p_i1 = 456;
             TestGeneric<int,string>.static_p_s1 = "test_string4";
             MY my = new MY();
+            CHILDOFMY<int> ichofmy = new CHILDOFMY<int>();
+            CHILDOFMY<string> schofmy = new CHILDOFMY<string>();
+            ichofmy.m = 15;
+            schofmy.m = 15;
             TestNested<char,int> testnested = new TestNested<char,int>();
             TestNested<char,int> uninitialized;
 
@@ -721,6 +763,21 @@ namespace VSCodeTestGeneric
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "TestNested<int,string>.Nested<char,bool>.static_test1(\"xyz\")", "error");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "TestNested<int,string>.Nested<char,bool>.static_test3<string>('a', true, 123)", "error");
                 Context.CheckErrorAtRequest(@"__FILE__:__LINE__", frameId, "TestNested<int,string>.Nested<char,bool>.static_test3<string>(123, true, \"abc\")", "error");
+
+                // Inherited methods
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "ichofmy.rett(15)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "ichofmy.retu<int>(15)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "97 'a'", "char", "ichofmy.retu<char>('a')");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"abc\"", "string", "ichofmy.retu<string>(\"abc\")");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "ichofmy.retm()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestGeneric.Program+CHILDOFMY`1[System.Int32]\"", "string", "ichofmy.ToString()");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"abc\"", "string", "schofmy.rett(\"abc\")");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "schofmy.retu<int>(15)");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "97 'a'", "char", "schofmy.retu<char>('a')");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"abc\"", "string", "schofmy.retu<string>(\"abc\")");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "15", "int", "schofmy.retm()");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "\"VSCodeTestGeneric.Program+CHILDOFMY`1[System.String]\"", "string", "schofmy.ToString()");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

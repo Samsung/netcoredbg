@@ -74,7 +74,8 @@ HRESULT UpdateApplication(ICorDebugThread *pThread, Modules *pModules, Evaluator
     std::vector<Evaluator::ArgElementType> emptyVector;
     for (auto &updateHandlerType : modulesUpdateHandlerTypes)
     {
-        pEvaluator->WalkMethods(updateHandlerType.GetPtr(), emptyVector, [&](
+        ToRelease<ICorDebugType> iCorResultType;
+        pEvaluator->WalkMethods(updateHandlerType.GetPtr(), &iCorResultType, emptyVector, [&](
             bool is_static,
             const std::string &methodName,
             Evaluator::ReturnElementType &methodRet,

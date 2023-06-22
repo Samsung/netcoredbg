@@ -1181,7 +1181,8 @@ namespace
         }
 
         ToRelease<ICorDebugFunction> iCorFunc;
-        ed.pEvaluator->WalkMethods(iCorType, methodGenerics, [&](
+        ToRelease<ICorDebugType> iCorResultType;
+        ed.pEvaluator->WalkMethods(iCorType, &iCorResultType, methodGenerics, [&](
             bool is_static,
             const std::string &methodName,
             Evaluator::ReturnElementType&,
@@ -1211,6 +1212,9 @@ namespace
             else
                 return E_FAIL;
         }
+
+        if(iCorResultType)
+            iCorType = iCorResultType.Detach();
 
         size_t typeArgsCount = evalStack.front().genericTypeCache.size();
         ULONG32 realArgsCount = Int + (isInstance ? 1 : 0);

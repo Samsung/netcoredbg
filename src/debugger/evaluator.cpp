@@ -477,15 +477,16 @@ HRESULT Evaluator::WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallb
     ToRelease<ICorDebugType> iCorType;
     IfFailRet(iCorValue2->GetExactType(&iCorType));
     std::vector<Evaluator::ArgElementType> methodGenerics;
+    ToRelease<ICorDebugType> iCorResultType;
 
-    return WalkMethods(iCorType, methodGenerics, cb);
+    return WalkMethods(iCorType, &iCorResultType, methodGenerics, cb);
 }
 
 // https://github.com/dotnet/runtime/blob/57bfe474518ab5b7cfe6bf7424a79ce3af9d6657/docs/design/coreclr/profiling/davbr-blog-archive/samples/sigparse.cpp
 static const ULONG SIG_METHOD_VARARG = 0x5; // vararg calling convention
 static const ULONG SIG_METHOD_GENERIC = 0x10; // used to indicate that the method has one or more generic parameters.
 
-static HRESULT InternalWalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, Evaluator::WalkMethodsCallback cb)
+static HRESULT InternalWalkMethods(ICorDebugType *pInputType, ICorDebugType **ppResultType, std::vector<Evaluator::ArgElementType> &methodGenerics, Evaluator::WalkMethodsCallback cb)
 {
     HRESULT Status;
     ToRelease<ICorDebugClass> pClass;
@@ -586,6 +587,8 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, std::vector<Evalua
         Status = cb(is_static, to_utf8(szFunctionName), returnElementType, argElementTypes, getFunction);
         if (FAILED(Status))
         {
+            pInputType->AddRef();
+            *ppResultType = pInputType;
             pMD->CloseEnum(fEnum);
             return Status;
         }
@@ -595,15 +598,15 @@ static HRESULT InternalWalkMethods(ICorDebugType *pInputType, std::vector<Evalua
     ToRelease<ICorDebugType> iCorBaseType;
     if(SUCCEEDED(pInputType->GetBase(&iCorBaseType)) && iCorBaseType != NULL)
     {
-        IfFailRet(InternalWalkMethods(iCorBaseType, methodGenerics, cb));
+        IfFailRet(InternalWalkMethods(iCorBaseType, ppResultType, methodGenerics, cb));
     }
 
     return S_OK;
 }
 
-HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, Evaluator::WalkMethodsCallback cb)
+HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, ICorDebugType **ppResultType, std::vector<Evaluator::ArgElementType> &methodGenerics, Evaluator::WalkMethodsCallback cb)
 {
-    return InternalWalkMethods(pInputType, methodGenerics, cb);
+    return InternalWalkMethods(pInputType, ppResultType, methodGenerics, cb);
 }
 
 static HRESULT InternalSetValue(EvalStackMachine *pEvalStackMachine, EvalHelpers *pEvalHelpers, ICorDebugThread *pThread, FrameLevel frameLevel,

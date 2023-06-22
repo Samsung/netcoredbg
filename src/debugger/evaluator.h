@@ -139,7 +139,7 @@ public:
         ICorDebugFunction** ppCorFunc);
 
     HRESULT GetElement(ICorDebugValue *pInputValue, std::vector<ULONG32> &indexes, ICorDebugValue **ppResultValue);
-    HRESULT WalkMethods(ICorDebugType *pInputType, std::vector<Evaluator::ArgElementType> &methodGenerics, WalkMethodsCallback cb);
+    HRESULT WalkMethods(ICorDebugType *pInputType, ICorDebugType **ppResultType, std::vector<Evaluator::ArgElementType> &methodGenerics, WalkMethodsCallback cb);
     HRESULT WalkMethods(ICorDebugValue *pInputTypeValue, WalkMethodsCallback cb);
     HRESULT SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ICorDebugValue *pValue, SetterData *setterData,
                      const std::string &value, int evalFlags, std::string &output);
