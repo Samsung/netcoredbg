@@ -63,9 +63,15 @@ namespace netcoredbg
         for(char* bufptr = sf->text; bufptr < sf->text + fileLen; )
         {
             sf->lines.push_back(bufptr);
-            while(*bufptr != '\r')
+            while(*bufptr != '\r' && *bufptr != '\n' && *bufptr != '\0')
                 bufptr++;
-            *bufptr++ = '\0';
+            if (*bufptr == '\0')
+            {
+                bufptr++;
+                continue;
+            }
+            if (*bufptr == '\r')
+                *bufptr++ = '\0';
             if (*bufptr == '\n')
                 *bufptr++ = '\0';
         }
