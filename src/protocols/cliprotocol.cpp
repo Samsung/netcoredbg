@@ -93,6 +93,7 @@ enum class CLIProtocol::CommandTag
     Enable,
     File,
     Finish,
+    Frame,
     Interrupt,
     List,
     Next,
@@ -249,6 +250,9 @@ constexpr static const CLIParams::CommandInfo commands_list[] =
 
     {CommandTag::Finish, {}, {}, {{"finish"}},
         {{}, "Continue execution till end of the current function."}},
+
+    {CommandTag::Frame, {}, {}, {{"frame", "f"}},
+        {{}, "Select & display stack frame."}},
 
     {CommandTag::Interrupt, {}, {}, {{"interrupt"}},
         {{}, "Interrupt program execution, stop all threads."}},
@@ -558,6 +562,7 @@ CLIProtocol::CLIProtocol(InStream& input, OutStream& output) :
   m_sourceLine(0),
   m_listSize(10),
   m_stoppedAt(0),
+  m_frameIdx(0),
   m_sources(nullptr),
   m_term_settings(*this), 
   line_reader(),
@@ -701,6 +706,7 @@ HRESULT CLIProtocol::StepCommand(const std::vector<std::string> &args,
             {
                 lock_guard lock(m_mutex);
                 m_processStatus = Running;
+                m_frameIdx = 0;
                 m_state_cv.notify_all();
             }
             return Status;
@@ -711,7 +717,6 @@ HRESULT CLIProtocol::StepCommand(const std::vector<std::string> &args,
             return E_FAIL;
     }
 }
-
 
 HRESULT CLIProtocol::PrintFrameLocation(const StackFrame &stackFrame, std::string &output)
 {
@@ -737,6 +742,11 @@ HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLe
     
     IfFailRet(m_sharedDebugger->GetStackTrace(threadId, lowFrame, int(highFrame) - int(lowFrame), stackFrames, totalFrames));
 
+    if (stackFrames.size() == 0)
+    {
+        return E_INVALIDARG;
+    }
+
     int currentFrame = int(lowFrame);
 
     for (const StackFrame &stackFrame : stackFrames)
@@ -751,9 +761,7 @@ HRESULT CLIProtocol::PrintFrames(ThreadId threadId, std::string &output, FrameLe
         currentFrame++;
     }
 
-
     output = ss.str();
-
     return S_OK;
 }
 
@@ -1091,6 +1099,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Continue>(const std::vector<std::stri
       lock_guard lock(m_mutex);
 
       m_processStatus = Running;
+      m_frameIdx = 0;
       m_state_cv.notify_all();
     }
 
@@ -1222,6 +1231,57 @@ template <>
 HRESULT CLIProtocol::doCommand<CommandTag::Finish>(const std::vector<std::string> &args, std::string &output)
 {
     return StepCommand(args, output, IDebugger::StepType::STEP_OUT);
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Frame>(const std::vector<std::string> &args, std::string &output)
+{
+    lock_guard lock(m_mutex);
+
+    if (m_processStatus == NotStarted || m_processStatus == Exited)
+    {
+        output = "No process.";
+        return E_FAIL;
+    }
+
+    if (m_processStatus != Paused)
+    {
+        output = "Can't select frame for running process.";
+        return E_FAIL;
+    }
+
+    ThreadId tid = m_sharedDebugger->GetLastStoppedThreadId();
+    if (tid == ThreadId::AllThreads)
+    {
+        output ="No stack.";
+        return E_FAIL;
+    }
+
+    if (args.size() > 1)
+    {
+        output = "Invalid number of arguments.";
+        return E_INVALIDARG;
+    }
+
+    int frameIdx = m_frameIdx;
+    if (args.size() > 0)
+    {
+        bool er;
+        frameIdx = ProtocolUtils::ParseInt(args.at(0), er);
+        if (!er || frameIdx < 0 || frameIdx >= FrameLevel::MaxFrameLevel)
+        {
+            output = "Invalid argument.";
+            return E_INVALIDARG;
+        }
+    }
+
+    if(FAILED(PrintFrames(tid, output, FrameLevel{frameIdx}, FrameLevel{frameIdx + 1})))
+    {
+        output = "Frame not found.";
+        return E_FAIL;
+    }
+    m_frameIdx = frameIdx;
+    return S_OK;
 }
 
 template <>
@@ -1551,7 +1611,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string>
 
         // call of getter should not fire callback, so we can call it with locked mutex
         threadId = m_sharedDebugger->GetLastStoppedThreadId();
-        frameId = FrameId(threadId, FrameLevel{0});
+        frameId = FrameId(threadId, FrameLevel{m_frameIdx});
     }
 
     HRESULT Status;
@@ -1607,6 +1667,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Run>(const std::vector<std::string> &
 
         lock.lock();
         m_processStatus = Running;
+        m_frameIdx = 0;
         m_state_cv.notify_all();
 
         setupInterruptHandler();
@@ -2346,6 +2407,7 @@ void CLIProtocol::SetRunningState()
     {
         setupInterruptHandler();
         m_processStatus = Running;
+        m_frameIdx = 0;
     }
 }
 
