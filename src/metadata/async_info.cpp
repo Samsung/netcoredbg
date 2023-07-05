@@ -13,11 +13,6 @@ namespace netcoredbg
 // Caller must care about m_asyncMethodSteppingInfoMutex.
 HRESULT AsyncInfo::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion)
 {
-    if (asyncMethodSteppingInfo.modAddress == modAddress &&
-        asyncMethodSteppingInfo.methodToken == methodToken &&
-        asyncMethodSteppingInfo.methodVersion == methodVersion)
-        return S_OK;
-
     if (!asyncMethodSteppingInfo.awaits.empty())
         asyncMethodSteppingInfo.awaits.clear();
 
