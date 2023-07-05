@@ -13,15 +13,21 @@ namespace netcoredbg
 // Caller must care about m_asyncMethodSteppingInfoMutex.
 HRESULT AsyncInfo::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethodDef methodToken, ULONG32 methodVersion)
 {
+    // Note, for normal methods, `Interop::GetAsyncMethodSteppingInfo()` will return error code and set `lastIlOffset` to 0.
+    // Error during async info search (debug info not available or method token belong to normal method) is proper behaviour and debugger logic also count on this.
+
     if (asyncMethodSteppingInfo.modAddress == modAddress &&
         asyncMethodSteppingInfo.methodToken == methodToken &&
         asyncMethodSteppingInfo.methodVersion == methodVersion)
-        return S_OK;
+        return asyncMethodSteppingInfo.retCode;
 
     if (!asyncMethodSteppingInfo.awaits.empty())
         asyncMethodSteppingInfo.awaits.clear();
 
-    return m_sharedModules->GetModuleInfo(modAddress, [&](ModuleInfo &mdInfo) -> HRESULT
+    asyncMethodSteppingInfo.modAddress = modAddress;
+    asyncMethodSteppingInfo.methodToken = methodToken;
+    asyncMethodSteppingInfo.methodVersion = methodVersion;
+    asyncMethodSteppingInfo.retCode = m_sharedModules->GetModuleInfo(modAddress, [&](ModuleInfo &mdInfo) -> HRESULT
     {
         if (mdInfo.m_symbolReaderHandles.empty() || mdInfo.m_symbolReaderHandles.size() < methodVersion)
             return E_FAIL;
@@ -35,12 +41,10 @@ HRESULT AsyncInfo::GetAsyncMethodSteppingInfo(CORDB_ADDRESS modAddress, mdMethod
             asyncMethodSteppingInfo.awaits.emplace_back(entry.yield_offset, entry.resume_offset);
         }
 
-        asyncMethodSteppingInfo.modAddress = modAddress;
-        asyncMethodSteppingInfo.methodToken = methodToken;
-        asyncMethodSteppingInfo.methodVersion = methodVersion;
-
         return S_OK;
     });
+
+    return asyncMethodSteppingInfo.retCode;
 }
 
 // Check if method have await block. In this way we detect async method with awaits.

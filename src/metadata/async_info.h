@@ -47,13 +47,14 @@ private:
         CORDB_ADDRESS modAddress;
         mdMethodDef methodToken;
         ULONG32 methodVersion;
+        HRESULT retCode;
 
         std::vector<AwaitInfo> awaits;
         // Part of NotifyDebuggerOfWaitCompletion magic, see ManagedDebugger::SetupAsyncStep().
         ULONG32 lastIlOffset;
 
         AsyncMethodInfo() :
-            modAddress(0), methodToken(mdMethodDefNil), methodVersion(0), awaits(), lastIlOffset(0)
+            modAddress(0), methodToken(mdMethodDefNil), methodVersion(0), retCode(S_OK), awaits(), lastIlOffset(0)
         {};
     };
 
