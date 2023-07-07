@@ -6,6 +6,7 @@
 #include "debugger/interop_brk_helpers.h"
 #include "debugger/interop_mem_helpers.h"
 #include "debugger/interop_ptrace_helpers.h"
+#include "debugger/interop_arm32_singlestep_helpers.h"
 
 #ifdef DEBUGGER_FOR_TIZEN
 // Tizen 5.0/5.5 build fix.
@@ -76,6 +77,59 @@ InteropDebugger::InteropDebugger(IProtocol *pProtocol_,
     InteropDebuggerHelpers(pProtocol_, sharedBreakpoints, sharedEvalWaiter)
 {}
 
+#if DEBUGGER_UNIX_ARM
+// NOTE caller must care about m_waitpidMutex.
+static bool DoSoftwareSingleStep(pid_t pid, std::unordered_map<pid_t, thread_status_t> &TIDs, std::vector<sw_singlestep_brk_t> &swSingleStepBreakpoints)
+{
+    if (!ARM32_DoSoftwareSingleStep(pid, swSingleStepBreakpoints))
+    {
+        LOGE("Software singlestep initialization error.\n");
+        return false;
+    }
+
+    if (async_ptrace(PTRACE_CONT, pid, nullptr, nullptr) == -1)
+    {
+        LOGW("Ptrace cont error: %s", strerror(errno));
+        return false;
+    }
+    else
+    {
+        TIDs[pid].stat = thread_stat_e::running;
+        TIDs[pid].stop_signal = 0;
+    }
+
+    return true;
+};
+
+static bool DetectBrkForSoftwareSingleStep(pid_t pid, std::unordered_map<pid_t, thread_status_t> &TIDs, std::vector<sw_singlestep_brk_t> &swSingleStepBreakpoints)
+{
+    user_regs_struct regs;
+    iovec iov;
+    iov.iov_base = &regs;
+    iov.iov_len = sizeof(user_regs_struct);
+    if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
+    {
+        LOGW("Ptrace getregset error: %s\n", strerror(errno));
+        ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+        return false;
+    }
+
+    std::uintptr_t brkAddr = GetBrkAddrByPC(regs);
+
+    for (auto &entry : swSingleStepBreakpoints)
+    {
+        if (entry.bpAddr == brkAddr)
+        {
+            // Note, we don't call SetPrevBrkPC() + ptrace(PTRACE_SETREGSET) here, since arm32 don't need this for sure.
+            TIDs[pid].stop_signal = 0;
+            break;
+        }
+    }
+
+    return ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+};
+#endif // DEBUGGER_UNIX_ARM
+
 // NOTE caller must care about m_waitpidMutex.
 bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
 {
@@ -87,22 +141,57 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
     // Another case is signal that landed on stopped thread. For example SIGKILL from user or SIGILL
     // due to wrong instruction that was covered by breakpoint opcode and now executed on single step.
 
-    if (async_ptrace(PTRACE_SINGLESTEP, pid, nullptr, nullptr) == -1)
+#if DEBUGGER_UNIX_ARM
+    std::vector<sw_singlestep_brk_t> swSingleStepBreakpoints;
+
+    if (!m_HWSingleStepSupported)
     {
-        LOGE("Ptrace singlestep error: %s\n", strerror(errno));
-        return false;
+        if (!DoSoftwareSingleStep(pid, m_TIDs, swSingleStepBreakpoints))
+        {
+            ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+            return false;
+        }
     }
     else
+#endif // DEBUGGER_UNIX_ARM
     {
-        m_TIDs[pid].stat = thread_stat_e::running;
-        m_TIDs[pid].stop_signal = 0;
+        if (async_ptrace(PTRACE_SINGLESTEP, pid, nullptr, nullptr) == -1)
+        {
+#if DEBUGGER_UNIX_ARM
+            if (errno == EIO)
+            {
+                m_HWSingleStepSupported = false;
+                if (!DoSoftwareSingleStep(pid, m_TIDs, swSingleStepBreakpoints))
+                {
+                    ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+                    return false;
+                }
+            }
+            else
+#endif // DEBUGGER_UNIX_ARM
+            {
+                LOGE("Ptrace singlestep error: %s\n", strerror(errno));
+                return false;
+            }
+        }
+        else
+        {
+            m_TIDs[pid].stat = thread_stat_e::running;
+            m_TIDs[pid].stop_signal = 0;
+        }
     }
 
     WaitThreadStop(pid);
 
     // Check that we still have this thread alive.
     if (m_TIDs.find(pid) == m_TIDs.end())
+    {
+#if DEBUGGER_UNIX_ARM
+        if (!m_HWSingleStepSupported)
+            ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+#endif // DEBUGGER_UNIX_ARM
         return false;
+    }
 
     if (m_TIDs[pid].stop_signal == SIGTRAP &&
         m_TIDs[pid].event == 0) // not ptrace event (breakpoint, step)
@@ -111,6 +200,10 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
         if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
         {
             LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+#if DEBUGGER_UNIX_ARM
+            if (!m_HWSingleStepSupported)
+                ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+#endif // DEBUGGER_UNIX_ARM
             return false;
         }
 
@@ -118,18 +211,32 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
         {
         case SI_KERNEL:
         case TRAP_BRKPT:
+#if DEBUGGER_UNIX_ARM
+            if (!m_HWSingleStepSupported)
+            {
+                bool parseSucceeded = DetectBrkForSoftwareSingleStep(pid, m_TIDs, swSingleStepBreakpoints);
+                if (!parseSucceeded || m_TIDs[pid].stop_signal == 0)
+                    return parseSucceeded;
+            }
+#endif // DEBUGGER_UNIX_ARM
             // Care about `__builtin_debugtrap()` in user code.
             m_TIDs[pid].stat = thread_stat_e::stopped_signal_event_detected;
             m_TIDs[pid].stop_event_data.signal = "SIGTRAP";
             m_eventedThreads.emplace_back(pid);
             return true;
 
-        case TRAP_TRACE: // single step
+        case TRAP_TRACE: // "hardware" single step
             m_TIDs[pid].stop_signal = 0;
             return true;
         }
     }
-    else if (m_TIDs[pid].stop_signal == SIGILL)
+
+#if DEBUGGER_UNIX_ARM
+    if (!m_HWSingleStepSupported && !ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints))
+        return false;
+#endif // DEBUGGER_UNIX_ARM
+
+    if (m_TIDs[pid].stop_signal == SIGILL)
     {
         siginfo_t ptrace_info;
         if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)

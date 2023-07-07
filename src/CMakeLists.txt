@@ -167,6 +167,9 @@ if (INTEROP_DEBUGGING)
             debugger/sigaction.cpp
             metadata/interop_libraries.cpp
         )
+    if (CLR_CMAKE_PLATFORM_UNIX_ARM)
+        list(APPEND netcoredbg_SRC debugger/interop_arm32_singlestep_helpers.cpp)
+    endif()
 endif (INTEROP_DEBUGGING)
 
 # special threatment of buildinfo.cpp -- this file rebuilds every time,

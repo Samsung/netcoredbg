@@ -60,7 +60,7 @@ std::uintptr_t GetBrkAddrByPC(const user_regs_struct &regs)
 #elif DEBUGGER_UNIX_ARM64
     return std::uintptr_t(regs.pc);
 #elif DEBUGGER_UNIX_ARM
-    const static int REG_PC = 15;
+    constexpr int REG_PC = 15;
     return std::uintptr_t(regs.uregs[REG_PC]);
 #else
 #error "Unsupported platform"
@@ -77,7 +77,7 @@ std::uintptr_t GetBreakAddrByPC(const user_regs_struct &regs)
 #elif DEBUGGER_UNIX_ARM64
     return std::uintptr_t(regs.pc);
 #elif DEBUGGER_UNIX_ARM
-    const static int REG_PC = 15;
+    constexpr int REG_PC = 15;
     return std::uintptr_t(regs.uregs[REG_PC]);
 #else
 #error "Unsupported platform"
@@ -85,12 +85,14 @@ std::uintptr_t GetBreakAddrByPC(const user_regs_struct &regs)
 }
 
 #if DEBUGGER_UNIX_ARM
-static bool IsThumbOpcode32Bits(word_t data)
+// Note, little-endian only architectures are supported now.
+bool IsThumbOpcode32Bits(word_t data)
 {
     return (data & 0xe000) == 0xe000 && (data & 0x1800) != 0;
 }
 #endif
 
+// Note, little-endian only architectures are supported now.
 word_t EncodeBrkOpcode(word_t data, bool thumbCode)
 {
 #if DEBUGGER_UNIX_AMD64

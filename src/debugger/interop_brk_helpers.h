@@ -21,6 +21,10 @@ namespace InteropDebugging
     word_t RestoredOpcode(word_t dataWithBrk, word_t restoreData);
     bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData, std::function<bool(pid_t, std::uintptr_t)> SingleStepOnBrk);
 
+#if DEBUGGER_UNIX_ARM
+    bool IsThumbOpcode32Bits(word_t data);
+#endif
+
 } // namespace InteropDebugging
 } // namespace netcoredbg
 

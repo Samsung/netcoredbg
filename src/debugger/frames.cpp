@@ -120,7 +120,7 @@ static HRESULT EmptyContextForTopFrame(ICorDebugThread *pThread, WalkFramesCallb
         }
         else
         {
-            const static int REG_PC = 15;
+            constexpr int REG_PC = 15;
             if (SUCCEEDED(g_pInteropDebugger->GetFrameForAddr(regs.uregs[REG_PC], frame)))
             {
                 NativeFrame result;
