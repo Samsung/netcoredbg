@@ -1,6 +1,6 @@
 Name:      netcoredbg
 Summary:   Managed code debugger for CoreCLR
-Version:   2.2.2
+Version:   2.2.3
 Release:   1
 Group:     Development/Toolchain
 License:   MIT
