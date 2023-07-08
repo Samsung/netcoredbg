@@ -111,9 +111,11 @@ constexpr char UtilsClassName[] = "NetCoreDbg.Utils";
 // Returns the number of bytes read.
 int ReadMemoryForSymbols(uint64_t address, char *buffer, int cb)
 {
-    // TODO: In-memory PDB?
-    // OSPageSize() for Linux/Windows already implemented in code.
-    return 0;
+    if (address == 0 || buffer == 0 || cb == 0)
+      return 0;
+
+    std::memcpy(buffer, (const void*)address, cb);
+    return cb;
 }
 
 } // unnamed namespace

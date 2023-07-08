@@ -645,7 +645,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LoadModule(ICorDebugAppDomain *pAppDo
 
     Module module;
     std::string outputText;
-    m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode(), m_debugger.IsHotReload(), outputText);
+    m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode(), m_debugger.IsHotReload(), 0, 0, outputText);
     if (!outputText.empty())
         m_debugger.m_sharedProtocol->EmitOutputEvent(OutputStdErr, outputText);
     m_debugger.m_sharedProtocol->EmitModuleEvent(ModuleEvent(ModuleNew, module));
@@ -766,6 +766,35 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::NameChange(ICorDebugAppDomain *pAppDo
 HRESULT STDMETHODCALLTYPE ManagedCallback::UpdateModuleSymbols(ICorDebugAppDomain *pAppDomain, ICorDebugModule *pModule, IStream *pSymbolStream)
 {
     LogFuncEntry();
+
+    std::vector<unsigned char> inMemoryPdb;
+    std::vector<unsigned char> buf(4096);
+    ULONG read = 0;
+    do
+    {
+      pSymbolStream->Read(&buf[0], (ULONG)buf.size(), &read);
+      if (read > 0)
+        inMemoryPdb.insert(inMemoryPdb.end(), buf.begin(), buf.begin() + read);
+    } while (read == buf.size());
+
+    if (inMemoryPdb.size() > 0)
+    {
+      Module module;
+      std::string outputText;
+      m_debugger.m_sharedModules->TryLoadModuleSymbols(pModule, module, m_debugger.IsJustMyCode(), m_debugger.IsHotReload(), (ULONG64)&inMemoryPdb[0], inMemoryPdb.size(), outputText);
+      if (!outputText.empty())
+        m_debugger.m_sharedProtocol->EmitOutputEvent(OutputStdErr, outputText);
+
+      if (module.symbolStatus == SymbolsLoaded)
+      {
+        std::vector<BreakpointEvent> events;
+        m_debugger.m_uniqueBreakpoints->ManagedCallbackLoadModule(pModule, events);
+        for (const BreakpointEvent& event : events)
+          m_debugger.m_sharedProtocol->EmitBreakpointEvent(event);
+      }
+      m_debugger.m_uniqueBreakpoints->ManagedCallbackLoadModuleAll(pModule);
+    }
+
     return ContinueAppDomainWithCallbacksQueue(pAppDomain);
 }
 

@@ -468,7 +468,7 @@ HRESULT GetModuleId(ICorDebugModule *pModule, std::string &id)
     return S_OK;
 }
 
-static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID **ppSymbolReaderHandle)
+static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, ULONG64 inMemoryPdbAddress, ULONG64 inMemoryPdbSize, VOID **ppSymbolReaderHandle)
 {
     HRESULT Status = S_OK;
     BOOL isDynamic = FALSE;
@@ -477,26 +477,45 @@ static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID 
     IfFailRet(pModule->IsInMemory(&isInMemory));
 
     if (isDynamic)
-        return E_FAIL; // Dynamic and in memory assemblies are a special case which we will ignore for now
+        return E_FAIL; // Dynamic assemblies are a special case which we will ignore for now
 
-    ULONG64 peAddress = 0;
-    ULONG32 peSize = 0;
-    IfFailRet(pModule->GetBaseAddress(&peAddress));
-    IfFailRet(pModule->GetSize(&peSize));
+    std::vector<unsigned char> peBuf;
+    ULONG64 peBufAddress = 0;
+    ULONG32 peBufSize = 0;
+    if (isInMemory)
+    {
+      ICorDebugProcess* process = 0;
+      ULONG64 peAddress = 0;
+      ULONG32 peSize = 0;
+      IfFailRet(pModule->GetProcess(&process));
+      IfFailRet(pModule->GetBaseAddress(&peAddress));
+      IfFailRet(pModule->GetSize(&peSize));
+
+      if (peAddress != 0 && peSize != 0)
+      {
+        peBufSize = peSize;
+        peBuf.resize(peBufSize);
+        peBufAddress = (ULONG64)&peBuf[0];
+        SIZE_T read = 0;
+        IfFailRet(process->ReadMemory(peAddress, peSize, &peBuf[0], &read));
+        if (read != peSize)
+          return E_FAIL;
+      }
+    }
 
     return Interop::LoadSymbolsForPortablePDB(
         GetModuleFileName(pModule),
         isInMemory,
         isInMemory, // isFileLayout
-        peAddress,
-        peSize,
-        0,          // inMemoryPdbAddress
-        0,          // inMemoryPdbSize
+        peBufAddress,
+        peBufSize,
+        inMemoryPdbAddress,
+        inMemoryPdbSize,
         ppSymbolReaderHandle
     );
 }
 
-HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, bool needJMC, bool needHotReload, std::string &outputText)
+HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, bool needJMC, bool needHotReload, ULONG64 inMemoryPdbAddress, ULONG64 inMemoryPdbSize, std::string &outputText)
 {
     HRESULT Status;
 
@@ -509,7 +528,7 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
     module.name = GetFileName(module.path);
 
     PVOID pSymbolReaderHandle = nullptr;
-    LoadSymbols(pMDImport, pModule, &pSymbolReaderHandle);
+    LoadSymbols(pMDImport, pModule, inMemoryPdbAddress, inMemoryPdbSize, &pSymbolReaderHandle);
     module.symbolStatus = pSymbolReaderHandle != nullptr ? SymbolsLoaded : SymbolsNotFound;
 
     if (module.symbolStatus == SymbolsLoaded)
@@ -563,6 +582,7 @@ HRESULT Modules::TryLoadModuleSymbols(ICorDebugModule *pModule, Module &module, 
     pModule->AddRef();
     ModuleInfo mdInfo { pSymbolReaderHandle, pModule };
     std::lock_guard<std::mutex> lock(m_modulesInfoMutex);
+    m_modulesInfo.erase(baseAddress);
     m_modulesInfo.insert(std::make_pair(baseAddress, std::move(mdInfo)));
 
     if (needHotReload)
