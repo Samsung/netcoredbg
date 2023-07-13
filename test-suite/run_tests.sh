@@ -7,12 +7,11 @@ generate_xml()
     local xml_path=$1
     local testnames=$2
 
-    echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?>
-        <testsuites>
-            <testsuite name=\"Tests\" tests=\"\" failures=\"\" errors=\"\" time=\"\">
-                ${testnames}
-            </testsuite>
-        </testsuites>" > "${xml_path}/test-results.xml"
+    echo -e "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+    <testsuites>
+        <testsuite name=\"Tests\" tests=\"$(($test_pass + $test_fail))\" failures=\"$test_fail\" errors=\"0\" time=\"\">
+${testnames}        </testsuite>
+    </testsuites>" > "${xml_path}/test-results.xml"
 }
 
 ALL_TEST_NAMES=(
@@ -90,6 +89,10 @@ case $i in
     generate_report=true
     shift
     ;;
+    -c|--coverage)
+    code_coverage_report=true
+    shift
+    ;;
     *)
         TEST_NAMES="$TEST_NAMES *"
     ;;
@@ -102,8 +105,14 @@ if [[ -z $NETCOREDBG ]]; then
     NETCOREDBG="../bin/netcoredbg"
 fi
 
+if [[ -z $OBJS_DIR ]]; then
+    OBJS_DIR="../build/src/CMakeFiles/netcoredbg.dir/"
+fi
+
 if [[ -z $TEST_NAMES ]]; then
     TEST_NAMES="${ALL_TEST_NAMES[@]}"
+    # delete all accumulated coverage data
+    find $OBJS_DIR -name '*.gcda' -delete
 fi
 
 dotnet build TestRunner || exit $?
@@ -187,17 +196,27 @@ for TEST_NAME in $TEST_NAMES; do
     if [ "$res" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
         test_list="$test_list$TEST_NAME ... failed res=$res\n"
-        test_xml+="<testcase name=\"$TEST_NAME\"><failure></failure></testcase>"
+        test_xml+="            <testcase name=\"$TEST_NAME\"><failure></failure></testcase>\n"
     else
         test_pass=$(($test_pass + 1))
         test_list="$test_list$TEST_NAME ... passed\n"
-        test_xml+="<testcase name=\"$TEST_NAME\"></testcase>"
+        test_xml+="            <testcase name=\"$TEST_NAME\"></testcase>\n"
     fi
 done
+
+if [[ $code_coverage_report == true ]]; then
+     lcov --capture --derive-func-data --gcov-tool $PWD/llvm-gcov.sh --directory $OBJS_DIR --output-file coverage.info
+     cd ..
+     lcov --remove test-suite/coverage.info $PWD/'.coreclr/*' $PWD/'build/*' '/usr/*' $PWD/'third_party/*' -o coverage.info
+     genhtml  -o ./cov_html coverage.info
+     zip -r coverage.zip cov_html/ coverage.info
+     cd -
+fi
 
 if [[ $generate_report == true ]]; then
     #Generate xml test file to current directory
     generate_xml "${XML_ABS_PATH}" "${test_xml}"
+    zip test.zip test-results.xml
 fi
 
 echo ""

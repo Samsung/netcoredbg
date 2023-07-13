@@ -52,6 +52,9 @@ user@build$ CC=clang CXX=clang++ cmake ..
 
 For running tests after build has succeed you need to add option `-DCMAKE_INSTALL_PREFIX=$PWD/../bin`.
 
+To enable the Source-based code coverage feature (https://clang.llvm.org/docs/SourceBasedCodeCoverage.html)
+add `-DCLR_CMAKE_ENABLE_CODE_COVERAGE` option.
+
 If you have previously downloaded .NET SDK or CoreCLR sources, then you should modify command line and add following options: `-DDOTNET_DIR=/path/to/sdk/dir -DCORECLR_DIR=/path/to/coreclr/sources`
 
 If cmake tries to download .NET SDK or CoreCLR sources and fails -- see bullets 6 and 7 above. You can download required files manually.
@@ -193,6 +196,10 @@ $ /path/to/netcoredbg --interpreter=TYPE -- /path/to/dotnet /path/to/program.dll
 
 You can find detailed instruction how to run tests in `test-suite` directory, see [test-suite/README.md](test-suite/README.md).
 Basically you just need to build and install Netcoredbg into `bin` directory (in Netcoredbg source tree) and then change directory to `test-suite` and run script `/run_tests.sh`
+
+If you wish to get "Source-based code coverage" report, you can add an -c or --coverage option to the command line, i.e.:
+`./run_tests.sh -c [[testname1][testname2]..]`
+Note, for that case your build configuration should be done with `-DCLR_CMAKE_ENABLE_CODE_COVERAGE` option (see above). This feature is currently supported on Unix-like platforms only.
 
 
 ### Building and running unit tests
