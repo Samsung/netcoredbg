@@ -76,6 +76,17 @@ user@netcoredbg$ rm -rf build src/debug/netcoredbg/bin bin
 
 > *Directory `bin` contains "installed" Netcoredbg's binaries for tests. If you have installed Netcoredbg in other place, for example in `/usr/local/bin`, you should remove it manually: currently Netcoredbg's build system doesn't performs "uninstalling".*
 
+#### Prerequisites and compiling with interop mode support (Linux and Tizen OSes only)
+Prerequisites and compiling process are the same as above with following changes:
+
+1. You need to install `libunwind-dev` or `libunwind-devel` package, depends on your distro.
+
+2. Configure build with the following commands:
+
+```
+user@build$ CC=clang CXX=clang++ cmake .. -DINTEROP_DEBUGGING=1
+```
+More details about usage of NCDB you can find in [Interop mode](docs/interop.md).
 
 ### MacOS
 
