@@ -31,6 +31,7 @@ generate_xml()
 }
 
 ALL_TEST_NAMES=(
+    "CLITestBreakpoint"
     "MIExampleTest"
     "MITestBreakpoint"
     "MITestExpression"
@@ -238,7 +239,18 @@ for TEST_NAME in $TEST_NAMES; do
     HOSTTESTDIR=$SCRIPTDIR/$TEST_NAME
     SOURCE_FILES=$(find $HOSTTESTDIR \! -path "$HOSTTESTDIR/obj/*" -type f -name "*.cs" -printf '%p;')
 
-    if  [[ $TEST_NAME == VSCode* ]] ;
+    RC="0"
+
+    if [[ $TEST_NAME == CLI* ]] ;
+    then
+
+        $SDB push $SCRIPTDIR/$TEST_PROJ_NAME/commands.txt $REMOTETESTDIR
+        $SDB root on
+        ./run_cli_test.sh "$SDB shell $NETCOREDBG" "$TEST_NAME" "$REMOTETESTDIR/$TEST_NAME.dll" "$REMOTETESTDIR/commands.txt"
+        let RC=$?
+        $SDB root off
+
+    elif  [[ $TEST_NAME == VSCode* ]] ;
     then
         PROTO="vscode"
 
@@ -255,6 +267,7 @@ for TEST_NAME in $TEST_NAMES; do
             --test $TEST_NAME \
             --sources $SOURCE_FILES \
             --assembly $REMOTETESTDIR/$TEST_PROJ_NAME.dll
+        let RC=$?
     else
         PROTO="mi"
 
@@ -271,9 +284,10 @@ for TEST_NAME in $TEST_NAMES; do
             --test $TEST_NAME \
             --sources "$SOURCE_FILES" \
             --assembly $REMOTETESTDIR/$TEST_PROJ_NAME.dll
+        let RC=$?
     fi
 
-    if [ "$?" -ne "0" ]; then
+    if [ "$RC" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
         test_list="$test_list$TEST_NAME ... failed\n"
         test_xml+="<testcase name=\"$TEST_NAME\"><failure></failure></testcase>"

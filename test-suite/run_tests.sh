@@ -15,6 +15,7 @@ ${testnames}        </testsuite>
 }
 
 ALL_TEST_NAMES=(
+    "CLITestBreakpoint"
     "MIExampleTest"
     "MITestBreakpoint"
     "MITestExpression"
@@ -177,19 +178,33 @@ for TEST_NAME in $TEST_NAMES; do
         SOURCE_FILES="${SOURCE_FILES}${file};"
     done
 
-    PROTO="mi"
-    if  [[ $TEST_NAME == VSCode* ]] ;
+    # Check, that test shell run in terminal (returns 0 (succeeds), if the descriptors are hooked up to a terminal).
+    test -t 0 -a -t 1 -a -t 2
+    # Skip CLI tests on MacOS (kernel "Darwin") in jenkins.
+    if [[ "$?" != "0" ]] && [[ $TEST_NAME == CLI* ]] && [[ "$(uname)" == "Darwin" ]] ;
     then
-        PROTO="vscode"
+        continue
     fi
 
-    test_timeout $TIMEOUT dotnet run --project TestRunner -- \
-        --local $NETCOREDBG \
-        --proto $PROTO \
-        --test $TEST_NAME \
-        --sources "$SOURCE_FILES" \
-        --assembly $TEST_NAME/bin/Debug/netcoreapp3.1/$TEST_NAME.dll \
-        "${LOGOPTS[@]}"
+    if [[ $TEST_NAME == CLI* ]] ;
+    then
+        ./run_cli_test.sh "$NETCOREDBG" "$TEST_NAME" "$TEST_NAME/bin/Debug/netcoreapp3.1/$TEST_NAME.dll" "$TEST_NAME/commands.txt"
+    else
+        PROTO="mi"
+        if  [[ $TEST_NAME == VSCode* ]] ;
+        then
+            PROTO="vscode"
+        fi
+
+        test_timeout $TIMEOUT dotnet run --project TestRunner -- \
+            --local $NETCOREDBG \
+            --proto $PROTO \
+            --test $TEST_NAME \
+            --sources "$SOURCE_FILES" \
+            --assembly $TEST_NAME/bin/Debug/netcoreapp3.1/$TEST_NAME.dll \
+            "${LOGOPTS[@]}"
+    fi
+
 
     res=$?
 

@@ -776,13 +776,6 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
 {
     LogFuncEntry();
 
-    {
-      lock_guard lock(m_mutex);
-
-      m_processStatus = Paused;
-      m_state_cv.notify_all();
-    }
-
     // call repaint() at function exit
     std::unique_ptr<void, std::function<void(void*)> >
         on_exit(this, [&](void *)
@@ -834,7 +827,14 @@ void CLIProtocol::EmitStoppedEvent(const StoppedEvent &event)
             break;
         }
         default:
-            return;
+            break;
+    }
+
+    {
+      lock_guard lock(m_mutex);
+
+      m_processStatus = Paused;
+      m_state_cv.notify_all();
     }
 }
 
@@ -2168,7 +2168,7 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr, bool printCommands)
     {
         unique_lock lock(m_mutex);
 
-	// TODO move this out here
+        // TODO move this out here
         // deactivate debugger on process exit (deffered, can't call this in callback)
         if(!exited && m_processStatus == Exited)
         {
@@ -2195,6 +2195,9 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr, bool printCommands)
 
             case IDebugger::AsyncResult::Eof:
                 {
+                if (dynamic_cast<FileLineReader*>(line_reader) != nullptr)
+                    break;
+
                 static const auto ErrorMsg =
                     tty::bold + tty::brown + literal("EOF") + tty::reset + literal("\n");
 
