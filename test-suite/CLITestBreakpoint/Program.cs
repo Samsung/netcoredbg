@@ -6,7 +6,7 @@ namespace CLITestBreakpoint
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");      // BREAK1
+            Console.WriteLine("<stdout_marker>Hello World!");      // BREAK1
         }
     }
 }

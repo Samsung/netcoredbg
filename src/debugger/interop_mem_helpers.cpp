@@ -172,7 +172,7 @@ bool ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr)
     {
         if (seg.get_hdr().type == elf::pt::dynamic)
         {
-            dynamicAddr = (elfFile->is_PIE() ? startAddr : 0) + seg.get_hdr().vaddr;
+            dynamicAddr = startAddr + seg.get_hdr().vaddr;
             break;
         }
     }

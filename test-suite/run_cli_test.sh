@@ -17,11 +17,39 @@ skip_line()
 {
     local line=$1
 
+    # Replies
+
+    # Note, we check only first 2 frames in backtraces, since in case of interop we can't count on other info.
+    if [[ "$line" == "#0:"* ]] ||
+       [[ "$line" == "#1:"* ]]
+    then
+        exit
+    elif [[ "$line" =~ ^#[0-9]+:.* ]]
+    then
+        echo "1"
+        exit
+    fi
+
+    # Ignore text sent by program itself, since we can't predict line of this text in log.
+    if [[ "$line" == "<stdout_marker>"* ]]
+    then
+        echo "1"
+        exit
+    fi
+
+    # Events
+
     if [[ -z "$line" ]] ||
        [[ "$line" == "library loaded:"* ]] ||
+       [[ "$line" == "library unloaded:"* ]] ||
        [[ "$line" == "no symbols loaded, base address:"* ]] ||
        [[ "$line" == "symbols loaded, base address:"* ]] ||
-       [[ "$line" == "thread created, id:"* ]] ;
+       [[ "$line" == "thread created, id:"* ]] ||
+       [[ "$line" == "thread exited, id:"* ]] ||
+       [[ "$line" == "native thread created, id: "* ]] ||
+       [[ "$line" == "managed thread created, id: "* ]] ||
+       [[ "$line" == "native thread exited, id: "* ]] ||
+       [[ "$line" == "managed thread exited, id: "* ]]
     then
         echo "1"
     else

@@ -16,6 +16,7 @@ ${testnames}        </testsuite>
 
 ALL_TEST_NAMES=(
     "CLITestBreakpoint"
+    "CLITestInteropBreakpoint"
     "MIExampleTest"
     "MITestBreakpoint"
     "MITestExpression"
@@ -82,6 +83,9 @@ ALL_TEST_NAMES=(
 
 # Skipped tests:
 # VSCodeTest297killNCD --- is not automated enough. For manual run only.
+
+INTEROP="0"
+
 for i in "$@"
 do
 case $i in
@@ -92,6 +96,10 @@ case $i in
     ;;
     -c|--coverage)
     code_coverage_report=true
+    shift
+    ;;
+    -i|--interop)
+    INTEROP="1"
     shift
     ;;
     *)
@@ -173,6 +181,23 @@ for TEST_NAME in $TEST_NAMES; do
         continue
     }
 
+    # Native part compilation for interop testing
+    if  [[ $TEST_NAME == CLITestInterop* ]] ;
+    then
+        if [[ $INTEROP == "0" ]] ;
+        then
+            continue
+        fi
+
+        pushd $(pwd)
+        mkdir "$TEST_NAME/build"
+        cd "$TEST_NAME/build"
+        clang++ -g -fPIC -c "../program.c" -o ./test_breakpoint.o
+        clang++ -g -fPIC -shared -o "../bin/Debug/netcoreapp3.1/libtest_breakpoint.so" test_breakpoint.o
+        # Note, we don't remove build directory for test possible issues with interop test execution/build.
+        popd
+    fi
+
     SOURCE_FILES=""
     for file in `find $TEST_NAME \! -path "$TEST_NAME/obj/*" -type f -name "*.cs"`; do
         SOURCE_FILES="${SOURCE_FILES}${file};"
@@ -188,7 +213,13 @@ for TEST_NAME in $TEST_NAMES; do
 
     if [[ $TEST_NAME == CLI* ]] ;
     then
-        ./run_cli_test.sh "$NETCOREDBG" "$TEST_NAME" "$TEST_NAME/bin/Debug/netcoreapp3.1/$TEST_NAME.dll" "$TEST_NAME/commands.txt"
+        CLI_NETCOREDBG=$NETCOREDBG
+        if  [[ $TEST_NAME == CLITestInterop* ]] ;
+        then
+            CLI_NETCOREDBG="$NETCOREDBG --interop-debugging"
+        fi
+
+        ./run_cli_test.sh "$CLI_NETCOREDBG" "$TEST_NAME" "$TEST_NAME/bin/Debug/netcoreapp3.1/$TEST_NAME.dll" "$TEST_NAME/commands.txt"
     else
         PROTO="mi"
         if  [[ $TEST_NAME == VSCode* ]] ;

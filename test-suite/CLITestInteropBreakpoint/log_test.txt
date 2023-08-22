@@ -1,0 +1,23 @@
+set just-my-code 1
+b Program.cs:15
+ Breakpoint 1 at Program.cs:15 --pending, warning: No executable code of the debugger's target code type is associated with this line.
+b program.c:7
+ Breakpoint 2 at program.c:7 --pending, warning: No executable code of the debugger's target code type is associated with this line.
+r
+\^running
+breakpoint modified,  Breakpoint 1 at .*CLITestInteropBreakpoint/Program.cs:15
+stopped, reason: breakpoint 1 hit, thread id: [0-9]+, stopped threads: all, times= 1, frame=\{CLITestInteropBreakpoint\.Program\.Main\(\) at .*CLITestInteropBreakpoint/Program.cs:15\}
+bt
+#0: .* CLITestInteropBreakpoint.dll` CLITestInteropBreakpoint\.Program.Main\(\) at .*CLITestInteropBreakpoint/Program\.cs:15
+#1: .* libcoreclr.so` .*
+c
+\^running
+breakpoint modified,  Breakpoint 2 at .*CLITestInteropBreakpoint.*program\.c:7
+stopped, reason: breakpoint 2 hit, thread id: [0-9]+, stopped threads: all, times= 1, frame=\{libtest_breakpoint.so` native_method\(\) at .*CLITestInteropBreakpoint.*program\.c:7\}
+bt
+#0: .* libtest_breakpoint.so` native_method\(\) at .*CLITestInteropBreakpoint.*program\.c:7
+#1: .* \[CoreCLR Native Frame\]|^#1: .* \[Native Frame\(s\), unwind failed - CoreCLR don't provide registers context\]
+c
+\^running
+stopped, reason: exited, exit-code: 0
+\^exit

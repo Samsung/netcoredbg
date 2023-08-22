@@ -41,6 +41,7 @@ Requires: coreclr
 %define netcoreapp      %{netshareddir}/Microsoft.NETCore.App/
 %define netcoreappalias dotnet.tizen/netcoreapp
 %define sdktoolsdir     /home/owner/share/tmp/sdk_tools
+%define netcoredbg_test %{sdktoolsdir}/netcoredbg-tests
 %define install_prefix /usr
 %define sdk_install_prefix /home/owner/share/tmp/sdk_tools/netcoredbg
 %define netcoreapp_hotreload_min_ver 6.0.0
@@ -63,6 +64,14 @@ Requires: coreclr
 
 %description
 This is a CoreCLR debugger for Tizen.
+
+%package -n netcoredbg-test
+Summary:  Native tests for netcoredbg
+Requires: netcoredbg
+AutoReqProv: no
+
+%description -n netcoredbg-test
+Tests native libs
 
 %prep
 %setup -q
@@ -123,6 +132,11 @@ if [ "${is_hot_reload_supported}" == "1" ]; then
     NCDB_HOOK_TargetFramework=net6.0 dotnet build -c Debug ../src/ncdbhook
 fi
 
+# Native tests
+# CLITestInteropBreakpoint
+g++ -g -fPIC -c "../test-suite/CLITestInteropBreakpoint/program.c" -o ./test_breakpoint.o
+g++ -g -fPIC -shared -o libtest_breakpoint.so test_breakpoint.o
+
 %install
 cd build
 %make_install
@@ -150,6 +164,13 @@ find lib/netstandard1.3/ -name '*.dll' -exec %{_datarootdir}/%{netcoreappalias}/
 install -p -m 644 lib/netstandard1.3/*.dll %{buildroot}%{sdk_install_prefix}
 touch %{buildroot}%{sdk_install_prefix}/version-%{version}-%{release}
 
+mkdir -p %{buildroot}%{netcoredbg_test}
+install -p -m 644 libtest_breakpoint.so %{buildroot}%{netcoredbg_test}
+
 %files
 %manifest netcoredbg.manifest
 %{sdk_install_prefix}/*
+
+%files -n netcoredbg-test
+%manifest %{name}.manifest
+%{netcoredbg_test}/*

@@ -4,13 +4,12 @@ b Program.cs:9
 r
 \^running
 breakpoint modified,  Breakpoint 1 at .*CLITestBreakpoint/Program.cs:9
-stopped, reason: breakpoint 1 hit, thread id: .*, stopped threads: all, times= 1, frame=\{CLITestBreakpoint\.Program\.Main\(\) at .*CLITestBreakpoint/Program.cs:9\}
+stopped, reason: breakpoint 1 hit, thread id: [0-9]+, stopped threads: all, times= 1, frame=\{CLITestBreakpoint\.Program\.Main\(\) at .*CLITestBreakpoint/Program.cs:9\}
 s
 \^running
-Hello World!
-stopped, reason: end stepping range, thread id: .*, stopped threads: all, frame=\{CLITestBreakpoint\.Program\.Main\(\) at .*CLITestBreakpoint/Program.cs:10\}
+stopped, reason: end stepping range, thread id: [0-9]+, stopped threads: all, frame=\{CLITestBreakpoint\.Program\.Main\(\) at .*CLITestBreakpoint/Program.cs:10\}
 bt
-#0 CLITestBreakpoint\.Program\.Main\(\) at .*CLITestBreakpoint/Program.cs:10
+#0: .* CLITestBreakpoint.dll` CLITestBreakpoint\.Program\.Main\(\) at .*CLITestBreakpoint/Program.cs:10
 c
 \^running
 stopped, reason: exited, exit-code: 0

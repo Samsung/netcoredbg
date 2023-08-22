@@ -32,6 +32,7 @@ generate_xml()
 
 ALL_TEST_NAMES=(
     "CLITestBreakpoint"
+    "CLITestInteropBreakpoint"
     "MIExampleTest"
     "MITestBreakpoint"
     "MITestExpression"
@@ -178,7 +179,15 @@ if [[ -z $RPMFILE ]]; then
     # The following command assumes that GBS build was performed on a clean system (or in Docker),
     # which means only one such file exists.
     RPMFILE=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-[0-9]\*$ARCH.rpm -print -quit)
+    RPMFILE_TEST=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-test-[0-9]\*$ARCH.rpm -print -quit)
+    RPMFILE_TESTDEBUG=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-test-debuginfo-[0-9]\*$ARCH.rpm -print -quit)
+else
+    # Find tests related RPMs near debugger RPM.
+    RPMFILE_TEST=$(find $(dirname "${RPMFILE}") -type f -name netcoredbg-test-[0-9]\*$ARCH.rpm -print -quit)
+    RPMFILE_TESTDEBUG=$(find $(dirname "${RPMFILE}") -type f -name netcoredbg-test-debuginfo-[0-9]\*$ARCH.rpm -print -quit)
 fi
+
+REMOTETESTDIR=$TOOLS_ABS_PATH/netcoredbg-tests
 
 # Repackage RPM file as TGZ
 
@@ -190,20 +199,35 @@ TARGZNAME=$PKGNAME-$PKGVERSION-$PKGARCH.tar.gz
 if [ -d "$SCRIPTDIR/unpacked" ]; then rm -rf "$SCRIPTDIR/unpacked"; fi
 mkdir "$SCRIPTDIR/unpacked" && cd "$SCRIPTDIR/unpacked"
 rpm2cpio "$RPMFILE" | cpio -idmv
+if [[ -f "$RPMFILE_TEST" ]] ;
+then
+    rpm2cpio "$RPMFILE_TEST" | cpio -idmv
+else
+    echo "Debugger Test RPM not found"
+fi
+if [[ -f "$RPMFILE_TESTDEBUG" ]] ;
+then
+    rpm2cpio "$RPMFILE_TESTDEBUG" | cpio -idmv
+    # Note, "home" folder is a symlink with real location in Tizen is "/opt/usr/home", debug info located in "/usr/lib/debug/home/.." will be never found.
+    # So, we just copy debuginfo close to library .so file.
+    cp -a "./usr/lib/debug/home/owner/share/tmp/sdk_tools/netcoredbg-tests/." "./$REMOTETESTDIR"
+    rm -rf "./usr/lib/debug/home/owner/share/tmp/sdk_tools/netcoredbg-tests/"
+else
+    echo "Debugger Test Debug Info RPM not found"
+fi
 touch .$TOOLS_ABS_PATH/$PKGNAME/version-$PKGVERSION
 tar cfz ../$TARGZNAME --owner=owner --group=users -C .$TOOLS_ABS_PATH .
 cd ..
 
 # Upload TGZ to target and unpack
 
-REMOTETESTDIR=$TOOLS_ABS_PATH/netcoredbg-tests
-
 $SDB shell rm -rf "$TOOLS_ABS_PATH/netcoredbg"
+$SDB shell rm -rf "$TOOLS_ABS_PATH/netcoredbg-tests"
 $SDB shell mkdir -p $TOOLS_ABS_PATH/on-demand
 $SDB push $TARGZNAME $TOOLS_ABS_PATH/on-demand
-$SDB shell "cd $TOOLS_ABS_PATH && tar xf $TOOLS_ABS_PATH/on-demand/$(basename $TARGZNAME)"
 $SDB shell rm -rf "$REMOTETESTDIR"
 $SDB shell mkdir $REMOTETESTDIR
+$SDB shell "cd $TOOLS_ABS_PATH && tar xf $TOOLS_ABS_PATH/on-demand/$(basename $TARGZNAME)"
 
 NETCOREDBG=$TOOLS_ABS_PATH/netcoredbg/netcoredbg
 
@@ -244,9 +268,15 @@ for TEST_NAME in $TEST_NAMES; do
     if [[ $TEST_NAME == CLI* ]] ;
     then
 
+        CLI_NETCOREDBG=$NETCOREDBG
+        if  [[ $TEST_NAME == CLITestInterop* ]] ;
+        then
+            CLI_NETCOREDBG="$NETCOREDBG --interop-debugging"
+        fi
+
         $SDB push $SCRIPTDIR/$TEST_PROJ_NAME/commands.txt $REMOTETESTDIR
         $SDB root on
-        ./run_cli_test.sh "$SDB shell $NETCOREDBG" "$TEST_NAME" "$REMOTETESTDIR/$TEST_NAME.dll" "$REMOTETESTDIR/commands.txt"
+        ./run_cli_test.sh "$SDB shell $CLI_NETCOREDBG" "$TEST_NAME" "$REMOTETESTDIR/$TEST_NAME.dll" "$REMOTETESTDIR/commands.txt"
         let RC=$?
         $SDB root off
 
