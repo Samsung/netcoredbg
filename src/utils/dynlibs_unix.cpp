@@ -14,6 +14,7 @@
 #include <dlfcn.h>
 #include "utils/limits.h"
 #include "utils/dynlibs.h"
+#include "utils/logger.h"
 
 namespace netcoredbg
 {
@@ -23,7 +24,14 @@ namespace netcoredbg
 // In case of error function returns NULL.
 DLHandle DLOpen(const std::string &path)
 {
-    return reinterpret_cast<DLHandle>(::dlopen(path.c_str(), RTLD_GLOBAL | RTLD_NOW));
+    void *tmpPointer = ::dlopen(path.c_str(), RTLD_GLOBAL | RTLD_NOW);
+    if (tmpPointer == NULL)
+    {
+        char *err = ::dlerror();
+        fprintf(stderr, "dlopen() error: %s\n", err);
+        LOGE("dlopen() error: %s", err);
+    }
+    return reinterpret_cast<DLHandle>(tmpPointer);
 }
 
 // This function resolves symbol address within library specified by handle,
@@ -36,14 +44,34 @@ void* DLSym(DLHandle handle, string_view name)
 
     name.copy(str, name.size());
     str[name.size()] = 0;
-    return ::dlsym(handle, str);
+
+    ::dlerror(); // Clear any existing error
+
+    void *tmpPointer = ::dlsym(handle, str);
+
+    char *err = ::dlerror();
+    if (err != NULL)
+    {
+        fprintf(stderr, "dlsym() error: %s\n", err);
+        LOGE("dlsym() error: %s", err);
+    }
+
+    return tmpPointer;
 }
 
 /// This function unloads previously loadded library, specified by handle.
 /// In case of error this function returns `false'.
 bool DLClose(DLHandle handle)
 {
-    return ::dlclose(handle);
+    int ret = ::dlclose(handle);
+    if (ret != 0)
+    {
+        char *err = ::dlerror();
+        fprintf(stderr, "dlclose() error: %s\n", err);
+        LOGE("dlclose() error: %s", err);
+    }
+
+    return ret;
 }
 
 }  // ::netcoredbg
