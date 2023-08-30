@@ -1,7 +1,7 @@
 # Debugger for .NET Core runtime
 
-The debugger provides [GDB/MI](https://sourceware.org/gdb/current/onlinedocs/gdb/GDB_002fMI.html)
-and [VSCode Debug Adapterprotocol](https://microsoft.github.io/debug-adapter-protocol/)
+The debugger provides [GDB/MI](https://sourceware.org/gdb/onlinedocs/gdb/GDB_002fMI.html)
+and [VSCode Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/)
 and allows to debug .NET apps under .NET Core runtime.  Also debugger allows debugging from
 command line (like as GDB).
 
