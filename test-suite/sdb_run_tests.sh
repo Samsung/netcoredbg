@@ -15,19 +15,24 @@ print_help()
     echo "  -r, --rpm         path to netcordbg rmp file"
     echo "  -x, --xml_path    path to test-results xml xunit format file,"
     echo "                    \"/home/owner/share/tmp/\" by default"
+    echo "  -c, --coverage    create code coverage report, do not create by default"
     echo "      --help        display this help and exit"
 }
+
 generate_xml()
 {
     local xml_path=$1
-    local testnames=$2
+    xml_filename="${xml_path}/test-results.xml"
 
-    echo "<?xml version=\"1.0\" encoding=\"utf-8\" ?>
-        <testsuites>
-            <testsuite name=\"Tests\" tests=\"\" failures=\"\" errors=\"\" time=\"\">
-                ${testnames}
-            </testsuite>
-        </testsuites>" > "${xml_path}/test-results.xml"
+    echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" > $xml_filename
+    echo "    <testsuites>" >> $xml_filename
+    echo "        <testsuite name=\"Tests\" tests=\"$(($test_pass+$test_fail))\" failures=\"$test_fail\">"  >> $xml_filename
+    for item in ${test_xml[*]}
+    do
+        echo "            <testcase name=\"${item}" >> $xml_filename
+    done
+    echo "        </testsuite>" >> $xml_filename
+    echo "    </testsuites>" >> $xml_filename
 }
 
 ALL_TEST_NAMES=(
@@ -112,6 +117,9 @@ GBSROOT=${GBSROOT:-$HOME/GBS-ROOT}
 TOOLS_ABS_PATH=${TOOLS_ABS_PATH:-/home/owner/share/tmp/sdk_tools}
 SCRIPTDIR=$(dirname $(readlink -f $0))
 XML_ABS_PATH=${XML_ABS_PATH:-/tmp}
+COVERAGE_DATA_DIR=${COVERAGE_DATA_DIR:-/home/abuild}
+OBJS_DIR=${OBJS_DIR:-$COVERAGE_DATA_DIR/rpmbuild/BUILD}
+CODE_COVERAGE_REPORT=false
 
 for i in "$@"
 do
@@ -152,6 +160,10 @@ case $i in
     print_help
     exit 0
     ;;
+    -c|--coverage)
+    CODE_COVERAGE_REPORT=true
+    shift
+    ;;
     *)
         TEST_NAMES="$TEST_NAMES *"
     ;;
@@ -162,6 +174,11 @@ TEST_NAMES="$@"
 
 if [[ -z $TEST_NAMES ]]; then
     TEST_NAMES="${ALL_TEST_NAMES[@]}"
+    # delete all accumulated coverage data
+    $SDB root on
+    $SDB shell rm -rf $COVERAGE_DATA_DIR
+    $SDB root off
+    rm -rf build
 fi
 
 if [[ -z $RPMFILE ]]; then
@@ -238,8 +255,9 @@ $SDB forward tcp:$PORT tcp:4711
 
 test_pass=0
 test_fail=0
+test_count=0
 test_list=""
-test_xml=""
+test_xml=()
 
 for i in $(eval echo {1..$REPEAT}); do
 # Build, push and run tests
@@ -319,18 +337,33 @@ for TEST_NAME in $TEST_NAMES; do
 
     if [ "$RC" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
-        test_list="$test_list$TEST_NAME ... failed\n"
-        test_xml+="<testcase name=\"$TEST_NAME\"><failure></failure></testcase>"
+        test_list="$test_list$TEST_NAME ... failed res=$res\n"
+        test_xml[test_count]="$TEST_NAME\"><failure></failure></testcase>"
     else
         test_pass=$(($test_pass + 1))
         test_list="$test_list$TEST_NAME ... passed\n"
-        test_xml+="<testcase name=\"$TEST_NAME\"></testcase>"
+        test_xml[test_count]="$TEST_NAME\"></testcase>"
     fi
+    test_count=$(($test_count + 1))
 done
 done # REPEAT
 
+#Collect code coverage artifacts if enabled
+if [[ $CODE_COVERAGE_REPORT == true ]]; then
+    cp -r $GBSROOT/local/BUILD-ROOTS/scratch.$ARCH.0/$OBJS_DIR/$PKGNAME-$PKGVERSION/build .
+    $SDB shell tar -czf $REMOTETESTDIR/coverage.tar.gz -C $OBJS_DIR/$PKGNAME-$PKGVERSION build
+    $SDB pull $REMOTETESTDIR/coverage.tar.gz
+    tar -xf coverage.tar.gz
+    echo "geninfo_adjust_src_path = $COVERAGE_DATA_DIR => $GBSROOT/local/BUILD-ROOTS/scratch.$ARCH.0$COVERAGE_DATA_DIR" > build/lcov.cfg
+    lcov --capture --derive-func-data --gcov-tool $PWD/llvm-gcov.sh --config-file build/lcov.cfg --directory build/src/CMakeFiles/netcoredbg.dir/ --output-file build/coverage.info
+    lcov --remove build/coverage.info '*third_party/*' '/lib/*' '/usr/*' '*errormessage*' -o build/coverage.info
+    genhtml -o build/cov_html build/coverage.info
+    tar -czf build/cov_html.tar.gz -C build cov_html
+    rm coverage.tar.gz
+fi
+
 #Generate xml test file to XML_ABS_PATH
-generate_xml "${XML_ABS_PATH}" "${test_xml}"
+generate_xml "${XML_ABS_PATH}"
 
 echo ""
 echo -e $test_list

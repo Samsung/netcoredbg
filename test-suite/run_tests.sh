@@ -5,13 +5,17 @@
 generate_xml()
 {
     local xml_path=$1
-    local testnames=$2
+    xml_filename="${xml_path}/test-results.xml"
 
-    echo -e "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-    <testsuites>
-        <testsuite name=\"Tests\" tests=\"$(($test_pass + $test_fail))\" failures=\"$test_fail\" errors=\"0\" time=\"\">
-${testnames}        </testsuite>
-    </testsuites>" > "${xml_path}/test-results.xml"
+    echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" > $xml_filename
+    echo "    <testsuites>" >> $xml_filename
+    echo "        <testsuite name=\"Tests\" tests=\"$(($test_pass+$test_fail))\" failures=\"$test_fail\">"  >> $xml_filename
+    for item in ${test_xml[*]}
+    do
+        echo "            <testcase name=\"${item}" >> $xml_filename
+    done
+    echo "        </testsuite>" >> $xml_filename
+    echo "    </testsuites>" >> $xml_filename
 }
 
 ALL_TEST_NAMES=(
@@ -128,8 +132,9 @@ dotnet build TestRunner || exit $?
 
 test_pass=0
 test_fail=0
+test_count=0
 test_list=""
-test_xml=""
+test_xml=()
 
 DOC=<<EOD
   test_timeout run a command with timelimit and with housekeeping of all child processes
@@ -242,12 +247,13 @@ for TEST_NAME in $TEST_NAMES; do
     if [ "$res" -ne "0" ]; then
         test_fail=$(($test_fail + 1))
         test_list="$test_list$TEST_NAME ... failed res=$res\n"
-        test_xml+="            <testcase name=\"$TEST_NAME\"><failure></failure></testcase>\n"
+        test_xml[test_count]="$TEST_NAME\"><failure></failure></testcase>"
     else
         test_pass=$(($test_pass + 1))
         test_list="$test_list$TEST_NAME ... passed\n"
-        test_xml+="            <testcase name=\"$TEST_NAME\"></testcase>\n"
+        test_xml[test_count]="$TEST_NAME\"></testcase>"
     fi
+    test_count=$(($test_count + 1))
 done
 
 if [[ $code_coverage_report == true ]]; then
@@ -261,8 +267,7 @@ fi
 
 if [[ $generate_report == true ]]; then
     #Generate xml test file to current directory
-    generate_xml "${XML_ABS_PATH}" "${test_xml}"
-    zip test.zip test-results.xml
+    generate_xml "${XML_ABS_PATH}"
 fi
 
 echo ""

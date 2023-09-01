@@ -8,6 +8,7 @@ Source0:   %{name}-%{version}.tar.gz
 Source1001: %{name}.manifest
 AutoReqProv: no
 
+%{!?coverage: %define coverage 0}
 # Accelerate clang
 %ifarch armv7l
 BuildRequires: clang-accel-armv7l-cross-arm
@@ -30,6 +31,11 @@ BuildRequires: unzip
 BuildRequires: corefx-managed
 BuildRequires: libdlog-devel
 BuildRequires: libunwind-devel
+
+%if 0%{coverage}
+BuildRequires: compiler-rt
+%endif
+
 Requires: coreclr
 
 %{!?build_type:%define build_type Release}
@@ -121,7 +127,8 @@ cmake .. \
     -DBUILD_MANAGED=OFF \
     -DNCDB_DOTNET_STARTUP_HOOK=$STARTUP_HOOK \
     -DINTEROP_DEBUGGING=1 \
-    -DBUILD_TESTING=%{build_testing}
+    -DBUILD_TESTING=%{build_testing} \
+    -DCLR_CMAKE_ENABLE_CODE_COVERAGE=%{coverage}
 
 make %{?jobs:-j%jobs} %{?verbose:VERBOSE=1}
 
