@@ -52,7 +52,7 @@ void *hostHandle = nullptr;
 unsigned int domainId = 0;
 coreclr_shutdown_ptr shutdownCoreClr = nullptr;
 
-// CoreCLR use fixed size integers, don't use system/arch size dependant types for delegates.
+// CoreCLR use fixed size integers, don't use system/arch size dependent types for delegates.
 // Important! In case of usage pointer to variable as delegate arg, make sure it have proper size for CoreCLR!
 // For example, native code "int" != managed code "int", since managed code "int" is 4 byte fixed size.
 typedef  int (*ReadMemoryDelegate)(uint64_t, char*, int32_t);

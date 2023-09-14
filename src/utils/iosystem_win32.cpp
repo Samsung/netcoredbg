@@ -435,7 +435,7 @@ Class::IOResult Class::async_cancel(AsyncHandle& h)
     if (!CloseHandle(h.overlapped->hEvent))
         perror("CloseHandle(event) error");
 
-    // console workaround -- canceling deffered operation
+    // console workaround -- canceling deferred operation
     if (h.buf)
     {
         h = AsyncHandle();

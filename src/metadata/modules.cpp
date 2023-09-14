@@ -157,14 +157,14 @@ static std::vector<std::string> split_on_tokens(const std::string &str, const ch
 
 static HRESULT ResolveMethodInModule(ICorDebugModule *pModule, const std::string &funcName, ResolveFuncBreakpointCallback cb)
 {
-    std::vector<std::string> splittedName = split_on_tokens(funcName, '.');
+    std::vector<std::string> splitName = split_on_tokens(funcName, '.');
 
     auto functor = [&](const std::string& fullName, mdMethodDef& mdMethod) -> bool
     {
-        std::vector<std::string> splittedFullName = split_on_tokens(fullName, '.');
+        std::vector<std::string> splitFullName = split_on_tokens(fullName, '.');
 
         // If we've found the target function
-        if (IsTargetFunction(splittedFullName, splittedName))
+        if (IsTargetFunction(splitFullName, splitName))
         {
             if (FAILED(cb(pModule, mdMethod)))
                 return false; // abort operation
@@ -194,7 +194,7 @@ std::string GetModuleFileName(ICorDebugModule *pModule)
     std::string moduleName = to_utf8(name/*, name_len*/);
 
     // On Tizen platform module path may look like /proc/self/fd/8/bin/Xamarin.Forms.Platform.dll
-    // This path is invalid in debugger process, we shoud change `self` to `<debugee process id>`
+    // This path is invalid in debugger process, we should change `self` to `<debugee process id>`
     static const std::string selfPrefix("/proc/self/");
 
     if (moduleName.compare(0, selfPrefix.size(), selfPrefix) != 0)

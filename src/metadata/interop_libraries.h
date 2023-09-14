@@ -40,7 +40,7 @@ public:
         std::unique_ptr<elf::elf> ef;
         std::unique_ptr<dwarf::dwarf> dw;
 #if DEBUGGER_UNIX_ARM
-        // All thumb code related adress blocks in form [`start address`, `end address`),
+        // All thumb code related address blocks in form [`start address`, `end address`),
         // where `start address` is `key` and `end address` is `value` of map.
         bool thumbRegionsValid = false;
         std::map<std::uintptr_t, std::uintptr_t> thumbRegions;

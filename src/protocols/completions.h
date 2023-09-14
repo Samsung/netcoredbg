@@ -211,7 +211,7 @@ private:
 
     // Function handles command arguments completions via CommandInfo::completions.
     // Arguments: ci -- descriptor of current command, str -- whole command line,
-    // cur -- cursor position withing command line, func -- callback function,
+    // cur -- cursor position within command line, func -- callback function,
     // which will be called for each completion variant.
     template <typename Func>
     static unsigned complete_ext(const CommandInfo *ci, string_view str, unsigned cur, Func& func);
@@ -237,7 +237,7 @@ CLIHelper<Params>::find_command(const CLIHelper<Params>::CommandInfo *commands_l
     const CommandInfo *sub = nullptr;
     while (true)
     {
-        // skip preceeding spaces
+        // skip preceding spaces
         str.remove_prefix(std::min(str.size(), str.find_first_not_of(Delimiters)));
 
         // find word length
@@ -358,12 +358,12 @@ bool CLIHelper<Params>::complete_subcommand(const CLIHelper<Params>::CommandInfo
 template <typename Params> template <typename Func, typename>
 unsigned CLIHelper<Params>::complete(string_view str, unsigned cur, Func&& func) const
 {
-    // command/arg prefix, before cursor position, without preceeding spaces
+    // command/arg prefix, before cursor position, without preceding spaces
     string_view prefix = str.substr(0, cur);
     prefix.remove_prefix(std::min(prefix.size(), prefix.find_first_not_of(Delimiters)));
     auto retval = unsigned(prefix.data() - str.data());
 
-    // search for prefix preceeding last word, at first search for space
+    // search for prefix preceding last word, at first search for space
     // back from cursor position
     size_t last_space = prefix.find_last_of(Delimiters);
     if (last_space == string_view::npos)

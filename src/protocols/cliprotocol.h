@@ -31,7 +31,7 @@ class CLIProtocol : public IProtocol
     std::istream& m_input;
     std::ostream& m_output;
 
-    // All function acessing m_output (calling cout << something or printf) must lock
+    // All function accessing m_output (calling cout << something or printf) must lock
     // this mutex (because in control loop flush() function used which isn't thread safe).
     std::recursive_mutex m_cout_mutex;
 
@@ -193,7 +193,7 @@ public:
             Eof,        // end of file
             Error,      // can't read file
             Interrupt,  // user request to interrupt debugee (from console)
-            Success     // line was read succesfully
+            Success     // line was read successfully
         };
 
         // This function reads next line (LineReader retain ownership

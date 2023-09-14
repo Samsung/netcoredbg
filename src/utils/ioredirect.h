@@ -24,7 +24,7 @@
 namespace netcoredbg
 {
 
-/// This class allows to redirect standart input/output file of the program
+/// This class allows to redirect standard input/output file of the program
 /// (and its child processes), and provides event driven mechanism for 
 /// processing data which was written to stdout/stderr.
 class IORedirectHelper

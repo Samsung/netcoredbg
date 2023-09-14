@@ -2259,7 +2259,7 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr, bool printCommands)
         unique_lock lock(m_mutex);
 
         // TODO move this out here
-        // deactivate debugger on process exit (deffered, can't call this in callback)
+        // deactivate debugger on process exit (deferred, can't call this in callback)
         if(!exited && m_processStatus == Exited)
         {
             lock.unlock();

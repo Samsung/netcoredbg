@@ -37,7 +37,7 @@ struct cant_compile { constexpr static bool value = false; };
 // The main purpose of this macros, is to detect compilation error at
 // compile time and just record the result, but not stop the compilation,
 // and report errors later, in runtime. There is two reasons for this:
-// 1) to allow few tests failed, but still perfoming the testing
+// 1) to allow few tests failed, but still performing the testing
 //    (not to stop on first failure, at compile time);
 // 2) to detect cases, when some expression is successfully compiled, but
 //    expected, that such expressions must fail to compilate (usually

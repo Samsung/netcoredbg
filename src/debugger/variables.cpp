@@ -33,7 +33,7 @@ static void GetNumChild(Evaluator *pEvaluator, ICorDebugValue *pValue, int &numC
 
     int numStatic = 0;
     int numInstance = 0;
-    // No thread and FrameLevel{0} here, since we need only count childs.
+    // No thread and FrameLevel{0} here, since we need only count children.
     if (FAILED(pEvaluator->WalkMembers(pValue, nullptr, FrameLevel{0}, false, [&numStatic, &numInstance](
         ICorDebugType *,
         bool is_static,

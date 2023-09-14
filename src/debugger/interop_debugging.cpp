@@ -414,7 +414,7 @@ void InteropDebuggerHelpers::Detach(pid_t tgid)
     StopAndDetach(tgid);
 }
 
-// Note, InteropDebugging::Shutdown() must be called only in case process stoped or finished.
+// Note, InteropDebugging::Shutdown() must be called only in case process stopped or finished.
 void InteropDebugger::Shutdown()
 {
     std::unique_lock<std::mutex> lock(m_waitpidMutex);

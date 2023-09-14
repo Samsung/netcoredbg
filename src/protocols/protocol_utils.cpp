@@ -345,7 +345,7 @@ BreakType GetBreakpointType(const std::vector<std::string> &args)
 
     std::size_t i = args.at(ncnt).rfind(':');
 
-    // TODO: Spaces are avaliable at least for Func breakpoints!
+    // TODO: Spaces are available at least for Func breakpoints!
 
     if (i == std::string::npos)
         return BreakType::FuncBreak;

@@ -33,7 +33,7 @@ namespace EscapedStringInternal
     //
     // CAUTION:
     // When TempReference is passed to ordinary function (not a class constructor),
-    // additionaly cautions is needed: in this case construction order of function
+    // additionally cautions is needed: in this case construction order of function
     // arguments isn't predefined, as destruction order (which is reverse). In such
     // situation TempReference might be used only and only in case, when no other 
     // arguments is strictly not a temporary variables. To ensure this, you should

@@ -171,7 +171,7 @@ protected:
     /// (user code should use `pubsync` function for such purpose).
     virtual int sync() override;
 
-    // Following functions exposed to enable direct acess of the buffer.
+    // Following functions exposed to enable direct access of the buffer.
 public:
     /// Function returns the pointer to the beginning of free space in the buffer.
     char* pptr() const { return std::streambuf::pptr(); }
