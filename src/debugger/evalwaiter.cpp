@@ -147,7 +147,7 @@ HRESULT EvalWaiter::WaitEvalResult(ICorDebugThread *pThread,
 
 #ifdef INTEROP_DEBUGGING
     assert(!!m_sharedInteropDebugger);
-    if (m_sharedInteropDebugger->IsNativeThreadStopped((pid_t)evalThreadId))
+    if (m_sharedInteropDebugger->IsManagedThreadWasStoppedInNativeCode((pid_t)evalThreadId))
         return COR_E_THREADSTATE;
 #endif // INTEROP_DEBUGGING
 

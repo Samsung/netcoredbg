@@ -191,7 +191,7 @@ public:
     HRESULT UnwindNativeFrames(pid_t pid, bool firstFrame, std::uintptr_t endAddr, CONTEXT *pStartContext,
                                std::function<HRESULT(NativeFrame &nativeFrame)> nativeFramesCallback);
 
-    bool IsNativeThreadStopped(pid_t pid);
+    bool IsManagedThreadWasStoppedInNativeCode(pid_t pid);
     void WalkAllThreads(std::function<void(pid_t, bool)> cb);
 };
 

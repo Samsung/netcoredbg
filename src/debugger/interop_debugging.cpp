@@ -1668,18 +1668,21 @@ HRESULT InteropDebugger::GetFrameForAddr(std::uintptr_t addr, StackFrame &frame)
     return S_OK;
 }
 
-bool InteropDebugger::IsNativeThreadStopped(pid_t pid)
+bool InteropDebugger::IsManagedThreadWasStoppedInNativeCode(pid_t pid)
 {
     std::lock_guard<std::mutex> lock(m_waitpidMutex);
 
     if (m_TIDs.empty())
-        return S_OK;
+        return false;
 
     auto tid = m_TIDs.find(pid);
     if (tid == m_TIDs.end())
-        return E_INVALIDARG;
+    {
+        LOGE("Requested native thread not found in process, TID: %i\n", pid);
+        // Note, in this case "not found" mean "not stopped" (same logic as we have for `m_TIDs.empty()`).
+        return false;
+    }
 
-    assert(tid->second.stat != thread_stat_e::stopped);
     return tid->second.stat != thread_stat_e::running;
 }
 
