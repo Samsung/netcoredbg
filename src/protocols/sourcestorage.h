@@ -25,7 +25,7 @@ class SourceStorage
     int totalLen;
 
 private:
-    HRESULT loadFile(std::string& file);
+    HRESULT loadFile(std::string& file, const char **errMessage);
 
 public:
     SourceStorage(IDebugger* d) 
@@ -35,7 +35,7 @@ public:
     }
     ~SourceStorage();
 
-    char* getLine(std::string& file, int linenum);
+    char* getLine(std::string& file, int linenum, const char **errMessage);
 
 }; // class sourcestorage
 } // namespace

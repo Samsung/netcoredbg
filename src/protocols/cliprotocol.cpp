@@ -1628,7 +1628,12 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
     {
         for (int i = 0; i < lines; i++, line++)
         {
-            char* toPrint = m_sources->getLine(m_sourcePath, line);
+            const char* errMessage = nullptr;
+            char* toPrint = m_sources->getLine(m_sourcePath, line, &errMessage);
+            if (errMessage)
+            {
+                printf("Source code file: %s\n%s\n", m_sourcePath.c_str(), errMessage);
+            }
             if (toPrint)
             {
                 if(line == m_stoppedAt)

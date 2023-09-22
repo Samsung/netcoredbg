@@ -1517,6 +1517,12 @@ namespace NetCoreDbg
                     if (docPath == fileName)
                     {
                         MemoryStream ms = GetEmbeddedSource(mdReader, handle, out docSize);
+
+                        // PDB loaded, but don't contain source file lines.
+                        // This is not an error, but also no data to return.
+                        if (docSize == 0)
+                            return RetCode.OK;
+
                         data = Marshal.AllocCoTaskMem(docSize);
                         Marshal.Copy(ms.ToArray(), 0, data, docSize);
                         length = docSize;

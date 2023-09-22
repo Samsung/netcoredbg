@@ -16,7 +16,7 @@ namespace netcoredbg
         }
     }
 
-    char* SourceStorage::getLine(std::string& file, int linenum)
+    char* SourceStorage::getLine(std::string& file, int linenum, const char **errMessage)
     {
         if(files.empty() || files.front()->filePath != file)
         {
@@ -36,7 +36,7 @@ namespace netcoredbg
             if (notFound)
             {
                 // file is not in the list -- try to load it from pdb
-                if (loadFile(file) != S_OK)
+                if (loadFile(file, errMessage) != S_OK)
                     return NULL;
             }
         }
@@ -47,13 +47,23 @@ namespace netcoredbg
             return NULL;
     }
 
-    HRESULT SourceStorage::loadFile(std::string& file)
+    HRESULT SourceStorage::loadFile(std::string& file, const char **errMessage)
     {
         char* fileBuff = NULL;
         int fileLen = 0;
         HRESULT Status = S_OK;
 
-        IfFailRet(m_dbg->GetSourceFile(file, &fileBuff, &fileLen));
+        if (FAILED(Status = m_dbg->GetSourceFile(file, &fileBuff, &fileLen)))
+        {
+            *errMessage = "Debug information (PDB file) cannot be opened. Check that PDB file exists and is correct.";
+            return Status;
+        }
+        if (fileLen == 0)
+        {
+            *errMessage = "Debug information (PDB file) doesn't contain source code. Make sure csproj file has <EmbedAllSources>true</EmbedAllSources> line.";
+            return E_FAIL;
+        }
+
         SourceFile *sf = new SourceFile();
         sf->filePath = file;
         sf->size = fileLen;
