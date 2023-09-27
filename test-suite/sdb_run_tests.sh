@@ -116,7 +116,7 @@ REPEAT=${REPEAT:-1}
 GBSROOT=${GBSROOT:-$HOME/GBS-ROOT}
 TOOLS_ABS_PATH=${TOOLS_ABS_PATH:-/home/owner/share/tmp/sdk_tools}
 SCRIPTDIR=$(dirname $(readlink -f $0))
-XML_ABS_PATH=${XML_ABS_PATH:-/tmp}
+XML_ABS_PATH=${XML_ABS_PATH:-build}
 COVERAGE_DATA_DIR=${COVERAGE_DATA_DIR:-/home/abuild}
 OBJS_DIR=${OBJS_DIR:-$COVERAGE_DATA_DIR/rpmbuild/BUILD}
 CODE_COVERAGE_REPORT=false
@@ -181,28 +181,27 @@ if [[ -z $TEST_NAMES ]]; then
     rm -rf build
 fi
 
-if [[ -z $RPMFILE ]]; then
-    # Detect target arch
-    if   $SDB shell lscpu | grep -q armv7l;  then ARCH=armv7l;
-    elif $SDB shell lscpu | grep -q aarch64; then
-        # https://superuser.com/questions/791506/how-to-determine-if-a-linux-binary-file-is-32-bit-or-64-bit
-        # The 5th byte of a Linux binary executable file is 1 for a 32 bit executable, 2 for a 64 bit executable.
-        if [ $($SDB shell od -An -t x1 -j 4 -N 1 /bin/od | grep "02") ]; then ARCH=aarch64;
-        else ARCH=armv7l; fi
-    elif $SDB shell lscpu | grep -q i686;    then ARCH=i686;
-    elif $SDB shell lscpu | grep -q x86_64;  then ARCH=x86_64;
-    else echo "Unknown target architecture"; exit 1; fi
+set -x
+# Detect target arch
+if   $SDB shell lscpu | grep -q armv7l;  then ARCH=armv7l;
+elif $SDB shell lscpu | grep -q aarch64; then
+    # https://superuser.com/questions/791506/how-to-determine-if-a-linux-binary-file-is-32-bit-or-64-bit
+    # The 5th byte of a Linux binary executable file is 1 for a 32 bit executable, 2 for a 64 bit executable.
+    if [ $($SDB shell od -An -t x1 -j 4 -N 1 /bin/od | grep "02") ]; then ARCH=aarch64;
+    else ARCH=armv7l; fi
+elif $SDB shell lscpu | grep -q i686;    then ARCH=i686;
+elif $SDB shell lscpu | grep -q x86_64;  then ARCH=x86_64;
+else echo "Unknown target architecture"; exit 1;
+fi
 
+if [[ -z $RPMFILE ]]; then
     # The following command assumes that GBS build was performed on a clean system (or in Docker),
     # which means only one such file exists.
     RPMFILE=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-[0-9]\*$ARCH.rpm -print -quit)
-    RPMFILE_TEST=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-test-[0-9]\*$ARCH.rpm -print -quit)
-    RPMFILE_TESTDEBUG=$(find $GBSROOT/local/repos/ -type f -name netcoredbg-test-debuginfo-[0-9]\*$ARCH.rpm -print -quit)
-else
-    # Find tests related RPMs near debugger RPM.
-    RPMFILE_TEST=$(find $(dirname "${RPMFILE}") -type f -name netcoredbg-test-[0-9]\*$ARCH.rpm -print -quit)
-    RPMFILE_TESTDEBUG=$(find $(dirname "${RPMFILE}") -type f -name netcoredbg-test-debuginfo-[0-9]\*$ARCH.rpm -print -quit)
 fi
+# Find tests related RPMs near debugger RPM.
+RPMFILE_TEST=$(find $(dirname "${RPMFILE}") -type f -name netcoredbg-test-[0-9]\*$ARCH.rpm -print -quit)
+RPMFILE_TESTDEBUG=$(find $(dirname "${RPMFILE}") -type f -name netcoredbg-test-debuginfo-[0-9]\*$ARCH.rpm -print -quit)
 
 REMOTETESTDIR=$TOOLS_ABS_PATH/netcoredbg-tests
 
@@ -356,14 +355,16 @@ if [[ $CODE_COVERAGE_REPORT == true ]]; then
     tar -xf coverage.tar.gz
     echo "geninfo_adjust_src_path = $COVERAGE_DATA_DIR => $GBSROOT/local/BUILD-ROOTS/scratch.$ARCH.0$COVERAGE_DATA_DIR" > build/lcov.cfg
     lcov --capture --derive-func-data --gcov-tool $PWD/llvm-gcov.sh --config-file build/lcov.cfg --directory build/src/CMakeFiles/netcoredbg.dir/ --output-file build/coverage.info
-    lcov --remove build/coverage.info '*third_party/*' '/lib/*' '/usr/*' '*errormessage*' -o build/coverage.info
-    genhtml -o build/cov_html build/coverage.info
-    tar -czf build/cov_html.tar.gz -C build cov_html
+    lcov --remove build/coverage.info '*third_party/*' '/lib/*' '/lib64/*' '/usr/*' '*errormessage*' -o build/coverage.info
+    genhtml -s -o cov_html build/coverage.info
+    zip -r cov_html.zip cov_html
     rm coverage.tar.gz
 fi
 
 #Generate xml test file to XML_ABS_PATH
 generate_xml "${XML_ABS_PATH}"
+
+zip -D test-results.zip $XML_ABS_PATH/test-results.xml
 
 echo ""
 echo -e $test_list
