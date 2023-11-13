@@ -207,6 +207,10 @@ if (INTEROP_DEBUGGING)
         message(FATAL_ERROR "Interop debugging feature not implemented for this OS.")
     endif()
 
+    if (CLR_CMAKE_PLATFORM_UNIX_RISCV64)
+        message(FATAL_ERROR "Interop debugging feature not implemented for RISCV64.")
+    endif()
+
     add_definitions(-DINTEROP_DEBUGGING)
 
     if (CLR_CMAKE_PLATFORM_UNIX_AMD64)
