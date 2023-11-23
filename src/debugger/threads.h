@@ -32,7 +32,7 @@ class Threads
 
 public:
 
-    void Add(const ThreadId &threadId);
+    void Add(const ThreadId &threadId, bool processAttached);
     void Remove(const ThreadId &threadId);
     HRESULT GetThreadsWithState(ICorDebugProcess *pProcess, std::vector<Thread> &threads);
 #ifdef INTEROP_DEBUGGING

@@ -20,13 +20,13 @@ ThreadId getThreadId(ICorDebugThread *pThread)
     return SUCCEEDED(res) && threadId != 0 ? ThreadId{threadId} : ThreadId{};
 }
 
-void Threads::Add(const ThreadId &threadId)
+void Threads::Add(const ThreadId &threadId, bool processAttached)
 {
     std::unique_lock<Utility::RWLock::Writer> write_lock(m_userThreadsRWLock.writer);
 
     m_userThreads.emplace(threadId);
-    // First added user thread is Main thread for sure.
-    if (!MainThread)
+    // First added user thread during start is Main thread for sure.
+    if (!processAttached && !MainThread)
         MainThread = threadId;
 }
 
@@ -43,9 +43,6 @@ void Threads::Remove(const ThreadId &threadId)
 
 std::string Threads::GetThreadName(ICorDebugProcess *pProcess, const ThreadId &userThread)
 {
-    if (MainThread == userThread)
-        return "Main Thread";
-
     std::string threadName = "<No name>";
 
     if (m_sharedEvaluator)
@@ -81,6 +78,9 @@ std::string Threads::GetThreadName(ICorDebugProcess *pProcess, const ThreadId &u
             });
         }
     }
+
+    if (MainThread && MainThread == userThread && threadName == "<No name>")
+        return "Main Thread";
 
     return threadName;
 }

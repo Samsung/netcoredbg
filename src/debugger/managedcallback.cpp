@@ -259,7 +259,7 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CreateThread(ICorDebugAppDomain *pApp
         LOGW("Thread was created by user code during evaluation with implicit user code execution.");
 
     ThreadId threadId(getThreadId(pThread));
-    m_debugger.m_sharedThreads->Add(threadId);
+    m_debugger.m_sharedThreads->Add(threadId, m_debugger.m_startMethod == StartAttach);
 
     m_debugger.pProtocol->EmitThreadEvent(ThreadEvent(ManagedThreadStarted, threadId, m_debugger.m_interopDebugging));
     return m_sharedCallbacksQueue->ContinueAppDomain(pAppDomain);
