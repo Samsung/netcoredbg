@@ -28,6 +28,9 @@ obj/
 /.dotnet/
 /.coreclr/
 
+# cross-build related files
+/.tools/
+
 # GDB-related
 .gdb_history
 

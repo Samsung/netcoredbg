@@ -16,14 +16,15 @@ BuildRequires: clang-accel-armv7l-cross-arm
 %ifarch aarch64
 BuildRequires: clang-accel-aarch64-cross-aarch64
 %endif
+%ifarch riscv64
+BuildRequires: clang-accel-riscv64-cross-riscv64
+%endif
 
 BuildRequires: cmake
 BuildRequires: clang >= 3.8
 BuildRequires: clang-devel >= 3.8
 BuildRequires: llvm >= 3.8
 BuildRequires: llvm-devel >= 3.8
-BuildRequires: lldb >= 3.8
-BuildRequires: lldb-devel >= 3.8
 BuildRequires: libstdc++-devel
 BuildRequires: coreclr-devel
 BuildRequires: dotnet-build-tools
@@ -66,6 +67,10 @@ Requires: coreclr
 
 %ifarch aarch64
 %define ARCH ARM64
+%endif
+
+%ifarch riscv64
+%define ARCH RISCV64
 %endif
 
 %description
@@ -125,8 +130,10 @@ cmake .. \
     -DCLR_CMAKE_LINUX_ID=tizen \
     -DDBGSHIM_DIR=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF \
+%ifnarch riscv64
     -DNCDB_DOTNET_STARTUP_HOOK=$STARTUP_HOOK \
     -DINTEROP_DEBUGGING=1 \
+%endif
     -DBUILD_TESTING=%{build_testing} \
     -DCLR_CMAKE_ENABLE_CODE_COVERAGE=%{coverage}
 
@@ -164,7 +171,7 @@ unzip ../packaging/microsoft.codeanalysis.csharp.scripting.$CSVER.nupkg lib/nets
 unzip $SYSCODEPAGES lib/netstandard1.3/System.Text.Encoding.CodePages.dll
 
 find lib/netstandard1.3/ -name '*.dll' -exec chmod 644 {} \;
-%ifnarch %{ix86}
+%ifnarch %{ix86} riscv64
 find lib/netstandard1.3/ -name '*.dll' -exec %{_datarootdir}/%{netcoreappalias}/crossgen -ReadyToRun /Platform_Assemblies_Paths %{_datarootdir}/%{netcoreappalias}:$PWD/lib/netstandard1.3 {} \;
 %endif
 
