@@ -18,6 +18,7 @@
 #include <memory>
 #include <cassert>
 #include <climits>
+#include <cstdint>
 
 namespace netcoredbg
 {
