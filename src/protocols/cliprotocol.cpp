@@ -981,7 +981,7 @@ void CLIProtocol::EmitOutputEvent(OutputCategory category, string_view output, s
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Backtrace>(const std::vector<std::string> &args_orig, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Backtrace>(const std::string &, const std::vector<std::string> &args_orig, std::string &output)
 {
     lock_guard lock(m_mutex);
 
@@ -1057,7 +1057,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Backtrace>(const std::vector<std::str
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string> &unmutable_args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::string &, const std::vector<std::string> &unmutable_args, std::string &output)
 {
     HRESULT Status = E_FAIL;
     Breakpoint breakpoint;
@@ -1099,7 +1099,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::vector<std::string>
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Catch>(const std::vector<std::string> &args, std::string &outStr)
+HRESULT CLIProtocol::doCommand<CommandTag::Catch>(const std::string &, const std::vector<std::string> &args, std::string &outStr)
 {
     if (args.size() < 2)
     {
@@ -1163,7 +1163,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Catch>(const std::vector<std::string>
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Continue>(const std::vector<std::string> &, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Continue>(const std::string &, const std::vector<std::string> &, std::string &output)
 {
     {
       lock_guard lock(m_mutex);
@@ -1197,7 +1197,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Continue>(const std::vector<std::stri
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Delete>(const std::vector<std::string> &args, std::string &)
+HRESULT CLIProtocol::doCommand<CommandTag::Delete>(const std::string &, const std::vector<std::string> &args, std::string &)
 {
     std::unordered_set<uint32_t> ids;
     for (const std::string &idStr : args)
@@ -1214,7 +1214,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Delete>(const std::vector<std::string
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Detach>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Detach>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     {
       lock_guard lock(m_mutex);
@@ -1231,7 +1231,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Detach>(const std::vector<std::string
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Disable>(const std::vector<std::string> &args, std::string &)
+HRESULT CLIProtocol::doCommand<CommandTag::Disable>(const std::string &, const std::vector<std::string> &args, std::string &)
 {
     int count = 0, sub = 0;
 
@@ -1267,7 +1267,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Disable>(const std::vector<std::strin
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Enable>(const std::vector<std::string> &args, std::string &)
+HRESULT CLIProtocol::doCommand<CommandTag::Enable>(const std::string &, const std::vector<std::string> &args, std::string &)
 {
     int count = 0, sub = 0;
 
@@ -1303,7 +1303,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Enable>(const std::vector<std::string
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::File>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::File>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     if (args.empty())
     {
@@ -1317,13 +1317,13 @@ HRESULT CLIProtocol::doCommand<CommandTag::File>(const std::vector<std::string> 
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Finish>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Finish>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     return StepCommand(args, output, IDebugger::StepType::STEP_OUT);
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Frame>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Frame>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     lock_guard lock(m_mutex);
 
@@ -1374,14 +1374,14 @@ HRESULT CLIProtocol::doCommand<CommandTag::Frame>(const std::vector<std::string>
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Help>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Help>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     printHelp(CommandsList::commands_list, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::InfoThreads>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::InfoThreads>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     {
       lock_guard lock(m_mutex);
@@ -1420,7 +1420,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoThreads>(const std::vector<std::s
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::InfoBreakpoints>(const std::vector<std::string>& args, std::string& output)
+HRESULT CLIProtocol::doCommand<CommandTag::InfoBreakpoints>(const std::string &, const std::vector<std::string>& args, std::string& output)
 {
     const static string_view header[] {"#", "Enb", "Rslvd", "Hits", "Source/Function"};
     const static string_view data[] { "99999", "Y", "N", "999999999", "" };
@@ -1508,7 +1508,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoBreakpoints>(const std::vector<st
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::string> &, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::string &, const std::vector<std::string> &, std::string &output)
 {
     {
       lock_guard lock(m_mutex);
@@ -1533,7 +1533,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Interrupt>(const std::vector<std::str
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     HRESULT status = S_OK;
     int line = m_sourceLine;
@@ -1651,7 +1651,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::List>(const std::vector<std::string> 
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Next>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Next>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     return StepCommand(args, output, IDebugger::StepType::STEP_OVER);
 }
@@ -1684,7 +1684,7 @@ HRESULT CLIProtocol::PrintVariable(const Variable &v, std::ostringstream &ss, bo
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::string &input, const std::vector<std::string> &args, std::string &output)
 {
     ThreadId threadId;
     FrameId frameId;
@@ -1696,7 +1696,12 @@ HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string>
 
         if (!args.empty())
         {
-            m_lastPrintArg = args[0];
+            // In order to get expression from input string that contain command and spaces (for example, `   p   "test"`):
+            // 1) find first 'p' (could be "p" or "print" only here);
+            // 2) find first ' ' (after command we have at least one space for sure);
+            // 3) find first not ' ' (skip all spaces before expression);
+            // Note, we don't check errors here, since at this point `input` string have "p "/"print " substrings for sure.
+            m_lastPrintArg = input.substr(input.find_first_not_of(' ', input.find_first_of(' ', input.find_first_of('p'))));
         }
         else if (m_lastPrintArg.empty())
         {
@@ -1718,7 +1723,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Print>(const std::vector<std::string>
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::vector<std::string> &, std::string &)
+HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::string &, const std::vector<std::string> &, std::string &)
 {
     // no mutex locking needed here
     m_exit = true;
@@ -1728,7 +1733,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Quit>(const std::vector<std::string> 
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Run>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Run>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     unique_lock lock(m_mutex);
 
@@ -1771,7 +1776,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Run>(const std::vector<std::string> &
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::vector<std::string>& args, std::string& output)
+HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::string &, const std::vector<std::string>& args, std::string& output)
 {
     unique_lock lock(m_mutex);
 
@@ -1809,14 +1814,14 @@ HRESULT CLIProtocol::doCommand<CommandTag::Attach>(const std::vector<std::string
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Step>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Step>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     return StepCommand(args, output, IDebugger::StepType::STEP_IN);
 }
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     // check arguments
     if (args.empty())
@@ -1847,7 +1852,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::vector<std::string
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Wait>(const std::vector<std::string> &, std::string &)
+HRESULT CLIProtocol::doCommand<CommandTag::Wait>(const std::string &, const std::vector<std::string> &, std::string &)
 {
     lock_guard lock(m_mutex);
 
@@ -1860,21 +1865,21 @@ HRESULT CLIProtocol::doCommand<CommandTag::Wait>(const std::vector<std::string> 
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Set>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Set>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     printf("Argument(s) required: see 'help set' for details.\n");
     return S_FALSE;
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Info>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Info>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     printHelp(CommandsList::info_commands, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::InfoHelp>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::InfoHelp>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     printHelp(CommandsList::info_commands, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
@@ -1882,14 +1887,14 @@ HRESULT CLIProtocol::doCommand<CommandTag::InfoHelp>(const std::vector<std::stri
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Save>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::Save>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     printf("Argument(s) required: see 'help save' for details.\n");
     return S_FALSE;
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::SaveBreakpoints>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::SaveBreakpoints>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     if (args.empty())
     {
@@ -1957,7 +1962,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::SaveBreakpoints>(const std::vector<st
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::SaveHelp>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::SaveHelp>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     printHelp(CommandsList::save_commands, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
@@ -1965,7 +1970,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::SaveHelp>(const std::vector<std::stri
 
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::SetArgs>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::SetArgs>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     lock_guard lock(m_mutex);
     m_execArgs = args;
@@ -1973,7 +1978,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::SetArgs>(const std::vector<std::strin
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::SetJustMyCode>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::SetJustMyCode>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     if (args.empty() || (args[0] != "0" && args[0] != "1"))
         return E_INVALIDARG;
@@ -1983,7 +1988,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::SetJustMyCode>(const std::vector<std:
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::SetStepFiltering>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::SetStepFiltering>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     if (args.empty() || (args[0] != "0" && args[0] != "1"))
         return E_INVALIDARG;
@@ -1993,28 +1998,28 @@ HRESULT CLIProtocol::doCommand<CommandTag::SetStepFiltering>(const std::vector<s
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::SetHelp>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::SetHelp>(const std::string &, const std::vector<std::string> &args, std::string &output)
 {
     printHelp(CommandsList::set_commands, args.empty() ? string_view{} : string_view{args[0]});
     return S_OK;
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::HelpInfo>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::HelpInfo>(const std::string &input, const std::vector<std::string> &args, std::string &output)
 {
-    return doCommand<CommandTag::InfoHelp>(args, output);
+    return doCommand<CommandTag::InfoHelp>(input, args, output);
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::HelpSet>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::HelpSet>(const std::string &input, const std::vector<std::string> &args, std::string &output)
 {
-    return doCommand<CommandTag::SetHelp>(args, output);
+    return doCommand<CommandTag::SetHelp>(input, args, output);
 }
 
 template <>
-HRESULT CLIProtocol::doCommand<CommandTag::HelpSave>(const std::vector<std::string> &args, std::string &output)
+HRESULT CLIProtocol::doCommand<CommandTag::HelpSave>(const std::string &input, const std::vector<std::string> &args, std::string &output)
 {
-    return doCommand<CommandTag::SaveHelp>(args, output);
+    return doCommand<CommandTag::SaveHelp>(input, args, output);
 }
 
 
@@ -2082,7 +2087,9 @@ void CLIProtocol::completion_handler<CompletionTag::Print>(string_view prefix, c
     const static unsigned QueryLimit = 30;
 
     auto thread = m_sharedDebugger->GetLastStoppedThreadId();
-    auto frame = FrameLevel{0};
+    m_mutex.lock();
+    auto frame = FrameLevel{m_frameIdx};
+    m_mutex.unlock();
 
     unsigned count;
     auto counter = [&](const char *) { return ++count, true; };
@@ -2350,7 +2357,7 @@ HRESULT CLIProtocol::execCommands(LineReader&& lr, bool printCommands)
             while (tokenizer.Next(result))
                args.push_back(result);
 
-            hr = (this->*func)(args, output);
+            hr = (this->*func)(str, args, output);
             have_result = true;
         };
 

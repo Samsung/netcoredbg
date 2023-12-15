@@ -140,11 +140,11 @@ private:
     using CLIParams = Expose<CommandsList>;
 
     // Type of the member function pointer, which handles every user command.
-    typedef HRESULT (CLIProtocol::*HandlerFunc)(const std::vector<std::string> &args, std::string &output);
+    typedef HRESULT (CLIProtocol::*HandlerFunc)(const std::string &input, const std::vector<std::string> &args, std::string &output);
 
     // This function template should be explicitly specialized by command tag
     // to handle each particular user command.
-    template <CommandTag> HRESULT doCommand(const std::vector<std::string> &, std::string &);
+    template <CommandTag> HRESULT doCommand(const std::string &, const std::vector<std::string> &, std::string &);
 
     // This type maps particular command tag to particular specialization
     // of `doCommand<Tag>` function. This is required to dispatch commands handlers.
