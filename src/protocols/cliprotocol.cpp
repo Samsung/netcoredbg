@@ -219,13 +219,19 @@ constexpr static const CLIParams::CommandInfo help_commands[] =
 constexpr static const CLIParams::CommandInfo commands_list[] =
 {
     {CommandTag::Backtrace, {}, {}, {{"backtrace", "bt"}},
-        {{}, "Print backtrace info."}},
+        {"[all][--thread TID]", "Print backtrace info."}},
 
     {CommandTag::Break, {}, {{{1, CompletionTag::Break}}}, {{"break", "b"}},
         {"<loc>", "Set breakpoint at specified location, where the\n"
                   "location might be filename.cs:line or function name.\n"
                   "Optional, module name also could be provided as part\n"
-                  "of location: module.dll!filename.cs:line"}},
+                  "of location: module.dll!filename.cs:line\n"
+                  "GDB-like command syntax:\n"
+                  "break file_name:line_num\n"
+                  "break func_name\n"
+                  "break func_name(args)\n"
+                  "break assembly.dll!func_name\n"
+                  "break ... if condition"}},
 
     {CommandTag::Catch, {}, {}, {{"catch"}},
         {{}, "Set exception breakpoints."}},
@@ -1056,45 +1062,297 @@ HRESULT CLIProtocol::doCommand<CommandTag::Backtrace>(const std::string &, const
     }
 
     // command "bt [--thread TID]"
-    ThreadId threadId{ ProtocolUtils::GetIntArg(args, "--thread", int(tid)) };
+    ThreadId threadId{ ProtocolUtils::GetIntArg(args_orig, "--thread", int(tid)) };
     return PrintFrames(threadId, output, FrameLevel{lowFrame}, FrameLevel{highFrame});
 }
 
-template <>
-HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::string &, const std::vector<std::string> &unmutable_args, std::string &output)
+static HRESULT BreakCommandSourceWithLine(std::string &args_string, std::string::size_type nameEnd, std::string::size_type colon, std::string &filename, unsigned int &linenum, std::string &output)
 {
-    HRESULT Status = E_FAIL;
-    Breakpoint breakpoint;
-    std::vector<std::string> args = unmutable_args;
+    filename = args_string.substr(0, nameEnd);
+    args_string.erase(0, colon + 1);
 
-    ProtocolUtils::StripArgs(args);
+    // remove spaces between ':' and number
+    std::string::size_type tmp = args_string.find_first_not_of(' ');
+    if (tmp == std::string::npos)
+    {
+        output = "Unknown breakpoint location format";
+        return E_FAIL;
+    }
+    args_string.erase(0, tmp);
 
-    BreakType bt = ProtocolUtils::GetBreakpointType(args);
+    // get line number
+    bool ok = false;
+    tmp = args_string.find_first_of(' ');
+    if (tmp == std::string::npos)
+    {
+        linenum = ProtocolUtils::ParseInt(args_string, ok);
+        args_string = "";
+    }
+    else
+    {
+        linenum = ProtocolUtils::ParseInt(args_string.substr(0, tmp), ok);
+        args_string.erase(0, tmp);
+    }
 
-    if (bt == BreakType::Error)
+    if (!ok)
+    {
+        output = "Unknown breakpoint location format";
+        return E_FAIL;
+    }
+
+    return S_OK;
+}
+
+static HRESULT BreakCommandSourceWithLine(std::string &args_string, std::string &filename, unsigned int &linenum, std::string &output)
+{
+    // find end of source
+    char quote_symbol = args_string[0];
+    args_string.erase(0, 1); // erase first quote symbol
+    std::string::size_type nameEnd = args_string.find_first_of(quote_symbol);
+    if (nameEnd == std::string::npos)
     {
         output = "Wrong breakpoint specified";
         return E_FAIL;
     }
 
-    if (bt == BreakType::LineBreak)
+    // find ':' char
+    std::string::size_type colon = args_string.find_first_not_of(' ', nameEnd + 1); // skip second quote symbol
+    if (colon == std::string::npos || args_string[colon] != ':')
     {
-        struct LineBreak lb;
-
-        if (ProtocolUtils::ParseBreakpoint(args, lb)
-            && SUCCEEDED(m_breakpointsHandle.SetLineBreakpoint(m_sharedDebugger, lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
-            Status = S_OK;
-    }
-    else if (bt == BreakType::FuncBreak)
-    {
-        struct FuncBreak fb;
-
-        if (ProtocolUtils::ParseBreakpoint(args, fb)
-            && SUCCEEDED(m_breakpointsHandle.SetFuncBreakpoint(m_sharedDebugger, fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
-            Status = S_OK;
+        output = "Unknown breakpoint location format";
+        return E_FAIL;
     }
 
-    if (Status == S_OK)
+    return BreakCommandSourceWithLine(args_string, nameEnd, colon, filename, linenum, output);
+}
+
+static HRESULT BreakCommandFuncWithParams(std::string &args_string, std::string::size_type firstBrace, std::string &funcname, std::string &params, std::string &output)
+{
+    funcname = args_string.substr(0, firstBrace);
+
+    std::string::size_type secondBrace = args_string.find_first_of(')', firstBrace);
+    if (secondBrace == std::string::npos)
+    {
+        output = "Wrong breakpoint specified";
+        return E_FAIL;
+    }
+
+    params = args_string.substr(firstBrace + 1, secondBrace - firstBrace - 1);
+    args_string.erase(0, secondBrace + 1);
+    return S_OK;
+}
+
+static HRESULT BreakCommandParseInput(const std::string &input, std::string &filename, unsigned int &linenum, std::string &funcname, std::string &params, std::string &condition, std::string &output)
+{
+    HRESULT Status;
+
+    // 1) find first 'b' (could be "b" or "break" only here);
+    // 2) find first ' ' (after command we have at least one space for sure);
+    // 3) find first not ' ' (skip all spaces before expression);
+    // Note, we don't check errors here, since at this point `input` string have "b "/"break " substrings for sure.
+    std::string args_string = input.substr(input.find_first_not_of(' ', input.find_first_of(' ', input.find_first_of('b'))));
+
+    if (args_string[0] == '\'' || args_string[0] == '"')
+    {
+        IfFailRet(BreakCommandSourceWithLine(args_string, filename, linenum, output));
+    }
+    else
+    {
+        std::string::size_type firstSpace = args_string.find_first_of(' ');
+        std::string::size_type firstColon = args_string.find_first_of(':');
+        std::string::size_type firstBrace = args_string.find_first_of('(');
+
+        if (firstSpace == std::string::npos &&
+            firstColon == std::string::npos &&
+            firstBrace == std::string::npos)
+        {
+            funcname = std::move(args_string);
+            return S_OK;
+        }
+        else if (firstSpace != std::string::npos &&
+                 firstColon != std::string::npos &&
+                 firstBrace != std::string::npos)
+        {
+            if (firstSpace < firstColon && firstSpace < firstBrace)
+            {
+                if (args_string.find_first_not_of(' ', firstSpace) == firstColon)
+                {
+                    IfFailRet(BreakCommandSourceWithLine(args_string, firstSpace, firstColon, filename, linenum, output));
+                }
+                else if (args_string.find_first_not_of(' ', firstSpace) == firstBrace)
+                {
+                    IfFailRet(BreakCommandFuncWithParams(args_string, firstBrace, funcname, params, output));
+                }
+                else
+                {
+                    funcname = args_string.substr(0, firstSpace);
+                    args_string.erase(0, firstSpace);
+                }
+            }
+            else if (firstColon < firstSpace && firstColon < firstBrace)
+            {
+                IfFailRet(BreakCommandSourceWithLine(args_string, firstColon, firstColon, filename, linenum, output));
+            }
+            else
+            {
+                assert(firstBrace < firstSpace && firstBrace < firstColon);
+                IfFailRet(BreakCommandFuncWithParams(args_string, firstBrace, funcname, params, output));
+            }
+        }
+        else if (firstSpace == std::string::npos &&
+                 firstColon != std::string::npos &&
+                 firstBrace != std::string::npos)
+        {
+            output = "Unknown breakpoint location format";
+            return E_FAIL;
+        }
+        else if (firstSpace != std::string::npos &&
+                 firstColon == std::string::npos &&
+                 firstBrace != std::string::npos)
+        {
+            if (firstSpace < firstBrace)
+            {
+                if (args_string.find_first_not_of(' ', firstSpace) == firstBrace)
+                {
+                    IfFailRet(BreakCommandFuncWithParams(args_string, firstBrace, funcname, params, output));
+                }
+                else
+                {
+                    funcname = args_string.substr(0, firstSpace);
+                    args_string.erase(0, firstSpace);
+                }
+            }
+            else
+            {
+                IfFailRet(BreakCommandFuncWithParams(args_string, firstBrace, funcname, params, output));
+            }
+        }
+        else if (firstSpace != std::string::npos &&
+                 firstColon != std::string::npos &&
+                 firstBrace == std::string::npos)
+        {
+            if (firstSpace < firstColon)
+            {
+                if (args_string.find_first_not_of(' ', firstSpace) == firstColon)
+                {
+                    IfFailRet(BreakCommandSourceWithLine(args_string, firstSpace, firstColon, filename, linenum, output));
+                }
+                else
+                {
+                    funcname = args_string.substr(0, firstSpace);
+                    args_string.erase(0, firstSpace);
+                }
+            }
+            else
+            {
+                IfFailRet(BreakCommandSourceWithLine(args_string, firstColon, firstColon, filename, linenum, output));
+            }
+        }
+        else if (firstSpace == std::string::npos &&
+                 firstColon == std::string::npos &&
+                 firstBrace != std::string::npos)
+        {
+            IfFailRet(BreakCommandFuncWithParams(args_string, firstBrace, funcname, params, output));
+        }
+        else if (firstSpace != std::string::npos &&
+                 firstColon == std::string::npos &&
+                 firstBrace == std::string::npos)
+        {
+            funcname = args_string.substr(0, firstSpace);
+            args_string.erase(0, firstSpace);
+        }
+        else if (firstSpace == std::string::npos &&
+                 firstColon != std::string::npos &&
+                 firstBrace == std::string::npos)
+        {
+            IfFailRet(BreakCommandSourceWithLine(args_string, firstColon, firstColon, filename, linenum, output));
+        }
+    }
+
+    // get condition
+    std::string::size_type tmp = std::string::npos;
+    if (!args_string.empty())
+        tmp = args_string.find_first_not_of(' ');
+    if (tmp != std::string::npos)
+    {
+        // remove spaces
+        args_string.erase(0, tmp);
+
+        // remove "if " part and all spaces before expression
+        if (args_string.size() < 3 || args_string.rfind("if ", 0) != 0)
+        {
+            output = "Unknown breakpoint condition format";
+            return E_FAIL;
+        }
+
+        tmp = args_string.find_first_not_of(' ', 3);
+        if (tmp == std::string::npos)
+        {
+            output = "Unknown breakpoint condition format";
+            return E_FAIL;
+        }
+        args_string.erase(0, tmp);
+
+        if (!args_string.empty())
+            condition = std::move(args_string);
+        else
+        {
+            output = "Unknown breakpoint condition format";
+            return E_FAIL;
+        }
+    }
+
+    return S_OK;
+}
+
+template <>
+HRESULT CLIProtocol::doCommand<CommandTag::Break>(const std::string &input, const std::vector<std::string> &args, std::string &output)
+{
+    // GDB-like command syntax
+    // https://ftp.gnu.org/old-gnu/Manuals/gdb/html_node/gdb_28.html
+    // break file_name:line_num
+    // break func_name
+    // break func_name(args)
+    // break assembly.dll!func_name
+    // break ... if condition
+
+    if (args.empty())
+    {
+        output = "Wrong breakpoint specified";
+        return E_FAIL;
+    }
+
+    HRESULT Status;
+    std::string filename;
+    unsigned int linenum = 0;
+    std::string funcname;
+    std::string params;
+    std::string condition;
+    IfFailRet(BreakCommandParseInput(input, filename, linenum, funcname, params, condition, output));
+
+    std::string modulename;
+    Breakpoint breakpoint;
+    if (!filename.empty())
+    {
+        Status = m_breakpointsHandle.SetLineBreakpoint(m_sharedDebugger, modulename, filename, linenum, condition, breakpoint);
+    }
+    else
+    {
+        assert(!funcname.empty());
+        // check module name filter inside function name (for example, assembly.dll!Main)
+        std::string::size_type module_delimiter = funcname.find_first_of('!');
+        if (module_delimiter != std::string::npos)
+        {
+            modulename = funcname.substr(0, module_delimiter);
+            funcname.erase(0, module_delimiter + 1);
+        }
+        // remove spaces in params
+        params.erase(std::remove(params.begin(), params.end(), ' '), params.end());
+
+        Status = m_breakpointsHandle.SetFuncBreakpoint(m_sharedDebugger, modulename, funcname, params, condition, breakpoint);
+    }
+
+    if (SUCCEEDED(Status))
         PrintBreakpoint(breakpoint, output);
     else
         output = "Unknown breakpoint location format";

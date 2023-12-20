@@ -11,40 +11,47 @@ Note: to debug Release build of dlls with pdbs Just-My-Code should be disabled, 
 
 ## Command reference
 ```
-command    alias  args   
---------------------------
-backtrace  bt     [all]    Print backtrace info.
-break      b      <loc>    Set breakpoint at specified location, where the
-                           location might be source_file_name:line or function name.
-                           Optional, module name also could be provided as part
-                           of location: module.dll!source_file_name:line
-catch                      Set exception breakpoints.
-continue   c               Continue debugging after stop/pause.
-delete     clear  <num>    Delete breakpoint with specified number.
-detach                     Detach from the debugged process.
-disable                    Disable breakpoint N.
-enable                     Enable breakpoint N.
-file              <file>   load executable file to debug.
-finish                     Continue execution till end of the current function.
-interrupt                  Interrupt program execution, stop all threads.
-list       l               List source code lines, 5 by default.
-next       n               Step program, through function calls.
-print      p      <expr>   Print variable value or evaluate an expression.
-quit       q               Quit the debugger.
-run        r               Start debugged program.
-attach                     Attach to the debugged process.
-detach                     Detach from the debugged process.
-step       s               Step program until a different source line.
-source            <file>   Read commands from a file.
-wait                       Wait until debugee stops (in async. mode)
-set               args...  Set miscellaneous options (see 'help set')
+command    alias  args               
+--------------------------------------
+backtrace  bt     [all][--thread TID]  Print backtrace info.
+break      b      <loc>                Set breakpoint at specified location, where the
+                                       location might be filename.cs:line or function name.
+                                       Optional, module name also could be provided as part
+                                       of location: module.dll!filename.cs:line
+                                       GDB-like command syntax:
+                                       break file_name:line_num
+                                       break func_name
+                                       break func_name(args)
+                                       break assembly.dll!func_name
+                                       break ... if condition
+catch                                  Set exception breakpoints.
+continue   c                           Continue debugging after stop/pause.
+delete     clear  <num>                Delete breakpoint with specified number.
+detach                                 Detach from the debugged process.
+disable                                Disable breakpoint N.
+enable                                 Enable breakpoint N.
+file              <file>               load executable file to debug.
+finish                                 Continue execution till end of the current function.
+frame      f                           Select & display stack frame.
+interrupt                              Interrupt program execution, stop all threads.
+list       l                           List source code lines, 5 by default.
+next       n                           Step program, through function calls.
+print      p      <expr>               Print variable value or evaluate an expression.
+quit       q                           Quit the debugger.
+run        r                           Start debugged program.
+attach                                 Attach to the debugged process.
+detach                                 Detach from the debugged process.
+step       s                           Step program until a different source line.
+source            <file>               Read commands from a file.
+wait                                   Wait until debugee stops (in async. mode)
 
-command    alias  args   
----------------------------
-info              <topic>  Show misc. things about the program being debugged.
-save              args...  Save misc. things to the files.
-help              [topic]  Show help on specified topic or print
-                           this help message (if no argument specified).
+command    alias  args               
+---------------------------------------
+set               args...              Set miscellaneous options (see 'help set')
+info              <topic>              Show misc. things about the program being debugged.
+save              args...              Save misc. things to the files.
+help              [topic]              Show help on specified topic or print
+                                       this help message (if no argument specified).
 ```
 
 ### Preparing debug information

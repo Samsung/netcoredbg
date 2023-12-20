@@ -339,7 +339,7 @@ BreakType GetBreakpointType(const std::vector<std::string> &args)
     {
         ncnt += 2;
 
-        if (args.size() < ncnt)
+        if (args.size() <= ncnt)
             return BreakType::Error;
     }
 
