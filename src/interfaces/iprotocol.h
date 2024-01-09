@@ -40,7 +40,7 @@ public:
     virtual void EmitInteropDebuggingErrorEvent(const int error_n) {}
     virtual void EmitThreadEvent(const ThreadEvent &event) = 0;
     virtual void EmitModuleEvent(const ModuleEvent &event) = 0;
-    virtual void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") = 0;
+    virtual void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "", DWORD threadId = 0) = 0;
     virtual void EmitBreakpointEvent(const BreakpointEvent &event) = 0;
     virtual void Cleanup() = 0;
     virtual void SetLaunchCommand(const std::string &fileExec, const std::vector<std::string> &args) = 0;

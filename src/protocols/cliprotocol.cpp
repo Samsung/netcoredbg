@@ -968,7 +968,7 @@ void CLIProtocol::EmitModuleEvent(const ModuleEvent &event)
 
 // This function implements Debugger interface and called from ManagedDebugger, 
 // (from IORedirect class) as callback function, in separate thread.
-void CLIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
+void CLIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source, DWORD threadId)
 {
     LogFuncEntry();
 

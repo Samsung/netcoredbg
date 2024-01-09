@@ -74,7 +74,7 @@ public:
     void EmitContinuedEvent(ThreadId threadId) override;
     void EmitThreadEvent(const ThreadEvent &event) override;
     void EmitModuleEvent(const ModuleEvent &event) override;
-    void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "") override;
+    void EmitOutputEvent(OutputCategory category, string_view output, string_view source = "", DWORD threadId = 0) override;
     void EmitBreakpointEvent(const BreakpointEvent &event) override;
     void Cleanup() override;
     void CommandLoop() override;

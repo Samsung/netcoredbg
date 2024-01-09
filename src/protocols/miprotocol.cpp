@@ -509,7 +509,7 @@ void MIProtocol::EmitModuleEvent(const ModuleEvent &event)
     }
 }
 
-void MIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source)
+void MIProtocol::EmitOutputEvent(OutputCategory category, string_view output, string_view source, DWORD threadId)
 {
     LogFuncEntry();
 

@@ -363,7 +363,9 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::LogMessage(ICorDebugAppDomain *pAppDo
         src = "Debugger.Log";
     }
 
-    m_debugger.pProtocol->EmitOutputEvent(OutputConsole, to_utf8(pMessage), src);
+    DWORD threadId = 0;
+    pThread->GetID(&threadId);
+    m_debugger.pProtocol->EmitOutputEvent(OutputStdOut, to_utf8(pMessage), src, threadId);
     return m_sharedCallbacksQueue->ContinueAppDomain(pAppDomain);
 }
 
