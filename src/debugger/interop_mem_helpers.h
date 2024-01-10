@@ -5,6 +5,7 @@
 
 #ifdef INTEROP_DEBUGGING
 
+#include <cstdint>
 #include <sys/types.h>
 #include <string>
 #include <unordered_map>

@@ -8,6 +8,7 @@
 #include <elf.h> // NT_PRSTATUS
 #include <assert.h>
 #include <string.h>
+#include <cstdlib>
 #include "utils/logger.h"
 
 

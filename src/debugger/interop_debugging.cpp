@@ -22,6 +22,7 @@
 #include <dirent.h>
 #include <unistd.h> // usleep
 
+#include <array>
 #include <vector>
 #include <algorithm>
 #include <sstream>

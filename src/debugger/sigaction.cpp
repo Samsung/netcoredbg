@@ -6,7 +6,7 @@
 
 #ifdef FEATURE_PAL
 #include <dlfcn.h>
-
+#include <stdlib.h>
 #include "utils/logger.h"
 
 namespace netcoredbg

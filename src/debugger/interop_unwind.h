@@ -6,6 +6,7 @@
 #ifdef INTEROP_DEBUGGING
 
 #include <sys/types.h>
+#include <cstdint>
 #include <functional>
 #include <libunwind.h>
 

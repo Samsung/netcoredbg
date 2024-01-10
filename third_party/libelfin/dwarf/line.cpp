@@ -132,7 +132,7 @@ line_table::line_table(const std::shared_ptr<section> &sec, section_offset offse
                 if (incdir.back() != '/')
                         incdir += '/';
                 if (incdir[0] == '/')
-                        m->include_directories.push_back(move(incdir));
+                        m->include_directories.push_back(std::move(incdir));
                 else
                         m->include_directories.push_back(comp_dir + incdir);
         }
@@ -230,7 +230,7 @@ line_table::impl::read_file_entry(cursor *cur, bool in_header)
         last_file_name_end = cur->get_section_offset();
 
         if (file_name[0] == '/')
-                file_names.emplace_back(move(file_name), mtime, length);
+                file_names.emplace_back(std::move(file_name), mtime, length);
         else if (dir_index < include_directories.size())
                 file_names.emplace_back(
                         include_directories[dir_index] + file_name,
