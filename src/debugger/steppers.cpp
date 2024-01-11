@@ -15,6 +15,9 @@ namespace netcoredbg
 // From ECMA-335
 static const std::unordered_set<WSTRING> g_operatorMethodNames
 {
+// Cast operators
+    W("op_Implicit"),
+    W("op_Explicit"),
 // Unary operators
     W("op_Decrement"),                    // --
     W("op_Increment"),                    // ++

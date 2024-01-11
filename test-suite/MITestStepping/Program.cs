@@ -217,6 +217,24 @@ namespace NetcoreDbgTest.Script
 
 namespace MITestStepping
 {
+    public readonly struct Digit
+    {
+        private readonly byte digit;
+
+        public Digit(byte digit)
+        {
+            this.digit = digit;
+        }
+        public static implicit operator byte(Digit d)
+        {
+            return d.digit;
+        }
+        public static explicit operator Digit(byte b)
+        {
+            return new Digit(b);
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -319,7 +337,7 @@ namespace MITestStepping
             res = TestImplHolder.getImpl2().Calc1();                        Label.Breakpoint("test_step_through2");
             Console.WriteLine("Test step through end.");                    Label.Breakpoint("test_step_through_end");
 
-            Label.Checkpoint("test_step_through", "finish", (Object context) => {
+            Label.Checkpoint("test_step_through", "test_step_cast", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_through1");
                 Context.StepIn(@"__FILE__:__LINE__");
@@ -336,6 +354,26 @@ namespace MITestStepping
                 Context.StepOut(@"__FILE__:__LINE__");
 
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_through_end");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            // Test steps for casts.
+
+            var d = new Digit(100);                                         Label.Breakpoint("test_step_cast1");
+            byte byte_var = d;                                              Label.Breakpoint("test_step_cast2");
+            Digit digit_var = (Digit)byte_var;                              Label.Breakpoint("test_step_cast3");
+            Console.WriteLine("Test steps for casts end.");                 Label.Breakpoint("test_step_cast_end");
+
+            Label.Checkpoint("test_step_cast", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_cast1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_cast2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_cast3");
+                Context.StepIn(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_cast_end");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
 
