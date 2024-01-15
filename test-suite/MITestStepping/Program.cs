@@ -235,6 +235,63 @@ namespace MITestStepping
         }
     }
 
+    public class TestBreakpointInProperty
+    {
+        private int _value = 7;
+
+        private int AddOne(int data)
+        {
+            return data + 1;                                    Label.Breakpoint("test_break_property_getter_1");
+        Label.Breakpoint("test_break_property_getter_2");}
+
+        public int Data
+        {
+            get
+            {
+                int tmp = AddOne(_value);                       Label.Breakpoint("test_break_property_getter_3");
+                return tmp;                                     Label.Breakpoint("test_break_property_getter_4");
+            Label.Breakpoint("test_break_property_getter_5");}
+            set
+            {
+                _value = value;                             Label.Breakpoint("test_break_property_setter_1");
+            Label.Breakpoint("test_break_property_setter_2");}
+        }
+    }
+
+    class TestStepInArguments
+    {
+        public int P1 => 1;
+        public int P2 => 2;
+        
+        public int M1()
+        {                                                                   Label.Breakpoint("test_step_arguments_M1_1");
+            return 1;                                                       Label.Breakpoint("test_step_arguments_M1_2");
+        Label.Breakpoint("test_step_arguments_M1_3");}
+        public int M2()
+        {                                                                   Label.Breakpoint("test_step_arguments_M2_1");
+            return 2;                                                       Label.Breakpoint("test_step_arguments_M2_2");
+        Label.Breakpoint("test_step_arguments_M2_3");}
+
+        public void M3(int a, int b)
+        {                                                                   Label.Breakpoint("test_step_arguments_M3_1");
+            ;                                                               Label.Breakpoint("test_step_arguments_M3_2");
+        Label.Breakpoint("test_step_arguments_M3_3");}
+        public void M4(int a, int b, int c = 0, int d = 0)
+        {                                                                   Label.Breakpoint("test_step_arguments_M4_1");
+            ;                                                               Label.Breakpoint("test_step_arguments_M4_2");
+        Label.Breakpoint("test_step_arguments_M4_3");}
+        public int M5(int k)
+        {                                                                   Label.Breakpoint("test_step_arguments_M5_1");
+            return k + 1;                                                   Label.Breakpoint("test_step_arguments_M5_2");
+        Label.Breakpoint("test_step_arguments_M5_3");}
+
+        [DebuggerStepThrough]
+        public int M6()
+        {
+            return 1;
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -245,6 +302,8 @@ namespace MITestStepping
                 Context.WasEntryPointHit(@"__FILE__:__LINE__");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "inside_func1_1"); // check, that step-in and breakpoint at same line will generate only one event - step
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "inside_func2_1"); // check, that step-over and breakpoint inside method will generate breakpoint and reset step
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "test_break_property_getter_1");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "test_break_property_setter_1");
                 Context.StepOver(@"__FILE__:__LINE__");
             });
 
@@ -274,6 +333,8 @@ namespace MITestStepping
 
             Label.Checkpoint("step_over", "step_over_breakpoint", (Object context) => {
                 Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func1");
+                Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "step_func2");
                 Context.StepOver(@"__FILE__:__LINE__");
             });
@@ -282,17 +343,29 @@ namespace MITestStepping
 
             // Test debugger attribute on methods with JMC enabled.
 
-            test_attr_func1();                                              Label.Breakpoint("test_attr_func1");
-            test_attr_func2();                                              Label.Breakpoint("test_attr_func2");
-            test_attr_func3();                                              Label.Breakpoint("test_attr_func3");
+            test_attr_func1_1();                                            Label.Breakpoint("test_attr_func1_1");
+            test_attr_func1_2();                                            Label.Breakpoint("test_attr_func1_2");
+            test_attr_func2_1();                                            Label.Breakpoint("test_attr_func2_1");
+            test_attr_func2_2();                                            Label.Breakpoint("test_attr_func2_2");
+            test_attr_func3_1();                                            Label.Breakpoint("test_attr_func3_1");
+            test_attr_func3_2();                                            Label.Breakpoint("test_attr_func3_2");
 
             Label.Checkpoint("test_attr1", "test_attr2", (Object context) => {
                 Context Context = (Context)context;
-                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func1");
+                Context.WasStep(@"__FILE__:__LINE__", "step_func2");
+                Context.StepOver(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func1_1");
                 Context.StepIn(@"__FILE__:__LINE__");
-                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func2");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func1_2");
                 Context.StepIn(@"__FILE__:__LINE__");
-                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func3");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func2_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func2_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func3_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func3_2");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
 
@@ -343,6 +416,8 @@ namespace MITestStepping
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_through_Calc1");
                 Context.StepOut(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through1");
+                Context.StepOver(@"__FILE__:__LINE__");
 
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_through2");
                 Context.StepIn(@"__FILE__:__LINE__");
@@ -352,6 +427,8 @@ namespace MITestStepping
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_through_Calc1");
                 Context.StepOut(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_through2");
+                Context.StepOver(@"__FILE__:__LINE__");
 
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_through_end");
                 Context.StepOver(@"__FILE__:__LINE__");
@@ -364,7 +441,7 @@ namespace MITestStepping
             Digit digit_var = (Digit)byte_var;                              Label.Breakpoint("test_step_cast3");
             Console.WriteLine("Test steps for casts end.");                 Label.Breakpoint("test_step_cast_end");
 
-            Label.Checkpoint("test_step_cast", "finish", (Object context) => {
+            Label.Checkpoint("test_step_cast", "test_step_breakpoint", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_cast1");
                 Context.StepOver(@"__FILE__:__LINE__");
@@ -374,6 +451,152 @@ namespace MITestStepping
                 Context.StepIn(@"__FILE__:__LINE__");
 
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_cast_end");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            // Test steps with breakpoint in filtered methods.
+
+            var test_obj = new TestBreakpointInProperty();                  Label.Breakpoint("test_break_property_1");
+            test_obj.Data = 5;                                              Label.Breakpoint("test_break_property_2");
+            int i = test_obj.Data;                                          Label.Breakpoint("test_break_property_3");
+            Console.WriteLine("Test steps with breakpoint end.");           Label.Breakpoint("test_step_breakpoint_end");
+
+            Label.Checkpoint("test_step_breakpoint", "test_step_arguments", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_1");
+                Context.StepOver(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "test_break_property_setter_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_setter_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_2");
+                Context.StepOver(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "test_break_property_getter_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_getter_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_getter_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_getter_4");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_getter_5");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_break_property_3");
+                Context.StepOver(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_breakpoint_end");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            // Test step-in into method arguments.
+
+            TestStepInArguments C = new TestStepInArguments();              Label.Breakpoint("test_step_arguments_1");
+            C.M3(C.P1, C.P2);                                               Label.Breakpoint("test_step_arguments_2");
+            C.M4(C.M1(), C.M2(), C.M1());                                   Label.Breakpoint("test_step_arguments_3");
+            C.M3(C.M5(C.P1), C.M5(C.P1));                                   Label.Breakpoint("test_step_arguments_4");
+            C.M6();                                                         Label.Breakpoint("test_step_arguments_5");
+            C.M3(C.M6(), C.M6());                                           Label.Breakpoint("test_step_arguments_6");
+            Console.WriteLine("Test steps for arguments end.");             Label.Breakpoint("test_step_arguments_end");
+
+            Label.Checkpoint("test_step_arguments", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_1");
+                Context.StepOver(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M1_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M1_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M1_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M2_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M2_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M2_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M1_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M1_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M1_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M4_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M4_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M4_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_4");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M5_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M5_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M5_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_4");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M5_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M5_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M5_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_4");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_4");
+                Context.StepIn(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_5");
+                Context.StepIn(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_6");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_M3_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_6");
+                Context.StepIn(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_end");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
 
@@ -413,18 +636,33 @@ namespace MITestStepping
         }
 
         [DebuggerStepThroughAttribute()]
-        static void test_attr_func1()
+        static void test_attr_func1_1()
         {
+        }
+        [DebuggerStepThroughAttribute()]
+        static int test_attr_func1_2()
+        {
+            return 5;
         }
 
         [DebuggerNonUserCodeAttribute()]
-        static void test_attr_func2()
+        static void test_attr_func2_1()
         {
+        }
+        [DebuggerNonUserCodeAttribute()]
+        static int test_attr_func2_2()
+        {
+            return 5;
         }
 
         [DebuggerHiddenAttribute()]
-        static void test_attr_func3()
+        static void test_attr_func3_1()
         {
+        }
+        [DebuggerHiddenAttribute()]
+        static int test_attr_func3_2()
+        {
+            return 5;
         }
 
         public static int test_property1

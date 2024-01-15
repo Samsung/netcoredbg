@@ -271,6 +271,9 @@ namespace MITestAsyncStepping
 
             Label.Checkpoint("step_out_func1_check", "step_in_func4", (Object context) => {
                 Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func1");
+                Context.StepOver(@"__FILE__:__LINE__");
+
                 Context.WasStep(@"__FILE__:__LINE__", "step_func4");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -280,6 +283,9 @@ namespace MITestAsyncStepping
 
             Label.Checkpoint("step_out_func4_check", "step_in_func2", (Object context) => {
                 Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func4");
+                Context.StepOver(@"__FILE__:__LINE__");
+
                 Context.WasStep(@"__FILE__:__LINE__", "step_func2");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -289,6 +295,9 @@ namespace MITestAsyncStepping
 
             Label.Checkpoint("step_out_func2_check", "step_in_func3_cycle1", (Object context) => {
                 Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func2");
+                Context.StepOver(@"__FILE__:__LINE__");
+
                 Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle1");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -299,6 +308,9 @@ namespace MITestAsyncStepping
 
             Label.Checkpoint("step_out_func3_check_cycle1", "step_in_func3_cycle2", (Object context) => {
                 Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle1");
+                Context.StepOver(@"__FILE__:__LINE__");
+
                 Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle2");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -311,6 +323,9 @@ namespace MITestAsyncStepping
 
             Label.Checkpoint("step_whenall", "test_attr1", (Object context) => {
                 Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "step_func3_cycle2");
+                Context.StepOver(@"__FILE__:__LINE__");
+
                 Context.WasStep(@"__FILE__:__LINE__", "step_whenall_1");
                 Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "step_whenall_2");

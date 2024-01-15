@@ -121,6 +121,11 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
 
     auto methodShouldBeFltered = [&]() -> bool
     {
+        // In case stepping by method code lines or return to caller, don't check filtering (don't need to):
+        // 1) filtering check for this method was already "passed" or 2) execution was stopped at breakpoint inside method or its callee.
+        if (reason != CorDebugStepReason::STEP_CALL)
+            return false;
+
         ULONG nameLen;
         WCHAR szFunctionName[mdNameLen] = {0};
         if (SUCCEEDED(iMD->GetMethodProps(methodDef, nullptr, szFunctionName, _countof(szFunctionName),
@@ -170,8 +175,8 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
     bool noUserCodeFound = false; // Must be initialized with `false`, since GetFrameILAndNextUserCodeILOffset call could be failed before delegate call.
     if (SUCCEEDED(Status = m_sharedModules->GetFrameILAndNextUserCodeILOffset(iCorFrame, ipOffset, ilNextUserCodeOffset, &noUserCodeFound)))
     {
-        // Current IL offset less than IL offset of next close user code line.
-        if (ipOffset < ilNextUserCodeOffset)
+        // Current IL offset less than IL offset of next close user code line (for example, step-in into async method)
+        if (reason == CorDebugStepReason::STEP_CALL && ipOffset < ilNextUserCodeOffset)
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OVER));
             return S_OK;
@@ -202,8 +207,7 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
             // In case step-in will return from filtered method and no user code was called, step-in again.
-            if (!m_stepFiltering && methodShouldBeFltered())
-                 m_filteredPrevStep = true;
+            m_filteredPrevStep = true;
 
             return S_OK;
         }

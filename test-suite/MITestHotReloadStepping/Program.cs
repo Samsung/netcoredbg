@@ -474,7 +474,7 @@ namespace MITestHotReloadStepping
                 Context Context = (Context)context;
 
                 Context.StepOut(@"__FILE__:__LINE__");
-                Context.WasStep(@"__FILE__:__LINE__", 16);
+                Context.WasStep(@"__FILE__:__LINE__", 15);
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

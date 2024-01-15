@@ -265,6 +265,8 @@ namespace VSCodeTestNoJMCAsyncStepping
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_func2_in");
                 Context.StepOut(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_func2");
+                Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_func3");
                 Context.StepIn(@"__FILE__:__LINE__");
             });
@@ -283,6 +285,8 @@ namespace VSCodeTestNoJMCAsyncStepping
                 Context.StepIn(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_class2_func_in");
                 Context.StepOut(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_attr_class2_func");
+                Context.StepOver(@"__FILE__:__LINE__");
                 Context.WasStep(@"__FILE__:__LINE__", "test_attr_end");
 
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "test_async_void1");
