@@ -318,6 +318,31 @@ namespace VSCodeTestNoJMCNoFilterStepping
         }
     }
 
+    class TestStepWithCompilerGenCode : IDisposable
+    {
+        public void Dispose()
+        {                                                                   Label.Breakpoint("test_step_comp_Dispose_1");
+            ;                                                               Label.Breakpoint("test_step_comp_Dispose_2");
+        Label.Breakpoint("test_step_comp_Dispose_3");}
+
+        public static void M()
+        {                                                                   Label.Breakpoint("test_step_comp_M_1");
+            Label.Breakpoint("test_step_comp_M_2");using (var c = new TestStepWithCompilerGenCode())
+            {                                                               Label.Breakpoint("test_step_comp_M_3");
+                ;                                                           Label.Breakpoint("test_step_comp_M_4");
+            Label.Breakpoint("test_step_comp_M_5");}
+            using var c2 = new TestStepWithCompilerGenCode();               Label.Breakpoint("test_step_comp_M_6");
+            try
+            {                                                               Label.Breakpoint("test_step_comp_M_7");
+                ;                                                           Label.Breakpoint("test_step_comp_M_8");
+            Label.Breakpoint("test_step_comp_M_9");}
+            finally
+            {                                                               Label.Breakpoint("test_step_comp_M_10");
+                ;                                                           Label.Breakpoint("test_step_comp_M_11");
+            Label.Breakpoint("test_step_comp_M_12");}
+        Label.Breakpoint("test_step_comp_M_13");}
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -551,7 +576,7 @@ namespace VSCodeTestNoJMCNoFilterStepping
             C.M3(C.M6(), C.M6());                                           Label.Breakpoint("test_step_arguments_6");
             Console.WriteLine("Test steps for arguments end.");             Label.Breakpoint("test_step_arguments_end");
 
-            Label.Checkpoint("test_step_arguments", "finish", (Object context) => {
+            Label.Checkpoint("test_step_arguments", "test_step_comp", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_1");
                 Context.StepOver(@"__FILE__:__LINE__");
@@ -676,6 +701,96 @@ namespace VSCodeTestNoJMCNoFilterStepping
                 Context.StepIn(@"__FILE__:__LINE__");
 
                 Context.WasStep(@"__FILE__:__LINE__", "test_step_arguments_end");
+                Context.StepOver(@"__FILE__:__LINE__");
+            });
+
+            // Test step-in/step-over for compiler generated code inside user code.
+
+            TestStepWithCompilerGenCode.M();                                Label.Breakpoint("test_step_comp_1");
+            TestStepWithCompilerGenCode.M();                                Label.Breakpoint("test_step_comp_2");
+            Console.WriteLine("Test steps end.");                           Label.Breakpoint("test_step_comp_end");
+
+            Label.Checkpoint("test_step_comp", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_1");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_2");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_3");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_4");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_5");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_6");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_7");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_8");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_9");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_10");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_11");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_12");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_13");
+                Context.StepOver(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_1");
+                Context.StepOver(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_4");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_5");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_Dispose_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_Dispose_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_Dispose_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_5");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_6");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_7");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_8");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_9");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_10");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_11");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_12");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_13");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_Dispose_1");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_Dispose_2");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_Dispose_3");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_M_13");
+                Context.StepIn(@"__FILE__:__LINE__");
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_2");
+                Context.StepOver(@"__FILE__:__LINE__");
+
+                Context.WasStep(@"__FILE__:__LINE__", "test_step_comp_end");
                 Context.StepOut(@"__FILE__:__LINE__");
             });
 

@@ -268,6 +268,9 @@ HRESULT AsyncStepper::SetupStep(ICorDebugThread *pThread, IDebugger::StepType st
     ULONG32 ipOffset;
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&ipOffset, &mappingResult));
+    if (mappingResult == MAPPING_UNMAPPED_ADDRESS ||
+        mappingResult == MAPPING_NO_INFO)
+        return E_FAIL;
 
     // If we are at end of async method with await blocks and doing step-in or step-over,
     // switch to step-out, so whole NotifyDebuggerOfWaitCompletion magic happens.
@@ -446,7 +449,9 @@ HRESULT AsyncStepper::ManagedCallbackBreakpoint(ICorDebugThread *pThread)
     ULONG32 ipOffset;
     CorDebugMappingResult mappingResult;
     if (FAILED(pFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)) ||
-        FAILED(pILFrame->GetIP(&ipOffset, &mappingResult)))
+        FAILED(pILFrame->GetIP(&ipOffset, &mappingResult)) ||
+        mappingResult == MAPPING_UNMAPPED_ADDRESS ||
+        mappingResult == MAPPING_NO_INFO)
     {
         LOGE("Failed receive current IP offset for async step");
         return S_FALSE;

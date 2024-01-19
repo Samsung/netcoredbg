@@ -71,10 +71,19 @@ HRESULT Steppers::SetupStep(ICorDebugThread *pThread, IDebugger::StepType stepTy
 {
     HRESULT Status;
     m_filteredPrevStep = false;
+    m_initialStepType = stepType;
 
     ToRelease<ICorDebugProcess> pProcess;
     IfFailRet(pThread->GetProcess(&pProcess));
     DisableAllSteppers(pProcess);
+
+    ToRelease<ICorDebugFrame> pFrame;
+    IfFailRet(pThread->GetActiveFrame(&pFrame));
+    if (pFrame == nullptr)
+        return E_FAIL;
+
+    ULONG32 ilOffset;
+    IfFailRet(m_sharedModules->GetFrameILAndSequencePoint(pFrame, ilOffset, m_StepStartSP));
 
     IfFailRet(m_asyncStepper->SetupStep(pThread, stepType));
     if (Status == S_OK) // S_FALSE = setup simple stepper
@@ -175,8 +184,34 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
     bool noUserCodeFound = false; // Must be initialized with `false`, since GetFrameILAndNextUserCodeILOffset call could be failed before delegate call.
     if (SUCCEEDED(Status = m_sharedModules->GetFrameILAndNextUserCodeILOffset(iCorFrame, ipOffset, ilNextUserCodeOffset, &noUserCodeFound)))
     {
+        if (reason == CorDebugStepReason::STEP_NORMAL)
+        {
+            if (ipOffset != ilNextUserCodeOffset)
+            {
+                // Step completed on some compiler generated (not user) code inside user code (for example, `finally` block related code)
+                IfFailRet(m_simpleStepper->SetupStep(pThread, m_initialStepType));
+                return S_OK;
+            }
+            else
+            {
+                // Step completed on same location in source as it was started, this happens when some user code block have several
+                // SequencePoints for same line (for example, `using` related code could mix user/compiler generated code for same line).
+                ULONG32 ilOffset;
+                Modules::SequencePoint sp;
+                IfFailRet(m_sharedModules->GetFrameILAndSequencePoint(iCorFrame, ilOffset, sp));
+                if (sp.startLine == m_StepStartSP.startLine &&
+                    sp.startColumn == m_StepStartSP.startColumn &&
+                    sp.endLine == m_StepStartSP.endLine &&
+                    sp.endColumn == m_StepStartSP.endColumn &&
+                    sp.document == m_StepStartSP.document)
+                {
+                    IfFailRet(m_simpleStepper->SetupStep(pThread, m_initialStepType));
+                    return S_OK;
+                }
+            }
+        }
         // Current IL offset less than IL offset of next close user code line (for example, step-in into async method)
-        if (reason == CorDebugStepReason::STEP_CALL && ipOffset < ilNextUserCodeOffset)
+        else if (reason == CorDebugStepReason::STEP_CALL && ipOffset < ilNextUserCodeOffset)
         {
             IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_OVER));
             return S_OK;
@@ -190,7 +225,7 @@ HRESULT Steppers::ManagedCallbackStepComplete(ICorDebugThread *pThread, CorDebug
     }
     else if (noUserCodeFound)
     {
-        IfFailRet(m_simpleStepper->SetupStep(pThread, IDebugger::StepType::STEP_IN));
+        IfFailRet(m_simpleStepper->SetupStep(pThread, m_initialStepType));
         // In case step-in will return from method and no user code was called in user module, step-in again.
         m_filteredPrevStep = true;
         return S_OK;

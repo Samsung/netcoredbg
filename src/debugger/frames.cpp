@@ -332,6 +332,16 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
                 return Status;
 #endif // INTEROP_DEBUGGING
 
+            ToRelease<ICorDebugILFrame> pILFrame;
+            IfFailRet(iCorFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+
+            ULONG32 nOffset;
+            CorDebugMappingResult mappingResult;
+            IfFailRet(pILFrame->GetIP(&nOffset, &mappingResult));
+            if (mappingResult == MAPPING_UNMAPPED_ADDRESS ||
+                mappingResult == MAPPING_NO_INFO)
+                continue;
+
             IfFailRet(cb(FrameCLRManaged, GetIP(&currentCtx), iCorFrame, nullptr));
             continue;
         }

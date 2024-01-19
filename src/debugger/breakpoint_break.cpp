@@ -41,6 +41,9 @@ HRESULT BreakBreakpoint::GetFullyQualifiedIlOffset(ICorDebugThread *pThread, Ful
     ULONG32 ilOffset;
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+    if (mappingResult == MAPPING_UNMAPPED_ADDRESS ||
+        mappingResult == MAPPING_NO_INFO)
+        return E_FAIL;
 
     fullyQualifiedIlOffset.modAddress = modAddress;
     fullyQualifiedIlOffset.methodToken = methodToken;

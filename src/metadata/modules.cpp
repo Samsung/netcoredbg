@@ -329,6 +329,9 @@ HRESULT Modules::GetFrameILAndSequencePoint(
 
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+    if (mappingResult == MAPPING_UNMAPPED_ADDRESS ||
+        mappingResult == MAPPING_NO_INFO)
+        return E_FAIL;
 
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pFunc->GetModule(&pModule));
@@ -376,6 +379,9 @@ HRESULT Modules::GetFrameILAndNextUserCodeILOffset(
 
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&ilOffset, &mappingResult));
+    if (mappingResult == MAPPING_UNMAPPED_ADDRESS ||
+        mappingResult == MAPPING_NO_INFO)
+        return E_FAIL;
 
     ToRelease<ICorDebugModule> pModule;
     IfFailRet(pFunc->GetModule(&pModule));
@@ -411,6 +417,9 @@ HRESULT Modules::GetStepRangeFromCurrentIP(ICorDebugThread *pThread, COR_DEBUG_S
     ULONG32 nOffset;
     CorDebugMappingResult mappingResult;
     IfFailRet(pILFrame->GetIP(&nOffset, &mappingResult));
+    if (mappingResult == MAPPING_UNMAPPED_ADDRESS ||
+        mappingResult == MAPPING_NO_INFO)
+        return E_FAIL;
 
     CORDB_ADDRESS modAddress;
     IfFailRet(pModule->GetBaseAddress(&modAddress));
