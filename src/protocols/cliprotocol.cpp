@@ -623,6 +623,10 @@ HRESULT CLIProtocol::PrintBreakpoint(const Breakpoint &b, std::string &output)
             ss << " Breakpoint " << b.id << " at " << b.funcname << "()";
         else
             ss << " Breakpoint " << b.id << " at " << b.source.path << ":" << b.line;
+
+        if (!b.message.empty())
+            ss << ", warning: " << b.message;
+
         Status = S_OK;
     }
     else if (b.source.IsNull())

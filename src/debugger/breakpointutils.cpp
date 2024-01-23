@@ -26,7 +26,7 @@ HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICor
     IfFailRet(pBreakpoint2->GetOffset(&nOffset2));
 
     if (nOffset1 != nOffset2)
-        return E_FAIL;
+        return S_FALSE;
 
     ToRelease<ICorDebugFunction> pFunction1;
     ToRelease<ICorDebugFunction> pFunction2;
@@ -39,7 +39,7 @@ HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICor
     IfFailRet(pFunction2->GetToken(&methodDef2));
 
     if (methodDef1 != methodDef2)
-        return E_FAIL;
+        return S_FALSE;
 
     ToRelease<ICorDebugModule> pModule1;
     ToRelease<ICorDebugModule> pModule2;
@@ -52,7 +52,7 @@ HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICor
     IfFailRet(pModule2->GetBaseAddress(&modAddress2));
 
     if (modAddress1 != modAddress2)
-        return E_FAIL;
+        return S_FALSE;
 
     ToRelease<ICorDebugCode> pCode1;
     IfFailRet(pFunction1->GetILCode(&pCode1));
@@ -64,31 +64,42 @@ HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICor
     IfFailRet(pCode2->GetVersionNumber(&methodVersion2));
 
     if (methodVersion1 != methodVersion2)
-        return E_FAIL;
+        return S_FALSE;
 
     return S_OK;
 }
 
-HRESULT IsEnableByCondition(const std::string &condition, Variables *pVariables, ICorDebugThread *pThread)
+HRESULT IsEnableByCondition(const std::string &condition, Variables *pVariables, ICorDebugThread *pThread, std::string &output)
 {
+    if (condition.empty())
+        return S_OK;
+
     HRESULT Status;
+    DWORD threadId = 0;
+    IfFailRet(pThread->GetID(&threadId));
+    FrameId frameId(ThreadId{threadId}, FrameLevel{0});
 
-    if (!condition.empty())
+    ToRelease<ICorDebugProcess> iCorProcess;
+    IfFailRet(pThread->GetProcess(&iCorProcess));
+
+    Variable variable;
+    if (FAILED(Status = pVariables->Evaluate(iCorProcess, frameId, condition, variable, output)))
     {
-        DWORD threadId = 0;
-        IfFailRet(pThread->GetID(&threadId));
-        FrameId frameId(ThreadId{threadId}, FrameLevel{0});
+        if (output.empty())
+            output = "unknown error";
 
-        ToRelease<ICorDebugProcess> iCorProcess;
-        IfFailRet(pThread->GetProcess(&iCorProcess));
-
-        Variable variable;
-        std::string output;
-        IfFailRet(pVariables->Evaluate(iCorProcess, frameId, condition, variable, output));
-
-        if (variable.type != "bool" || variable.value != "true")
-            return E_FAIL;
+        return Status;
     }
+    if (variable.type != "bool")
+    {
+        if (output.empty())
+            output = "The breakpoint condition must evaluate to a boolean operation, result type is " + variable.type;
+
+        return E_FAIL;
+    }
+
+    if (variable.value != "true")
+        return S_FALSE;
 
     return S_OK;
 }

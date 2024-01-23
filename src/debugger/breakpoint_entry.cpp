@@ -219,6 +219,8 @@ HRESULT EntryBreakpoint::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugB
     ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
     IfFailRet(pBreakpoint->QueryInterface(IID_ICorDebugFunctionBreakpoint, (LPVOID*) &pFunctionBreakpoint));
     IfFailRet(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, m_iCorFuncBreakpoint));
+    if (Status == S_FALSE)
+        return S_FALSE;
 
     m_iCorFuncBreakpoint->Activate(FALSE);
     m_iCorFuncBreakpoint.Free();

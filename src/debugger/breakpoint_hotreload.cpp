@@ -84,10 +84,8 @@ HRESULT HotReloadBreakpoint::CheckApplicationReload(ICorDebugThread *pThread, IC
     HRESULT ReturnStatus;
     ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
     IfFailRet(pBreakpoint->QueryInterface(IID_ICorDebugFunctionBreakpoint, (LPVOID*) &pFunctionBreakpoint));
-    if (FAILED(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, m_iCorFuncBreakpoint)))
-        ReturnStatus = S_FALSE; // Probably, we stopped on other breakpoint, need check this and emit event.
-    else
-        ReturnStatus = S_OK;
+    IfFailRet(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, m_iCorFuncBreakpoint));
+    ReturnStatus = Status; // In case S_FALSE, probably, we stopped on another breakpoint, need check this and emit event.
 
     IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get(),
                                                   m_updatedDLL, m_updatedTypeTokens));

@@ -17,7 +17,7 @@ class Variables;
 namespace BreakpointUtils
 {
     HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICorDebugFunctionBreakpoint *pBreakpoint2);
-    HRESULT IsEnableByCondition(const std::string &condition, Variables *pVariables, ICorDebugThread *pThread);
+    HRESULT IsEnableByCondition(const std::string &condition, Variables *pVariables, ICorDebugThread *pThread, std::string &output);
     HRESULT SkipBreakpoint(ICorDebugModule *pModule, mdMethodDef methodToken, bool justMyCode);
 }
 

@@ -204,6 +204,10 @@ namespace NetcoreDbgTest.Script
         public string id6 = null;
         public string id7 = null;
         public string id8 = null;
+        public string id9 = null;
+        public string id10 = null;
+        public string id11 = null;
+        public string id12 = null;
     }
 }
 
@@ -260,6 +264,29 @@ namespace MITestBreakpoint
                     Context.MIDebugger.Request("11-break-insert -f TestFuncBreakpointDelete()");
                 Context.id8 = ((MIConst)((MITuple)insBp8Resp["bkpt"])["number"]).CString;
 
+                var insBp9Resp =
+                    Context.MIDebugger.Request("12-break-insert -f " +
+                        ((LineBreakpoint)Context.ControlInfo.Breakpoints["BREAK_COND_FAIL_1"]).ToString());
+                Context.id9 = ((MIConst)((MITuple)insBp9Resp["bkpt"])["number"]).CString;
+
+                // test condition: return not boolean value
+                var insBp10Resp =
+                    Context.MIDebugger.Request("13-break-insert -f -c \"i\" " +
+                        ((LineBreakpoint)Context.ControlInfo.Breakpoints["BREAK_COND_FAIL_2"]).ToString());
+                Context.id10 = ((MIConst)((MITuple)insBp10Resp["bkpt"])["number"]).CString;
+
+                // test condition: variable not exist in the current context
+                var insBp11Resp =
+                    Context.MIDebugger.Request("14-break-insert -f -c \"a != b\" " +
+                        ((LineBreakpoint)Context.ControlInfo.Breakpoints["BREAK_COND_FAIL_3"]).ToString());
+                Context.id11 = ((MIConst)((MITuple)insBp11Resp["bkpt"])["number"]).CString;
+
+                // test condition: exception during evaluation
+                var insBp12Resp =
+                    Context.MIDebugger.Request("15-break-insert -f -c \"method_with_exc()\" " +
+                        ((LineBreakpoint)Context.ControlInfo.Breakpoints["BREAK_COND_FAIL_4"]).ToString());
+                Context.id12 = ((MIConst)((MITuple)insBp12Resp["bkpt"])["number"]).CString;
+
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -308,11 +335,35 @@ namespace MITestBreakpoint
             ctest_attr1.test_func();
             ctest_attr2.test_func();
 
+            // Test breakpoints with condition evaluation fails.
+
+            int i = 5;                              Label.Breakpoint("BREAK_COND_FAIL_1");
+            ;                                       Label.Breakpoint("BREAK_COND_FAIL_2");
+            ;                                       Label.Breakpoint("BREAK_COND_FAIL_3");
+            ;                                       Label.Breakpoint("BREAK_COND_FAIL_4");
+
+            Label.Checkpoint("FUNCBREAKCOND3_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointWithIdHit(@"__FILE__:__LINE__", "BREAK_COND_FAIL_1", Context.id9);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointWithIdHit(@"__FILE__:__LINE__", "BREAK_COND_FAIL_2", Context.id10);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointWithIdHit(@"__FILE__:__LINE__", "BREAK_COND_FAIL_3", Context.id11);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointWithIdHit(@"__FILE__:__LINE__", "BREAK_COND_FAIL_4", Context.id12);
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasExit(@"__FILE__:__LINE__");
                 Context.DebuggerExit(@"__FILE__:__LINE__");
             });
+        }
+
+        static bool method_with_exc()
+        {
+            throw new System.Exception();
         }
 
         static void TestFunc(int x)
@@ -362,7 +413,7 @@ namespace MITestBreakpoint
         {
             Console.WriteLine("TestFuncBreakpointCond2 " + t.ToString());
 
-            Label.Checkpoint("FUNCBREAKCOND2_test", "finish", (Object context) => {
+            Label.Checkpoint("FUNCBREAKCOND2_test", "FUNCBREAKCOND3_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasFuncBreakpointWithIdHit(@"__FILE__:__LINE__", "Program.TestFuncBreakpointCond2()", Context.id7);
                 Context.Continue(@"__FILE__:__LINE__");

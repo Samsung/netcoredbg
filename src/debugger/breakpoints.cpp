@@ -150,7 +150,7 @@ HRESULT Breakpoints::GetExceptionInfo(ICorDebugThread *pThread, ExceptionInfo &e
     return m_uniqueExceptionBreakpoints->GetExceptionInfo(pThread, exceptionInfo);
 }
 
-HRESULT Breakpoints::ManagedCallbackBreakpoint(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, bool &atEntry)
+HRESULT Breakpoints::ManagedCallbackBreakpoint(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents, bool &atEntry)
 {
     // CheckBreakpointHit return:
     //     S_OK - breakpoint hit
@@ -183,13 +183,13 @@ HRESULT Breakpoints::ManagedCallbackBreakpoint(ICorDebugThread *pThread, ICorDeb
         return S_OK; // forced to interrupt this callback (breakpoint in not user code, continue process execution)
     }
 
-    if (SUCCEEDED(Status = m_uniqueLineBreakpoints->CheckBreakpointHit(pThread, pBreakpoint, breakpoint)) &&
+    if (SUCCEEDED(Status = m_uniqueLineBreakpoints->CheckBreakpointHit(pThread, pBreakpoint, breakpoint, bpChangeEvents)) &&
         Status == S_OK) // S_FALSE - no breakpoint hit
     {
         return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)
     }
 
-    if (SUCCEEDED(Status = m_uniqueFuncBreakpoints->CheckBreakpointHit(pThread, pBreakpoint, breakpoint)) &&
+    if (SUCCEEDED(Status = m_uniqueFuncBreakpoints->CheckBreakpointHit(pThread, pBreakpoint, breakpoint, bpChangeEvents)) &&
         Status == S_OK) // S_FALSE - no breakpoint hit
     {
         return S_FALSE; // S_FALSE - not affect on callback (callback will emit stop event)

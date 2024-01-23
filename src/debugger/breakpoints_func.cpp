@@ -30,7 +30,7 @@ void FuncBreakpoints::DeleteAll()
     m_breakpointsMutex.unlock();
 }
 
-HRESULT FuncBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint)
+HRESULT FuncBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents)
 {
     if (m_funcBreakpoints.empty())
         return S_FALSE; // Stopped at break, but no breakpoints.
@@ -85,12 +85,28 @@ HRESULT FuncBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugB
 
         for (auto &funcBreakpoint : fbp.funcBreakpoints)
         {
-            if (FAILED(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, funcBreakpoint.iCorFuncBreakpoint)) ||
-                FAILED(BreakpointUtils::IsEnableByCondition(fbp.condition, m_sharedVariables.get(), pThread)))
+            IfFailRet(BreakpointUtils::IsSameFunctionBreakpoint(pFunctionBreakpoint, funcBreakpoint.iCorFuncBreakpoint));
+            if (Status == S_FALSE)
                 continue;
-            
+
+            std::string output;
+            if (FAILED(Status = BreakpointUtils::IsEnableByCondition(fbp.condition, m_sharedVariables.get(), pThread, output)))
+            {
+                if (output.empty())
+                    return Status;
+            }
+            if (Status == S_FALSE)
+                continue;
+
             ++fbp.times;
             fbp.ToBreakpoint(breakpoint);
+
+            if (!output.empty())
+            {
+                breakpoint.message = "The condition for a breakpoint failed to execute. The condition was '" + fbp.condition + "'. The error returned was '" + output + "'.";
+                bpChangeEvents.emplace_back(BreakpointChanged, breakpoint);
+            }
+
             return S_OK;
         }
     }

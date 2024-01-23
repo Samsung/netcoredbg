@@ -199,6 +199,9 @@ namespace VSCodeTestBreakpoint
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp1");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp3");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_cond_fail_1", "i"); // test condition: return not boolean value
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_cond_fail_2", "a != b"); // test condition: variable not exist in the current context
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_cond_fail_3", "method_with_exc()"); // test condition: exception during evaluation
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
 
                 Context.PrepareEnd(@"__FILE__:__LINE__");
@@ -244,7 +247,7 @@ namespace VSCodeTestBreakpoint
             int z = 0;
             Console.WriteLine("A breakpoint \"bp5\" is set on this line, z=" + z.ToString()); Label.Breakpoint("bp5");
 
-            Label.Checkpoint("bp5_test", "finish", (Object context) => {
+            Label.Checkpoint("bp5_test", "bp6_test", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp5");
 
@@ -264,11 +267,32 @@ namespace VSCodeTestBreakpoint
             ctest_attr1.test_func();
             ctest_attr2.test_func();
 
+            // Test breakpoints with condition evaluation fails.
+
+            ;                                       Label.Breakpoint("bp_cond_fail_1");
+            ;                                       Label.Breakpoint("bp_cond_fail_2");
+            ;                                       Label.Breakpoint("bp_cond_fail_3");
+
+            Label.Checkpoint("bp6_test", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_cond_fail_1");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_cond_fail_2");
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_cond_fail_3");
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
             Label.Checkpoint("finish", "", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasExit(@"__FILE__:__LINE__");
                 Context.DebuggerExit(@"__FILE__:__LINE__");
             });
+        }
+
+        static bool method_with_exc()
+        {
+            throw new System.Exception();
         }
 
         [DebuggerStepThroughAttribute()]

@@ -16,6 +16,7 @@
 #include "interfaces/iprotocol.h"
 
 #include <algorithm>
+#include <sstream>
 
 namespace netcoredbg
 {
@@ -34,8 +35,9 @@ bool CallbacksQueue::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, I
     bool atEntry = false;
     ThreadId threadId(getThreadId(pThread));
     StoppedEvent event(StopBreakpoint, threadId);
+    std::vector<BreakpointEvent> bpChangeEvents;
     // S_FALSE - not error and not affect on callback (callback will emit stop event)
-    if (S_FALSE != m_debugger.m_sharedBreakpoints->ManagedCallbackBreakpoint(pThread, pBreakpoint, event.breakpoint, atEntry))
+    if (S_FALSE != m_debugger.m_sharedBreakpoints->ManagedCallbackBreakpoint(pThread, pBreakpoint, event.breakpoint, bpChangeEvents, atEntry))
         return false;
 
     // Disable all steppers if we stop at breakpoint during step.
@@ -53,6 +55,17 @@ bool CallbacksQueue::CallbacksWorkerBreakpoint(ICorDebugAppDomain *pAppDomain, I
 #endif // INTEROP_DEBUGGING
 
     m_debugger.SetLastStoppedThread(pThread);
+    for (const BreakpointEvent &changeEvent : bpChangeEvents)
+    {
+        std::ostringstream ss;
+        ss << "Breakpoint error: " << changeEvent.breakpoint.message << " - ";
+        if(changeEvent.breakpoint.source.IsNull())
+            ss << changeEvent.breakpoint.funcname << "()\n";
+        else
+            ss << changeEvent.breakpoint.source.path << ":" << changeEvent.breakpoint.line << "\n";
+        m_debugger.pProtocol->EmitOutputEvent(OutputStdErr, ss.str());
+        m_debugger.pProtocol->EmitBreakpointEvent(changeEvent);
+    }
     m_debugger.pProtocol->EmitStoppedEvent(event);
     m_debugger.m_ioredirect.async_cancel();
     return true;

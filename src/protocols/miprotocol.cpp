@@ -38,7 +38,12 @@ static HRESULT PrintBreakpoint(const Breakpoint &b, std::string &output)
         ss << "bkpt={number=\"" << b.id << "\",type=\"breakpoint\",disp=\"keep\",enabled=\"y\",func=\"\","
               "file=\"" << MIProtocol::EscapeMIValue(b.source.name) << "\","
               "fullname=\"" << MIProtocol::EscapeMIValue(b.source.path) << "\","
-              "line=\"" << b.line << "\"}";
+              "line=\"" << b.line << "\"";
+        if (!b.message.empty())
+        {
+            ss << ",warning=\"" << b.message << "\"";
+        }
+        ss << "}";
         Status = S_OK;
     }
     else
