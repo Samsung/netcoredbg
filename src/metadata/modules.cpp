@@ -484,11 +484,29 @@ static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID 
     IfFailRet(pModule->GetBaseAddress(&peAddress));
     IfFailRet(pModule->GetSize(&peSize));
 
+    std::vector<unsigned char> peBuf;
+    ULONG64 peBufAddress = 0;
+    if (isInMemory)
+    {
+        ICorDebugProcess* process = 0;
+        IfFailRet(pModule->GetProcess(&process));
+
+        if (peAddress != 0 && peSize != 0)
+        {
+            peBuf.resize(peSize);
+            peBufAddress = (ULONG64)&peBuf[0];
+            SIZE_T read = 0;
+            IfFailRet(process->ReadMemory(peAddress, peSize, &peBuf[0], &read));
+            if (read != peSize)
+                return E_FAIL;
+        }
+    }
+
     return Interop::LoadSymbolsForPortablePDB(
         GetModuleFileName(pModule),
         isInMemory,
         isInMemory, // isFileLayout
-        peAddress,
+        peBufAddress,
         peSize,
         0,          // inMemoryPdbAddress
         0,          // inMemoryPdbSize
