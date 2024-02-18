@@ -497,7 +497,7 @@ static HRESULT LoadSymbols(IMetaDataImport *pMD, ICorDebugModule *pModule, VOID 
     ULONG64 peBufAddress = 0;
     if (isInMemory)
     {
-        ICorDebugProcess* process = 0;
+        ToRelease<ICorDebugProcess> process;
         IfFailRet(pModule->GetProcess(&process));
 
         if (peAddress != 0 && peSize != 0)
