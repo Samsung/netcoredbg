@@ -36,7 +36,7 @@ Building of Netcoredbg requires Microsoft's .NET, so currently you can build Net
 
 6. Optional step: Netcoredbg requires **CoreCLR runtime source code**, which is typically downloaded automatically, but you can download it from here: https://github.com/dotnet/runtime
 
-   You should check out tag v7.x.
+   For example, you can check out tag v8.x.
 
 7. Optional step: Netcoredbg requires **.NET SDK**, which can be downloaded automatically, but you can download it manually from here: https://dotnet.microsoft.com/download
 
@@ -120,7 +120,7 @@ After this, build instructions are same as for Unix (including prerequisites).
 5. This step might be omitted, in this case cmake automatically downloads necessary files.
    But if it fails, you should then checkout **CoreCLR sources** to another directory from here: https://github.com/dotnet/runtime
 
-   You need latest tag **v7.x**.
+   For example, you can use latest tag **v8.x**.
 
 6. This step might be omitted too, and cmake will automatically downloads that it needs.
    But in case of failure you need download and install **.NET SDK** from here: https://dotnet.microsoft.com/download

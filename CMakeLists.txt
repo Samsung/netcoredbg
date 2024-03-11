@@ -8,9 +8,9 @@ project(netcoredbg)
 
 set(CORECLR_DIR "" CACHE FILEPATH "Path to CoreCLR source directory")
 set(DOTNET_DIR "" CACHE FILEPATH "Path to .NET SDK directory")
-set(CORECLR_BRANCH "release/7.0" CACHE STRING "CoreCLR source branch")
+set(CORECLR_BRANCH "release/8.0" CACHE STRING "CoreCLR source branch")
 # After move of dbgshim from runtime to diagnostics, this sdk is used only for build of managed part.
-set(DOTNET_CHANNEL "7.0" CACHE STRING ".NET SDK channel")
+set(DOTNET_CHANNEL "8.0" CACHE STRING ".NET SDK channel")
 set(BUILD_MANAGED ON CACHE BOOL "Build managed part")
 set(DBGSHIM_DIR "" CACHE FILEPATH "Path to dbgshim library directory")
 
