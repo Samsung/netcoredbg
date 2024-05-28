@@ -12,6 +12,15 @@ You can find licensing information in file [LICENSE](LICENSE), in root directory
 ## Usage
 More details about usage of NCDB you can find in [CLI](docs/cli.md) manual.
 
+## Installation
+NetCoreDbg is available in repositories of some Linux distributions and Windows package manager:
+- Arch Linux (https://aur.archlinux.org/packages/netcoredbg)
+- Gentoo Linux (https://packages.gentoo.org/packages/dev-dotnet/netcoredbg)
+- LiGurOS (https://gitlab.com/liguros/liguros-repo/-/tree/develop/dev-dotnet/netcoredbg?ref_type=heads)
+- NixOS (https://mynixos.com/nixpkgs/package/netcoredbg)
+- Scoop (Windows) (https://github.com/ScoopInstaller/Main/blob/master/bucket/netcoredbg.json)
+
+For other Linux distributions you can use binaries provided in github releases (https://github.com/Samsung/netcoredbg/releases) or build from source code.
 
 ## Building from source code
 
