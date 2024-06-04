@@ -41,8 +41,8 @@ NetCoreDbg's build requires Microsoft's .NET framework, and as such, NetCoreDbg 
 Configure the build with the following commands:
 
 ```
-user@NetCoreDbg$ mkdir build
-user@NetCoreDbg$ cd build
+user@netcoredbg$ mkdir build
+user@netcoredbg$ cd build
 user@build$ CC=clang CXX=clang++ cmake ..
 ```
 
@@ -59,16 +59,16 @@ If cmake tries to download the .NET SDK or CoreCLR sources and fails, then pleas
 After configuration has finished, you can then build NetCoreDbg:
 
 ```
-user@NetCoreDbg$ make
+user@netcoredbg$ make
 ...
-user@NetCoreDbg$ make install
+user@netcoredbg$ make install
 ```
 
 To perform a build from scratch, including the configuration step, you should again delete any artifacts with the following commands:
 
 ```
 user@build$ cd ..
-user@NetCoreDbg$ rm -rf build src/debug/NetCoreDbg/bin bin
+user@netcoredbg$ rm -rf build src/debug/netcoredbg/bin bin
 ```
 
 > *Directory `bin` contains "installed" NetCoreDbg's binaries for tests. If you have installed NetCoreDbg in other places, for example in `/usr/local/bin`, you should remove it manually because NetCoreDbg's build system doesn't currently implement automatic uninstalling.*
@@ -125,9 +125,9 @@ After this, the build instructions are the same as for Unix, including the prere
 Configure the build with the following commands given in NetCoreDbg's source tree:
 
 ```
-C:\Users\localuser\NetCoreDbg> md build
-C:\Users\localuser\NetCoreDbg> cd build
-C:\Users\localuser\NetCoreDbg\build> cmake .. -G "Visual Studio 16 2019"
+C:\Users\localuser\netcoredbg> md build
+C:\Users\localuser\netcoredbg> cd build
+C:\Users\localuser\netcoredbg\build> cmake .. -G "Visual Studio 16 2019"
 ```
 
 *Note: You should run this command from cmd.exe, **not from cygwin's shell***.
@@ -143,27 +143,27 @@ If you have downloaded either the .NET SDK or .NET Core sources manually, you sh
 To compile and install, implement the following command:
 
 ```
-C:\Users\localuser\NetCoreDbg\build> cmake --build . --target install
+C:\Users\localuser\netcoredbg\build> cmake --build . --target install
 ```
 
 To perform a build from scratch, including the configuration step, you should again delete any artifacts by using the following commands:
 
 ```
-C:\Users\localuser\NetCoreDbg\build>cd ..
-C:\Users\localuser\NetCoreDbg>rmdir /s /q build src\debug\NetCoreDbg\bin bin
+C:\Users\localuser\netcoredbg\build>cd ..
+C:\Users\localuser\netcoredbg>rmdir /s /q build src\debug\netcoredbg\bin bin
 ```
 
 > *Directory `bin` contains the "installed" NetCoreDbg's binaries for tests. If you have installed NetCoreDbg in other places, you should remove it manually because NetCoreDbg's build system doesn't currently perform automatic uninstalling.*
 
 ## Running NetCoreDbg
 
-In the instructions provided above, the `NetCoreDbg` binary and additional libraries will be installed in some directory.
+In the instructions provided above, the `netcoredbg` binary and additional libraries will be installed in some directory.
 For development purposes (for running tests, debugging, etc...), the directory `bin` in NetCoreDbg's source tree is typically used.
 
 Now, running the debugger with the `--help` option should look like this:
 
 ```
-$ ../bin/NetCoreDbg --help
+$ ../bin/netcoredbg --help
 .NET Core debugger
 
 Options:
@@ -189,7 +189,7 @@ Options:
 Basically, to debug .NET code, you should run NetCoreDbg with the following command line:
 
 ```
-$ /path/to/NetCoreDbg --interpreter=TYPE -- /path/to/dotnet /path/to/program.dll
+$ /path/to/netcoredbg --interpreter=TYPE -- /path/to/dotnet /path/to/program.dll
 ```
 
 ## Notes for Developers
@@ -221,7 +221,7 @@ export LOG_OUTPUT=/tmp/log.txt
 
 Each line of the log file utilizes the same format which is explained below:
 ```
-5280715.183 D/NetCoreDbg(P12036, T12036): cliprotocol.cpp: evalCommands(1309) > evaluating: 'source file.txt'
+5280715.183 D/NETCOREDBG(P12036, T12036): cliprotocol.cpp: evalCommands(1309) > evaluating: 'source file.txt'
       ^     ^  ^          ^       ^        ^               ^            ^       ^
       |     |  |          |       |        |               |            |       `-- Message itself.
       |     |  |          |       |        |               |            |   
