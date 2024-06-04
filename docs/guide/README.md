@@ -1,28 +1,32 @@
-# NetcoreDBG Developer's Guide.
+# The NetCoreDbg Developer's Guide.
 
-An easy guide to NetcoreDBG C# debugger.
-
+This is an easy user guide to the NetCoreDbg C# debugger.
 
 ## Downloads:
 
-Binary releases are available right here on github:
-https://github.com/Samsung/netcoredbg/releases
-
+Binary releases are available here on [Github](https://github.com/Samsung/netcoredbg/releases).
 
 ## Compiling:
 
-On Linux, Install `dia`, `rsvg-convert`, and most of LaTeX, then run `make`.
+On Linux, Install `dia`, `rsvg-convert`, and most of [LaTeX](https://www.latex-project.org/get/), then run `make`.
 
+The following shell commands are a good start:
+
+```
 $ sudo apt update
 $ sudo apt install dia
 $ sudo apt install texlive-latex-base texlive-fonts-recommended texlive-fonts-extra texlive-latex-extra
 $ sudo apt install texlive-binaries
 $ sudo apt install librsvg2-bin
+```
 
-This automates generation of includable diagrams from the respective .dia files.
-If you manage to automate the process on any other OS, please share!
+This automates the generation of available diagrams from the respective .dia files.
 
+*Note: If you manage to automate the process on any other OS, please share it here on Github so that our team can review it!*
 
 ## Reporting issues:
 
-Please report issues with this guide here on github. Pull requests are also welcome.
+Please report issues with this guide here on Github.
+
+Pull requests are also welcome.
+
