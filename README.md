@@ -1,4 +1,4 @@
-# A Debugger for the .NET Core Runtime
+# Debugger for the .NET Core Runtime
 
 The NetCoreDbg debugger implements [GDB/MI](https://sourceware.org/gdb/onlinedocs/gdb/GDB_002fMI.html)
 and [VSCode Debug Adapter Protocol](https://microsoft.github.io/debug-adapter-protocol/) in a unified framework, allowing the debugging of .NET apps under the .NET Core runtime as well as facilitating debugging from the command line (such as in GDB).
@@ -16,7 +16,7 @@ Currently, NetCoreDbg can be built on Linux, MacOS, or Windows. Instructions for
 
 ### Unix
 
-NetCoreDbg's build requires Microsoft's .NET framework, and as such, NetCoreDbg can only be built in Linux. Microsoft supports a few distributions, the details of which can be found here: https://docs.microsoft.com/en-us/dotnet/core/install/linux.
+NetCoreDbg's build requires Microsoft's .NET, and as such, NetCoreDbg can only be built in Linux. Microsoft supports a few distributions, the details of which can be found here: https://docs.microsoft.com/en-us/dotnet/core/install/linux.
 
 #### Prerequisites
 
@@ -140,7 +140,7 @@ If you want to run tests after a successful build, then you should add the follo
 If you have downloaded either the .NET SDK or .NET Core sources manually, you should add the following options:
 `-DDOTNET_DIR="c:\Program Files\dotnet" -DCORECLR_DIR="path\to\coreclr"`
 
-To compile and install, implement the following command:
+To compile and install, use the following command:
 
 ```
 C:\Users\localuser\netcoredbg\build> cmake --build . --target install
@@ -202,7 +202,7 @@ You simply need to build and install NetCoreDbg into the `bin` directory (in the
 If you wish to get the "Source-Based Code Coverage" report, you can add a `-c` or `--coverage` option to the command line, i.e.:
 `./run_tests.sh -c [[testname1][testname2]..]`.
 
-Please note, for that case, that your build configuration should be implemented with the `-DCLR_CMAKE_ENABLE_CODE_COVERAGE` option (please see above). *This feature is currently only supported on Unix-like platforms*.
+Please note, for that case your build configuration should be implemented with the `-DCLR_CMAKE_ENABLE_CODE_COVERAGE` option (please see above). *This feature is currently only supported on Unix-like platforms*.
 
 ### Building and Running Unit Tests
 
@@ -235,7 +235,7 @@ Each line of the log file utilizes the same format which is explained below:
       |     |  |          |      
       |     |  |          `-- This is process PID
       |     |  |         
-      |     |  `-- This program name (always NetCoreDbg).
+      |     |  `-- This program name (always NETCOREDBG).
       |     |
       |     `-- This is log level: E is for error, W is for warnings, D is for debug...
       |
