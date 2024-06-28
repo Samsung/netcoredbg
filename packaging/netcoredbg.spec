@@ -148,7 +148,7 @@ fi
 
 # Native tests
 # CLITestInteropBreakpoint
-g++ -g -fPIC -c "../test-suite/CLITestInteropBreakpoint/program.c" -o ./test_breakpoint.o
+g++ -g -gdwarf-4 -fPIC -c "../test-suite/CLITestInteropBreakpoint/program.c" -o ./test_breakpoint.o
 g++ -g -fPIC -shared -o libtest_breakpoint.so test_breakpoint.o
 
 %install

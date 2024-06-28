@@ -197,7 +197,7 @@ for TEST_NAME in $TEST_NAMES; do
         pushd $(pwd)
         mkdir "$TEST_NAME/build"
         cd "$TEST_NAME/build"
-        clang++ -g -fPIC -c "../program.c" -o ./test_breakpoint.o
+        clang++ -g -gdwarf-4 -fPIC -c "../program.c" -o ./test_breakpoint.o
         clang++ -g -fPIC -shared -o "../bin/Debug/netcoreapp3.1/libtest_breakpoint.so" test_breakpoint.o
         # Note, we don't remove build directory for test possible issues with interop test execution/build.
         popd
