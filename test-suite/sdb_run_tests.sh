@@ -191,6 +191,7 @@ elif $SDB shell lscpu | grep -q aarch64; then
     else ARCH=armv7l; fi
 elif $SDB shell lscpu | grep -q i686;    then ARCH=i686;
 elif $SDB shell lscpu | grep -q x86_64;  then ARCH=x86_64;
+elif $SDB shell lscpu | grep -q riscv64;  then ARCH=riscv64;
 else echo "Unknown target architecture"; exit 1;
 fi
 

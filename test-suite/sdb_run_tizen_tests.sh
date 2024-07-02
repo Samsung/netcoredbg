@@ -102,6 +102,7 @@ if [[ -z $RPMFILE ]]; then
         else ARCH=armv7l; fi
     elif $SDB shell lscpu | grep -q i686;    then ARCH=i686;
     elif $SDB shell lscpu | grep -q x86_64;  then ARCH=x86_64;
+    elif $SDB shell lscpu | grep -q riscv64;  then ARCH=riscv64;
     else echo "Unknown target architecture"; exit 1; fi
 
     # The following command assumes that GBS build was performed on a clean system (or in Docker),
@@ -151,8 +152,18 @@ for TEST_NAME in ${ALL_TEST_NAMES[@]}; do
     HOSTTESTDIR=$SCRIPTDIR/$TEST_NAME
     $DOTNET build $HOSTTESTDIR
     $SDB install skip $HOSTTESTDIR/bin/Debug/netcoreapp3.1/org.tizen.example.$TEST_NAME-1.0.0.tpk
- 
+
+    # FIXME 2 jul 2024, riscv64 can't use `launch_app` without root permission.
+    if [ "$ARCH" == "riscv64" ]; then
+        $SDB root on
+    fi
+
     $SDB shell launch_app org.tizen.example.$TEST_NAME  __AUL_SDK__ NETCOREDBG __DLP_DEBUG_ARG__ --server=4711,--
+
+    # FIXME 2 jul 2024, riscv64 can't use `launch_app` without root permission.
+    if [ "$ARCH" == "riscv64" ]; then
+        $SDB root off
+    fi
 
     # DO NOT CHANGE
     # we use first test control program for both tests, since we need NI generation in second test
