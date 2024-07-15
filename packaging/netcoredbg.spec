@@ -130,8 +130,8 @@ cmake .. \
     -DCLR_CMAKE_LINUX_ID=tizen \
     -DDBGSHIM_DIR=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF \
-%ifnarch riscv64
     -DNCDB_DOTNET_STARTUP_HOOK=$STARTUP_HOOK \
+%ifnarch riscv64
     -DINTEROP_DEBUGGING=1 \
 %endif
     -DBUILD_TESTING=%{build_testing} \
