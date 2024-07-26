@@ -7,7 +7,7 @@ There are two interop mode debugging scenarios:
 
 ## Restrictions
 
-**Interop mode is implemented for Linux and Tizen OSes only for amd64, x86, arm64 and arm32 architectures.**
+**Interop mode is implemented for Linux and Tizen OSes only for amd64, x86, arm64, arm32 and riscv64 architectures.**
 
 Since debugger uses CoreCLR Debug API, debug of CoreCLR itself is not allowed.
 This means that user can't stop at breakpoint, break, step, handle signal or exception in CoreCLR related dynamic libraries:

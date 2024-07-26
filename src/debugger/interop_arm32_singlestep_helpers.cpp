@@ -1041,31 +1041,6 @@ static bool GetThumbCodeNextPCs(pid_t pid, const user_regs_struct &regs, std::ve
     return FixThumbCodeNextPCs(pid, regs, swSingleStepNextPCs);
 }
 
-bool ARM32_RemoveSoftwareSingleStepBreakpoints(pid_t pid, std::vector<sw_singlestep_brk_t> &swSingleStepBreakpoints)
-{
-    for (auto &entry : swSingleStepBreakpoints)
-    {
-        errno = 0;
-        word_t brkData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)entry.bpAddr, nullptr);
-        if (errno != 0)
-        {
-            LOGE("Ptrace peekdata error: %s", strerror(errno));
-            return false;
-        }
-
-        entry.restoreData = RestoredOpcode(brkData, entry.restoreData); // fix restore data in case breakpoint opcode size less than word_t
-
-        if (async_ptrace(PTRACE_POKEDATA, pid, (void*)entry.bpAddr, (void*)entry.restoreData) == -1)
-        {
-            LOGE("Ptrace pokedata error: %s\n", strerror(errno));
-            return false;
-        }
-    }
-    swSingleStepBreakpoints.clear();
-
-    return true;
-};
-
 bool ARM32_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &swSingleStepBreakpoints)
 {
     user_regs_struct regs;

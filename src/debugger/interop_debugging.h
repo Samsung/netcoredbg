@@ -125,7 +125,11 @@ protected:
     void InitWaitpidWorkerThread();
     void WaitpidWorker();
 
+#if DEBUGGER_UNIX_RISCV64
+    bool m_HWSingleStepSupported = false;
+#else
     bool m_HWSingleStepSupported = true;
+#endif
 
     void WaitThreadStop(pid_t stoppedPid, std::vector<pid_t> *stopTreads = nullptr);
     bool SingleStepOnBrk(pid_t pid, std::uintptr_t addr);

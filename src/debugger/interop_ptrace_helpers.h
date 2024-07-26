@@ -6,6 +6,9 @@
 #ifdef INTEROP_DEBUGGING
 
 #include <sys/ptrace.h>
+#if DEBUGGER_UNIX_RISCV64
+#include <asm/ptrace.h>
+#endif
 #include <sys/types.h>
 #include <sys/user.h>
 #include <cstdint>

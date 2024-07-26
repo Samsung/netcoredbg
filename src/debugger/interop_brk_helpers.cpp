@@ -27,6 +27,8 @@ bool NeedSetPrevBrkPC()
     return false; // In case of arm64 breakpoint is illegal code interpreted by Linux kernel as breakpoint, no PC change need.
 #elif DEBUGGER_UNIX_ARM
     return false; // In case of arm32 breakpoint is illegal code interpreted by Linux kernel as breakpoint, no PC change need.
+#elif DEBUGGER_UNIX_RISCV64
+    return false; // In case of riscv64 breakpoint is illegal code interpreted by Linux kernel as breakpoint, no PC change need.
 #else
 #error "Unsupported platform"
 #endif
@@ -45,6 +47,8 @@ void SetPrevBrkPC(user_regs_struct &regs)
     // In case of arm64 breakpoint is illegal code interpreted by Linux kernel as breakpoint, no PC change need.
 #elif DEBUGGER_UNIX_ARM
     // In case of arm32 breakpoint is illegal code interpreted by Linux kernel as breakpoint, no PC change need.
+#elif DEBUGGER_UNIX_RISCV64
+    // In case of riscv64 breakpoint is illegal code interpreted by Linux kernel as breakpoint, no PC change need.
 #else
 #error "Unsupported platform"
 #endif
@@ -62,6 +66,8 @@ std::uintptr_t GetBrkAddrByPC(const user_regs_struct &regs)
 #elif DEBUGGER_UNIX_ARM
     constexpr int REG_PC = 15;
     return std::uintptr_t(regs.uregs[REG_PC]);
+#elif DEBUGGER_UNIX_RISCV64
+    return std::uintptr_t(regs.pc);
 #else
 #error "Unsupported platform"
 #endif
@@ -79,6 +85,8 @@ std::uintptr_t GetBreakAddrByPC(const user_regs_struct &regs)
 #elif DEBUGGER_UNIX_ARM
     constexpr int REG_PC = 15;
     return std::uintptr_t(regs.uregs[REG_PC]);
+#elif DEBUGGER_UNIX_RISCV64
+    return std::uintptr_t(regs.pc);
 #else
 #error "Unsupported platform"
 #endif
@@ -89,6 +97,12 @@ std::uintptr_t GetBreakAddrByPC(const user_regs_struct &regs)
 bool IsThumbOpcode32Bits(word_t data)
 {
     return (data & 0xe000) == 0xe000 && (data & 0x1800) != 0;
+}
+#elif DEBUGGER_UNIX_RISCV64
+bool IsOpcode16Bits(word_t data)
+{
+    // TODO in case 48+ bit break opcodes will be added, care about it.
+    return (data & 0x3) != 0x3;
 }
 #endif
 
@@ -119,6 +133,12 @@ word_t EncodeBrkOpcode(word_t data, bool thumbCode)
         return 0xa000f7f0; // 4 bytes thumb breakpoint
     else
         return (data & ~((word_t)0xffff)) | 0xde01; // 2 bytes thumb breakpoint
+#elif DEBUGGER_UNIX_RISCV64
+    // TODO in case 48+ bit break opcodes will be added, care about it.
+    if (IsOpcode16Bits(data))
+        return ((data & ~((word_t)0xffff)) | 0x9002); // C.EBREAK
+    else
+        return ((data & ~((word_t)0xffffffff)) | 0x00100073); // EBREAK
 #else
 #error "Unsupported platform"
 #endif
@@ -138,6 +158,12 @@ word_t RestoredOpcode(word_t dataWithBrk, word_t restoreData)
 
     // 2 bytes thumb breakpoint
     return (dataWithBrk & ~((word_t)0xffff)) | (restoreData & 0xffff);
+#elif DEBUGGER_UNIX_RISCV64
+    // TODO in case 48+ bit break opcodes will be added, care about it.
+    if (IsOpcode16Bits(dataWithBrk))
+        return (dataWithBrk & ~((word_t)0xffff)) | (restoreData & 0xffff);
+    else
+        return (dataWithBrk & ~((word_t)0xffffffff)) | (restoreData & 0xffffffff);
 #else
 #error "Unsupported platform"
 #endif

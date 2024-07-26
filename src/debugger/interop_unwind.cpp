@@ -146,6 +146,40 @@ static std::array<int, UNW_REG_LAST + 1> InitPtraceRegOffset()
     res[UNW_AARCH64_SP]       = 0xf8;
     res[UNW_AARCH64_PC]       = 0x100;
     res[UNW_AARCH64_PSTATE]   = 0x108;
+#elif defined(UNW_TARGET_RISCV)
+    // UNW_RISCV_X0 not available in user_regs_struct.
+    res[UNW_RISCV_X1]       = 0x08;
+    res[UNW_RISCV_X2]       = 0x10;
+    res[UNW_RISCV_X3]       = 0x18;
+    res[UNW_RISCV_X4]       = 0x20;
+    res[UNW_RISCV_X5]       = 0x28;
+    res[UNW_RISCV_X6]       = 0x30;
+    res[UNW_RISCV_X7]       = 0x38;
+    res[UNW_RISCV_X8]       = 0x40;
+    res[UNW_RISCV_X9]       = 0x48;
+    res[UNW_RISCV_X10]      = 0x50;
+    res[UNW_RISCV_X11]      = 0x58;
+    res[UNW_RISCV_X12]      = 0x60;
+    res[UNW_RISCV_X13]      = 0x68;
+    res[UNW_RISCV_X14]      = 0x70;
+    res[UNW_RISCV_X15]      = 0x78;
+    res[UNW_RISCV_X16]      = 0x80;
+    res[UNW_RISCV_X17]      = 0x88;
+    res[UNW_RISCV_X18]      = 0x90;
+    res[UNW_RISCV_X19]      = 0x98;
+    res[UNW_RISCV_X20]      = 0xa0;
+    res[UNW_RISCV_X21]      = 0xa8;
+    res[UNW_RISCV_X22]      = 0xb0;
+    res[UNW_RISCV_X23]      = 0xb8;
+    res[UNW_RISCV_X24]      = 0xc0;
+    res[UNW_RISCV_X25]      = 0xc8;
+    res[UNW_RISCV_X26]      = 0xd0;
+    res[UNW_RISCV_X27]      = 0xd8;
+    res[UNW_RISCV_X28]      = 0xe0;
+    res[UNW_RISCV_X29]      = 0xe8;
+    res[UNW_RISCV_X30]      = 0xf0;
+    res[UNW_RISCV_X31]      = 0xf8;
+    res[UNW_RISCV_PC]       = 0x00;
 #else
 #error "Unsupported platform"
 #endif
@@ -229,6 +263,11 @@ static int AccessReg(unw_addr_space_t as, unw_regnum_t reg, unw_word_t *val, int
         *val = (*(ui->contextRegs))[reg];
         return 0;
     }
+
+#if DEBUGGER_UNIX_RISCV64
+    if (reg == UNW_RISCV_X0)
+        return -UNW_EBADREG;
+#endif // DEBUGGER_UNIX_RISCV64
 
     if ((unsigned)reg >= g_ptraceRegOffset.size())
         return -UNW_EBADREG;

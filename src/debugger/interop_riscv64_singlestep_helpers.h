@@ -1,4 +1,4 @@
-// Copyright (c) 2023 Samsung Electronics Co., LTD
+// Copyright (c) 2024 Samsung Electronics Co., LTD
 // Distributed under the MIT License.
 // See the LICENSE file in the project root for more information.
 #pragma once
@@ -15,11 +15,11 @@ namespace netcoredbg
 namespace InteropDebugging
 {
 
-#if DEBUGGER_UNIX_ARM
+#if DEBUGGER_UNIX_RISCV64
 
-bool ARM32_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &swSingleStepBreakpoints);
+bool RISCV64_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &swSingleStepBreakpoints);
 
-#endif // DEBUGGER_UNIX_ARM
+#endif // DEBUGGER_UNIX_RISCV64
 
 } // namespace InteropDebugging
 } // namespace netcoredbg

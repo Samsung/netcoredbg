@@ -131,9 +131,7 @@ cmake .. \
     -DDBGSHIM_DIR=$NETCOREAPPDIR \
     -DBUILD_MANAGED=OFF \
     -DNCDB_DOTNET_STARTUP_HOOK=$STARTUP_HOOK \
-%ifnarch riscv64
     -DINTEROP_DEBUGGING=1 \
-%endif
     -DBUILD_TESTING=%{build_testing} \
     -DCLR_CMAKE_ENABLE_CODE_COVERAGE=%{coverage}
 

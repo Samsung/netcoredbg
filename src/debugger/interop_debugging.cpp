@@ -7,6 +7,7 @@
 #include "debugger/interop_mem_helpers.h"
 #include "debugger/interop_ptrace_helpers.h"
 #include "debugger/interop_arm32_singlestep_helpers.h"
+#include "debugger/interop_riscv64_singlestep_helpers.h"
 
 #ifdef DEBUGGER_FOR_TIZEN
 // Tizen 5.0/5.5 build fix.
@@ -78,11 +79,15 @@ InteropDebugger::InteropDebugger(IProtocol *pProtocol_,
     InteropDebuggerHelpers(pProtocol_, sharedBreakpoints, sharedEvalWaiter)
 {}
 
-#if DEBUGGER_UNIX_ARM
+#if DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
 // NOTE caller must care about m_waitpidMutex.
 static bool DoSoftwareSingleStep(pid_t pid, std::unordered_map<pid_t, thread_status_t> &TIDs, std::vector<sw_singlestep_brk_t> &swSingleStepBreakpoints)
 {
+#if DEBUGGER_UNIX_ARM
     if (!ARM32_DoSoftwareSingleStep(pid, swSingleStepBreakpoints))
+#else
+    if (!RISCV64_DoSoftwareSingleStep(pid, swSingleStepBreakpoints))
+#endif
     {
         LOGE("Software singlestep initialization error.\n");
         return false;
@@ -111,7 +116,7 @@ static bool DetectBrkForSoftwareSingleStep(pid_t pid, std::unordered_map<pid_t, 
     if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
     {
         LOGW("Ptrace getregset error: %s\n", strerror(errno));
-        ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+        RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
         return false;
     }
 
@@ -121,15 +126,15 @@ static bool DetectBrkForSoftwareSingleStep(pid_t pid, std::unordered_map<pid_t, 
     {
         if (entry.bpAddr == brkAddr)
         {
-            // Note, we don't call SetPrevBrkPC() + ptrace(PTRACE_SETREGSET) here, since arm32 don't need this for sure.
+            // Note, we don't call SetPrevBrkPC() + ptrace(PTRACE_SETREGSET) here, since arm32/riscv64 don't need this for sure.
             TIDs[pid].stop_signal = 0;
             break;
         }
     }
 
-    return ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+    return RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
 };
-#endif // DEBUGGER_UNIX_ARM
+#endif // DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
 
 // NOTE caller must care about m_waitpidMutex.
 bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
@@ -142,29 +147,30 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
     // Another case is signal that landed on stopped thread. For example SIGKILL from user or SIGILL
     // due to wrong instruction that was covered by breakpoint opcode and now executed on single step.
 
-#if DEBUGGER_UNIX_ARM
+#if DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
     std::vector<sw_singlestep_brk_t> swSingleStepBreakpoints;
 
     if (!m_HWSingleStepSupported)
     {
         if (!DoSoftwareSingleStep(pid, m_TIDs, swSingleStepBreakpoints))
         {
-            ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+            RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
             return false;
         }
     }
     else
-#endif // DEBUGGER_UNIX_ARM
+#endif // DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
     {
         if (async_ptrace(PTRACE_SINGLESTEP, pid, nullptr, nullptr) == -1)
         {
+// ARM32 only here, since for RISCV64 `m_HWSingleStepSupported` by default is `false`, that mean this code will be never executed for this arch.
 #if DEBUGGER_UNIX_ARM
             if (errno == EIO)
             {
                 m_HWSingleStepSupported = false;
                 if (!DoSoftwareSingleStep(pid, m_TIDs, swSingleStepBreakpoints))
                 {
-                    ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+                    RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
                     return false;
                 }
             }
@@ -187,10 +193,10 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
     // Check that we still have this thread alive.
     if (m_TIDs.find(pid) == m_TIDs.end())
     {
-#if DEBUGGER_UNIX_ARM
+#if DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
         if (!m_HWSingleStepSupported)
-            ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
-#endif // DEBUGGER_UNIX_ARM
+            RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+#endif // DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
         return false;
     }
 
@@ -201,10 +207,10 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
         if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
         {
             LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
-#if DEBUGGER_UNIX_ARM
+#if DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
             if (!m_HWSingleStepSupported)
-                ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
-#endif // DEBUGGER_UNIX_ARM
+                RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
+#endif // DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
             return false;
         }
 
@@ -212,14 +218,14 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
         {
         case SI_KERNEL:
         case TRAP_BRKPT:
-#if DEBUGGER_UNIX_ARM
+#if DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
             if (!m_HWSingleStepSupported)
             {
                 bool parseSucceeded = DetectBrkForSoftwareSingleStep(pid, m_TIDs, swSingleStepBreakpoints);
                 if (!parseSucceeded || m_TIDs[pid].stop_signal == 0)
                     return parseSucceeded;
             }
-#endif // DEBUGGER_UNIX_ARM
+#endif // DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
             // Care about `__builtin_debugtrap()` in user code.
             m_TIDs[pid].stat = thread_stat_e::stopped_signal_event_detected;
             m_TIDs[pid].stop_event_data.signal = "SIGTRAP";
@@ -232,10 +238,10 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
         }
     }
 
-#if DEBUGGER_UNIX_ARM
-    if (!m_HWSingleStepSupported && !ARM32_RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints))
+#if DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
+    if (!m_HWSingleStepSupported && !RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints))
         return false;
-#endif // DEBUGGER_UNIX_ARM
+#endif // DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
 
     if (m_TIDs[pid].stop_signal == SIGILL)
     {
@@ -608,17 +614,45 @@ static bool AddSignalEventForCallerInUserCode(pid_t pid, pid_t TGID, InteropLibr
         // (?) check that top frame is user code / not CoreCLR (but skip frames with "system" libs like libc, libpthread, ...)
 
         // (?) check lib + method name for first frame:
-        // raise(SIGTRAP)                                   -> libpthread-2.31.so` raise()
-        // kill(syscall(SYS_gettid), SIGTRAP)               -> libc-2.31.so` kill()
-        // tgkill(getpid(), syscall(SYS_gettid), SIGTRAP)   -> libc-2.31.so` tgkill()
-        // syscall(SYS_tkill, syscall(SYS_gettid), SIGTRAP) -> libc-2.31.so` syscall()
+        // raise(SIGTRAP)                                   -> libpthread.so`raise()
+        // kill(syscall(SYS_gettid), SIGTRAP)               -> libc.so`kill()
+        // tgkill(getpid(), syscall(SYS_gettid), SIGTRAP)   -> libc.so`tgkill()
+        // syscall(SYS_tkill, syscall(SYS_gettid), SIGTRAP) -> libc.so`syscall()
 
+#if DEBUGGER_UNIX_RISCV64
+        // Note, in case of RISCV64:
+        //      raise(SIGTRAP): libc.so`raise() => libc.so`gsignal() => user code
+        if (frameCount == 1)
+        {
+            breakAddr = addr;
+            return true;
+        }
+        else
+        {
+            std::string libLoadName;
+            std::string procName;
+            if (pInteropLibraries->FindDataForNotClrAddr(addr, libLoadName, procName))
+            {
+                if (libLoadName == "libc.so")
+                {
+                    return true;
+                }
+                else
+                {
+                    isUserDebuggingCode = pInteropLibraries->IsUserDebuggingCode(addr);
+                    return false;
+                }
+            }
+            return false;
+        }
+#else
         if (frameCount == 1)
             breakAddr = addr;
         else
             isUserDebuggingCode = pInteropLibraries->IsUserDebuggingCode(addr);
 
         return frameCount < 2;
+#endif
     });
     if (!isUserDebuggingCode)
         return false;
@@ -885,7 +919,7 @@ void InteropDebuggerBase::CallbackEventWorker()
                     }
                     break;
                 default:
-                    LOGW("This event type is not stop event: %d", entry.stat);
+                    LOGW("This event type is not stop event: %d", (int)entry.stat);
                     break;
                 }
             }
@@ -922,7 +956,7 @@ void InteropDebuggerBase::ParseThreadsEvents()
             m_callbackEvents.emplace_back(pid, m_TIDs[pid].stat, m_TIDs[pid].stop_event_data);
             break;
         default:
-            LOGW("This event type is not stop event: %d", m_TIDs[pid].stat);
+            LOGW("This event type is not stop event: %d", (int)m_TIDs[pid].stat);
             break;
         }
     }
@@ -1516,7 +1550,40 @@ static std::array<unw_word_t, UNW_REG_LAST + 1> *InitContextRegs(std::array<unw_
     contextRegs[UNW_AARCH64_SP]       = context->Sp;
     contextRegs[UNW_AARCH64_PC]       = context->Pc;
     contextRegs[UNW_AARCH64_PSTATE]   = context->Cpsr;
-
+#elif defined(UNW_TARGET_RISCV)
+    contextRegs[UNW_RISCV_X0]       = context->R0;
+    contextRegs[UNW_RISCV_X1]       = context->Ra;
+    contextRegs[UNW_RISCV_X2]       = context->Sp;
+    contextRegs[UNW_RISCV_X3]       = context->Gp;
+    contextRegs[UNW_RISCV_X4]       = context->Tp;
+    contextRegs[UNW_RISCV_X5]       = context->T0;
+    contextRegs[UNW_RISCV_X6]       = context->T1;
+    contextRegs[UNW_RISCV_X7]       = context->T2;
+    contextRegs[UNW_RISCV_X8]       = context->Fp;
+    contextRegs[UNW_RISCV_X9]       = context->S1;
+    contextRegs[UNW_RISCV_X10]      = context->A0;
+    contextRegs[UNW_RISCV_X11]      = context->A1;
+    contextRegs[UNW_RISCV_X12]      = context->A2;
+    contextRegs[UNW_RISCV_X13]      = context->A3;
+    contextRegs[UNW_RISCV_X14]      = context->A4;
+    contextRegs[UNW_RISCV_X15]      = context->A5;
+    contextRegs[UNW_RISCV_X16]      = context->A6;
+    contextRegs[UNW_RISCV_X17]      = context->A7;
+    contextRegs[UNW_RISCV_X18]      = context->S2;
+    contextRegs[UNW_RISCV_X19]      = context->S3;
+    contextRegs[UNW_RISCV_X20]      = context->S4;
+    contextRegs[UNW_RISCV_X21]      = context->S5;
+    contextRegs[UNW_RISCV_X22]      = context->S6;
+    contextRegs[UNW_RISCV_X23]      = context->S7;
+    contextRegs[UNW_RISCV_X24]      = context->S8;
+    contextRegs[UNW_RISCV_X25]      = context->S9;
+    contextRegs[UNW_RISCV_X26]      = context->S10;
+    contextRegs[UNW_RISCV_X27]      = context->S11;
+    contextRegs[UNW_RISCV_X28]      = context->T3;
+    contextRegs[UNW_RISCV_X29]      = context->T4;
+    contextRegs[UNW_RISCV_X30]      = context->T5;
+    contextRegs[UNW_RISCV_X31]      = context->T6;
+    contextRegs[UNW_RISCV_PC]       = context->Pc;
 #else
 #error "Unsupported platform"
 #endif

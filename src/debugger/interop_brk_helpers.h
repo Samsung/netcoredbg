@@ -23,6 +23,8 @@ namespace InteropDebugging
 
 #if DEBUGGER_UNIX_ARM
     bool IsThumbOpcode32Bits(word_t data);
+#elif DEBUGGER_UNIX_RISCV64
+    bool IsOpcode16Bits(word_t data);
 #endif
 
 } // namespace InteropDebugging
