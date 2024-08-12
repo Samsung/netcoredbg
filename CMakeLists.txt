@@ -44,6 +44,7 @@ set(VERSION_PROPS_PATH "${CORECLR_DIR}/eng/Versions.props")
 if (NOT EXISTS "${CORECLR_SRC_DIR}/pal")
     set(CORECLR_SRC_DIR "${CORECLR_DIR}")
     set(VERSION_PROPS_PATH "${CORECLR_DIR}/../../eng/Versions.props")
+    set(NATIVE_SRC_DIR "${CORECLR_DIR}/../native")
 endif()
 
 if (WIN32)

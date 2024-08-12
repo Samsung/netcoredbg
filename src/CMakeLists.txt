@@ -35,6 +35,10 @@ include_directories(${CORECLR_SRC_DIR}/dlls/dbgshim)
 include_directories(${CORECLR_SRC_DIR}/coreclr/hosts/inc)
 # for dotnet-runtime (> 3.x)
 include_directories(${CORECLR_SRC_DIR}/hosts/inc)
+# for dotnet-runtime (> 8.x)
+if (DEFINED NATIVE_SRC_DIR)
+    include_directories(${NATIVE_SRC_DIR})
+endif()
 
 # Build native part of the debugger
 
