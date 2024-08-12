@@ -2096,12 +2096,12 @@ HRESULT EvalStackMachine::FindPredefinedTypes(ICorDebugModule *pModule)
 
     mdTypeDef typeDef = mdTypeDefNil;
     static const WCHAR strTypeDefDecimal[] = W("System.Decimal");
-    IfFailRet(pMD->FindTypeDefByName(strTypeDefDecimal, NULL, &typeDef));
+    IfFailRet(pMD->FindTypeDefByName(strTypeDefDecimal, (mdToken)NULL, &typeDef));
     IfFailRet(pModule->GetClassFromToken(typeDef, &m_evalData.iCorDecimalClass));
 
     typeDef = mdTypeDefNil;
     static const WCHAR strTypeDefVoid[] = W("System.Void");
-    IfFailRet(pMD->FindTypeDefByName(strTypeDefVoid, NULL, &typeDef));
+    IfFailRet(pMD->FindTypeDefByName(strTypeDefVoid, (mdToken)NULL, &typeDef));
     IfFailRet(pModule->GetClassFromToken(typeDef, &m_evalData.iCorVoidClass));
 
     static const std::vector<std::pair<CorElementType, const WCHAR*>> corElementToValueNameMap{
@@ -2122,7 +2122,7 @@ HRESULT EvalStackMachine::FindPredefinedTypes(ICorDebugModule *pModule)
     for (auto &entry : corElementToValueNameMap)
     {
         typeDef = mdTypeDefNil;
-        IfFailRet(pMD->FindTypeDefByName(entry.second, NULL, &typeDef));
+        IfFailRet(pMD->FindTypeDefByName(entry.second, (mdToken)NULL, &typeDef));
         IfFailRet(pModule->GetClassFromToken(typeDef, &m_evalData.corElementToValueClassMap[entry.first]));
     }
 
