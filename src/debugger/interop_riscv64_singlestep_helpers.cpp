@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <string.h>
 #include <assert.h>
+#include <climits>
 #include "utils/logger.h"
 
 
@@ -65,16 +66,16 @@ static void Get16BitCodeNextPC(pid_t pid, const user_regs_struct &regs, const ui
                                   (BitExtract(opcode, 8, 8) << 10) | (BitExtract(opcode, 12, 12) << 11), 11);
         nextPC = currentPC + imm;
     }
-    else if ((opcode & 0xE07F) == 0x8002) // C.JR, C.JALR
+    else if ((opcode & 0xE07F) == 0x8002) // C.JR, C.JALR (Note, C.JR and C.JALR vary by 1 bit and this condition will be true only for them)
     {
         uint64_t Rs1 = BitExtract(opcode, 11, 7);
         if (Rs1 != 0)
         {
-            uint64_t Rs1SValue = GetReg(regs, Rs1);
-            nextPC = Rs1SValue;
+            uint64_t Rs1Value = GetReg(regs, Rs1);
+            nextPC = Rs1Value;
         }
     }
-    else if ((opcode & 0xC003) == 0xC001) // C.BEQZ, C.BNEZ
+    else if ((opcode & 0xC003) == 0xC001) // C.BEQZ, C.BNEZ (Note, C.BEQZ and C.BNEZ vary by 1 bit and this condition will be true only for them)
     {
         // CB type immediate
         ///      |15 14 13|12 11 10|9 8 7|6       2|1 0|
@@ -83,16 +84,16 @@ static void Get16BitCodeNextPC(pid_t pid, const user_regs_struct &regs, const ui
                                   (BitExtract(opcode, 6, 5) << 6) | (BitExtract(opcode, 12, 12) << 8), 8);
 
         uint64_t Rs1 = BitExtract(opcode, 9, 7);
-        uint64_t Rs1SValue = GetReg(regs, Rs1);
+        uint64_t Rs1Value = GetReg(regs, Rs1);
 
         if (BitExtract(opcode, 13, 13))
         {// C.BNEZ
-            if (Rs1SValue != 0)
+            if (Rs1Value != 0)
                 nextPC = currentPC + imm;
         }
         else
         {// C.BEQZ
-            if (Rs1SValue == 0)
+            if (Rs1Value == 0)
                 nextPC = currentPC + imm;
         }
     }
@@ -126,8 +127,20 @@ static void Get32BitCodeNextPC(pid_t pid, const user_regs_struct &regs, const ui
     {
         uint64_t Rs1 = BitExtract(opcode, 19, 15);
         uint64_t Rs2 = BitExtract(opcode, 24, 20);
-        int64_t Rs1SValue = GetReg(regs, Rs1);
-        int64_t Rs2SValue = GetReg(regs, Rs2);
+
+        uint64_t value = GetReg(regs, Rs1);
+        int64_t Rs1SValue;
+        if (value <= LLONG_MAX)
+            Rs1SValue = value;
+        else
+            Rs1SValue = -(int64_t)(ULLONG_MAX - value) - 1;
+
+        value = GetReg(regs, Rs2);
+        int64_t Rs2SValue;
+        if (value <= LLONG_MAX)
+            Rs2SValue = value;
+        else
+            Rs2SValue = -(int64_t)(ULLONG_MAX - value) - 1;
 
         if ((((opcode & 0x707f) == 0x63) && Rs1SValue == Rs2SValue) ||
             (((opcode & 0x707f) == 0x1063) && Rs1SValue != Rs2SValue) ||
