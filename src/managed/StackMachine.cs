@@ -513,7 +513,7 @@ namespace NetCoreDbg
 
             public override void Visit(SyntaxNode node)
             {
-                if (node.Kind() == SyntaxKind.ExpressionStatement)
+                if (Microsoft.CodeAnalysis.CSharpExtensions.IsKind(node, SyntaxKind.ExpressionStatement))
                 {
                     ExpressionStatementCount++;
                     ExpressionStatementBody = true;
@@ -573,14 +573,14 @@ namespace NetCoreDbg
                             bool OmittedTypeArg = false;
                             foreach (var child in node.ChildNodes())
                             {
-                                if (child.Kind() != SyntaxKind.TypeArgumentList)
+                                if (!Microsoft.CodeAnalysis.CSharpExtensions.IsKind(child, SyntaxKind.TypeArgumentList))
                                     continue;
 
                                 GenericNameArgs = 0;
 
                                 foreach (var ArgumentListChild in child.ChildNodes())
                                 {
-                                    if (ArgumentListChild.Kind() == SyntaxKind.OmittedTypeArgument)
+                                    if (Microsoft.CodeAnalysis.CSharpExtensions.IsKind(ArgumentListChild, SyntaxKind.OmittedTypeArgument))
                                     {
                                         OmittedTypeArg = true;
                                         break;
@@ -606,14 +606,14 @@ namespace NetCoreDbg
                             int? ArgsCount = null;
                             foreach (var child in node.ChildNodes())
                             {
-                                if (child.Kind() != SyntaxKind.ArgumentList)
+                                if (!Microsoft.CodeAnalysis.CSharpExtensions.IsKind(child, SyntaxKind.ArgumentList))
                                     continue;
 
                                 ArgsCount = new int();
 
                                 foreach (var ArgumentListChild in child.ChildNodes())
                                 {
-                                    if (ArgumentListChild.Kind() != SyntaxKind.Argument)
+                                    if (!Microsoft.CodeAnalysis.CSharpExtensions.IsKind(ArgumentListChild, SyntaxKind.Argument))
                                         continue;
 
                                     ArgsCount++;
@@ -634,14 +634,14 @@ namespace NetCoreDbg
                             int? ElementAccessArgs = null;
                             foreach (var child in node.ChildNodes())
                             {
-                                if (child.Kind() != SyntaxKind.BracketedArgumentList)
+                                if (!Microsoft.CodeAnalysis.CSharpExtensions.IsKind(child, SyntaxKind.BracketedArgumentList))
                                     continue;
 
                                 ElementAccessArgs = new int();
 
                                 foreach (var ArgumentListChild in child.ChildNodes())
                                 {
-                                    if (ArgumentListChild.Kind() != SyntaxKind.Argument)
+                                    if (!Microsoft.CodeAnalysis.CSharpExtensions.IsKind(ArgumentListChild, SyntaxKind.Argument))
                                         continue;
 
                                     ElementAccessArgs++;
