@@ -66,7 +66,6 @@ public:
         m_execArgs = args;
     }
 
-    void EmitInitializedEvent() override;
     void EmitExecEvent(PID, const std::string& argv0) override;
     void EmitStoppedEvent(const StoppedEvent &event) override;
     void EmitExitedEvent(const ExitedEvent &event) override;
@@ -79,6 +78,7 @@ public:
     void Cleanup() override;
     void CommandLoop() override;
 
+    void EmitInitializedEvent();
     void EmitCapabilitiesEvent();
 };
 

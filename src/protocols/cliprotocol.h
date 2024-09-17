@@ -85,7 +85,6 @@ class CLIProtocol : public IProtocol
 public:
     CLIProtocol(InStream& input, OutStream& output);
 
-    void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv) override {}
     void EmitStoppedEvent(const StoppedEvent &event) override;
     void EmitExitedEvent(const ExitedEvent &event) override;

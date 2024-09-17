@@ -31,7 +31,6 @@ protected:
 public:
     IProtocol(std::istream& input, std::ostream& output) : m_exit(false), m_sharedDebugger(nullptr), cin(input), cout(output)  {}
     void SetDebugger(std::shared_ptr<IDebugger> &sharedDebugger) { m_sharedDebugger = sharedDebugger; }
-    virtual void EmitInitializedEvent() = 0;
     virtual void EmitExecEvent(PID, const std::string& argv0) = 0;
     virtual void EmitStoppedEvent(const StoppedEvent &event) = 0;
     virtual void EmitExitedEvent(const ExitedEvent &event) = 0;

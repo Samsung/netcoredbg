@@ -30,7 +30,6 @@ public:
 
     MIProtocol(std::istream& input, std::ostream& output) : IProtocol(input, output) {}
 
-    void EmitInitializedEvent() override {}
     void EmitExecEvent(PID, const std::string& argv0) override {}
     void EmitStoppedEvent(const StoppedEvent &event) override;
     void EmitExitedEvent(const ExitedEvent &event) override;

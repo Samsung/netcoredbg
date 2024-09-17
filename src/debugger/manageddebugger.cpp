@@ -246,7 +246,6 @@ HRESULT ManagedDebugger::Initialize()
 
     // TODO: Report capabilities and check client support
     m_startMethod = StartNone;
-    pProtocol->EmitInitializedEvent();
     return S_OK;
 }
 

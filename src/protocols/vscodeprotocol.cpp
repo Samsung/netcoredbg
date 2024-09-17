@@ -1019,8 +1019,13 @@ void VSCodeProtocol::CommandsWorker()
         // Post command action.
         if (g_syncCommandExecutionSet.find(c.command) != g_syncCommandExecutionSet.end())
             m_commandSyncCV.notify_one();
+
         if (c.command == "disconnect")
             break;
+        // The Debug Adapter Protocol specifies that `InitializedEvent` occurs after the `InitializeRequest` has returned:
+        // https://microsoft.github.io/debug-adapter-protocol/specification#arrow_left-initialized-event
+        else if (c.command == "initialize" && SUCCEEDED(Status))
+            EmitInitializedEvent();
 
         lockCommandsMutex.lock();
     }
