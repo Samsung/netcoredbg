@@ -316,7 +316,8 @@ namespace
         if (!source.IsNull())
         {
             // "source":{"name":"Program.cs","path":"/path/Program.cs"}
-            stream << ",\"source\":{\"name\":\"" << source.name << "\",\"path\":\"" << source.path << "\"}";
+            EscapedString<JSON_escape_rules> escaped_source_path(source.path);
+            stream << ",\"source\":{\"name\":\"" << source.name << "\",\"path\":\"" << escaped_source_path << "\"}";
         }
 
         stream <<  "}}";
