@@ -1194,6 +1194,109 @@ HRESULT ManagedDebuggerBase::GetManagedStackTrace(ICorDebugThread *pThread, Thre
     }));
 
     totalFrames = currentFrame + 1;
+    ExceptionInfo exceptionInfo;
+    bool analyzeExceptions = true;
+    if (!stackFrames.empty())
+    {
+        analyzeExceptions = analyzeExceptions && (stackFrames.front().line == 0);
+    }
+
+#ifdef INTEROP_DEBUGGING
+    analyzeExceptions = analyzeExceptions && !m_interopDebugging;
+#endif // INTEROP_DEBUGGING
+
+    if (!analyzeExceptions)
+        return S_OK;
+
+//  Sometimes Coreclr may return the empty stack frame in exception info
+//  for some unknown reason. In that case the 2nd attempt is usually successful.
+//  If even the 3rd attempt failed, there is almost no chances to get data successfuly.
+    int tries = 3;
+    for(int tryCount = 0; tryCount < tries; tryCount++)
+    {
+        if (SUCCEEDED(GetExceptionInfo (threadId, exceptionInfo)))
+        {
+            std::stringstream ss(exceptionInfo.details.stackTrace);
+            int countOfNewFrames = 0;
+            int currentFrame = -1;
+            int sizeofStackFrame = stackFrames.size();
+
+//          The stackTrace strings from ExceptionInfo usually looks like:
+//          at Program.Func2(std::string[] strvect) in /home/user/work/vscode_test/utils.cs:line 122
+//          at Program.Func1<int, char>() in /home/user/work/vscode_test/utils.cs:line 78
+//          at Program.Main() in /home/user/work/vscode_test/Program.cs:line 25
+//          at Program.Main() in C:\Users/localuser/work/vscode_test\Program.cs:line 25
+            while (!ss.eof())
+            {
+                std::string line;
+                std::getline(ss, line, '\n');
+                size_t lastcolon = line.find_last_of(':');
+                if (lastcolon == std::string::npos)
+                    continue;
+
+                size_t beginpath = line.find_first_of('/');
+                if (beginpath == std::string::npos)
+                {
+                    beginpath = line.find_first_of('\\');
+                    if (beginpath == std::string::npos)
+                    {
+                        continue;
+                    }
+                }
+
+                // append disk name, if exists
+                beginpath = line.find_last_of(' ', beginpath);
+                if (beginpath == std::string::npos)
+                    continue;
+
+                beginpath++;
+                if (beginpath >= lastcolon)
+                    continue;
+
+                // remove leading spaces and the first word ("at" for the case of English locale)
+                size_t beginname = line.find_first_not_of(' ');
+                if (beginname == std::string::npos)
+                    continue;
+
+                beginname = line.find_first_of(' ', beginname);
+                if (beginname == std::string::npos)
+                    continue;
+                beginname++;
+
+                // the function name ends with the last ')' before the beginning of fullpath
+                size_t endname = line.find_last_of(')', beginpath);
+                if (endname == std::string::npos)
+                    continue;
+                endname++;
+
+                if (beginname >= endname)
+                    continue;
+
+                // look for the line number after the last colon
+                size_t beginlinenum = line.find_first_of("0123456789", lastcolon);
+                size_t endlinenum = line.find_first_not_of("0123456789", beginlinenum);
+                if (beginlinenum == std::string::npos)
+                    continue;
+
+                currentFrame++;
+                if (currentFrame < (int)startFrame || currentFrame >= (int)startFrame + (int)maxFrames)
+                    continue;
+
+                int l{std::stoi(line.substr(beginlinenum, endlinenum))};
+                stackFrames.emplace_back(threadId, FrameLevel{currentFrame}, line.substr(beginname, endname - beginname));
+                stackFrames.back().source = Source(line.substr(beginpath, lastcolon - beginpath));
+                stackFrames.back().line = stackFrames.back().endLine = l;
+                countOfNewFrames++;
+            }
+
+            if (countOfNewFrames > 0)
+            {
+                stackFrames.erase(stackFrames.begin(), stackFrames.begin() + sizeofStackFrame);
+                totalFrames = currentFrame + 1;
+                break;
+            }
+        }
+    }
 
     return S_OK;
 }

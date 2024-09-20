@@ -40,6 +40,7 @@ $ALL_TEST_NAMES = @(
     "MITestEvalArraysIndexers"
     "MITestBreakpointWithoutStop"
     "MITestBreakpointUpdate"
+    "MITestUnhandledException"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -69,6 +70,7 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestEvalArraysIndexers"
     "VSCodeTestExtensionMethods"
     "VSCodeTestBreakpointWithoutStop"
+    "VSCodeTestUnhandledException"
 )
 
 # Skipped tests:
