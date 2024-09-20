@@ -617,6 +617,85 @@ void EscapeString(std::string &s, char q = '\"')
     }
 }
 
+HRESULT GetNullableValue(ICorDebugValue *pValue, ICorDebugValue **ppValueValue, ICorDebugValue **ppHasValueValue)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue2> pValue2;
+    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
+    ToRelease<ICorDebugType> pType;
+    IfFailRet(pValue2->GetExactType(&pType));
+    if (!pType) return E_FAIL;
+
+    ToRelease<ICorDebugClass> pClass;
+    IfFailRet(pType->GetClass(&pClass));
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pClass->GetModule(&pModule));
+    mdTypeDef currentTypeDef;
+    IfFailRet(pClass->GetToken(&currentTypeDef));
+    ToRelease<IUnknown> pMDUnknown;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    ToRelease<ICorDebugObjectValue> pObjValue;
+    ToRelease<ICorDebugValue> unboxedResultValue;
+    IfFailRet(DereferenceAndUnboxValue(pValue, &unboxedResultValue));
+    IfFailRet(unboxedResultValue->QueryInterface(IID_ICorDebugObjectValue, (LPVOID*) &pObjValue));
+
+    ULONG numFields = 0;
+    HCORENUM hEnum = NULL;
+    mdFieldDef fieldDef;
+    while (SUCCEEDED(pMD->EnumFields(&hEnum, currentTypeDef, &fieldDef, 1, &numFields)) && numFields != 0)
+    {
+        ULONG nameLen = 0;
+        WCHAR mdName[mdNameLen] = {0};
+        if (SUCCEEDED(pMD->GetFieldProps(fieldDef, nullptr, mdName, _countof(mdName), &nameLen, NULL, NULL, NULL, NULL, NULL, NULL)))
+        {
+            // https://github.com/dotnet/runtime/blob/adba54da2298de9c715922b506bfe17a974a3650/src/libraries/System.Private.CoreLib/src/System/Nullable.cs#L24
+            if (str_equal(mdName, W("value")))
+                IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, ppValueValue));
+
+            // https://github.com/dotnet/runtime/blob/adba54da2298de9c715922b506bfe17a974a3650/src/libraries/System.Private.CoreLib/src/System/Nullable.cs#L23
+            if (str_equal(mdName, W("hasValue")))
+                IfFailRet(pObjValue->GetFieldValue(pClass, fieldDef, ppHasValueValue));
+        }
+    }
+
+    return S_OK;
+}
+
+HRESULT PrintNullableValue(ICorDebugValue *pValue, std::string &outTextValue)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue> pValueValue;
+    ToRelease<ICorDebugValue> pHasValueValue;
+    IfFailRet(GetNullableValue(pValue, &pValueValue, &pHasValueValue));
+
+    ULONG32 cbSize;
+    IfFailRet(pHasValueValue->GetSize(&cbSize));
+    ArrayHolder<BYTE> rgbValue = new (std::nothrow) BYTE[cbSize];
+    if (rgbValue == nullptr)
+    {
+        return E_OUTOFMEMORY;
+    }
+    memset(rgbValue.GetPtr(), 0, cbSize * sizeof(BYTE));
+
+    ToRelease<ICorDebugGenericValue> pGenericValue;
+    IfFailRet(pHasValueValue->QueryInterface(IID_ICorDebugGenericValue, (LPVOID*) &pGenericValue));
+    IfFailRet(pGenericValue->GetValue((LPVOID) &(rgbValue[0])));
+    // pHasValueValue is ELEMENT_TYPE_BOOLEAN
+    if (rgbValue[0] != 0)
+    {
+        PrintValue(pValueValue, outTextValue, true);
+    }
+    else
+    {
+        outTextValue = "null";
+    }
+
+    return S_OK;
+}
+
 HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape)
 {
     HRESULT Status;
@@ -712,6 +791,12 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
             else if (typeName == "void")
             {
                 ss << "Expression has been evaluated and has no value";
+            }
+            else if (typeName.back() == '?') // System.Nullable<T>
+            {
+                std::string val;
+                PrintNullableValue(pValue, val);
+                ss << val;
             }
             else
             {

@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <memory>
 
+#include "utils/string_view.h"
 #include "utils/torelease.h"
 #include "utils/utf.h"
 
@@ -448,7 +449,13 @@ HRESULT GetTypeOfValue(ICorDebugType *pType, std::string &elementType, std::stri
                 AddGenericArgs(pType, args);
                 if(SUCCEEDED(NameForToken(TokenFromRid(typeDef, mdtTypeDef), pMD, name, false, &args)))
                 {
-                    ss << name;
+                    static const Utility::string_view nullablePattern = "System.Nullable<";
+                    if (name.rfind(nullablePattern, 0) == 0)
+                    {
+                        ss << name.substr(nullablePattern.size(), name.rfind(">") - nullablePattern.size()) << "?";
+                    }
+                    else
+                        ss << name;
                 }
             }
             elementType = ss.str();

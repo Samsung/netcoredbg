@@ -315,7 +315,7 @@ namespace NetcoreDbgTest.Script
             setVariableRequest.arguments.variablesReference = variablesReference;
             setVariableRequest.arguments.name = Name;
             setVariableRequest.arguments.value = Value;
-            Assert.True(VSCodeDebugger.Request(setVariableRequest).Success, @"__FILE__:__LINE__");
+            Assert.True(VSCodeDebugger.Request(setVariableRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
 
             if (ignoreCheck)
                 return;
@@ -330,7 +330,7 @@ namespace NetcoreDbgTest.Script
             setVariableRequest.arguments.variablesReference = variablesReference;
             setVariableRequest.arguments.name = Name;
             setVariableRequest.arguments.value = Value;
-            Assert.False(VSCodeDebugger.Request(setVariableRequest).Success, @"__FILE__:__LINE__");
+            Assert.False(VSCodeDebugger.Request(setVariableRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
         public void SetExpression(string caller_trace, Int64 frameId, string Expression, string Value)
@@ -338,7 +338,7 @@ namespace NetcoreDbgTest.Script
             SetExpressionRequest setExpressionRequest = new SetExpressionRequest();
             setExpressionRequest.arguments.expression = Expression;
             setExpressionRequest.arguments.value = Value;
-            Assert.True(VSCodeDebugger.Request(setExpressionRequest).Success, @"__FILE__:__LINE__");
+            Assert.True(VSCodeDebugger.Request(setExpressionRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
         public void ErrorSetExpression(string caller_trace, Int64 frameId, string Expression, string Value)
@@ -346,7 +346,7 @@ namespace NetcoreDbgTest.Script
             SetExpressionRequest setExpressionRequest = new SetExpressionRequest();
             setExpressionRequest.arguments.expression = Expression;
             setExpressionRequest.arguments.value = Value;
-            Assert.False(VSCodeDebugger.Request(setExpressionRequest).Success, @"__FILE__:__LINE__");
+            Assert.False(VSCodeDebugger.Request(setExpressionRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
         public void Continue(string caller_trace)
@@ -680,6 +680,7 @@ namespace VSCodeTestVariables
             TestImplicitCast1 varClass = new TestImplicitCast1(112);
             TestImplicitCast2 varClass2 = new TestImplicitCast2(312);
             TestImplicitCast3 varStruct3;
+            double? varNullableDouble = null;
 
             sbyte   litSByte = -103;
             byte    litByte = 102;
@@ -1179,6 +1180,36 @@ namespace VSCodeTestVariables
                 Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1+1", "2");
                 Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1", "1");
                 Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "1.ToString()", "\"1\"");
+
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testChar");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testSByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testByte");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testUShort");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testUInt");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testLong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testULong");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testFloat", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "testDouble");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varNullableDouble", "testDecimal");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varNullableDouble", "testBool");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varNullableDouble", "testString");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varNullableDouble", "testClass");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "'A'");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "310");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "310u");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "310L");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "310ul");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "310.1f", true);
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "310.1d");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varNullableDouble", "310.1m");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varNullableDouble", "true");
+                Context.ErrorSetVariable(@"__FILE__:__LINE__", variablesReference, "varNullableDouble", "\"string\"");
+                Context.SetVariable(@"__FILE__:__LINE__", frameId, variablesReference, "varNullableDouble", "null");
+                Context.SetExpression(@"__FILE__:__LINE__", frameId, "varNullableDouble", "3001");
+                Context.SetExpression(@"__FILE__:__LINE__", frameId, "varNullableDouble", "null");
+                Context.ErrorSetExpression(@"__FILE__:__LINE__", frameId, "varNullableDouble", "true");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

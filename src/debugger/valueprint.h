@@ -12,6 +12,8 @@ namespace netcoredbg
 {
 
 HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true);
+HRESULT GetNullableValue(ICorDebugValue *pValue, ICorDebugValue **ppValueValue, ICorDebugValue **ppHasValueValue);
+HRESULT PrintNullableValue(ICorDebugValue *pValue, std::string &outTextValue);
 HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output);
 HRESULT DereferenceAndUnboxValue(ICorDebugValue * pValue, ICorDebugValue** ppOutputValue, BOOL * pIsNull = nullptr);
 

@@ -609,19 +609,51 @@ HRESULT Evaluator::WalkMethods(ICorDebugType *pInputType, ICorDebugType **ppResu
     return InternalWalkMethods(pInputType, ppResultType, methodGenerics, cb);
 }
 
+static HRESULT InternalSetNullableValue(EvalStackMachine *pEvalStackMachine, ICorDebugThread *pThread, FrameLevel frameLevel,
+                                        ICorDebugValue *pValue, const std::string &value, int evalFlags, std::string &output)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugValue> pValueValue;
+    ToRelease<ICorDebugValue> pHasValueValue;
+    IfFailRet(GetNullableValue(pValue, &pValueValue, &pHasValueValue));
+
+    if (value == "null")
+    {
+        return pEvalStackMachine->SetValueByExpression(pThread, frameLevel, evalFlags, pHasValueValue, "false", output);
+    }
+    else
+    {
+        IfFailRet(pEvalStackMachine->SetValueByExpression(pThread, frameLevel, evalFlags, pValueValue, value, output));
+        return pEvalStackMachine->SetValueByExpression(pThread, frameLevel, evalFlags, pHasValueValue, "true", output);
+    }
+}
+
 static HRESULT InternalSetValue(EvalStackMachine *pEvalStackMachine, EvalHelpers *pEvalHelpers, ICorDebugThread *pThread, FrameLevel frameLevel,
-                                ICorDebugValue *pValue, Evaluator::SetterData *setterData, const std::string &value, int evalFlags, std::string &output)
+                                ToRelease<ICorDebugValue> &iCorPrevValue, Evaluator::GetValueCallback *getValue, Evaluator::SetterData *setterData, const std::string &value, int evalFlags, std::string &output)
 {
     if (!pThread)
         return E_FAIL;
 
+    HRESULT Status;
+    std::string className;
+    TypePrinter::GetTypeOfValue(iCorPrevValue, className);
+    if (className.back() == '?') // System.Nullable<T>
+    {
+        IfFailRet(InternalSetNullableValue(pEvalStackMachine, pThread, frameLevel, iCorPrevValue, value, evalFlags, output));
+        if (getValue)
+        {
+            iCorPrevValue.Free();
+            IfFailRet((*getValue)(&iCorPrevValue, evalFlags));
+        }
+        return S_OK;
+    }
+
     // In case this is not property, just change value itself.
     if (!setterData)
-        return pEvalStackMachine->SetValueByExpression(pThread, frameLevel, evalFlags, pValue, value, output);
+        return pEvalStackMachine->SetValueByExpression(pThread, frameLevel, evalFlags, iCorPrevValue, value, output);
 
-    HRESULT Status;
-    pValue->AddRef();
-    ToRelease<ICorDebugValue> iCorValue(pValue);
+    iCorPrevValue->AddRef();
+    ToRelease<ICorDebugValue> iCorValue(iCorPrevValue.GetPtr());
     CorElementType corType;
     IfFailRet(iCorValue->GetType(&corType));
 
@@ -653,10 +685,10 @@ static HRESULT InternalSetValue(EvalStackMachine *pEvalStackMachine, EvalHelpers
     }
 }
 
-HRESULT Evaluator::SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ICorDebugValue *pValue,
+HRESULT Evaluator::SetValue(ICorDebugThread *pThread, FrameLevel frameLevel, ToRelease<ICorDebugValue> &iCorValue, GetValueCallback *getValue,
                             SetterData *setterData, const std::string &value, int evalFlags, std::string &output)
 {
-    return InternalSetValue(m_sharedEvalStackMachine.get(), m_sharedEvalHelpers.get(), pThread, frameLevel, pValue, setterData, value, evalFlags, output);
+    return InternalSetValue(m_sharedEvalStackMachine.get(), m_sharedEvalHelpers.get(), pThread, frameLevel, iCorValue, getValue, setterData, value, evalFlags, output);
 }
 
 // https://github.com/dotnet/roslyn/blob/d1e617ded188343ba43d24590802dd51e68e8e32/src/Compilers/CSharp/Portable/Symbols/Synthesized/GeneratedNameParser.cs#L13
@@ -744,6 +776,9 @@ static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pI
     std::string className;
     TypePrinter::GetTypeOfValue(pType, className);
     if (className == "decimal") // TODO: implement mechanism for walking over custom type fields
+        return S_OK;
+
+    if (className.back() == '?') // System.Nullable<T>, don't provide class member list.
         return S_OK;
 
     CorElementType corElemType;

@@ -588,6 +588,7 @@ namespace MITestVariables
             TestImplicitCast1 varClass = new TestImplicitCast1(112);
             TestImplicitCast2 varClass2 = new TestImplicitCast2(312);
             TestImplicitCast3 varStruct3;
+            double? varNullableDouble = null;
 
             sbyte   litSByte = -103;
             byte    litByte = 102;
@@ -1072,6 +1073,33 @@ namespace MITestVariables
                 Context.CheckAttributes(@"__FILE__:__LINE__", "-array1[0]", "noneditable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "1+1", "noneditable");
                 Context.CheckAttributes(@"__FILE__:__LINE__", "litClass.data.ToString()", "noneditable");
+
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testChar");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testSByte");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testByte");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testShort");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testUShort");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testInt");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testUInt");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testLong");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testULong");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testFloat", true);
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testDouble");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testDecimal");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testBool");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testString");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "testClass");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "'A'");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "310");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "310u");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "310L");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "310ul");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "310.1f", true);
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "310.1d");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "310.1m");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "true");
+                Context.ErrorAtAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "\"string\"");
+                Context.CreateAndAssignVar(@"__FILE__:__LINE__", "varNullableDouble", "null");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

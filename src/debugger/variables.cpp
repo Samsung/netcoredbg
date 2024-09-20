@@ -76,15 +76,18 @@ struct VariableMember
     VariableMember(const VariableMember &that) = delete;
 };
 
-static void FillValueAndType(VariableMember &member, Variable &var)
+static HRESULT FillValueAndType(VariableMember &member, Variable &var)
 {
     if (member.value == nullptr)
     {
+        // "SUCCEEDED" result, variable found but error during value receive itself.
+        // For example, in case of eval flags `EVAL_NOFUNCEVAL` and property.
         var.value = "<error>";
-        return;
+        return S_FALSE;
     }
-    PrintValue(member.value, var.value, true);
+
     TypePrinter::GetTypeOfValue(member.value, var.type);
+    return PrintValue(member.value, var.value, true);
 }
 
 static HRESULT FetchFieldsAndProperties(Evaluator *pEvaluator, ICorDebugValue *pInputValue, ICorDebugThread *pThread,
@@ -254,8 +257,9 @@ HRESULT Variables::GetStackVariables(
         var.evaluateName = var.name;
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, var.evalFlags));
-        IfFailRet(PrintValue(iCorValue, var.value));
         IfFailRet(TypePrinter::GetTypeOfValue(iCorValue, var.type));
+        IfFailRet(PrintValue(iCorValue, var.value));
+
         IfFailRet(AddVariableReference(var, frameId, iCorValue, ValueIsVariable));
         variables.push_back(var);
         return S_OK;
@@ -350,7 +354,7 @@ HRESULT Variables::GetChildren(
         bool isIndex = !it.name.empty() && it.name.at(0) == '[';
         if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
             var.evaluateName = ref.evaluateName + (isIndex ? "" : ".") + var.name;
-        FillValueAndType(it, var);
+        IfFailRet(FillValueAndType(it, var));
         IfFailRet(AddVariableReference(var, ref.frameId, it.value, ValueIsVariable));
         variables.push_back(var);
     }
@@ -399,8 +403,9 @@ HRESULT Variables::Evaluate(
     IfFailRet(m_sharedEvalStackMachine->EvaluateExpression(pThread, frameLevel, variable.evalFlags, expression, &pResultValue, output, &variable.editable));
 
     variable.evaluateName = expression;
-    IfFailRet(PrintValue(pResultValue, variable.value));
     IfFailRet(TypePrinter::GetTypeOfValue(pResultValue, variable.type));
+    IfFailRet(PrintValue(pResultValue, variable.value));
+
     return AddVariableReference(variable, frameId, pResultValue, ValueIsVariable);
 }
 
@@ -443,6 +448,7 @@ HRESULT Variables::SetStackVariable(
     std::string &output)
 {
     HRESULT Status;
+    bool found = false;
 
     if (FAILED(Status = m_sharedEvaluator->WalkStackVars(pThread, ref.frameId.getLevel(),
         [&](const std::string &varName, Evaluator::GetValueCallback getValue) -> HRESULT
@@ -452,14 +458,20 @@ HRESULT Variables::SetStackVariable(
 
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, ref.evalFlags));
-        IfFailRet(m_sharedEvaluator->SetValue(pThread, ref.frameId.getLevel(), iCorValue, nullptr, value, ref.evalFlags, output));
+        IfFailRet(m_sharedEvaluator->SetValue(pThread, ref.frameId.getLevel(), iCorValue, &getValue, nullptr, value, ref.evalFlags, output));
         IfFailRet(PrintValue(iCorValue, output));
+        found = true;
         return E_ABORT; // Fast exit from cycle.
     })) && Status != E_ABORT)
     {
         return Status;
     }
 
+    if (!found)
+    {
+        output = "Variable name not found.";
+        return E_FAIL;
+    }
     return S_OK;
 }
 
@@ -477,6 +489,7 @@ HRESULT Variables::SetChild(
         return S_OK;
 
     HRESULT Status;
+    bool found = false;
 
     if (FAILED(Status = m_sharedEvaluator->WalkMembers(ref.iCorValue, pThread, ref.frameId.getLevel(), true, [&](
         ICorDebugType*,
@@ -493,14 +506,20 @@ HRESULT Variables::SetChild(
 
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, ref.evalFlags));
-        IfFailRet(m_sharedEvaluator->SetValue(pThread, ref.frameId.getLevel(), iCorValue, setterData, value, ref.evalFlags, output));
+        IfFailRet(m_sharedEvaluator->SetValue(pThread, ref.frameId.getLevel(), iCorValue, &getValue, setterData, value, ref.evalFlags, output));
         IfFailRet(PrintValue(iCorValue, output));
+        found = true;
         return E_ABORT; // Fast exit from cycle.
     })) && Status != E_ABORT)
     {
         return Status;
     }
 
+    if (!found)
+    {
+        output = "Variable name not found.";
+        return E_FAIL;
+    }
     return S_OK;
 }
 
@@ -526,7 +545,7 @@ HRESULT Variables::SetExpression(ICorDebugProcess *pProcess, FrameId frameId, co
         return E_INVALIDARG;
     }
 
-    IfFailRet(m_sharedEvaluator->SetValue(pThread, frameId.getLevel(), iCorValue, setterData.get(), value, evalFlags, output));
+    IfFailRet(m_sharedEvaluator->SetValue(pThread, frameId.getLevel(), iCorValue, nullptr, setterData.get(), value, evalFlags, output));
     IfFailRet(PrintValue(iCorValue, output));
     return S_OK;
 }
