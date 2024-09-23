@@ -415,19 +415,31 @@ HRESULT CallbacksQueue::Pause(ICorDebugProcess *pProcess, ThreadId lastStoppedTh
     }
     else if (eventFormat == EventFormat::CLI)
     {
+        ThreadId threadId;
+        if (threads.empty())
+        {
+            DWORD pid = 0;
+            IfFailRet(pProcess->GetID(&pid));
+            threadId = ThreadId(pid);
+        }
+        else
+        {
+            threadId = threads[0].id;
+        }
+
         // CLI protocol provide ThreadId::AllThreads as lastStoppedThread, stop at main thread with real top frame in event.
-        m_debugger.SetLastStoppedThreadId(threads[0].id);
+        m_debugger.SetLastStoppedThreadId(threadId);
 
         int totalFrames = 0;
+        StoppedEvent event(StopPause, threadId);
         std::vector<StackFrame> stackFrames;
-        if (SUCCEEDED(m_debugger.GetStackTrace(threads[0].id, FrameLevel(0), 1, stackFrames, totalFrames)))
+        if (SUCCEEDED(m_debugger.GetStackTrace(threadId, FrameLevel(0), 1, stackFrames, totalFrames)) && !stackFrames.empty())
         {
-            StoppedEvent event(StopPause, threads[0].id);
             event.frame = stackFrames[0];
-            m_debugger.pProtocol->EmitStoppedEvent(event);
-            m_debugger.m_ioredirect.async_cancel();
-            return S_OK;
         }
+        m_debugger.pProtocol->EmitStoppedEvent(event);
+        m_debugger.m_ioredirect.async_cancel();
+        return S_OK;
     }
     else
     {
