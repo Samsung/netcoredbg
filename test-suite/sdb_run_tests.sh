@@ -98,6 +98,8 @@ ALL_TEST_NAMES=(
     "VSCodeTestNoJMCNoFilterStepping"
     "VSCodeTestNoJMCBreakpoint"
     "VSCodeTestNoJMCAsyncStepping"
+    "VSCodeTestExceptionBreakpoint"
+    "VSCodeTestNoJMCExceptionBreakpoint"
     "VSCodeTestSizeof"
     "VSCodeTestAsyncLambdaEvaluate"
     "VSCodeTestGeneric"
