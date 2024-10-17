@@ -69,9 +69,9 @@ If cmake tries to download the .NET SDK or CoreCLR sources and fails, then pleas
 After configuration has finished, you can then build NetCoreDbg:
 
 ```
-user@netcoredbg$ make
+user@build$ make
 ...
-user@netcoredbg$ make install
+user@build$ make install
 ```
 
 To perform a build from scratch, including the configuration step, you should again delete any artifacts with the following commands:
