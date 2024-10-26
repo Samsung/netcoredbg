@@ -1219,10 +1219,10 @@ HRESULT ManagedDebuggerBase::GetManagedStackTrace(ICorDebugThread *pThread, Thre
             std::stringstream ss(exceptionInfo.details.stackTrace);
             int countOfNewFrames = 0;
             int currentFrame = -1;
-            int sizeofStackFrame = stackFrames.size();
+            size_t sizeofStackFrame = stackFrames.size();
 
 //          The stackTrace strings from ExceptionInfo usually looks like:
-//          at Program.Func2(std::string[] strvect) in /home/user/work/vscode_test/utils.cs:line 122
+//          at Program.Func2(string[] strvect) in /home/user/work/vscode_test/utils.cs:line 122
 //          at Program.Func1<int, char>() in /home/user/work/vscode_test/utils.cs:line 78
 //          at Program.Main() in /home/user/work/vscode_test/Program.cs:line 25
 //          at Program.Main() in C:\Users/localuser/work/vscode_test\Program.cs:line 25
@@ -1279,7 +1279,7 @@ HRESULT ManagedDebuggerBase::GetManagedStackTrace(ICorDebugThread *pThread, Thre
                     continue;
 
                 currentFrame++;
-                if (currentFrame < (int)startFrame || currentFrame >= (int)startFrame + (int)maxFrames)
+                if (currentFrame < (int)startFrame || (maxFrames != 0 && currentFrame >= (int)startFrame + (int)maxFrames))
                     continue;
 
                 int l{std::stoi(line.substr(beginlinenum, endlinenum))};
