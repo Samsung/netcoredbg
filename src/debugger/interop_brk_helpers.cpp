@@ -184,7 +184,8 @@ bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData, std::functi
         iov.iov_len = sizeof(user_regs_struct);
         if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
         {
-            LOGE("Ptrace getregset error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             return false;
         }
 
@@ -192,7 +193,8 @@ bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData, std::functi
 
         if (async_ptrace(PTRACE_SETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
         {
-            LOGE("Ptrace setregset error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace setregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             return false;
         }
     }
@@ -201,7 +203,8 @@ bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData, std::functi
     word_t brkData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)addr, nullptr);
     if (errno != 0)
     {
-        LOGE("Ptrace peekdata error: %s", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace peekdata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -210,7 +213,8 @@ bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData, std::functi
     // restore data
     if (async_ptrace(PTRACE_POKEDATA, pid, (void*)addr, (void*)restoreData) == -1)
     {
-        LOGE("Ptrace pokedata error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace pokedata error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -220,7 +224,8 @@ bool StepOverBrk(pid_t pid, std::uintptr_t addr, word_t restoreData, std::functi
     // setup bp again
     if (async_ptrace(PTRACE_POKEDATA, pid, (void*)addr, (void*)brkData) == -1)
     {
-        LOGE("Ptrace pokedata error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace pokedata error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 

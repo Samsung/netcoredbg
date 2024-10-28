@@ -124,7 +124,8 @@ static HRESULT EmptyContextForTopFrame(ICorDebugThread *pThread, WalkFramesCallb
         iov.iov_len = sizeof(user_regs_struct);
         if (InteropDebugging::async_ptrace(PTRACE_GETREGSET, threadId, (void*)NT_PRSTATUS, &iov) == -1)
         {
-            LOGW("Ptrace getregset error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         }
         else
         {

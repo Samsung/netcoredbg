@@ -54,7 +54,8 @@ bool GetDataFromMemory(pid_t pid, std::uintptr_t addr, T &result)
     word_t wData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)addr, nullptr);
     if (errno != 0)
     {
-        LOGE("Ptrace peekdata error: %s", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace peekdata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -1049,7 +1050,8 @@ bool ARM32_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &swS
     iov.iov_len = sizeof(user_regs_struct);
     if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
     {
-        LOGW("Ptrace getregset error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -1078,7 +1080,8 @@ bool ARM32_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &swS
         word_t nextPCData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)entry.addr, nullptr);
         if (errno != 0)
         {
-            LOGE("Ptrace peekdata error: %s", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace peekdata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
             return false;
         }
 
@@ -1086,7 +1089,8 @@ bool ARM32_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &swS
 
         if (async_ptrace(PTRACE_POKEDATA, pid, (void*)entry.addr, (void*)dataWithBrk) == -1)
         {
-            LOGE("Ptrace pokedata error: %s", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace pokedata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
             return false;
         }
 

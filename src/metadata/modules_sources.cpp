@@ -846,6 +846,12 @@ static HRESULT LoadLineUpdatesFile(ModulesSources *pModulesSources, const std::s
     };
     std::unordered_map<unsigned /*source fullPathIndex*/, std::vector<line_update_t>> lineUpdatesData;
 
+    // 0xfeefee is a magic number for "#line hidden" directive.
+    // https://docs.microsoft.com/en-us/dotnet/csharp/language-reference/preprocessor-directives/preprocessor-line
+    // https://docs.microsoft.com/en-us/archive/blogs/jmstall/line-hidden-and-0xfeefee-sequence-points
+    if (sourcesCount >= 0xfeefee)
+        return E_FAIL;
+
     for (uint32_t i = 0; i < sourcesCount; i++)
     {
         uint32_t stringSize = 0;

@@ -27,7 +27,8 @@ static T ReadFromAddr(pid_t pid, std::uintptr_t &addr)
     iovec remote_iov {(void*)addr, sizeof(T)};
     if (process_vm_readv(pid, &local_iov, 1, &remote_iov, 1, 0) == -1)
     {
-        LOGE("process_vm_readv: %s\n", strerror(errno));
+        char buf[1024];
+        LOGE("process_vm_readv: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         addr = 0;
         return t;
     }
@@ -81,7 +82,8 @@ static bool GetExecName(pid_t pid, std::string &execName)
 
     if (readlink(exeFileName, tmpName, PATH_MAX) == -1)
     {
-        LOGE("readlink error for %s file: %s\n", exeFileName, strerror(errno));
+        char buf[1024];
+        LOGE("readlink error for %s file: %s\n", exeFileName, ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -104,7 +106,8 @@ static bool GetProcData(pid_t pid, std::string &execName, std::uintptr_t &startA
     FILE *mapsFile = fopen(mapFileName, "r");
     if (mapsFile == nullptr)
     {
-        LOGE("fopen error for %s file: %s\n", mapFileName, strerror(errno));
+        char buf[1024];
+        LOGE("fopen error for %s file: %s\n", mapFileName, ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -148,7 +151,8 @@ bool ResolveRendezvous(pid_t pid, std::uintptr_t &rendezvousAddr)
     int fd = open(elfFileName.c_str(), O_RDONLY);
     if (fd == -1)
     {
-        LOGE("open error for %s file: %s\n", elfFileName.c_str(), strerror(errno));
+        char buf[1024];
+        LOGE("open error for %s file: %s\n", elfFileName.c_str(), ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 

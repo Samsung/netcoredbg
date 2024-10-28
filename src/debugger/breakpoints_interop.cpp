@@ -34,14 +34,16 @@ int InteropBreakpoints::Add(pid_t pid, std::uintptr_t brkAddr, bool isThumbCode,
         if (errno != 0)
         {
             int err_code = errno;
-            LOGE("Ptrace peekdata error: %s", strerror(err_code));
+            char buf[1024];
+            LOGE("Ptrace peekdata error: %s", ErrGetStr(err_code, buf, sizeof(buf)));
             return err_code;
         }
         dataWithBrk = EncodeBrkOpcode(savedData, isThumbCode);
         if (async_ptrace(PTRACE_POKEDATA, pid, (void*)brkAddr, (void*)dataWithBrk) == -1)
         {
             int err_code = errno;
-            LOGE("Ptrace pokedata error: %s", strerror(err_code));
+            char buf[1024];
+            LOGE("Ptrace pokedata error: %s", ErrGetStr(err_code, buf, sizeof(buf)));
             return err_code;
         }
 
@@ -75,7 +77,8 @@ int InteropBreakpoints::Remove(pid_t pid, std::uintptr_t brkAddr, std::function<
         if (errno != 0)
         {
             int err_code = errno;
-            LOGE("Ptrace peekdata error: %s", strerror(err_code));
+            char buf[1024];
+            LOGE("Ptrace peekdata error: %s", ErrGetStr(err_code, buf, sizeof(buf)));
             return err_code;
         }
         word_t restoredData = RestoredOpcode(brkData, find->second.m_savedData);
@@ -83,7 +86,8 @@ int InteropBreakpoints::Remove(pid_t pid, std::uintptr_t brkAddr, std::function<
         if (async_ptrace(PTRACE_POKEDATA, pid, (void*)find->first, (void*)restoredData) == -1)
         {
             int err_code = errno;
-            LOGW("Ptrace pokedata error: %s\n", strerror(err_code));
+            char buf[1024];
+            LOGW("Ptrace pokedata error: %s\n", ErrGetStr(err_code, buf, sizeof(buf)));
             return err_code;
         }
         m_currentBreakpointsInMemory.erase(find);
@@ -104,14 +108,16 @@ void InteropBreakpoints::RemoveAllAtDetach(pid_t pid)
             word_t brkData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)entry.first, nullptr);
             if (errno != 0)
             {
-                LOGE("Ptrace peekdata error: %s", strerror(errno));
+                char buf[1024];
+                LOGE("Ptrace peekdata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
                 continue;
             }
             word_t restoredData = RestoredOpcode(brkData, entry.second.m_savedData);
 
             if (async_ptrace(PTRACE_POKEDATA, pid, (void*)entry.first, (void*)restoredData) == -1)
             {
-                LOGE("Ptrace pokedata error: %s\n", strerror(errno));
+                char buf[1024];
+                LOGE("Ptrace pokedata error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             }
         }
     }
@@ -157,7 +163,8 @@ bool InteropBreakpoints::StepPrevToBrk(pid_t pid, std::uintptr_t brkAddr)
     iov.iov_len = sizeof(user_regs_struct);
     if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
     {
-        LOGE("Ptrace getregset error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         std::abort(); // Fatal error, we already logged all data about this error.
     }
 
@@ -165,7 +172,8 @@ bool InteropBreakpoints::StepPrevToBrk(pid_t pid, std::uintptr_t brkAddr)
 
     if (async_ptrace(PTRACE_SETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
     {
-        LOGE("Ptrace setregset error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace setregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         std::abort(); // Fatal error, we already logged all data about this error.
     }
 

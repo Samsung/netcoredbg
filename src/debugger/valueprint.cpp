@@ -431,7 +431,7 @@ static void udivrem96(uint32_t *divident, uint32_t divisor, uint32_t &remainder)
             remainder = 0;
         } else {
             divident[i] = Lo_32(partial_dividend / divisor);
-            remainder = Lo_32(partial_dividend - (divident[i] * divisor));
+            remainder = Lo_32(partial_dividend - ((uint64_t)divident[i] * divisor));
         }
     }
 }

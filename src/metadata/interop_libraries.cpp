@@ -31,7 +31,8 @@ static bool OpenElf(const std::string &file, std::unique_ptr<elf::elf> &ef)
     int fd = open(file.c_str(), O_RDONLY);
     if (fd == -1)
     {
-        LOGI("Load elf failed at file open %s: %s\n", file.c_str(), strerror(errno));
+        char buf[1024];
+        LOGI("Load elf failed at file open %s: %s\n", file.c_str(), ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 

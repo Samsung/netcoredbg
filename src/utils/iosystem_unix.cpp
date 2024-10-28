@@ -19,6 +19,7 @@
 #include <netinet/in.h>
 #include <stdexcept>
 #include <algorithm>
+#include "utils/logger.h"
 
 #include "iosystem_unix.h"
 
@@ -56,8 +57,9 @@ namespace
                     return {Class::IOResult::Pending, 0};
 
                 // TODO make exception class
+                char buf[1024];
                 char msg[256];
-                snprintf(msg, sizeof(msg), "select: %s", strerror(errno));
+                snprintf(msg, sizeof(msg), "select: %s", ErrGetStr(errno, buf, sizeof(buf)));
                 throw std::runtime_error(msg);
             }
 
@@ -98,8 +100,9 @@ namespace
                 if (errno == EAGAIN)
                     return {Class::IOResult::Pending, 0};
 
+                char buf[1024];
                 char msg[256];
-                snprintf(msg, sizeof(msg), "select: %s", strerror(errno));
+                snprintf(msg, sizeof(msg), "select: %s", ErrGetStr(errno, buf, sizeof(buf)));
                 throw std::runtime_error(msg);
             }
 
@@ -305,8 +308,9 @@ bool Class::async_wait(IOSystem::AsyncHandleIterator begin, IOSystem::AsyncHandl
 
     if (result < 0)
     {
+        char buf[1024];
         char msg[256];
-        snprintf(msg, sizeof(msg), "select: %s", strerror(errno));
+        snprintf(msg, sizeof(msg), "select: %s", ErrGetStr(errno, buf, sizeof(buf)));
         throw std::runtime_error(msg);
     }
 
@@ -369,15 +373,17 @@ Class::StdIOSwap::StdIOSwap(const StdFiles& files) : m_valid(true)
         m_orig_fd[n] = ::dup(oldfd[n]);
         if (m_orig_fd[n] == -1)
         {
+            char buf[1024];
             char msg[256];
-            snprintf(msg, sizeof(msg), "dup(%d): %s", oldfd[n], strerror(errno));
+            snprintf(msg, sizeof(msg), "dup(%d): %s", oldfd[n], ErrGetStr(errno, buf, sizeof(buf)));
             throw std::runtime_error(msg);
         }
 
         if (::dup2(newfd[n], oldfd[n]) == -1)
         {
+            char buf[1024];
             char msg[256];
-            snprintf(msg, sizeof(msg), "dup2(%d, %d): %s", newfd[n], oldfd[n], strerror(errno));
+            snprintf(msg, sizeof(msg), "dup2(%d, %d): %s", newfd[n], oldfd[n], ErrGetStr(errno, buf, sizeof(buf)));
             throw std::runtime_error(msg);
         }
     }

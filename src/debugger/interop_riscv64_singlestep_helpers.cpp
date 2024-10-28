@@ -184,7 +184,8 @@ bool RISCV64_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &s
     iov.iov_len = sizeof(user_regs_struct);
     if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
     {
-        LOGW("Ptrace getregset error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -192,7 +193,8 @@ bool RISCV64_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &s
     word_t currentPCData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)regs.pc, nullptr);
     if (errno != 0)
     {
-        LOGE("Ptrace peekdata error: %s", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace peekdata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -215,7 +217,8 @@ bool RISCV64_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &s
     word_t nextPCData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)nextPC, nullptr);
     if (errno != 0)
     {
-        LOGE("Ptrace peekdata error: %s", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace peekdata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -223,7 +226,8 @@ bool RISCV64_DoSoftwareSingleStep(pid_t pid, std::vector<sw_singlestep_brk_t> &s
 
     if (async_ptrace(PTRACE_POKEDATA, pid, (void*)nextPC, (void*)dataWithBrk) == -1)
     {
-        LOGE("Ptrace pokedata error: %s", strerror(errno));
+        char buf[1024];
+        LOGE("Ptrace pokedata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 

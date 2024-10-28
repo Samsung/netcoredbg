@@ -33,12 +33,14 @@ deftest(escaped_string ../protocols/escaped_string.cpp escaped_string_test.cpp)
 
 deftest(iosystem
     iosystem_test.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/err_utils.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/iosystem_win32.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/iosystem_unix.cpp
 )
 
 deftest(streams
     streams_test.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/err_utils.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/streams.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/iosystem_win32.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/iosystem_unix.cpp
@@ -46,6 +48,7 @@ deftest(streams
 
 deftest(ioredirect
     ioredirect_test.cpp
+    ${PROJECT_SOURCE_DIR}/src/utils/err_utils.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/ioredirect.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/streams.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/iosystem_win32.cpp

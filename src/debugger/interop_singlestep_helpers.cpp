@@ -23,7 +23,8 @@ bool RemoveSoftwareSingleStepBreakpoints(pid_t pid, std::vector<sw_singlestep_br
         word_t brkData = async_ptrace(PTRACE_PEEKDATA, pid, (void*)entry.bpAddr, nullptr);
         if (errno != 0)
         {
-            LOGE("Ptrace peekdata error: %s", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace peekdata error: %s", ErrGetStr(errno, buf, sizeof(buf)));
             return false;
         }
 
@@ -31,7 +32,8 @@ bool RemoveSoftwareSingleStepBreakpoints(pid_t pid, std::vector<sw_singlestep_br
 
         if (async_ptrace(PTRACE_POKEDATA, pid, (void*)entry.bpAddr, (void*)entry.restoreData) == -1)
         {
-            LOGE("Ptrace pokedata error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace pokedata error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             return false;
         }
     }

@@ -915,7 +915,8 @@ void CLIProtocol::EmitInteropDebuggingErrorEvent(const int error_n)
 {
     LogFuncEntry();
 
-    printf("Interop debugging disabled due to initialization fail: %s\n", strerror(error_n));
+    char buf[1024];
+    printf("Interop debugging disabled due to initialization fail: %s\n", ErrGetStr(error_n, buf, sizeof(buf)));
 }
 
 // This function implements Debugger interface and called from ManagedDebugger, 
@@ -2098,14 +2099,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::Source>(const std::string &, const st
     {
         output = args[0] + ": ";
         char buf[1024];
-#if defined(_MSC_VER)
-        if (strerror_s(buf, sizeof(buf), errno) == 0)
-            output += buf;
-        else
-            output += "Could not translate errno to a string";
-#else
-        output += strerror_r(errno, buf, sizeof(buf));
-#endif
+        output += ErrGetStr(errno, buf, sizeof(buf));
         return E_FAIL;
     }
 
@@ -2179,14 +2173,7 @@ HRESULT CLIProtocol::doCommand<CommandTag::SaveBreakpoints>(const std::string &,
             {
                 output = filename + ": ";
                 char buf[1024];
-#if defined(_MSC_VER)
-                if (strerror_s(buf, sizeof(buf), errno) == 0)
-                    output += buf;
-                else
-                    output += "Could not translate errno to a string";
-#else
-                output += strerror_r(errno, buf, sizeof(buf));
-#endif
+                output += ErrGetStr(errno, buf, sizeof(buf));
                 result = E_FAIL;
                 return false;
             }

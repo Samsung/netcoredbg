@@ -188,7 +188,8 @@ HRESULT STDMETHODCALLTYPE ManagedCallback::CreateProcess(ICorDebugProcess *pProc
     if (m_debugger.m_interopDebugging &&
         FAILED(m_debugger.m_sharedInteropDebugger->Init((pid_t)m_debugger.m_processId, m_sharedCallbacksQueue, attach, NotifyLastThreadExited, error_n)))
     {
-        LOGE("Interop debugging disabled due to initialization fail: %s", strerror(error_n));
+        char buf[1024];
+        LOGE("Interop debugging disabled due to initialization fail: %s", ErrGetStr(error_n, buf, sizeof(buf)));
         m_debugger.pProtocol->EmitInteropDebuggingErrorEvent(error_n);
         m_debugger.m_interopDebugging = false;
     }

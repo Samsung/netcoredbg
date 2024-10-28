@@ -56,9 +56,9 @@ static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
         corRVA = VAL32(ntHeaders64.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COMHEADER].VirtualAddress);
     }
 
-    constexpr DWORD DWORD_MAX = 4294967295;
-    DWORD pos = VAL32(dosHeader.e_lfanew);
-    if (pos > DWORD_MAX - sizeof(ntHeaders.Signature) - sizeof(ntHeaders.FileHeader) - VAL16(ntHeaders.FileHeader.SizeOfOptionalHeader))
+    constexpr LONG lLONG_MAX = 2147483647;
+    LONG pos = VAL32(dosHeader.e_lfanew);
+    if (pos < 0 || size_t(lLONG_MAX - pos) < sizeof(ntHeaders.Signature) + sizeof(ntHeaders.FileHeader) + VAL16(ntHeaders.FileHeader.SizeOfOptionalHeader))
         return mdMethodDefNil;
     pos += sizeof(ntHeaders.Signature) + sizeof(ntHeaders.FileHeader) + VAL16(ntHeaders.FileHeader.SizeOfOptionalHeader);
 
@@ -74,6 +74,8 @@ static mdMethodDef GetEntryPointTokenFromFile(const std::string &path)
             corRVA < VAL32(sectionHeader.VirtualAddress) + VAL32(sectionHeader.SizeOfRawData))
         {
             ULONG offset = (corRVA - VAL32(sectionHeader.VirtualAddress)) + VAL32(sectionHeader.PointerToRawData);
+            if (offset > (ULONG)lLONG_MAX)
+                return mdMethodDefNil;
 
             IMAGE_COR20_HEADER corHeader;
             if (fseek(pFile, offset, SEEK_SET) != 0) return mdMethodDefNil;

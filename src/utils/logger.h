@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 #include <stdarg.h>
+#include <string.h>
 
 #ifdef _MSC_VER
 #include <stdio.h>
@@ -125,6 +126,8 @@ namespace DLogInternal
 #define LOGW(fmt, ...) LOG_(DLOG_WARN, LOG_TAG, fmt, ##__VA_ARGS__)
 #define LOGE(fmt, ...) LOG_(DLOG_ERROR, LOG_TAG, fmt, ##__VA_ARGS__)
 #define LOGF(fmt, ...) LOG_(DLOG_FATAL, LOG_TAG, fmt, ##__VA_ARGS__)
+
+extern const char *ErrGetStr(int err_code, char buf[], size_t buf_size);
 
 // This macro allows to specify priority and a tag. 
 // The macro definition is similar to original from Tizen's dlog.h

@@ -95,7 +95,8 @@ static bool DoSoftwareSingleStep(pid_t pid, std::unordered_map<pid_t, thread_sta
 
     if (async_ptrace(PTRACE_CONT, pid, nullptr, nullptr) == -1)
     {
-        LOGW("Ptrace cont error: %s", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace cont error: %s", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
     else
@@ -115,7 +116,8 @@ static bool DetectBrkForSoftwareSingleStep(pid_t pid, std::unordered_map<pid_t, 
     iov.iov_len = sizeof(user_regs_struct);
     if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
     {
-        LOGW("Ptrace getregset error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
         return false;
     }
@@ -177,7 +179,8 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
             else
 #endif // DEBUGGER_UNIX_ARM
             {
-                LOGE("Ptrace singlestep error: %s\n", strerror(errno));
+                char buf[1024];
+                LOGE("Ptrace singlestep error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
                 return false;
             }
         }
@@ -206,7 +209,8 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
         siginfo_t ptrace_info;
         if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
         {
-            LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGW("Ptrace getsiginfo error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
 #if DEBUGGER_UNIX_ARM || DEBUGGER_UNIX_RISCV64
             if (!m_HWSingleStepSupported)
                 RemoveSoftwareSingleStepBreakpoints(pid, swSingleStepBreakpoints);
@@ -248,7 +252,8 @@ bool InteropDebuggerBase::SingleStepOnBrk(pid_t pid, std::uintptr_t addr)
         siginfo_t ptrace_info;
         if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
         {
-            LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGW("Ptrace getsiginfo error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             return false;
         }
 
@@ -337,7 +342,10 @@ void InteropDebuggerBase::WaitThreadStop(pid_t stoppedPid, std::vector<pid_t> *s
             siginfo_t siginfo;
             bool sendByItself = false;
             if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &siginfo) == -1)
-                LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+            {
+                char buf[1024];
+                LOGW("Ptrace getsiginfo error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
+            }
             else
                 sendByItself = (siginfo.si_pid == m_TGID);
 
@@ -376,7 +384,8 @@ void InteropDebuggerHelpers::StopAndDetach(pid_t tgid)
         iov.iov_len = sizeof(user_regs_struct);
         if (async_ptrace(PTRACE_GETREGSET, entry.first, (void*)NT_PRSTATUS, &iov) == -1)
         {
-            LOGW("Ptrace getregset error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             continue; // Will hope, this thread didn't stopped at breakpoint.
         }
 
@@ -393,7 +402,10 @@ void InteropDebuggerHelpers::StopAndDetach(pid_t tgid)
     for (const auto &tid : m_TIDs)
     {
         if (async_ptrace(PTRACE_DETACH, tid.first, nullptr, (void*)((word_t)tid.second.stop_signal)) == -1)
-            LOGW("Ptrace detach error: %s\n", strerror(errno));
+        {
+            char buf[1024];
+            LOGW("Ptrace detach error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
+        }
     }
 
     m_TIDs.clear();
@@ -409,7 +421,8 @@ static void StopAllRunningThreads(const std::unordered_map<pid_t, thread_status_
         if (tid.second.stat == thread_stat_e::running &&
             async_ptrace(PTRACE_INTERRUPT, tid.first, nullptr, nullptr) == -1)
         {
-            LOGW("Ptrace interrupt error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGW("Ptrace interrupt error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         }
     }
 }
@@ -464,7 +477,8 @@ static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_stat
     if (!dir)
     {
         error_n = errno;
-        LOGE("opendir: %s\n", strerror(errno));
+        char buf[1024];
+        LOGE("opendir: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         return E_FAIL;
     }
 
@@ -490,7 +504,8 @@ static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_stat
         if (async_ptrace(PTRACE_SEIZE, tid, nullptr, (void*)options) == -1)
         {
             error_n = errno;
-            LOGE("Ptrace seize error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace seize error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             closedir(dir);
             return E_FAIL;
         }
@@ -500,7 +515,8 @@ static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_stat
 
         if (async_ptrace(PTRACE_INTERRUPT, tid, nullptr, nullptr) == -1)
         {
-            LOGE("Ptrace interrupt error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGE("Ptrace interrupt error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             closedir(dir);
             exit(EXIT_FAILURE); // Fatal error, seized but failed on interrupt.
         }
@@ -508,13 +524,15 @@ static HRESULT SeizeAndInterruptAllThreads(std::unordered_map<pid_t, thread_stat
     if (errno)
     {
         error_n = errno;
-        LOGE("readdir: %s\n", strerror(errno));
+        char buf[1024];
+        LOGE("readdir: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         closedir(dir);
         return E_FAIL;
     }
     if (closedir(dir))
     {
-        LOGW("closedir: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("closedir: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
     }
 
     return S_OK;
@@ -568,7 +586,8 @@ static bool AddSignalEventForUserCode(pid_t pid, InteropLibraries *pInteropLibra
     iov.iov_len = sizeof(user_regs_struct);
     if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
     {
-        LOGW("Ptrace getregset error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
 
@@ -591,7 +610,8 @@ static bool AddSignalEventForCallerInUserCode(pid_t pid, pid_t TGID, InteropLibr
     memset(&siginfo, 0, sizeof(siginfo_t));
     if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &siginfo) == -1)
     {
-        LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace getsiginfo error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
         return false;
     }
     if (siginfo.si_pid != TGID)
@@ -669,7 +689,8 @@ void InteropDebuggerSignals::Parse_SIGILL(pid_t pid)
     siginfo_t ptrace_info;
     if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
     {
-        LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace getsiginfo error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
     }
     else
     {
@@ -699,7 +720,10 @@ void InteropDebuggerSignals::Parse_SIGTRAP__PTRACE_EVENT_EXEC(pid_t pid)
     }
 
     if (async_ptrace(PTRACE_DETACH, pid, nullptr, nullptr) == -1)
-        LOGW("Ptrace detach at exec error: %s\n", strerror(errno));
+    {
+        char buf[1024];
+        LOGW("Ptrace detach at exec error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
+    }
     else
         m_TIDs.erase(pid);
 }
@@ -709,7 +733,8 @@ void InteropDebuggerSignals::Parse_SIGTRAP__NOT_PTRACE_EVENT(pid_t pid)
     siginfo_t ptrace_info;
     if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &ptrace_info) == -1)
     {
-        LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+        char buf[1024];
+        LOGW("Ptrace getsiginfo error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
     }
     else
     {
@@ -724,7 +749,10 @@ void InteropDebuggerSignals::Parse_SIGTRAP__NOT_PTRACE_EVENT(pid_t pid)
                 iov.iov_base = &regs;
                 iov.iov_len = sizeof(user_regs_struct);
                 if (async_ptrace(PTRACE_GETREGSET, pid, (void*)NT_PRSTATUS, &iov) == -1)
-                    LOGW("Ptrace getregset error: %s\n", strerror(errno));
+                {
+                    char buf[1024];
+                    LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
+                }
 
                 std::uintptr_t brkAddr = GetBrkAddrByPC(regs);
 
@@ -865,7 +893,10 @@ void InteropDebuggerBase::ParseThreadsChanges()
             continue;
 
         if (async_ptrace(PTRACE_CONT, pid, nullptr, (void*)((word_t)m_TIDs[pid].stop_signal)) == -1)
-            LOGW("Ptrace cont error: %s", strerror(errno));
+        {
+            char buf[1024];
+            LOGW("Ptrace cont error: %s", ErrGetStr(errno, buf, sizeof(buf)));
+        }
         else
         {
             m_TIDs[pid].stat = thread_stat_e::running;
@@ -1028,7 +1059,10 @@ static void StopAllManagedThreads(std::unordered_map<pid_t, thread_status_t> &TI
             continue;
 
         if (async_ptrace(PTRACE_INTERRUPT, managedThread.first, nullptr, nullptr) == -1)
-            LOGW("Ptrace interrupt error: %s\n", strerror(errno));
+        {
+            char buf[1024];
+            LOGW("Ptrace interrupt error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
+        }
         else
             stoppedManagedTreads.emplace_back(managedThread.first);
     }
@@ -1215,7 +1249,8 @@ void InteropDebuggerBase::WaitpidWorker()
 
         if (pid == -1)
         {
-            LOGE("Waitpid error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGE("Waitpid error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             break;
         }
 
@@ -1278,7 +1313,10 @@ void InteropDebuggerBase::WaitpidWorker()
             siginfo_t siginfo;
             bool sendByItself = false;
             if (async_ptrace(PTRACE_GETSIGINFO, pid, nullptr, &siginfo) == -1)
-                LOGW("Ptrace getsiginfo error: %s\n", strerror(errno));
+            {
+                char buf[1024];
+                LOGW("Ptrace getsiginfo error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
+            }
             else
                 sendByItself = (siginfo.si_pid == m_TGID);
 
@@ -1294,7 +1332,10 @@ void InteropDebuggerBase::WaitpidWorker()
                     injectTIDs.emplace(std::make_pair(pid, injectSignalResetCountdown));
 
                 if (async_ptrace(PTRACE_CONT, pid, nullptr, (void*)((word_t)stop_signal)) == -1)
-                    LOGW("Ptrace cont error: %s", strerror(errno));
+                {
+                    char buf[1024];
+                    LOGW("Ptrace cont error: %s", ErrGetStr(errno, buf, sizeof(buf)));
+                }
                 // No need change `m_TIDs[pid].stat` and `m_TIDs[pid].stop_signal` here.
                 continue;
             }
@@ -1401,7 +1442,8 @@ void InteropDebuggerHelpers::BrkFixAllThreads(std::uintptr_t checkAddr)
         iov.iov_len = sizeof(user_regs_struct);
         if (async_ptrace(PTRACE_GETREGSET, entry.first, (void*)NT_PRSTATUS, &iov) == -1)
         {
-            LOGW("Ptrace getregset error: %s\n", strerror(errno));
+            char buf[1024];
+            LOGW("Ptrace getregset error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
             continue; // Will hope, this thread didn't stopped at breakpoint.
         }
 
@@ -1605,7 +1647,10 @@ HRESULT InteropDebugger::UnwindNativeFrames(pid_t pid, bool firstFrame, std::uin
     if (tid->second.stat == thread_stat_e::running)
     {
         if (async_ptrace(PTRACE_INTERRUPT, pid, nullptr, nullptr) == -1)
-            LOGW("Ptrace interrupt error: %s\n", strerror(errno));
+        {
+            char buf[1024];
+            LOGW("Ptrace interrupt error: %s\n", ErrGetStr(errno, buf, sizeof(buf)));
+        }
         else
         {
             WaitThreadStop(pid);

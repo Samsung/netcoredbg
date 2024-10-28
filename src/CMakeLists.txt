@@ -130,6 +130,7 @@ set(netcoredbg_SRC
     buildinfo.cpp
     utils/dynlibs_unix.cpp
     utils/dynlibs_win32.cpp
+    utils/err_utils.cpp
     utils/filesystem.cpp
     utils/filesystem_unix.cpp
     utils/filesystem_win32.cpp
