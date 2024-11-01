@@ -24,6 +24,14 @@ For other Linux distributions you can use binaries provided in github releases (
 
 Currently, NetCoreDbg can be built on Linux, MacOS, or Windows. Instructions for building NetCoreDbg on each platform is shown below.
 
+### Supported Architectures
+
+- ARM 32-bit
+- ARM 64-bit
+- x64
+- x86
+- RISC-V 64-bit
+
 ### Unix
 
 NetCoreDbg's build requires Microsoft's .NET, and as such, NetCoreDbg can only be built in Linux. Microsoft supports a few distributions, the details of which can be found here: https://docs.microsoft.com/en-us/dotnet/core/install/linux.
