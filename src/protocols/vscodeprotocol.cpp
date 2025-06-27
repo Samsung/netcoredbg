@@ -457,7 +457,7 @@ void VSCodeProtocol::Cleanup()
 // Caller must care about m_outMutex.
 void VSCodeProtocol::EmitMessage(nlohmann::json &message, std::string &output)
 {
-    message["seq"] = std::to_string(m_seqCounter);
+    message["seq"] = m_seqCounter;
     ++m_seqCounter;
     output = message.dump();
     cout << CONTENT_LENGTH << output.size() << TWO_CRLF << output;
