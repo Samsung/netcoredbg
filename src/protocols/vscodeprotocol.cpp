@@ -603,10 +603,20 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
         if (!fileExec.empty())
             return sharedDebugger->Launch(fileExec, execArgs, env, cwd, arguments.value("stopAtEntry", false));
 
+        std::string program = arguments.at("program").get<std::string>();
         std::vector<std::string> args = arguments.value("args", std::vector<std::string>());
-        args.insert(args.begin(), arguments.at("program").get<std::string>());
 
-        return sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
+        std::string dllSuffix = ".dll";
+        if (program.size() >= dllSuffix.size() && program.compare(program.size()-dllSuffix.size(), dllSuffix.size(), dllSuffix) == 0)
+        {
+            args.insert(args.begin(), program);
+            return sharedDebugger->Launch("dotnet", args, env, cwd, arguments.value("stopAtEntry", false));
+        }
+        else
+        {
+            // If we're not being asked to launch a dll, assume whatever we're given is an executable
+            return sharedDebugger->Launch(program, args, env, cwd, arguments.value("stopAtEntry", false));
+        }
     } },
     { "threads", [&](const json &arguments, json &body){
         HRESULT Status;
