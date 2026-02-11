@@ -342,7 +342,15 @@ HRESULT WalkFrames(ICorDebugThread *pThread, WalkFramesCallback cb)
 #endif // INTEROP_DEBUGGING
 
             ToRelease<ICorDebugILFrame> pILFrame;
-            IfFailRet(iCorFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame));
+            if (FAILED(iCorFrame->QueryInterface(IID_ICorDebugILFrame, (LPVOID*) &pILFrame)))
+            {
+                ToRelease<ICorDebugInternalFrame> pInternalFrame;
+                if (SUCCEEDED(iCorFrame->QueryInterface(IID_ICorDebugInternalFrame, (LPVOID*) &pInternalFrame)))
+                    IfFailRet(cb(FrameCLRInternal, GetIP(&currentCtx), iCorFrame, nullptr));
+                else
+                    IfFailRet(cb(FrameUnknown, GetIP(&currentCtx), iCorFrame, nullptr));
+                continue;
+            }
 
             ULONG32 nOffset;
             CorDebugMappingResult mappingResult;
