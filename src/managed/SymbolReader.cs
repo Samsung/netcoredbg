@@ -800,19 +800,27 @@ namespace NetCoreDbg
 
                     if (nestedToken != 0)
                     {
-                        // Check if nestedToken is within range of current_p. Example -
-                        //     await Parallel.ForEachAsync(userHandlers, parallelOptions, async (uri, token) =>   <- breakpoint at this line
-                        //     {
-                        //        await new HttpClient().GetAsync("https://google.com");
-                        //     });
-                        // nesetedToken here is the annonymous async func, and having a breakpoing at the 1st line should
-                        // break on the outer call.
                         SequencePoint nested_start_p = SequencePointForSourceLine(Position.First, ref reader, nestedToken);
                         SequencePoint nested_end_p = SequencePointForSourceLine(Position.Last, ref reader, nestedToken);
-                        if ((nested_start_p.StartLine > current_p.StartLine || (nested_start_p.StartLine == current_p.StartLine && nested_start_p.StartColumn > current_p.StartColumn)) &&
-                            (nested_end_p.EndLine < current_p.EndLine || (nested_end_p.EndLine == current_p.EndLine && nested_end_p.EndColumn < current_p.EndColumn ))
-                        ) {
-                            list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.Offset, methodToken));
+                        bool nestedFullyContained =
+                            (nested_start_p.StartLine > current_p.StartLine || (nested_start_p.StartLine == current_p.StartLine && nested_start_p.StartColumn > current_p.StartColumn)) &&
+                            (nested_end_p.EndLine < current_p.EndLine || (nested_end_p.EndLine == current_p.EndLine && nested_end_p.EndColumn < current_p.EndColumn));
+
+                        if (nestedFullyContained)
+                        {
+                            // The nested method is fully contained within the outer method's SP range.
+                            // If sourceLine falls within the nested method's own range, the user wants
+                            // to break inside the nested body (e.g., F# CE block, lambda body).
+                            // If sourceLine is before the nested method starts, the user wants the
+                            // outer call (e.g., C# await with inline lambda on same line).
+                            if (sourceLine >= nested_start_p.StartLine)
+                            {
+                                list.Add(new resolved_bp_t(nested_start_p.StartLine, nested_start_p.EndLine, nested_start_p.Offset, nestedToken));
+                            }
+                            else
+                            {
+                                list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.Offset, methodToken));
+                            }
                             break;
                         }
 

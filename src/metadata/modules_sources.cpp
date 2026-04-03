@@ -201,7 +201,7 @@ namespace
             }
             Tokens.emplace_back(result->methodDef);
         }
-        
+
         return !!result;
     }
 
