@@ -65,8 +65,12 @@ struct method_data_t
 
     bool NestedInto(const method_data_t &other) const
     {
-        assert(startLine != other.startLine || startColumn != other.startColumn);
-        assert(endLine != other.endLine || endColumn != other.endColumn);
+        // F# compiler-generated methods (closures, CE blocks) can share start/end positions.
+        // Return false for identical positions rather than asserting.
+        if (startLine == other.startLine && startColumn == other.startColumn)
+            return false;
+        if (endLine == other.endLine && endColumn == other.endColumn)
+            return false;
 
         return (startLine > other.startLine || (startLine == other.startLine && startColumn > other.startColumn)) &&
             (endLine < other.endLine || (endLine == other.endLine && endColumn < other.endColumn));

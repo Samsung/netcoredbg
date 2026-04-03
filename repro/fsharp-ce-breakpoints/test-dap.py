@@ -113,7 +113,7 @@ def main():
         [NETCOREDBG, "--interpreter=vscode"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
     )
     dap = DAPClient(proc)
 
@@ -138,7 +138,7 @@ def main():
             "args": ["exec", DLL],
             "cwd": os.path.dirname(DLL),
             "stopAtEntry": True,
-            "justMyCode": False,
+            "justMyCode": True,
         })
         resp = dap.wait_for("response", command="launch")
         print(f"2. launch: {'OK' if resp and resp.get('success') else 'FAIL'}")
@@ -185,14 +185,7 @@ def main():
             reason = body.get("reason", "?")
             tid = body.get("threadId", 1)
             if reason == "breakpoint":
-                # Try to get threads first
-                dap.send("threads")
-                threads_resp = dap.wait_for("response", command="threads")
-                if threads_resp:
-                    threads = threads_resp.get("body", {}).get("threads", [])
-                    if threads:
-                        tid = threads[0].get("id", tid)
-
+                # Use threadId from the stopped event directly
                 dap.send("stackTrace", {"threadId": tid, "startFrame": 0, "levels": 5})
                 st = dap.wait_for("response", command="stackTrace")
                 frames = st.get("body", {}).get("stackFrames", []) if st else []
