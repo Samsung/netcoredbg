@@ -18,6 +18,7 @@ void FuncBreakpoints::ManagedFuncBreakpoint::ToBreakpoint(Breakpoint &breakpoint
     breakpoint.id = this->id;
     breakpoint.verified = this->IsVerified();
     breakpoint.condition = this->condition;
+    breakpoint.logMessage = this->logMessage;
     breakpoint.module = this->module;
     breakpoint.funcname = this->name;
     breakpoint.params = this->params;
@@ -30,7 +31,7 @@ void FuncBreakpoints::DeleteAll()
     m_breakpointsMutex.unlock();
 }
 
-HRESULT FuncBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents)
+HRESULT FuncBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents, std::shared_ptr<Variables> &variables)
 {
     if (m_funcBreakpoints.empty())
         return S_FALSE; // Stopped at break, but no breakpoints.
@@ -107,6 +108,7 @@ HRESULT FuncBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugB
                 bpChangeEvents.emplace_back(BreakpointChanged, breakpoint);
             }
 
+            variables = m_sharedVariables;
             return S_OK;
         }
     }
@@ -187,6 +189,7 @@ HRESULT FuncBreakpoints::SetFuncBreakpoints(bool haveProcess, const std::vector<
             fbp.name = fb.func;
             fbp.params = fb.params;
             fbp.condition = fb.condition;
+            fbp.logMessage = fb.logMessage;
 
             if (haveProcess)
                 ResolveFuncBreakpoint(fbp);
@@ -199,6 +202,7 @@ HRESULT FuncBreakpoints::SetFuncBreakpoints(bool haveProcess, const std::vector<
             ManagedFuncBreakpoint &fbp = b->second;
 
             fbp.condition = fb.condition;
+            fbp.logMessage = fb.logMessage;
             fbp.ToBreakpoint(breakpoint);
         }
 
@@ -383,7 +387,7 @@ void FuncBreakpoints::AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInf
     {
         auto &bp = pair_bp.second;
 
-        list.emplace_back(IDebugger::BreakpointInfo{ bp.id, bp.IsVerified(), bp.enabled, bp.times, bp.condition, 
+        list.emplace_back(IDebugger::BreakpointInfo{ bp.id, bp.IsVerified(), bp.enabled, bp.times, bp.condition, bp.logMessage,
                                                      bp.name, 0, 0, bp.module, bp.params });
     }
 }

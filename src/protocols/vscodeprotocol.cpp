@@ -16,6 +16,7 @@
 
 // note: order matters, vscodeprotocol.h should be included before winerror.h
 #include "protocols/vscodeprotocol.h"
+#include "interfaces/types.h"
 #include "winerror.h"
 
 #include "interfaces/idebugger.h"
@@ -307,10 +308,10 @@ namespace
     // This function serializes "OutputEvent" to specified output stream and used for two
     // purposes: to compute output size, and to perform the output directly.
     template <typename T1>
-    void serialize_output(std::ostream& stream, uint64_t counter, string_view name, T1& text, Source& source)
+    void serialize_output(std::ostream& stream, uint64_t counter, string_view name, T1& text, const Source& source, int line)
     {
         stream << "{\"seq\":" << counter 
-            << ", \"event\":\"output\",\"type\":\"event\",\"body\":{\"category\":\"" << name
+            << ",\"event\":\"output\",\"type\":\"event\",\"body\":{\"category\":\"" << name
             << "\",\"output\":\"" << text << "\"";
 
         if (!source.IsNull())
@@ -318,6 +319,11 @@ namespace
             // "source":{"name":"Program.cs","path":"/path/Program.cs"}
             EscapedString<JSON_escape_rules> escaped_source_path(source.path);
             stream << ",\"source\":{\"name\":\"" << source.name << "\",\"path\":\"" << escaped_source_path << "\"}";
+        }
+
+        if (line != -1)
+        {
+            stream << ",\"line\":" << line;
         }
 
         stream <<  "}}";
@@ -341,6 +347,7 @@ void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output
     std::lock_guard<std::mutex> lock(m_outMutex);
 
     Source source;
+    int line = -1;
     int totalFrames = 0;
     std::vector<StackFrame> stackFrames;
     if (threadId && SUCCEEDED(m_sharedDebugger->GetStackTrace(ThreadId(threadId), FrameLevel(0), 0, stackFrames, totalFrames)))
@@ -351,6 +358,7 @@ void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output
             if (!stackFrame.source.IsNull())
             {
                 source = stackFrame.source;
+                line = stackFrame.line;
                 break;
             }
         }
@@ -358,14 +366,14 @@ void VSCodeProtocol::EmitOutputEvent(OutputCategory category, string_view output
 
     // compute size of headers without text (text could be huge, no reason parse it for size, that we already know)
     CountingStream count;
-    serialize_output(count, m_seqCounter, name, "", source);
+    serialize_output(count, m_seqCounter, name, "", source, line);
 
     // compute total size of headers + text
     auto const total_size = count.size() + escaped_text.size();
 
     // perform output
     cout << CONTENT_LENGTH << total_size << TWO_CRLF;
-    serialize_output(cout, m_seqCounter, name, escaped_text, source);
+    serialize_output(cout, m_seqCounter, name, escaped_text, source, line);
 
     ++m_seqCounter;
 }
@@ -416,6 +424,7 @@ static void AddCapabilitiesTo(json &capabilities)
     capabilities["supportsConfigurationDoneRequest"] = true;
     capabilities["supportsFunctionBreakpoints"] = true;
     capabilities["supportsConditionalBreakpoints"] = true;
+    capabilities["supportsLogPoints"] = true;
     capabilities["supportTerminateDebuggee"] = true;
     capabilities["supportsSetVariable"] = true;
     capabilities["supportsSetExpression"] = true;
@@ -479,6 +488,74 @@ void VSCodeProtocol::EmitEvent(const std::string &name, const nlohmann::json &bo
     message["event"] = name;
     message["body"] = body;
     EmitMessageWithLog(LOG_EVENT, message);
+}
+
+static HRESULT ParseLogMessage(const std::string &rawLogMessage, LogMessage &logMessage)
+{
+    logMessage = LogMessage();
+
+    if (rawLogMessage.empty())
+        return S_OK;
+
+    auto &format = logMessage.format;
+    auto &args = logMessage.args;
+
+    std::string currentText;
+    bool inArg = false;
+
+    for (size_t i = 0; i < rawLogMessage.size(); ++i) 
+    {
+        char c = rawLogMessage[i];
+
+        if (c == '\\' && i + 1 < rawLogMessage.size())
+        {
+            char next = rawLogMessage[i + 1];
+            if (next == '{' || next == '}' || next == '\\')
+            {
+                currentText += next;
+                i++;
+                continue;
+            }
+        }
+
+        if (inArg)
+        {
+            if (c == '}')
+            {
+                args.push_back(currentText);
+                currentText.clear();
+                inArg = false;
+            }
+            else
+            {
+                currentText += c;
+            }
+        }
+        else
+        {
+            if (c == '{')
+            {
+                format.push_back(currentText);
+                currentText.clear();
+                inArg = true;
+            }
+            else
+            {
+                currentText += c;
+            }
+        }
+    }
+
+    if (inArg)
+    {
+        format.back() += "{" + currentText;
+    }
+    else
+    {
+        format.push_back(currentText);
+    }
+
+    return S_OK;
 }
 
 static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::string &fileExec, std::vector<std::string> &execArgs,
@@ -573,7 +650,15 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
 
         std::vector<LineBreakpoint> lineBreakpoints;
         for (auto &b : arguments.at("breakpoints"))
-            lineBreakpoints.emplace_back(std::string(), b.at("line"), b.value("condition", std::string()));
+        {
+            auto rawLogMessage = b.value("logMessage", std::string());
+            LogMessage logMessage;
+            IfFailRet(ParseLogMessage(rawLogMessage, logMessage));
+            lineBreakpoints.emplace_back(std::string(),
+                                         b.at("line"),
+                                         b.value("condition", std::string()),
+                                         logMessage);
+        }
 
         std::vector<Breakpoint> breakpoints;
         IfFailRet(sharedDebugger->SetLineBreakpoints(arguments.at("source").at("path"), lineBreakpoints, breakpoints));
@@ -857,7 +942,11 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
                 name.erase(i, closeBrace);
             }
 
-            funcBreakpoints.emplace_back(module, name, params, b.value("condition", std::string()));
+            auto rawLogMessage = b.value("logMessage", std::string());
+            LogMessage logMessage;
+            IfFailRet(ParseLogMessage(rawLogMessage, logMessage));
+
+            funcBreakpoints.emplace_back(module, name, params, b.value("condition", std::string()), logMessage);
         }
 
         std::vector<Breakpoint> breakpoints;

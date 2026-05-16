@@ -495,6 +495,11 @@ namespace NetcoreDbgTest.MI
             get { return Results[variable]; }
         }
 
+        public bool TryGetValue(string variable, out MIValue value)
+        {
+            return Results.TryGetValue(variable, out value);
+        }
+
         public MIAsyncOutputClass Class;
         Dictionary<string, MIValue> Results;
     }

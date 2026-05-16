@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include <algorithm>
+#include <sstream>
 #include <vector>
 #include <tuple>
 #include <mutex>
@@ -13,6 +14,30 @@
 
 namespace netcoredbg
 {
+
+std::string LogMessage::Format(const std::vector<std::string> &values) const
+{
+    if (IsEmpty())
+        return std::string();
+
+    std::stringstream ss;
+
+    std::size_t maxIndex = format.size() - 1;
+
+    for (std::size_t i = 0; i < maxIndex; ++i)
+    {
+        ss << format[i] << values.at(i);
+    }
+
+    ss << format[maxIndex];
+
+    return ss.str();
+}
+
+bool LogMessage::IsEmpty() const
+{
+    return format.empty();
+}
 
 // This class implements container, which hold elements of type `T', where
 // elements addressed by integral value of type `Key'. The `Key' can take

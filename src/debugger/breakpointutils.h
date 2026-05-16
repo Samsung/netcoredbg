@@ -6,6 +6,7 @@
 
 #include "cor.h"
 #include "cordebug.h"
+#include "interfaces/types.h"
 
 #include <string>
 
@@ -19,6 +20,7 @@ namespace BreakpointUtils
     HRESULT IsSameFunctionBreakpoint(ICorDebugFunctionBreakpoint *pBreakpoint1, ICorDebugFunctionBreakpoint *pBreakpoint2);
     HRESULT IsEnableByCondition(const std::string &condition, Variables *pVariables, ICorDebugThread *pThread, std::string &output);
     HRESULT SkipBreakpoint(ICorDebugModule *pModule, mdMethodDef methodToken, bool justMyCode);
+    HRESULT FormatLogMessage(const LogMessage &logMessage, Variables *pVariables, ICorDebugThread *pThread, std::string &output);
 }
 
 } // namespace netcoredbg

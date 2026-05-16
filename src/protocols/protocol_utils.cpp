@@ -37,6 +37,7 @@ HRESULT BreakpointsHandle::UpdateLineBreakpoint(std::shared_ptr<IDebugger> &shar
             breakpoint.id = brk.first;
             breakpoint.verified = false;
             breakpoint.condition = brk.second.condition;
+            breakpoint.logMessage = brk.second.logMessage;
             breakpoint.source = breakpointsInSource.first;
             breakpoint.line = brk.second.line;
             breakpoint.endLine = brk.second.line;
@@ -51,7 +52,7 @@ HRESULT BreakpointsHandle::UpdateLineBreakpoint(std::shared_ptr<IDebugger> &shar
 
 HRESULT BreakpointsHandle::SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger,
                                              const std::string &module, const std::string &filename, int linenum,
-                                             const std::string &condition, Breakpoint &breakpoint)
+                                             const std::string &condition, const LogMessage &logMessage, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
@@ -61,7 +62,7 @@ HRESULT BreakpointsHandle::SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedD
     for (auto it : breakpointsInSource)
         lineBreakpoints.push_back(it.second);
 
-    lineBreakpoints.emplace_back(module, linenum, condition);
+    lineBreakpoints.emplace_back(module, linenum, condition, logMessage);
 
     std::vector<Breakpoint> breakpoints;
     IfFailRet(sharedDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints));
@@ -74,7 +75,7 @@ HRESULT BreakpointsHandle::SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedD
 
 HRESULT BreakpointsHandle::SetFuncBreakpoint(std::shared_ptr<IDebugger> &sharedDebugger,
                                              const std::string &module, const std::string &funcname, const std::string &params,
-                                             const std::string &condition, Breakpoint &breakpoint)
+                                             const std::string &condition, const LogMessage &logMessage, Breakpoint &breakpoint)
 {
     HRESULT Status;
 
@@ -83,7 +84,7 @@ HRESULT BreakpointsHandle::SetFuncBreakpoint(std::shared_ptr<IDebugger> &sharedD
     for (const auto &it : m_funcBreakpoints)
         funcBreakpoints.push_back(it.second);
 
-    funcBreakpoints.emplace_back(module, funcname, params, condition);
+    funcBreakpoints.emplace_back(module, funcname, params, condition, logMessage);
 
     std::vector<Breakpoint> breakpoints;
     IfFailRet(sharedDebugger->SetFuncBreakpoints(funcBreakpoints, breakpoints));
@@ -375,77 +376,133 @@ std::string GetConditionPrepareArgs(std::vector<std::string> &args)
     return condition;
 }
 
-bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb)
+bool CreateLogMessageFormat(const std::string &formatStr, std::vector<std::string> &format)
 {
-    bool ok;
-    lb.condition = GetConditionPrepareArgs(args);
-    std::string prepString("");
+    std::size_t lastPos = 0, pos = 0;
 
-    if (args.size() == 1)
-        prepString = args.at(0);
-    else
-        for (auto &str : args)
-            prepString += str;
-
-    std::size_t i = prepString.find('!');
-
-    if (i == std::string::npos)
+    while ((pos = formatStr.find("%s", lastPos)) != std::string::npos)
     {
-        lb.module.clear();
-    }
-    else
-    {
-        lb.module = std::string(prepString, 0, i);
-        prepString.erase(0, i + 1);
+        format.push_back(formatStr.substr(lastPos, pos - lastPos));
+        format.push_back("");
+        lastPos = pos + 2;
     }
 
-    i = prepString.rfind(':');
-
-    lb.filename = prepString.substr(0, i);
-    lb.linenum = ProtocolUtils::ParseInt(prepString.substr(i + 1), ok);
-
-    return ok && lb.linenum > 0;
-}
-
-bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb)
-{
-    fb.condition = GetConditionPrepareArgs(args);
-    std::string prepString("");
-
-    if (args.size() == 1)
-        prepString = args.at(0);
-    else
-        for (auto &str : args)
-            prepString += str;
-
-    std::size_t i = prepString.find('!');
-
-    if (i == std::string::npos)
-    {
-        fb.module.clear();
-    }
-    else
-    {
-        fb.module = std::string(prepString, 0, i);
-        prepString.erase(0, i + 1);
-    }
-
-    i = prepString.find('(');
-    if (i != std::string::npos)
-    {
-        std::size_t closeBrace = prepString.find(')');
-
-        fb.params = std::string(prepString, i, closeBrace - i + 1);
-        prepString.erase(i, closeBrace);
-    }
-    else
-    {
-        fb.params.clear();
-    }
-
-    fb.funcname = prepString;
+    if (lastPos < formatStr.size())
+        format.push_back(formatStr.substr(lastPos));
 
     return true;
+}
+
+bool ParseLogMessage(const std::vector<std::string> &args, LogMessage &logMessage)
+{
+    if (args.empty() || !CreateLogMessageFormat(args[0], logMessage.format))
+        return false;
+
+    logMessage.args = std::vector<std::string>(args.begin() + 1, args.end());
+    return true;
+}
+
+bool ParseBreakpoint(std::vector<std::string> &args, struct LineBreak &lb, bool isLogPoint)
+{
+    bool ok = false;
+    lb.condition = GetConditionPrepareArgs(args);
+
+    for (auto i = args.begin(); i != args.end(); ++i)
+    {
+        auto &arg = *i;
+
+        std::size_t colonIndex = arg.rfind(':');
+
+        if (colonIndex == std::string::npos)
+            continue;
+
+        auto moduleAndFile = arg.substr(0, colonIndex);
+
+        std::size_t exclIndex = moduleAndFile.find('!');
+
+        if (exclIndex != std::string::npos)
+        {
+            lb.module = moduleAndFile.substr(0, exclIndex);
+            lb.filename = moduleAndFile.substr(exclIndex + 1);
+        }
+        else
+        {
+            lb.module.clear();
+            lb.filename = moduleAndFile;
+        }
+
+        lb.linenum = ProtocolUtils::ParseInt(arg.substr(colonIndex + 1), ok);
+
+        if (!ok)
+        {
+            lb.filename.clear();
+            lb.linenum = 0;
+            continue;
+        }
+
+        args.erase(args.begin(), i + 1);
+        ok = true;
+        break;
+    }
+
+    return ok && (!isLogPoint || ParseLogMessage(args, lb.logMessage));
+}
+
+bool ParseBreakpoint(std::vector<std::string> &args, struct FuncBreak &fb, bool isLogPoint)
+{
+    fb.condition = GetConditionPrepareArgs(args);
+
+    auto i = args.begin();
+
+    for (; i != args.end(); ++i)
+    {
+        auto &arg = *i;
+
+        if (arg[0] == '-')
+        {
+            if (arg.size() >= 2 && arg[1] == '-' && ++i == args.end())
+                return false;
+        }
+        else
+            break;
+    }
+
+    if (i == args.end())
+        return false;
+
+    args.erase(args.begin(), i);
+
+    auto &loc = args[0];
+
+    std::size_t exclIndex = loc.find('!');
+
+    if (exclIndex == std::string::npos)
+        fb.module.clear();
+    else
+    {
+        fb.module = std::string(loc, 0, exclIndex);
+        loc.erase(0, exclIndex + 1);
+    }
+
+    auto parenIndex = loc.find('(');
+    if (parenIndex != std::string::npos)
+    {
+        std::size_t closeParenIndex = loc.find(')', parenIndex);
+
+        if (closeParenIndex == std::string::npos)
+            return false;
+
+        fb.params = std::string(loc, parenIndex, closeParenIndex - parenIndex + 1);
+        loc.erase(parenIndex, closeParenIndex - parenIndex + 1);
+    }
+    else
+        fb.params.clear();
+
+    fb.funcname = loc;
+
+    args.erase(args.begin());
+
+    return !isLogPoint || ParseLogMessage(args, fb.logMessage);
 }
 
 std::string AddrToString(std::uintptr_t addr)

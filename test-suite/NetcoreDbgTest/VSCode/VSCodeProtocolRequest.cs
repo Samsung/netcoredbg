@@ -182,6 +182,7 @@ namespace NetcoreDbgTest.VSCode
         public string name;
         public string condition;
         public string hitCondition;
+        public string logMessage;
     }
 
     public class StackTraceRequest : Request {

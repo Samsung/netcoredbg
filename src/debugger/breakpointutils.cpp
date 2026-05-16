@@ -4,6 +4,7 @@
 
 #include "debugger/breakpointutils.h"
 #include "debugger/variables.h"
+#include "interfaces/types.h"
 #include "metadata/attributes.h"
 #include "utils/torelease.h"
 
@@ -138,6 +139,39 @@ HRESULT SkipBreakpoint(ICorDebugModule *pModule, mdMethodDef methodToken, bool j
     }
 
     return S_FALSE; // don't skip breakpoint
+}
+
+HRESULT FormatLogMessage(const LogMessage &logMessage, Variables *pVariables, ICorDebugThread *pThread, std::string &output)
+{
+    if (logMessage.args.empty())
+    {
+        output = logMessage.Format({});
+        return S_OK;
+    }
+
+    HRESULT Status;
+    DWORD threadId = 0;
+    IfFailRet(pThread->GetID(&threadId));
+    FrameId frameId(ThreadId{threadId}, FrameLevel{0});
+
+    ToRelease<ICorDebugProcess> iCorProcess;
+    IfFailRet(pThread->GetProcess(&iCorProcess));
+
+    std::vector<std::string> argValues;
+    argValues.reserve(logMessage.args.size());
+
+    for (const auto &arg : logMessage.args)
+    {
+        Variable variable;
+
+        bool failed = FAILED(Status = pVariables->Evaluate(iCorProcess, frameId, arg, variable, output));
+        argValues.push_back(failed ? (output.empty() ? "unknown error" : output)
+                                      : variable.value);
+    }
+
+    output = logMessage.Format(argValues);
+
+    return S_OK;
 }
 
 } // namespace BreakpointUtils

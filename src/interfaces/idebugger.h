@@ -43,6 +43,7 @@ public:
         bool        enabled;
         unsigned    hit_count;
         std::string condition; // not empty for conditional breakpoints
+        LogMessage log_message;
         std::string name;      // file name or function name, depending on type.
         int         line;      // first line, 0 for function breakpoint
         int         last_line;

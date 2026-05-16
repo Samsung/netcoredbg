@@ -14,6 +14,7 @@
 #include <string>
 #include <unordered_map>
 #include "interfaces/idebugger.h"
+#include "interfaces/types.h"
 #include "utils/torelease.h"
 
 namespace netcoredbg
@@ -45,7 +46,7 @@ public:
     // Important! Must provide succeeded return code:
     // S_OK - breakpoint hit
     // S_FALSE - no breakpoint hit
-    HRESULT CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents);
+    HRESULT CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents, std::shared_ptr<Variables> &variables);
 
     // Important! Callbacks related methods must control return for succeeded return code.
     // Do not allow debugger API return succeeded (uncontrolled) return code.
@@ -66,6 +67,7 @@ public:
         bool enabled;
         ULONG32 times;
         std::string condition;
+        LogMessage logMessage;
         // In case of code line in constructor, we could resolve multiple methods for breakpoints.
         // For example, `MyType obj = new MyType(1);` code will be added to all class constructors).
         std::vector<ToRelease<ICorDebugFunctionBreakpoint> > iCorFuncBreakpoints;

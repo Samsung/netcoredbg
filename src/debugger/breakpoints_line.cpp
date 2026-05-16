@@ -17,6 +17,7 @@ void LineBreakpoints::ManagedLineBreakpoint::ToBreakpoint(Breakpoint &breakpoint
     breakpoint.id = this->id;
     breakpoint.verified = this->IsVerified();
     breakpoint.condition = this->condition;
+    breakpoint.logMessage = this->logMessage;
     breakpoint.source = Source(fullname);
     breakpoint.line = this->linenum;
     breakpoint.endLine = this->endLine;
@@ -31,7 +32,7 @@ void LineBreakpoints::DeleteAll()
     m_breakpointsMutex.unlock();
 }
 
-HRESULT LineBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents)
+HRESULT LineBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugBreakpoint *pBreakpoint, Breakpoint &breakpoint, std::vector<BreakpointEvent> &bpChangeEvents, std::shared_ptr<Variables> &variables)
 {
     HRESULT Status;
     ToRelease<ICorDebugFunctionBreakpoint> pFunctionBreakpoint;
@@ -95,6 +96,7 @@ HRESULT LineBreakpoints::CheckBreakpointHit(ICorDebugThread *pThread, ICorDebugB
                 bpChangeEvents.emplace_back(BreakpointChanged, breakpoint);
             }
 
+            variables = m_sharedVariables;
             return S_OK;
         }
     }
@@ -247,6 +249,8 @@ HRESULT LineBreakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std
             bp.linenum = initialBreakpoint.breakpoint.line;
             bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
+            bp.logMessage = initialBreakpoint.breakpoint.logMessage;
+
             unsigned resolved_fullname_index = 0;
             std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
 
@@ -326,6 +330,7 @@ HRESULT LineBreakpoints::UpdateLineBreakpoint(bool haveProcess, int id, int line
             bp.linenum = initialBreakpoint.breakpoint.line;
             bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
+            bp.logMessage = initialBreakpoint.breakpoint.logMessage;
 
             unsigned resolved_fullname_index = 0;
             std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
@@ -450,6 +455,8 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
             bp.linenum = line;
             bp.endLine = line;
             bp.condition = initialBreakpoint.breakpoint.condition;
+            bp.logMessage = initialBreakpoint.breakpoint.logMessage;
+
             unsigned resolved_fullname_index = 0;
             std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
 
@@ -480,6 +487,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
         {
             ManagedLineBreakpointMapping &initialBreakpoint = *b->second;
             initialBreakpoint.breakpoint.condition = sb.condition;
+            initialBreakpoint.breakpoint.logMessage = sb.logMessage;
 
             if (initialBreakpoint.resolved_linenum)
             {
@@ -498,6 +506,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
 
                     // Existing breakpoint
                     bp.condition = initialBreakpoint.breakpoint.condition;
+                    bp.logMessage = initialBreakpoint.breakpoint.logMessage;
                     std::string resolved_fullname;
                     m_sharedModules->GetSourceFullPathByIndex(initialBreakpoint.resolved_fullname_index, resolved_fullname);
                     bp.ToBreakpoint(breakpoint, resolved_fullname);
@@ -513,6 +522,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
                 bp.linenum = line;
                 bp.endLine = line;
                 bp.condition = initialBreakpoint.breakpoint.condition;
+                bp.logMessage = initialBreakpoint.breakpoint.logMessage;
                 bp.ToBreakpoint(breakpoint, filename);
                 if (!haveProcess)
                     breakpoint.message = "The breakpoint is pending and will be resolved when debugging starts.";
@@ -575,6 +585,7 @@ HRESULT LineBreakpoints::UpdateBreakpointsOnHotReload(ICorDebugModule *pModule, 
             bp.linenum = initialBreakpoint.breakpoint.line;
             bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
+            bp.logMessage = initialBreakpoint.breakpoint.logMessage;
             unsigned resolved_fullname_index = 0;
             Breakpoint breakpoint;
             std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
@@ -706,7 +717,7 @@ void LineBreakpoints::AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInf
         {
             for(auto &bp : line_bps.second)
             {
-                list.emplace_back(IDebugger::BreakpointInfo{ bp.id, bp.IsVerified(), bp.enabled, bp.times, bp.condition,
+                list.emplace_back(IDebugger::BreakpointInfo{ bp.id, bp.IsVerified(), bp.enabled, bp.times, bp.condition, bp.logMessage,
                                                              resolved_fullname, bp.linenum, bp.endLine, bp.module, {} });
             }
         }
@@ -718,7 +729,7 @@ void LineBreakpoints::AddAllBreakpointsInfo(std::vector<IDebugger::BreakpointInf
 
         for(auto &bp : file_bps.second)
         {
-            list.emplace_back(IDebugger::BreakpointInfo{ bp.id, false, true, 0, bp.breakpoint.condition,
+            list.emplace_back(IDebugger::BreakpointInfo{ bp.id, false, true, 0, bp.breakpoint.condition, bp.breakpoint.logMessage,
                                                          file_bps.first, bp.breakpoint.line, 0, bp.breakpoint.module, {} });
         }
     }

@@ -3,6 +3,7 @@
 // See the LICENSE file in the project root for more information.
 
 #include "debugger/frames.h"
+#include "pal/inc/rt/palrt.h"
 #include "utils/platform.h"
 #include "utils/torelease.h"
 #include "protocols/miprotocol.h"
@@ -541,6 +542,47 @@ void MIProtocol::EmitOutputEvent(OutputCategory category, string_view output, st
 static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, BreakpointsHandle &breakpointsHandle, MIProtocol::VariablesHandle &variablesHandle,
                              std::string &fileExec, std::vector<std::string> &execArgs, const std::string& command, const std::vector<std::string> &args, std::string &output)
 {
+    static std::function<HRESULT(const std::vector<std::string> &args, std::string &output, bool isLogPoint)> breakpointInsertCallback =
+        [&](const std::vector<std::string> &unmutable_args, std::string &output, bool isLogPoint) -> HRESULT {
+            HRESULT Status = E_FAIL;
+            Breakpoint breakpoint;
+            std::vector<std::string> args = unmutable_args;
+
+            ProtocolUtils::StripArgs(args);
+
+            BreakType bt = ProtocolUtils::GetBreakpointType(args);
+
+            if (bt == BreakType::Error)
+            {
+                output = "Wrong breakpoint specified";
+                return E_FAIL;
+            }
+
+            if (bt == BreakType::LineBreak)
+            {
+                struct LineBreak lb;
+
+                if (ProtocolUtils::ParseBreakpoint(args, lb, isLogPoint)
+                    && SUCCEEDED(breakpointsHandle.SetLineBreakpoint(sharedDebugger, lb.module, lb.filename, lb.linenum, lb.condition, lb.logMessage, breakpoint)))
+                    Status = S_OK;
+            }
+            else if (bt == BreakType::FuncBreak)
+            {
+                struct FuncBreak fb;
+
+                if (ProtocolUtils::ParseBreakpoint(args, fb, isLogPoint)
+                    && SUCCEEDED(breakpointsHandle.SetFuncBreakpoint(sharedDebugger, fb.module, fb.funcname, fb.params, fb.condition, fb.logMessage, breakpoint)))
+                    Status = S_OK;
+            }
+
+            if (Status == S_OK)
+                PrintBreakpoint(breakpoint, output);
+            else
+                output = "Unknown breakpoint location format";
+
+            return Status;
+        };
+
     static std::unordered_map<std::string, CommandCallback> commands {
     { "thread-info", [&](const std::vector<std::string> &, std::string &output){
         HRESULT Status = S_OK;
@@ -617,43 +659,10 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, Breakpo
         return E_FAIL;
     } },
     { "break-insert", [&](const std::vector<std::string> &unmutable_args, std::string &output) -> HRESULT {
-        HRESULT Status = E_FAIL;
-        Breakpoint breakpoint;
-        std::vector<std::string> args = unmutable_args;
-
-        ProtocolUtils::StripArgs(args);
-
-        BreakType bt = ProtocolUtils::GetBreakpointType(args);
-
-        if (bt == BreakType::Error)
-        {
-            output = "Wrong breakpoint specified";
-            return E_FAIL;
-        }
-
-        if (bt == BreakType::LineBreak)
-        {
-            struct LineBreak lb;
-
-            if (ProtocolUtils::ParseBreakpoint(args, lb)
-                && SUCCEEDED(breakpointsHandle.SetLineBreakpoint(sharedDebugger, lb.module, lb.filename, lb.linenum, lb.condition, breakpoint)))
-                Status = S_OK;
-        }
-        else if (bt == BreakType::FuncBreak)
-        {
-            struct FuncBreak fb;
-
-            if (ProtocolUtils::ParseBreakpoint(args, fb)
-                && SUCCEEDED(breakpointsHandle.SetFuncBreakpoint(sharedDebugger, fb.module, fb.funcname, fb.params, fb.condition, breakpoint)))
-                Status = S_OK;
-        }
-
-        if (Status == S_OK)
-            PrintBreakpoint(breakpoint, output);
-        else
-            output = "Unknown breakpoint location format";
-
-        return Status;
+        return breakpointInsertCallback(unmutable_args, output, false);
+    } },
+    { "dprintf-insert", [&](const std::vector<std::string> &unmutable_args, std::string &output) -> HRESULT {
+        return breakpointInsertCallback(unmutable_args, output, true);
     } },
     { "break-exception-insert", [&](const std::vector<std::string> &args, std::string &output) -> HRESULT {
         if (args.size() < 2)

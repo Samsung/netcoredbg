@@ -563,7 +563,7 @@ void ExceptionBreakpoints::AddAllBreakpointsInfo(std::vector<IDebugger::Breakpoi
                 ss += " ";
                 ss += entry;
             }
-            list.emplace_back(IDebugger::BreakpointInfo{ bp.id, true, true, 0, "",
+            list.emplace_back(IDebugger::BreakpointInfo{ bp.id, true, true, 0, "", {},
                                                      "exception ", 0, 0, "", ss});
             ++it;
         }
