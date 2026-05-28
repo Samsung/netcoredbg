@@ -76,7 +76,166 @@ struct VariableMember
     VariableMember(const VariableMember &that) = delete;
 };
 
-static HRESULT FillValueAndType(VariableMember &member, Variable &var)
+static bool IsTypeDisplayFallback(const std::string &value, const std::string &typeName)
+{
+    return value.size() == typeName.size() + 2 &&
+           value.front() == '{' &&
+           value.back() == '}' &&
+           value.compare(1, typeName.size(), typeName) == 0;
+}
+
+static bool IsZeroArgStringToString(IMetaDataImport *pMD, mdTypeDef typeDef, mdMethodDef methodDef)
+{
+    mdTypeDef memTypeDef;
+    ULONG nameLen;
+    WCHAR methodName[mdNameLen] = {0};
+    DWORD methodAttr = 0;
+    PCCOR_SIGNATURE pSig = nullptr;
+    ULONG cbSig = 0;
+    if (FAILED(pMD->GetMethodProps(methodDef, &memTypeDef,
+                                   methodName, _countof(methodName), &nameLen,
+                                   &methodAttr, &pSig, &cbSig, nullptr, nullptr)))
+        return false;
+
+    if (memTypeDef != typeDef || (methodAttr & mdStatic) || !(methodAttr & mdVirtual) ||
+        (methodAttr & mdNewSlot) || !str_equal(methodName, W("ToString")))
+        return false;
+
+    ULONG convFlags = 0;
+    ULONG elementSize = CorSigUncompressData(pSig, &convFlags);
+    pSig += elementSize;
+
+    if ((convFlags & IMAGE_CEE_CS_CALLCONV_MASK) == IMAGE_CEE_CS_CALLCONV_VARARG)
+        return false;
+
+    if (convFlags & IMAGE_CEE_CS_CALLCONV_GENERIC)
+    {
+        ULONG gParams = 0;
+        elementSize = CorSigUncompressData(pSig, &gParams);
+        pSig += elementSize;
+    }
+
+    ULONG cParams = 0;
+    elementSize = CorSigUncompressData(pSig, &cParams);
+    pSig += elementSize;
+
+    CorElementType returnType = CorSigUncompressElementType(pSig);
+    return cParams == 0 && returnType == ELEMENT_TYPE_STRING;
+}
+
+static bool FindDeclaredToStringOverride(IMetaDataImport *pMD, mdTypeDef typeDef, mdMethodDef &foundMethodDef)
+{
+    ULONG numMethods = 0;
+    HCORENUM hEnum = nullptr;
+    mdMethodDef methodDef = mdMethodDefNil;
+    while (SUCCEEDED(pMD->EnumMethodsWithName(&hEnum, typeDef, W("ToString"), &methodDef, 1, &numMethods)) &&
+           numMethods != 0)
+    {
+        if (IsZeroArgStringToString(pMD, typeDef, methodDef))
+        {
+            pMD->CloseEnum(hEnum);
+            foundMethodDef = methodDef;
+            return true;
+        }
+    }
+    pMD->CloseEnum(hEnum);
+    return false;
+}
+
+// Walk the exact type and its base types for a ToString() override and provide the override itself
+// plus its declaring type, so the caller could call it directly on the value it already holds.
+static bool FindOverriddenToString(ICorDebugValue *pInputValue, ICorDebugType **ppDeclaringType, ICorDebugFunction **ppFunc)
+{
+    BOOL isNull = TRUE;
+    ToRelease<ICorDebugValue> pValue;
+    if (FAILED(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull)))
+        return false;
+    if (isNull)
+        return false;
+
+    ToRelease<ICorDebugValue2> pValue2;
+    ToRelease<ICorDebugType> pType;
+    if (FAILED(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID*) &pValue2)) ||
+        FAILED(pValue2->GetExactType(&pType)))
+        return false;
+
+    while (pType)
+    {
+        std::string typeName;
+        if (FAILED(TypePrinter::GetTypeOfValue(pType, typeName)))
+            return false;
+        // Exception.ToString() includes stack traces; keep existing exception variable display.
+        if (typeName == "System.Object" || typeName == "System.ValueType" || typeName == "System.Exception")
+            return false;
+
+        ToRelease<ICorDebugClass> pClass;
+        mdTypeDef typeDef = mdTypeDefNil;
+        ToRelease<ICorDebugModule> pModule;
+        ToRelease<IUnknown> pMDUnknown;
+        ToRelease<IMetaDataImport> pMD;
+        if (FAILED(pType->GetClass(&pClass)) ||
+            FAILED(pClass->GetToken(&typeDef)) ||
+            FAILED(pClass->GetModule(&pModule)) ||
+            FAILED(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown)) ||
+            FAILED(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD)))
+        {
+            return false;
+        }
+
+        mdMethodDef methodDef = mdMethodDefNil;
+        if (FindDeclaredToStringOverride(pMD, typeDef, methodDef))
+        {
+            if (FAILED(pModule->GetFunctionFromToken(methodDef, ppFunc)))
+                return false;
+            *ppDeclaringType = pType.Detach();
+            return true;
+        }
+
+        ToRelease<ICorDebugType> pBaseType;
+        if (FAILED(pType->GetBase(&pBaseType)) || pBaseType == nullptr)
+            return false;
+        pType = pBaseType.Detach();
+    }
+
+    return false;
+}
+
+static HRESULT PrintValueWithImplicitToString(ICorDebugValue *pValue, ICorDebugThread *pThread, int evalFlags,
+                                              EvalHelpers *pEvalHelpers, std::string &output)
+{
+    HRESULT Status;
+
+    IfFailRet(PrintValue(pValue, output, true));
+
+    if (!pThread || !pEvalHelpers || (evalFlags & EVAL_NOFUNCEVAL))
+        return S_OK;
+
+    std::string typeName;
+    if (FAILED(TypePrinter::GetTypeOfValue(pValue, typeName)))
+        return S_OK;
+    if (!IsTypeDisplayFallback(output, typeName))
+        return S_OK;
+
+    ToRelease<ICorDebugType> pDeclaringType;
+    ToRelease<ICorDebugFunction> pToStringFunc;
+    if (!FindOverriddenToString(pValue, &pDeclaringType, &pToStringFunc))
+        return S_OK;
+
+    // Note, EvalFunction() return S_OK without result in case EVAL_NOFUNCEVAL flag.
+    ToRelease<ICorDebugValue> pToStringValue;
+    if (FAILED(pEvalHelpers->EvalFunction(pThread, pToStringFunc, pDeclaringType.GetRef(), 1, &pValue, 1,
+                                          &pToStringValue, evalFlags)) ||
+        pToStringValue == nullptr)
+        return S_OK;
+
+    std::string display;
+    if (SUCCEEDED(PrintValue(pToStringValue, display, false)))
+        output = display;
+
+    return S_OK;
+}
+
+static HRESULT FillValueAndType(VariableMember &member, Variable &var, ICorDebugThread *pThread, EvalHelpers *pEvalHelpers)
 {
     if (member.value == nullptr)
     {
@@ -87,7 +246,7 @@ static HRESULT FillValueAndType(VariableMember &member, Variable &var)
     }
 
     TypePrinter::GetTypeOfValue(member.value, var.type);
-    return PrintValue(member.value, var.value, true);
+    return PrintValueWithImplicitToString(member.value, pThread, var.evalFlags, pEvalHelpers, var.value);
 }
 
 static HRESULT FetchFieldsAndProperties(Evaluator *pEvaluator, ICorDebugValue *pInputValue, ICorDebugThread *pThread,
@@ -258,7 +417,7 @@ HRESULT Variables::GetStackVariables(
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, var.evalFlags));
         IfFailRet(TypePrinter::GetTypeOfValue(iCorValue, var.type));
-        IfFailRet(PrintValue(iCorValue, var.value));
+        IfFailRet(PrintValueWithImplicitToString(iCorValue, pThread, var.evalFlags, m_sharedEvalHelpers.get(), var.value));
 
         IfFailRet(AddVariableReference(var, frameId, iCorValue, ValueIsVariable));
         variables.push_back(var);
@@ -354,7 +513,7 @@ HRESULT Variables::GetChildren(
         bool isIndex = !it.name.empty() && it.name.at(0) == '[';
         if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
             var.evaluateName = ref.evaluateName + (isIndex ? "" : ".") + var.name;
-        IfFailRet(FillValueAndType(it, var));
+        IfFailRet(FillValueAndType(it, var, pThread, m_sharedEvalHelpers.get()));
         IfFailRet(AddVariableReference(var, ref.frameId, it.value, ValueIsVariable));
         variables.push_back(var);
     }
@@ -404,7 +563,7 @@ HRESULT Variables::Evaluate(
 
     variable.evaluateName = expression;
     IfFailRet(TypePrinter::GetTypeOfValue(pResultValue, variable.type));
-    IfFailRet(PrintValue(pResultValue, variable.value));
+    IfFailRet(PrintValueWithImplicitToString(pResultValue, pThread, variable.evalFlags, m_sharedEvalHelpers.get(), variable.value));
 
     return AddVariableReference(variable, frameId, pResultValue, ValueIsVariable);
 }
