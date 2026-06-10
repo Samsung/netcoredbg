@@ -507,6 +507,139 @@ namespace VSCodeTestVariables
         }
     }
 
+    [DebuggerDisplay("Id = {Id}")]
+    public class DebuggerDisplayFieldClass
+    {
+        public int Id = 101;
+    }
+
+    [DebuggerDisplay("Name = {Name}")]
+    public class DebuggerDisplayPropertyClass
+    {
+        public int Name
+        {
+            get
+            {
+                return 202;
+            }
+        }
+    }
+
+    [DebuggerDisplay("Text = {GetText()}")]
+    public class DebuggerDisplayMethodClass
+    {
+        public int GetText()
+        {
+            return 303;
+        }
+    }
+
+    [DebuggerDisplay("Id = {Id}, Name = {Name}, Text = {GetText()}")]
+    public class DebuggerDisplayMixedClass
+    {
+        public int Id = 404;
+
+        public int Name
+        {
+            get
+            {
+                return 505;
+            }
+        }
+
+        public int GetText()
+        {
+            return 606;
+        }
+    }
+
+    [DebuggerDisplay("Value = {Value}")]
+    public struct DebuggerDisplayStruct
+    {
+        public int Value;
+
+        public DebuggerDisplayStruct(int value)
+        {
+            Value = value;
+        }
+    }
+
+    [DebuggerDisplay("BaseId = {BaseId}")]
+    public class DebuggerDisplayBaseClass
+    {
+        public int BaseId = 808;
+    }
+
+    public class DebuggerDisplayInheritedClass : DebuggerDisplayBaseClass
+    {
+        public int ChildId = 909;
+    }
+
+    [DebuggerDisplay("Missing = {MissingMember}")]
+    public class DebuggerDisplayMissingMember
+    {
+        public int Id = 1001;
+    }
+
+    [DebuggerDisplay("malformed {Id")]
+    public class DebuggerDisplayMalformedClass
+    {
+        public int Id = 1002;
+    }
+
+    [DebuggerDisplay("just literal text")]
+    public class DebuggerDisplayLiteralClass
+    {
+        public int Id = 1003;
+    }
+
+    [DebuggerDisplay("escaped {{Id}} = {Id}")]
+    public class DebuggerDisplayEscapedClass
+    {
+        public int Id = 1004;
+    }
+
+    [DebuggerDisplay("Inner = {Inner.Value}")]
+    public class DebuggerDisplayNestedClass
+    {
+        public ToStringDisplayClass Inner = new ToStringDisplayClass();
+    }
+
+    [DebuggerDisplay("Name = {Name,nq} vs {Name}")]
+    public class DebuggerDisplayNoQuotesClass
+    {
+        public string Name = "text";
+    }
+
+    [DebuggerDisplay("Value = {Value}")]
+    public class DebuggerDisplayGenericClass<T>
+    {
+        public T Value;
+
+        public DebuggerDisplayGenericClass(T value)
+        {
+            Value = value;
+        }
+    }
+
+    [DebuggerDisplay("Id = {Id}")]
+    public class DebuggerDisplayExpandableClass
+    {
+        public int Id = 1111;
+        public int Child = 2222;
+    }
+
+    [DebuggerDisplay("Display = {Value}")]
+    public class DebuggerDisplayWithToStringClass
+    {
+        public int Value = 4242;
+
+        public override string ToString()
+        {
+            return "toString:" + Value.ToString();
+        }
+    }
+
     public struct TestSetVarStruct
     {
         public static int static_field_i;
@@ -714,6 +847,7 @@ namespace VSCodeTestVariables
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp4");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp5");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_to_string");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_debugger_display");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_func1");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_func2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_getter");
@@ -1489,7 +1623,7 @@ namespace VSCodeTestVariables
 
             i++;                                                            Label.Breakpoint("bp_to_string");
 
-            Label.Checkpoint("test_to_string_display", "finish", (Object context) => {
+            Label.Checkpoint("test_to_string_display", "test_debugger_display", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_to_string");
                 Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp_to_string");
@@ -1517,6 +1651,64 @@ namespace VSCodeTestVariables
                                                                                               "{VSCodeTestVariables.ToStringEvalChild}");
                 Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_evalResult, "VSCodeTestVariables.ToStringDisplayClass", "Inner", "class:42");
                 Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "toStringSideEffect.Calls", "1");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            DebuggerDisplayFieldClass ddField = new DebuggerDisplayFieldClass();
+            DebuggerDisplayPropertyClass ddProperty = new DebuggerDisplayPropertyClass();
+            DebuggerDisplayMethodClass ddMethod = new DebuggerDisplayMethodClass();
+            DebuggerDisplayMixedClass ddMixed = new DebuggerDisplayMixedClass();
+            DebuggerDisplayStruct ddStruct = new DebuggerDisplayStruct(707);
+            DebuggerDisplayInheritedClass ddInherited = new DebuggerDisplayInheritedClass();
+            DebuggerDisplayMissingMember ddMissing = new DebuggerDisplayMissingMember();
+            DebuggerDisplayMalformedClass ddMalformed = new DebuggerDisplayMalformedClass();
+            DebuggerDisplayLiteralClass ddLiteral = new DebuggerDisplayLiteralClass();
+            DebuggerDisplayEscapedClass ddEscaped = new DebuggerDisplayEscapedClass();
+            DebuggerDisplayNestedClass ddNested = new DebuggerDisplayNestedClass();
+            DebuggerDisplayNoQuotesClass ddNoQuotes = new DebuggerDisplayNoQuotesClass();
+            DebuggerDisplayGenericClass<int> ddGeneric = new DebuggerDisplayGenericClass<int>(99);
+            DebuggerDisplayExpandableClass ddExpandable = new DebuggerDisplayExpandableClass();
+            List<int> ddList = new List<int> { 1, 2, 3 };
+            Dictionary<string, int> ddDictionary = new Dictionary<string, int> {
+                { "one", 1 },
+                { "two", 2 },
+            };
+            DebuggerDisplayWithToStringClass ddWithToString = new DebuggerDisplayWithToStringClass();
+
+            i++;                                                            Label.Breakpoint("bp_debugger_display");
+
+            Label.Checkpoint("test_debugger_display", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_debugger_display");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp_debugger_display");
+
+                int variablesReference_Locals = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayFieldClass", "ddField", "Id = 101");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayPropertyClass", "ddProperty", "Name = 202");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayMethodClass", "ddMethod", "Text = 303");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayMixedClass", "ddMixed", "Id = 404, Name = 505, Text = 606");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayStruct", "ddStruct", "Value = 707");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayInheritedClass", "ddInherited", "BaseId = 808");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayMissingMember", "ddMissing", "{VSCodeTestVariables.DebuggerDisplayMissingMember}");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayMalformedClass", "ddMalformed", "{VSCodeTestVariables.DebuggerDisplayMalformedClass}");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayLiteralClass", "ddLiteral", "just literal text");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayEscapedClass", "ddEscaped", "escaped {Id} = 1004");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayNestedClass", "ddNested", "Inner = 42");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayNoQuotesClass", "ddNoQuotes", "Name = text vs \"text\"");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "", "ddGeneric", "Value = 99");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "", "ddList", "Count = 3");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "", "ddDictionary", "Count = 2");
+                // DebuggerDisplay takes precedence over an overridden ToString().
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.DebuggerDisplayWithToStringClass", "ddWithToString", "Display = 4242");
+
+                // Watch/evaluate requests use the same display.
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "ddField", "Id = 101");
+
+                // Child expansion must keep working on a DebuggerDisplay'd object.
+                int variablesReference_ddExpandable = Context.GetChildVariablesReference(@"__FILE__:__LINE__", variablesReference_Locals, "ddExpandable");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_ddExpandable, "int", "Id", "1111");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_ddExpandable, "int", "Child", "2222");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

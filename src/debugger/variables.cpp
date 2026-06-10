@@ -8,8 +8,10 @@
 #include <cstring>
 #include <algorithm>
 #include <sstream>
+#include <cctype>
 
 #include "metadata/typeprinter.h"
+#include "metadata/attributes.h"
 #include "valueprint.h"
 #include "debugger/variables.h"
 #include "debugger/evalhelpers.h"
@@ -82,6 +84,156 @@ static bool IsTypeDisplayFallback(const std::string &value, const std::string &t
            value.front() == '{' &&
            value.back() == '}' &&
            value.compare(1, typeName.size(), typeName) == 0;
+}
+
+static std::string Trim(const std::string &s)
+{
+    size_t begin = 0;
+    while (begin < s.size() && std::isspace(static_cast<unsigned char>(s[begin])))
+        ++begin;
+
+    size_t end = s.size();
+    while (end > begin && std::isspace(static_cast<unsigned char>(s[end - 1])))
+        --end;
+
+    return s.substr(begin, end - begin);
+}
+
+static bool IsDebuggerDisplayIdentifier(const std::string &s)
+{
+    if (s.empty())
+        return false;
+
+    size_t start = s[0] == '@' ? 1 : 0;
+    if (start == s.size())
+        return false;
+
+    unsigned char first = static_cast<unsigned char>(s[start]);
+    if (!std::isalpha(first) && s[start] != '_')
+        return false;
+
+    for (size_t i = start + 1; i < s.size(); ++i)
+    {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if (!std::isalnum(c) && s[i] != '_')
+            return false;
+    }
+
+    return true;
+}
+
+// DebuggerDisplay v1 intentionally supports only simple instance-member placeholders:
+//   {Field}, {Property}, {Method()}, {Nested.Member}, {this.Member}
+// plus the ",nq" string-display modifier handled below. Richer C# expressions
+// (method arguments, operators, indexers) cause whole-template fallback to {TypeName}.
+static bool IsSupportedDebuggerDisplayExpression(const std::string &expression)
+{
+    if (expression == "this")
+        return true;
+
+    size_t begin = 0;
+    bool sawSegment = false;
+    while (begin < expression.size())
+    {
+        size_t end = expression.find('.', begin);
+        std::string segment = expression.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+        bool isLast = end == std::string::npos;
+
+        bool isCall = false;
+        if (segment.size() > 2 && segment.compare(segment.size() - 2, 2, "()") == 0)
+        {
+            if (!isLast)
+                return false;
+
+            isCall = true;
+            segment.resize(segment.size() - 2);
+        }
+
+        if (!IsDebuggerDisplayIdentifier(segment))
+            return false;
+
+        sawSegment = true;
+        if (isCall)
+            return true;
+
+        if (isLast)
+            break;
+
+        begin = end + 1;
+    }
+
+    return sawSegment;
+}
+
+static bool ShouldTryDebuggerDisplay(ICorDebugValue *pValue)
+{
+    CorElementType corElemType;
+    if (FAILED(pValue->GetType(&corElemType)))
+        return false;
+
+    return corElemType == ELEMENT_TYPE_CLASS ||
+           corElemType == ELEMENT_TYPE_OBJECT ||
+           corElemType == ELEMENT_TYPE_VALUETYPE;
+}
+
+// Walk the exact type and its base types for a DebuggerDisplayAttribute and provide its Value
+// (display template). Note, metadata import must be requested from the module of each type in
+// the walk, since a base type could come from another module.
+static bool TryGetDebuggerDisplayTemplate(ICorDebugValue *pInputValue, std::string &displayTemplate)
+{
+    BOOL isNull = TRUE;
+    ToRelease<ICorDebugValue> pValue;
+    if (FAILED(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull)) || isNull || !pValue)
+        return false;
+
+    ToRelease<ICorDebugValue2> pValue2;
+    if (FAILED(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2)))
+        return false;
+
+    ToRelease<ICorDebugType> pType;
+    if (FAILED(pValue2->GetExactType(&pType)) || !pType)
+        return false;
+
+    while (pType)
+    {
+        CorElementType corElemType;
+        if (FAILED(pType->GetType(&corElemType)))
+            return false;
+
+        if (corElemType != ELEMENT_TYPE_CLASS && corElemType != ELEMENT_TYPE_VALUETYPE)
+            return false;
+
+        std::string typeName;
+        if (FAILED(TypePrinter::GetTypeOfValue(pType, typeName)) ||
+            typeName == "System.Object" || typeName == "System.ValueType")
+            return false;
+
+        ToRelease<ICorDebugClass> pClass;
+        if (FAILED(pType->GetClass(&pClass)) || !pClass)
+            return false;
+
+        ToRelease<ICorDebugModule> pModule;
+        mdTypeDef typeDef = mdTypeDefNil;
+        if (FAILED(pClass->GetModule(&pModule)) || FAILED(pClass->GetToken(&typeDef)))
+            return false;
+
+        ToRelease<IUnknown> pMDUnknown;
+        ToRelease<IMetaDataImport> pMD;
+        if (FAILED(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown)) ||
+            FAILED(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD)))
+            return false;
+
+        if (GetAttributeFixedStringArgument(pMD, typeDef, DebuggerAttribute::Display, displayTemplate))
+            return true;
+
+        ToRelease<ICorDebugType> pBaseType;
+        if (FAILED(pType->GetBase(&pBaseType)) || !pBaseType)
+            return false;
+
+        pType = pBaseType.Detach();
+    }
+
+    return false;
 }
 
 static bool IsZeroArgStringToString(IMetaDataImport *pMD, mdTypeDef typeDef, mdMethodDef methodDef)
@@ -200,20 +352,207 @@ static bool FindOverriddenToString(ICorDebugValue *pInputValue, ICorDebugType **
     return false;
 }
 
-static HRESULT PrintValueWithImplicitToString(ICorDebugValue *pValue, ICorDebugThread *pThread, int evalFlags,
-                                              EvalHelpers *pEvalHelpers, std::string &output)
+static HRESULT CallInstanceZeroArgMethod(Evaluator *pEvaluator, EvalHelpers *pEvalHelpers, ICorDebugThread *pThread,
+                                         int evalFlags, ICorDebugValue *pReceiver, const std::string &methodName,
+                                         ICorDebugValue **ppResultValue)
+{
+    HRESULT Status;
+    ToRelease<ICorDebugFunction> iCorFunc;
+    pEvaluator->WalkMethods(pReceiver, [&](
+        bool is_static,
+        const std::string &name,
+        Evaluator::ReturnElementType&,
+        std::vector<Evaluator::ArgElementType> &methodArgs,
+        Evaluator::GetFunctionCallback getFunction)
+    {
+        if (is_static || !methodArgs.empty() || name != methodName)
+            return S_OK; // Return with success to continue walk.
+
+        IfFailRet(getFunction(&iCorFunc));
+        return E_ABORT; // Fast exit from cycle, since we already found iCorFunc.
+    });
+    if (!iCorFunc)
+        return E_FAIL;
+
+    ToRelease<ICorDebugValue2> iCorValue2;
+    IfFailRet(pReceiver->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &iCorValue2));
+    ToRelease<ICorDebugType> iCorType;
+    IfFailRet(iCorValue2->GetExactType(&iCorType));
+
+    return pEvalHelpers->EvalFunction(pThread, iCorFunc, iCorType.GetRef(), 1, &pReceiver, 1, ppResultValue, evalFlags);
+}
+
+// Evaluate one display template placeholder against the displayed value itself (not the current
+// frame), so locals, watch results and child variables all resolve members of the right object.
+static bool TryEvaluateDebuggerDisplayExpression(Evaluator *pEvaluator, EvalHelpers *pEvalHelpers,
+                                                 ICorDebugThread *pThread, FrameLevel frameLevel, int evalFlags,
+                                                 ICorDebugValue *pReceiver, const std::string &placeholder,
+                                                 std::string &value)
+{
+    std::string expression = Trim(placeholder);
+    if (expression.empty())
+        return false;
+
+    bool noQuotes = false;
+    size_t comma = expression.find(',');
+    if (comma != std::string::npos)
+    {
+        std::string format = Trim(expression.substr(comma + 1));
+        expression = Trim(expression.substr(0, comma));
+        if (format != "nq")
+            return false;
+        noQuotes = true;
+    }
+
+    if (expression.empty() || !IsSupportedDebuggerDisplayExpression(expression))
+        return false;
+
+    // Note, placeholder results are printed with plain PrintValue() (no nested DebuggerDisplay
+    // or ToString() processing), so recursive display evaluation is not possible.
+    if (expression == "this")
+        return SUCCEEDED(PrintValue(pReceiver, value, !noQuotes));
+    if (expression.compare(0, 5, "this.") == 0)
+        expression = expression.substr(5);
+
+    bool isCall = expression.size() > 2 && expression.compare(expression.size() - 2, 2, "()") == 0;
+    if (isCall)
+        expression.resize(expression.size() - 2);
+
+    std::vector<std::string> identifiers;
+    size_t begin = 0;
+    while (begin <= expression.size())
+    {
+        size_t end = expression.find('.', begin);
+        identifiers.emplace_back(expression.substr(begin, end == std::string::npos ? std::string::npos : end - begin));
+        if (end == std::string::npos)
+            break;
+        begin = end + 1;
+    }
+
+    // Note, ResolveIdentifiers() and EvalFunction() could return S_OK without result, for example
+    // in case of eval flags `EVAL_NOFUNCEVAL` and property getter or method call. Fields resolve
+    // without function evaluation.
+    ToRelease<ICorDebugValue> pResultValue;
+    if (isCall)
+    {
+        std::string methodName = identifiers.back();
+        identifiers.pop_back();
+
+        ToRelease<ICorDebugValue> pMethodReceiver;
+        if (identifiers.empty())
+        {
+            pReceiver->AddRef();
+            pMethodReceiver = pReceiver;
+        }
+        else if (FAILED(pEvaluator->ResolveIdentifiers(pThread, frameLevel, pReceiver, nullptr, identifiers,
+                                                       &pMethodReceiver, nullptr, nullptr, evalFlags)) ||
+                 pMethodReceiver == nullptr)
+        {
+            return false;
+        }
+
+        if (FAILED(CallInstanceZeroArgMethod(pEvaluator, pEvalHelpers, pThread, evalFlags, pMethodReceiver,
+                                             methodName, &pResultValue)) ||
+            pResultValue == nullptr)
+        {
+            return false;
+        }
+    }
+    else if (FAILED(pEvaluator->ResolveIdentifiers(pThread, frameLevel, pReceiver, nullptr, identifiers,
+                                                   &pResultValue, nullptr, nullptr, evalFlags)) ||
+             pResultValue == nullptr)
+    {
+        return false;
+    }
+
+    return SUCCEEDED(PrintValue(pResultValue, value, !noQuotes));
+}
+
+// Build the display string from a DebuggerDisplayAttribute.Value template - literal text with
+// {expression} placeholders, "{{"/"}}" escaped braces. Any unsupported or failed placeholder
+// discards the whole template (caller keeps the {TypeName} display).
+static bool TryEvaluateDebuggerDisplay(Evaluator *pEvaluator, EvalHelpers *pEvalHelpers, ICorDebugThread *pThread,
+                                       FrameLevel frameLevel, int evalFlags, ICorDebugValue *pReceiver,
+                                       const std::string &displayTemplate, std::string &display)
+{
+    display.clear();
+
+    for (size_t i = 0; i < displayTemplate.size();)
+    {
+        char c = displayTemplate[i];
+        if (c == '{')
+        {
+            if (i + 1 < displayTemplate.size() && displayTemplate[i + 1] == '{')
+            {
+                display.push_back('{');
+                i += 2;
+                continue;
+            }
+
+            size_t close = displayTemplate.find('}', i + 1);
+            if (close == std::string::npos)
+                return false;
+
+            std::string expressionValue;
+            if (!TryEvaluateDebuggerDisplayExpression(pEvaluator, pEvalHelpers, pThread, frameLevel, evalFlags,
+                                                      pReceiver, displayTemplate.substr(i + 1, close - i - 1),
+                                                      expressionValue))
+                return false;
+
+            display += expressionValue;
+            i = close + 1;
+            continue;
+        }
+
+        if (c == '}')
+        {
+            if (i + 1 < displayTemplate.size() && displayTemplate[i + 1] == '}')
+            {
+                display.push_back('}');
+                i += 2;
+                continue;
+            }
+            return false;
+        }
+
+        display.push_back(c);
+        ++i;
+    }
+
+    return true;
+}
+
+static HRESULT PrintFormattedValue(ICorDebugValue *pValue, ICorDebugThread *pThread, FrameLevel frameLevel,
+                                   int evalFlags, Evaluator *pEvaluator, EvalHelpers *pEvalHelpers, std::string &output)
 {
     HRESULT Status;
 
     IfFailRet(PrintValue(pValue, output, true));
 
-    if (!pThread || !pEvalHelpers || (evalFlags & EVAL_NOFUNCEVAL))
+    if (!pThread || !pEvaluator || !pEvalHelpers)
         return S_OK;
 
     std::string typeName;
     if (FAILED(TypePrinter::GetTypeOfValue(pValue, typeName)))
         return S_OK;
     if (!IsTypeDisplayFallback(output, typeName))
+        return S_OK;
+
+    if (ShouldTryDebuggerDisplay(pValue))
+    {
+        std::string displayTemplate;
+        if (TryGetDebuggerDisplayTemplate(pValue, displayTemplate))
+        {
+            std::string display;
+            if (TryEvaluateDebuggerDisplay(pEvaluator, pEvalHelpers, pThread, frameLevel, evalFlags, pValue,
+                                           displayTemplate, display))
+                output = display;
+            // DebuggerDisplay takes precedence over an overridden ToString(), don't try it on failure.
+            return S_OK;
+        }
+    }
+
+    if (evalFlags & EVAL_NOFUNCEVAL)
         return S_OK;
 
     ToRelease<ICorDebugType> pDeclaringType;
@@ -235,7 +574,8 @@ static HRESULT PrintValueWithImplicitToString(ICorDebugValue *pValue, ICorDebugT
     return S_OK;
 }
 
-static HRESULT FillValueAndType(VariableMember &member, Variable &var, ICorDebugThread *pThread, EvalHelpers *pEvalHelpers)
+static HRESULT FillValueAndType(VariableMember &member, Variable &var, ICorDebugThread *pThread, FrameLevel frameLevel,
+                                Evaluator *pEvaluator, EvalHelpers *pEvalHelpers)
 {
     if (member.value == nullptr)
     {
@@ -246,7 +586,7 @@ static HRESULT FillValueAndType(VariableMember &member, Variable &var, ICorDebug
     }
 
     TypePrinter::GetTypeOfValue(member.value, var.type);
-    return PrintValueWithImplicitToString(member.value, pThread, var.evalFlags, pEvalHelpers, var.value);
+    return PrintFormattedValue(member.value, pThread, frameLevel, var.evalFlags, pEvaluator, pEvalHelpers, var.value);
 }
 
 static HRESULT FetchFieldsAndProperties(Evaluator *pEvaluator, ICorDebugValue *pInputValue, ICorDebugThread *pThread,
@@ -417,7 +757,8 @@ HRESULT Variables::GetStackVariables(
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, var.evalFlags));
         IfFailRet(TypePrinter::GetTypeOfValue(iCorValue, var.type));
-        IfFailRet(PrintValueWithImplicitToString(iCorValue, pThread, var.evalFlags, m_sharedEvalHelpers.get(), var.value));
+        IfFailRet(PrintFormattedValue(iCorValue, pThread, frameId.getLevel(), var.evalFlags,
+                                      m_sharedEvaluator.get(), m_sharedEvalHelpers.get(), var.value));
 
         IfFailRet(AddVariableReference(var, frameId, iCorValue, ValueIsVariable));
         variables.push_back(var);
@@ -513,7 +854,7 @@ HRESULT Variables::GetChildren(
         bool isIndex = !it.name.empty() && it.name.at(0) == '[';
         if (var.name.find('(') == std::string::npos) // expression evaluator does not support typecasts
             var.evaluateName = ref.evaluateName + (isIndex ? "" : ".") + var.name;
-        IfFailRet(FillValueAndType(it, var, pThread, m_sharedEvalHelpers.get()));
+        IfFailRet(FillValueAndType(it, var, pThread, ref.frameId.getLevel(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get()));
         IfFailRet(AddVariableReference(var, ref.frameId, it.value, ValueIsVariable));
         variables.push_back(var);
     }
@@ -563,7 +904,8 @@ HRESULT Variables::Evaluate(
 
     variable.evaluateName = expression;
     IfFailRet(TypePrinter::GetTypeOfValue(pResultValue, variable.type));
-    IfFailRet(PrintValueWithImplicitToString(pResultValue, pThread, variable.evalFlags, m_sharedEvalHelpers.get(), variable.value));
+    IfFailRet(PrintFormattedValue(pResultValue, pThread, frameLevel, variable.evalFlags,
+                                  m_sharedEvaluator.get(), m_sharedEvalHelpers.get(), variable.value));
 
     return AddVariableReference(variable, frameId, pResultValue, ValueIsVariable);
 }
