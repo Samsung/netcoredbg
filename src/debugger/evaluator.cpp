@@ -880,51 +880,7 @@ static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pI
             if (isNull && !is_static)
                 return S_OK;
 
-            // https://github.sec.samsung.net/dotnet/coreclr/blob/9df87a133b0f29f4932f38b7307c87d09ab80d5d/src/System.Private.CoreLib/shared/System/Diagnostics/DebuggerBrowsableAttribute.cs#L17
-            // Since we check only first byte, no reason store it as int (default enum type in c#)
-            enum DebuggerBrowsableState : char
-            {
-                Never = 0,
-                Expanded = 1, 
-                Collapsed = 2,
-                RootHidden = 3
-            };
-
-            const char *g_DebuggerBrowsable = "System.Diagnostics.DebuggerBrowsableAttribute..ctor";
-            bool debuggerBrowsableState_Never = false;
-
-            ULONG numAttributes = 0;
-            HCORENUM hEnum = NULL;
-            mdCustomAttribute attr;
-            while(SUCCEEDED(pMD->EnumCustomAttributes(&hEnum, propertyDef, 0, &attr, 1, &numAttributes)) && numAttributes != 0)
-            {
-                mdToken ptkObj = mdTokenNil;
-                mdToken ptkType = mdTokenNil;
-                void const *ppBlob = 0;
-                ULONG pcbSize = 0;
-                if (FAILED(pMD->GetCustomAttributeProps(attr, &ptkObj, &ptkType, &ppBlob, &pcbSize)))
-                    continue;
-
-                std::string mdName;
-                if (FAILED(TypePrinter::NameForToken(ptkType, pMD, mdName, true, nullptr)))
-                    continue;
-
-                if (mdName == g_DebuggerBrowsable
-                    // In case of DebuggerBrowsableAttribute blob is 8 bytes:
-                    // 2 bytes - blob prolog 0x0001
-                    // 4 bytes - data (DebuggerBrowsableAttribute::State), default enum type (int)
-                    // 2 bytes - alignment
-                    // We check only one byte (first data byte), no reason check 4 bytes in our case.
-                    && pcbSize > 2
-                    && ((char const *)ppBlob)[2] == DebuggerBrowsableState::Never)
-                {
-                    debuggerBrowsableState_Never = true;
-                    break;
-                }
-            }
-            pMD->CloseEnum(hEnum);
-
-            if (debuggerBrowsableState_Never)
+            if (HasDebuggerBrowsableNeverAttribute(pMD, propertyDef))
                 return S_OK;
 
             std::string name = to_utf8(propertyName);
