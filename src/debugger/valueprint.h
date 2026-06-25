@@ -11,7 +11,14 @@
 namespace netcoredbg
 {
 
-HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true);
+class EvalHelpers;
+class Evaluator;
+
+HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape = true,
+                   bool *wasFallback = nullptr);
+HRESULT PrintObjectValue(ICorDebugValue *pInputValue, ICorDebugThread *pThread,
+                         EvalHelpers *pEvalHelpers, Evaluator *pEvaluator,
+                         int evalFlags, std::string &output, bool escape = true);
 HRESULT GetNullableValue(ICorDebugValue *pValue, ICorDebugValue **ppValueValue, ICorDebugValue **ppHasValueValue);
 HRESULT PrintNullableValue(ICorDebugValue *pValue, std::string &outTextValue);
 HRESULT PrintStringValue(ICorDebugValue * pValue, std::string &output);

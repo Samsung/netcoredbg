@@ -18,6 +18,8 @@
 #include "utils/utf.h"
 #include "managed/interop.h"
 #include "metadata/attributes.h"
+#include "debugger/evalhelpers.h"
+#include "debugger/evaluator.h"
 
 namespace netcoredbg
 {
@@ -617,6 +619,59 @@ void EscapeString(std::string &s, char q = '\"')
     }
 }
 
+static HRESULT CallToString(ICorDebugValue *pInputValue, ICorDebugThread *pThread,
+                            EvalHelpers *pEvalHelpers, Evaluator *pEvaluator,
+                            int evalFlags, std::string &output)
+{
+    if (evalFlags & (EVAL_NOFUNCEVAL | EVAL_NOSIDEEFFECTS))
+        return E_FAIL;
+
+    HRESULT Status;
+
+    ToRelease<ICorDebugFunction> pFunc;
+    pEvaluator->WalkMethods(pInputValue, [&](
+        bool is_static,
+        const std::string &methodName,
+        Evaluator::ReturnElementType&,
+        std::vector<Evaluator::ArgElementType> &methodArgs,
+        Evaluator::GetFunctionCallback getFunction) -> HRESULT
+    {
+        if (is_static || methodName != "ToString" || !methodArgs.empty())
+            return S_OK;
+
+        IfFailRet(getFunction(&pFunc));
+        return E_ABORT;
+    });
+
+    if (!pFunc)
+        return E_FAIL;
+
+    ToRelease<ICorDebugValue> pResultValue;
+    IfFailRet(pEvalHelpers->EvalFunction(pThread, pFunc, nullptr, 0, &pInputValue, 1, &pResultValue, evalFlags));
+
+    ToRelease<ICorDebugValue> pStrValue;
+    IfFailRet(DereferenceAndUnboxValue(pResultValue, &pStrValue, nullptr));
+    return PrintStringValue(pStrValue, output);
+}
+
+HRESULT PrintObjectValue(ICorDebugValue *pInputValue, ICorDebugThread *pThread,
+                         EvalHelpers *pEvalHelpers, Evaluator *pEvaluator,
+                         int evalFlags, std::string &output, bool escape)
+{
+    bool wasFallback = false;
+    HRESULT hr = PrintValue(pInputValue, output, escape, &wasFallback);
+    if (FAILED(hr))
+        return hr;
+
+    if (!wasFallback)
+        return S_OK;
+
+    if (FAILED(CallToString(pInputValue, pThread, pEvalHelpers, pEvaluator, evalFlags, output)))
+        return S_OK;
+
+    return S_OK;
+}
+
 HRESULT GetNullableValue(ICorDebugValue *pValue, ICorDebugValue **ppValueValue, ICorDebugValue **ppHasValueValue)
 {
     HRESULT Status;
@@ -696,7 +751,8 @@ HRESULT PrintNullableValue(ICorDebugValue *pValue, std::string &outTextValue)
     return S_OK;
 }
 
-HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape)
+HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape,
+                   bool *wasFallback)
 {
     HRESULT Status;
 
@@ -800,6 +856,7 @@ HRESULT PrintValue(ICorDebugValue *pInputValue, std::string &output, bool escape
             }
             else
             {
+                if (wasFallback) *wasFallback = true;
                 ss << '{' << typeName << '}';
             }
         }
