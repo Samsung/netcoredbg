@@ -414,13 +414,14 @@ struct Variable
     std::string type;
     VariablePresentationHint presentationHint;
     std::string evaluateName;
+    uint64_t memoryReference;
     uint32_t variablesReference;
     int namedVariables;
     int indexedVariables;
     int evalFlags;
     bool editable;
 
-    Variable(int flags = defaultEvalFlags) : variablesReference(0), namedVariables(0), indexedVariables(0), evalFlags(flags), editable(false) {}
+    Variable(int flags = defaultEvalFlags) : memoryReference(0), variablesReference(0), namedVariables(0), indexedVariables(0), evalFlags(flags), editable(false) {}
 };
 
 enum VariablesFilter
