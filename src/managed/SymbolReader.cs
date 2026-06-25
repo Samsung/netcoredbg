@@ -695,13 +695,17 @@ namespace NetCoreDbg
         {
             public int startLine;
             public int endLine;
+            public int startColumn;
+            public int endColumn;
             public int ilOffset;
             public int methodToken;
 
-            public resolved_bp_t(int startLine_, int endLine_, int ilOffset_, int methodToken_)
+            public resolved_bp_t(int startLine_, int endLine_, int startColumn_, int endColumn_, int ilOffset_, int methodToken_)
             {
                 startLine = startLine_;
                 endLine = endLine_;
+                startColumn = startColumn_;
+                endColumn = endColumn_;
                 ilOffset = ilOffset_;
                 methodToken = methodToken_;
             }
@@ -722,7 +726,7 @@ namespace NetCoreDbg
         /// <param name="Count">entry's count in data</param>
         /// <param name="data">pointer to memory with result</param>
         /// <returns>"Ok" if information is available</returns>
-        internal static RetCode ResolveBreakPoints(IntPtr symbolReaderHandles, int tokenNum, IntPtr Tokens, int sourceLine, int nestedToken,
+        internal static RetCode ResolveBreakPoints(IntPtr symbolReaderHandles, int tokenNum, IntPtr Tokens, int sourceLine, int sourceColumn, int nestedToken,
                                                    out int Count, [MarshalAs(UnmanagedType.LPWStr)] string sourcePath, out IntPtr data)
         {
             Debug.Assert(symbolReaderHandles != IntPtr.Zero);
@@ -746,7 +750,7 @@ namespace NetCoreDbg
                 // We need check if nestedToken's method code closer to sourceLine than code from methodToken's method.
                 // If sourceLine closer to nestedToken's method code - setup breakpoint in nestedToken's method.
 
-                SequencePoint SequencePointForSourceLine(Position reqPos, ref MetadataReader reader, int methodToken)
+                SequencePoint SequencePointForSourceLine(Position reqPos, ref MetadataReader reader, int methodToken, bool filterByColumn = false)
                 {
                     // Note, SequencePoints ordered by IL offsets, not by line numbers.
                     // For example, infinite loop `while(true)` will have IL offset after cycle body's code.
@@ -755,6 +759,12 @@ namespace NetCoreDbg
                     foreach (SequencePoint p in GetSequencePointCollection(methodToken, reader))
                     {
                         if (p.StartLine == 0 || p.StartLine == SequencePoint.HiddenLine || p.EndLine < sourceLine)
+                            continue;
+
+                        // Skip sequence points that start strictly after our target column.
+                        // Use > (not >=) so a cursor placed exactly at a statement's start column is kept.
+                        // Only applied for the outer method — nested token calls use original line-only logic.
+                        if (filterByColumn && sourceColumn > 0 && p.StartLine == sourceLine && p.StartColumn > sourceColumn)
                             continue;
 
                         // Note, in case of constructors, we must care about source too, since we may have situation when field/property have same line in another source.
@@ -777,8 +787,16 @@ namespace NetCoreDbg
                         }
                         else
                         {
-                            if ((reqPos == Position.First && p.EndColumn < nearestSP.EndColumn) ||
-                                (reqPos == Position.Last && p.EndColumn > nearestSP.EndColumn))
+                            // For column-aware outer-method selection: prefer the sequence point whose
+                            // StartColumn is closest to (largest, not exceeding) the target column.
+                            // For nested token calls and plain line breakpoints: keep original EndColumn logic.
+                            if (filterByColumn && sourceColumn > 0 && p.StartLine == nearestSP.StartLine)
+                            {
+                                if (p.StartColumn > nearestSP.StartColumn)
+                                    nearestSP = p;
+                            }
+                            else if ((reqPos == Position.First && p.EndColumn < nearestSP.EndColumn) ||
+                                     (reqPos == Position.Last && p.EndColumn > nearestSP.EndColumn))
                                 nearestSP = p;
                         }
                     }
@@ -794,7 +812,7 @@ namespace NetCoreDbg
                     MetadataReader reader = ((OpenedReader)gch.Target).Reader;
 
                     int methodToken = Marshal.ReadInt32(Tokens, i * elementSize);
-                    SequencePoint current_p = SequencePointForSourceLine(Position.First, ref reader, methodToken);
+                    SequencePoint current_p = SequencePointForSourceLine(Position.First, ref reader, methodToken, filterByColumn: true);
                     // Note, we don't check that current_p was found or not, since we know for sure, that sourceLine could be resolved in method.
                     // Same idea for nested_p below, if we have nestedToken - it will be resolved for sure.
 
@@ -812,8 +830,17 @@ namespace NetCoreDbg
                         if ((nested_start_p.StartLine > current_p.StartLine || (nested_start_p.StartLine == current_p.StartLine && nested_start_p.StartColumn > current_p.StartColumn)) &&
                             (nested_end_p.EndLine < current_p.EndLine || (nested_end_p.EndLine == current_p.EndLine && nested_end_p.EndColumn < current_p.EndColumn ))
                         ) {
-                            list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.Offset, methodToken));
-                            break;
+                            // Nested is fully within current_p's range.
+                            // If column info places the cursor inside the nested body, fall through to
+                            // condition 2 so the breakpoint lands in the lambda, not the outer call.
+                            bool cursorInsideNested = sourceColumn > 0
+                                && sourceColumn >= nested_start_p.StartColumn
+                                && sourceColumn <= nested_end_p.EndColumn;
+                            if (!cursorInsideNested)
+                            {
+                                list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.StartColumn, current_p.EndColumn, current_p.Offset, methodToken));
+                                break;
+                            }
                         }
 
                         // Note, sequence points can't partially overlap each other, since same lemmas can't belong to 2 different sequence points for sure.
@@ -821,7 +848,7 @@ namespace NetCoreDbg
                         // current method sequence point and first nested method sequence point.
                         if (current_p.EndLine > nested_start_p.EndLine || (current_p.EndLine == nested_start_p.EndLine && current_p.EndColumn > nested_start_p.EndColumn))
                         {
-                            list.Add(new resolved_bp_t(nested_start_p.StartLine, nested_start_p.EndLine, nested_start_p.Offset, nestedToken));
+                            list.Add(new resolved_bp_t(nested_start_p.StartLine, nested_start_p.EndLine, nested_start_p.StartColumn, nested_start_p.EndColumn, nested_start_p.Offset, nestedToken));
                             // (tokenNum > 1) can have only lines, that added to multiple constructors, in this case - we will have same for all Tokens,
                             // we need unique tokens only for breakpoints, prevent adding nestedToken multiple times.
                             break;
@@ -829,7 +856,7 @@ namespace NetCoreDbg
                     }
                     nestedToken = 0; // Don't check nested block next cycle (will have same results).
 
-                    list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.Offset, methodToken));
+                    list.Add(new resolved_bp_t(current_p.StartLine, current_p.EndLine, current_p.StartColumn, current_p.EndColumn, current_p.Offset, methodToken));
                 }
 
                 if (list.Count == 0)

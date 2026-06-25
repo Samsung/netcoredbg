@@ -707,7 +707,7 @@ static void LineUpdatesBackwardCorrection(unsigned fullPathIndex, mdMethodDef me
 }
 
 HRESULT ModulesSources::ResolveBreakpoint(/*in*/ Modules *pModules, /*in*/ CORDB_ADDRESS modAddress, /*in*/ std::string filename, /*out*/ unsigned &fullname_index,
-                                          /*in*/ int sourceLine, /*out*/ std::vector<resolved_bp_t> &resolvedPoints)
+                                          /*in*/ int sourceLine, /*in*/ int sourceColumn, /*out*/ std::vector<resolved_bp_t> &resolvedPoints)
 {
     std::lock_guard<std::mutex> lockSourcesInfo(m_sourcesInfoMutex);
 
@@ -739,6 +739,8 @@ HRESULT ModulesSources::ResolveBreakpoint(/*in*/ Modules *pModules, /*in*/ CORDB
     {
         int32_t startLine;
         int32_t endLine;
+        int32_t startColumn;
+        int32_t endColumn;
         uint32_t ilOffset;
         uint32_t methodToken;
     };
@@ -805,7 +807,7 @@ HRESULT ModulesSources::ResolveBreakpoint(/*in*/ Modules *pModules, /*in*/ CORDB
         std::string fullName = m_sourceIndexToInitialFullPath[findIndex->second];
 #endif
         if (FAILED(Interop::ResolveBreakPoints(symbolReaderHandles.data(), (int32_t)Tokens.size(), Tokens.data(),
-                                               correctedStartLine, closestNestedToken, Count, fullName, &data))
+                                               correctedStartLine, sourceColumn, closestNestedToken, Count, fullName, &data))
             || data == nullptr)
         {
             continue;
@@ -819,7 +821,9 @@ HRESULT ModulesSources::ResolveBreakpoint(/*in*/ Modules *pModules, /*in*/ CORDB
             // In case Hot Reload we may have line updates that we must take into account.
             LineUpdatesForwardCorrection(findIndex->second, inputData.get()[i].methodToken, pmdInfo->m_methodBlockUpdates, inputData.get()[i]);
 
-            resolvedPoints.emplace_back(resolved_bp_t(inputData.get()[i].startLine, inputData.get()[i].endLine, inputData.get()[i].ilOffset,
+            resolvedPoints.emplace_back(resolved_bp_t(inputData.get()[i].startLine, inputData.get()[i].endLine,
+                                                      inputData.get()[i].startColumn, inputData.get()[i].endColumn,
+                                                      inputData.get()[i].ilOffset,
                                                       inputData.get()[i].methodToken, pmdInfo->m_iCorModule.GetPtr()));
         }
     }

@@ -68,8 +68,12 @@ void to_json(json &j, const Breakpoint &b) {
         {"verified", b.verified}};
     if (!b.message.empty())
         j["message"] = b.message;
+    if (b.column > 0)
+        j["column"] = b.column;
     if (b.verified) {
         j["endLine"] = b.endLine;
+        if (b.endColumn > 0)
+            j["endColumn"] = b.endColumn;
         if (!b.source.IsNull())
             j["source"] = b.source;
     }
@@ -573,7 +577,7 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
 
         std::vector<LineBreakpoint> lineBreakpoints;
         for (auto &b : arguments.at("breakpoints"))
-            lineBreakpoints.emplace_back(std::string(), b.at("line"), b.value("condition", std::string()));
+            lineBreakpoints.emplace_back(std::string(), b.at("line"), b.value("column", 0), b.value("condition", std::string()));
 
         std::vector<Breakpoint> breakpoints;
         IfFailRet(sharedDebugger->SetLineBreakpoints(arguments.at("source").at("path"), lineBreakpoints, breakpoints));

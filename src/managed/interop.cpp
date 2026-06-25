@@ -65,7 +65,7 @@ typedef  RetCode (*GetSequencePointsDelegate)(PVOID, mdMethodDef, PVOID*, int32_
 typedef  RetCode (*GetNextUserCodeILOffsetDelegate)(PVOID, mdMethodDef, uint32_t, uint32_t*, int32_t*);
 typedef  RetCode (*GetStepRangesFromIPDelegate)(PVOID, int32_t, mdMethodDef, uint32_t*, uint32_t*);
 typedef  RetCode (*GetModuleMethodsRangesDelegate)(PVOID, uint32_t, PVOID, uint32_t, PVOID, PVOID*);
-typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID[], int32_t, PVOID, int32_t, int32_t, int32_t*, const WCHAR*, PVOID*);
+typedef  RetCode (*ResolveBreakPointsDelegate)(PVOID[], int32_t, PVOID, int32_t, int32_t, int32_t, int32_t*, const WCHAR*, PVOID*);
 typedef  RetCode (*GetAsyncMethodSteppingInfoDelegate)(PVOID, mdMethodDef, PVOID*, int32_t*, uint32_t*);
 typedef  RetCode (*GetSourceDelegate)(PVOID, const WCHAR*, int32_t*, PVOID*);
 typedef  PVOID (*LoadDeltaPdbDelegate)(const WCHAR*, PVOID*, int32_t*);
@@ -429,13 +429,13 @@ HRESULT GetModuleMethodsRanges(PVOID pSymbolReaderHandle, uint32_t constrTokensN
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 
-HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandles[], int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t nestedToken, int32_t &Count, const std::string &sourcePath, PVOID *data)
+HRESULT ResolveBreakPoints(PVOID pSymbolReaderHandles[], int32_t tokenNum, PVOID Tokens, int32_t sourceLine, int32_t sourceColumn, int32_t nestedToken, int32_t &Count, const std::string &sourcePath, PVOID *data)
 {
     std::unique_lock<Utility::RWLock::Reader> read_lock(CLRrwlock.reader);
     if (!resolveBreakPointsDelegate || !pSymbolReaderHandles || !Tokens || !data)
         return E_FAIL;
 
-    RetCode retCode = resolveBreakPointsDelegate(pSymbolReaderHandles, tokenNum, Tokens, sourceLine, nestedToken, &Count, to_utf16(sourcePath).c_str(), data);
+    RetCode retCode = resolveBreakPointsDelegate(pSymbolReaderHandles, tokenNum, Tokens, sourceLine, sourceColumn, nestedToken, &Count, to_utf16(sourcePath).c_str(), data);
     return retCode == RetCode::OK ? S_OK : E_FAIL;
 }
 

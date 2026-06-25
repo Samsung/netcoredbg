@@ -71,6 +71,7 @@ public:
         /*in*/ std::string filename,
         /*out*/ unsigned &fullname_index,
         /*in*/ int sourceLine,
+        /*in*/ int sourceColumn,
         /*out*/ std::vector<ModulesSources::resolved_bp_t> &resolvedPoints);
 
     HRESULT GetSourceFullPathByIndex(unsigned index, std::string &fullPath);

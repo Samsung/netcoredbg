@@ -152,13 +152,17 @@ public:
     {
         int32_t startLine;
         int32_t endLine;
+        int32_t startColumn;
+        int32_t endColumn;
         uint32_t ilOffset;
         uint32_t methodToken;
         ToRelease<ICorDebugModule> iCorModule;
 
-        resolved_bp_t(int32_t startLine_, int32_t endLine_, uint32_t ilOffset_, uint32_t methodToken_, ICorDebugModule *pModule) :
+        resolved_bp_t(int32_t startLine_, int32_t endLine_, int32_t startColumn_, int32_t endColumn_, uint32_t ilOffset_, uint32_t methodToken_, ICorDebugModule *pModule) :
             startLine(startLine_),
             endLine(endLine_),
+            startColumn(startColumn_),
+            endColumn(endColumn_),
             ilOffset(ilOffset_),
             methodToken(methodToken_),
             iCorModule(pModule)
@@ -171,6 +175,7 @@ public:
         /*in*/ std::string filename,
         /*out*/ unsigned &fullname_index,
         /*in*/ int sourceLine,
+        /*in*/ int sourceColumn,
         /*out*/ std::vector<resolved_bp_t> &resolvedPoints);
 
     HRESULT FillSourcesCodeLinesForModule(ICorDebugModule *pModule, IMetaDataImport *pMDImport, PVOID pSymbolReaderHandle);

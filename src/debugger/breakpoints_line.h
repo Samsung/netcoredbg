@@ -62,7 +62,9 @@ public:
         std::string module;
         CORDB_ADDRESS modAddress;
         int linenum;
+        int column;
         int endLine;
+        int endColumn;
         bool enabled;
         ULONG32 times;
         std::string condition;
@@ -73,7 +75,7 @@ public:
         bool IsVerified() const { return !iCorFuncBreakpoints.empty(); }
 
         ManagedLineBreakpoint() :
-            id(0), modAddress(0), linenum(0), endLine(0), enabled(true), times(0)
+            id(0), modAddress(0), linenum(0), column(0), endLine(0), endColumn(0), enabled(true), times(0)
         {}
 
         ~ManagedLineBreakpoint()
@@ -107,7 +109,7 @@ private:
         unsigned resolved_fullname_index;
         int resolved_linenum; // if int is 0 - no resolved breakpoint available in m_lineResolvedBreakpoints
 
-        ManagedLineBreakpointMapping() : breakpoint("", 0, ""), id(0), enabled(true), resolved_fullname_index(0), resolved_linenum(0) {}
+        ManagedLineBreakpointMapping() : breakpoint("", 0, 0, ""), id(0), enabled(true), resolved_fullname_index(0), resolved_linenum(0) {}
         ~ManagedLineBreakpointMapping() = default;
     };
 

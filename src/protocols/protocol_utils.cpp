@@ -61,7 +61,7 @@ HRESULT BreakpointsHandle::SetLineBreakpoint(std::shared_ptr<IDebugger> &sharedD
     for (auto it : breakpointsInSource)
         lineBreakpoints.push_back(it.second);
 
-    lineBreakpoints.emplace_back(module, linenum, condition);
+    lineBreakpoints.emplace_back(module, linenum, 0, condition);
 
     IfFailRet(sharedDebugger->SetLineBreakpoints(filename, lineBreakpoints, breakpoints));
 

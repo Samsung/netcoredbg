@@ -91,8 +91,13 @@ namespace NetcoreDbgTest.Script
             disconnectRequest.arguments.restart = false;
             Assert.True(VSCodeDebugger.Request(disconnectRequest).Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
         }
+        public int GetBreakpointLine(string bpName)
+        {
+            Breakpoint bp = ControlInfo.Breakpoints[bpName];
+            return ((LineBreakpoint)bp).NumLine;
+        }
 
-        public void AddBreakpoint(string caller_trace, string bpName, string bpPath = null, string Condition = null)
+        public void AddBreakpoint(string caller_trace, string bpName, string bpPath = null, string Condition = null, int? Column = 0)
         {
             Breakpoint bp = ControlInfo.Breakpoints[bpName];
             Assert.Equal(BreakpointType.Line, bp.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
@@ -104,7 +109,7 @@ namespace NetcoreDbgTest.Script
                 listBp = new List<SourceBreakpoint>();
                 SrcBreakpoints[sourceFile] = listBp;
             }
-            listBp.Add(new SourceBreakpoint(lbp.NumLine, Condition));
+            listBp.Add(new SourceBreakpoint(lbp.NumLine, Condition) { column = Column });
 
             List<int?> listBpId;
             if (!SrcBreakpointIds.TryGetValue(sourceFile, out listBpId)) {
@@ -209,15 +214,107 @@ namespace NetcoreDbgTest.Script
 
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
+        public void WasManualBreakpointHitAtColumn(string caller_trace, string bp_fileName, int bp_line, int expectedColumn)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
 
-        public void AddManualBreakpoint(string caller_trace, string bp_fileName, int bp_line)
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+            var stackFrame = stackTraceResponse.body.stackFrames[0];
+
+            Assert.Equal(bp_line, stackFrame.line, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(bp_fileName, stackFrame.source.name, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(expectedColumn, stackFrame.column, @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasBreakpointHitAtStartColumn(string caller_trace, string bpName, int expectedColumn)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
+
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            var lbp = (LineBreakpoint)breakpoint;
+            StackTraceResponse stackTraceResponse = JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+            var stackFrame = stackTraceResponse.body.stackFrames[0];
+
+            Assert.Equal(lbp.NumLine, stackFrame.line, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(lbp.FileName, stackFrame.source.name, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(expectedColumn, stackFrame.column, @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void WasBreakpointHitAtColumn(string caller_trace, string bpName, int expectedColumn, int expectedEndColumn)
+        {
+            Func<string, bool> filter = (resJSON) => {
+                if (VSCodeDebugger.isResponseContainProperty(resJSON, "event", "stopped")
+                    && VSCodeDebugger.isResponseContainProperty(resJSON, "reason", "breakpoint")) {
+                    threadId = Convert.ToInt32(VSCodeDebugger.GetResponsePropertyValue(resJSON, "threadId"));
+                    return true;
+                }
+                return false;
+            };
+
+            Assert.True(VSCodeDebugger.IsEventReceived(filter), @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            StackTraceRequest stackTraceRequest = new StackTraceRequest();
+            stackTraceRequest.arguments.threadId = threadId;
+            stackTraceRequest.arguments.startFrame = 0;
+            stackTraceRequest.arguments.levels = 20;
+            var ret = VSCodeDebugger.Request(stackTraceRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__"+"\n"+caller_trace);
+
+            Breakpoint breakpoint = ControlInfo.Breakpoints[bpName];
+            Assert.Equal(BreakpointType.Line, breakpoint.Type, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            var lbp = (LineBreakpoint)breakpoint;
+
+            StackTraceResponse stackTraceResponse =
+                JsonConvert.DeserializeObject<StackTraceResponse>(ret.ResponseStr);
+            var stackFrame = stackTraceResponse.body.stackFrames[0];
+
+            Assert.Equal(lbp.NumLine, stackFrame.line, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(lbp.FileName, stackFrame.source.name, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(expectedColumn, stackFrame.column, @"__FILE__:__LINE__"+"\n"+caller_trace);
+            Assert.Equal(expectedEndColumn, stackFrame.endColumn, @"__FILE__:__LINE__"+"\n"+caller_trace);
+        }
+
+        public void AddManualBreakpoint(string caller_trace, string bp_fileName, int bp_line, int? Column = null)
         {
             List<SourceBreakpoint> listBp;
             if (!SrcBreakpoints.TryGetValue(bp_fileName, out listBp)) {
                 listBp = new List<SourceBreakpoint>();
                 SrcBreakpoints[bp_fileName] = listBp;
             }
-            listBp.Add(new SourceBreakpoint(bp_line, null));
+            listBp.Add(new SourceBreakpoint(bp_line, null) { column = Column });
 
             List<int?> listBpId;
             if (!SrcBreakpointIds.TryGetValue(bp_fileName, out listBpId)) {
@@ -576,15 +673,15 @@ Label.Breakpoint("bp20_2");            numbers.ForEach(delegate(string number) {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp23");
 
-                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
-                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 291); // line number with "int i = 5;" code
+                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 390); // line number with "int test_field = 5;" code
+                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", 394); // line number with "int i = 5;" code
                 Context.SetBreakpoints(@"__FILE__:__LINE__");
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 390); // line number with "int test_field = 5;" code
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 291); // line number with "int i = 5;" code
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 394); // line number with "int i = 5;" code
                 Context.Continue(@"__FILE__:__LINE__");
-                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 287); // line number with "int test_field = 5;" code
+                Context.WasManualBreakpointHit(@"__FILE__:__LINE__", "Program.cs", 390); // line number with "int test_field = 5;" code
                 Context.Continue(@"__FILE__:__LINE__");
             });
 
@@ -595,11 +692,70 @@ Label.Breakpoint("bp20_2");            numbers.ForEach(delegate(string number) {
                 break;                                                              Label.Breakpoint("bp25");
             }
 
-            Label.Checkpoint("bp_test_not_ordered_line_num", "finish", (Object context) => {
+            Label.Checkpoint("bp_test_not_ordered_line_num", "bp_test_column", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp24");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp25");
+
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_col1", Column: 13);
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_col2", Column: 28);
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_col3", Column: 43);
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_col4", Column: 35);
+
+                int endLine = Context.GetBreakpointLine("multi_end");
+
+                // Multiline statement: breakpoint set with a column on the non-first line snaps up to the start of the statement.
+                Context.AddManualBreakpoint(@"__FILE__:__LINE__", "Program.cs", endLine - 1, Column: 5);
+
+                // Multiple breakpoints on the same line coalesce to a single BP at the start of the line, max 1 breakpoint-per line rule
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_multi_order_A");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_multi_order_A", Column: 17);
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_multi_order_A", Column: 23);
+
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_multi_order_B", Column: 17);
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_multi_order_B");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_multi_order_B", Column: 23);
+
+                Context.SetBreakpoints(@"__FILE__:__LINE__");
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            int col_a1 = 0;int col_b1 = 5;int col_c1 = 9;                               Label.Breakpoint("bp_col1");
+            int col_a2 = 0;int col_b2 = 5;int col_c2 = 9;                               Label.Breakpoint("bp_col2");
+            int col_a3 = 0;int col_b3 = 5;int col_c3 = 9;                               Label.Breakpoint("bp_col3");
+            int col_a4 = 0;int col_b4 = 5;int col_c4 = 9;                               Label.Breakpoint("bp_col4");
+
+            int a =
+            1 + 25 +
+            12 + 5; int b = 5;                                                          Label.Breakpoint("multi_end");
+
+            int i1 = 0; i1++; i1--; i1 = 5;                                             Label.Breakpoint("bp_multi_order_A");
+            int i2 = 0; i2++; i2--; i2 = 5;                                             Label.Breakpoint("bp_multi_order_B");
+
+            Label.Checkpoint("bp_test_column", "finish", (Object context) => {
+                Context Context = (Context)context;
+                int endLine = Context.GetBreakpointLine("multi_end");
+
+                Context.WasBreakpointHitAtColumn(@"__FILE__:__LINE__", "bp_col1", 13, 28);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHitAtColumn(@"__FILE__:__LINE__", "bp_col2", 28, 43);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHitAtColumn(@"__FILE__:__LINE__", "bp_col3", 43, 58);
+                Context.Continue(@"__FILE__:__LINE__");
+                Context.WasBreakpointHitAtColumn(@"__FILE__:__LINE__", "bp_col4", 28, 43);
+                Context.Continue(@"__FILE__:__LINE__");
+
+                // Multiline snap-up: the BP was set on the 2nd line of a 3-line statement and resolves to 'int a =' one line above that
+                Context.WasManualBreakpointHitAtColumn(@"__FILE__:__LINE__", "Program.cs", endLine - 2, 13);
+                Context.Continue(@"__FILE__:__LINE__");
+
+                // Order A: col 0, 17, 23 all coalesce to one BP at start of line
+                Context.WasBreakpointHitAtStartColumn(@"__FILE__:__LINE__", "bp_multi_order_A", 13);
+                Context.Continue(@"__FILE__:__LINE__");
+
+                // Order B: col 17, 0, 23 — order doesn't matter, still one BP at start of line
+                Context.WasBreakpointHitAtStartColumn(@"__FILE__:__LINE__", "bp_multi_order_B", 13);
                 Context.Continue(@"__FILE__:__LINE__");
             });
 

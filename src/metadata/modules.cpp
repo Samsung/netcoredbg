@@ -742,7 +742,7 @@ HRESULT Modules::ForEachModule(std::function<HRESULT(ICorDebugModule *pModule)> 
 }
 
 HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::string filename, /*out*/ unsigned &fullname_index,
-                                   /*in*/ int sourceLine, /*out*/ std::vector<ModulesSources::resolved_bp_t> &resolvedPoints)
+                                   /*in*/ int sourceLine, /*in*/ int sourceColumn, /*out*/ std::vector<ModulesSources::resolved_bp_t> &resolvedPoints)
 {
 #ifdef WIN32
     HRESULT Status;
@@ -751,7 +751,7 @@ HRESULT Modules::ResolveBreakpoint(/*in*/ CORDB_ADDRESS modAddress, /*in*/ std::
 
     // Note, in all code we use m_modulesInfoMutex > m_sourcesInfoMutex lock sequence.
     std::lock_guard<std::mutex> lockModulesInfo(m_modulesInfoMutex);
-    return m_modulesSources.ResolveBreakpoint(this, modAddress, filename, fullname_index, sourceLine, resolvedPoints);
+    return m_modulesSources.ResolveBreakpoint(this, modAddress, filename, fullname_index, sourceLine, sourceColumn, resolvedPoints);
 }
 
 HRESULT Modules::ApplyPdbDeltaAndLineUpdates(ICorDebugModule *pModule, bool needJMC, const std::string &deltaPDB,

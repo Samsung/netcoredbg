@@ -19,7 +19,9 @@ void LineBreakpoints::ManagedLineBreakpoint::ToBreakpoint(Breakpoint &breakpoint
     breakpoint.condition = this->condition;
     breakpoint.source = Source(fullname);
     breakpoint.line = this->linenum;
+    breakpoint.column = this->column;
     breakpoint.endLine = this->endLine;
+    breakpoint.endColumn = this->endColumn;
     breakpoint.hitCount = this->times;
 }
 
@@ -169,7 +171,7 @@ static HRESULT ResolveLineBreakpoint(Modules *pModules, ICorDebugModule *pModule
     else if (pModule) // Filter data from only one module during resolve, if need.
         IfFailRet(pModule->GetBaseAddress(&modAddress));
 
-    IfFailRet(pModules->ResolveBreakpoint(modAddress, bp_fullname, bp_fullname_index, bp.linenum, resolvedPoints));
+    IfFailRet(pModules->ResolveBreakpoint(modAddress, bp_fullname, bp_fullname_index, bp.linenum, bp.column, resolvedPoints));
     if (resolvedPoints.empty())
         return E_FAIL;
 
@@ -224,6 +226,8 @@ static HRESULT ActivateLineBreakpoint(LineBreakpoints::ManagedLineBreakpoint &bp
     // same for multiple breakpoint resolve for one module
     bp.linenum = resolvedPoints[0].startLine;
     bp.endLine = resolvedPoints[0].endLine;
+    bp.column = resolvedPoints[0].startColumn;
+    bp.endColumn = resolvedPoints[0].endColumn;
     bp.modAddress = modAddress;
 
     return S_OK;
@@ -245,6 +249,7 @@ HRESULT LineBreakpoints::ManagedCallbackLoadModule(ICorDebugModule *pModule, std
             bp.module = initialBreakpoint.breakpoint.module;
             bp.enabled = initialBreakpoint.enabled;
             bp.linenum = initialBreakpoint.breakpoint.line;
+            bp.column = initialBreakpoint.breakpoint.column;
             bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
             unsigned resolved_fullname_index = 0;
@@ -324,12 +329,13 @@ HRESULT LineBreakpoints::UpdateLineBreakpoint(bool haveProcess, int id, int line
             bp.module = initialBreakpoint.breakpoint.module;
             bp.enabled = initialBreakpoint.enabled;
             bp.linenum = initialBreakpoint.breakpoint.line;
+            bp.column = initialBreakpoint.breakpoint.column;
             bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
 
             unsigned resolved_fullname_index = 0;
             std::vector<ModulesSources::resolved_bp_t> resolvedPoints;
-            if (FAILED(m_sharedModules->ResolveBreakpoint(modAddress, initialBreakpoints.first, resolved_fullname_index, bp.linenum, resolvedPoints)) ||
+            if (FAILED(m_sharedModules->ResolveBreakpoint(modAddress, initialBreakpoints.first, resolved_fullname_index, bp.linenum, bp.column, resolvedPoints)) ||
                 FAILED(ActivateLineBreakpoint(bp, initialBreakpoints.first, m_justMyCode, resolvedPoints)))
             {
                 return S_OK;
@@ -434,6 +440,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
     for (const auto &sb : lineBreakpoints)
     {
         int line = sb.line;
+        int column = sb.column;
         Breakpoint breakpoint;
 
         auto b = breakpointsInSourceMap.find(line);
@@ -448,6 +455,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
             bp.id = initialBreakpoint.id;
             bp.module = initialBreakpoint.breakpoint.module;
             bp.linenum = line;
+            bp.column = column;
             bp.endLine = line;
             bp.condition = initialBreakpoint.breakpoint.condition;
             unsigned resolved_fullname_index = 0;
@@ -511,6 +519,7 @@ HRESULT LineBreakpoints::SetLineBreakpoints(bool haveProcess, const std::string&
                 bp.id = initialBreakpoint.id;
                 bp.module = initialBreakpoint.breakpoint.module;
                 bp.linenum = line;
+                bp.column = column;
                 bp.endLine = line;
                 bp.condition = initialBreakpoint.breakpoint.condition;
                 bp.ToBreakpoint(breakpoint, filename);
@@ -573,6 +582,7 @@ HRESULT LineBreakpoints::UpdateBreakpointsOnHotReload(ICorDebugModule *pModule, 
             bp.module = initialBreakpoint.breakpoint.module;
             bp.enabled = initialBreakpoint.enabled;
             bp.linenum = initialBreakpoint.breakpoint.line;
+            bp.column = initialBreakpoint.breakpoint.column;
             bp.endLine = initialBreakpoint.breakpoint.line;
             bp.condition = initialBreakpoint.breakpoint.condition;
             unsigned resolved_fullname_index = 0;
