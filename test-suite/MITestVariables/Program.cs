@@ -341,6 +341,50 @@ namespace MITestVariables
         }
     }
 
+    public class ToStringDisplayClass
+    {
+        public int Value = 42;
+
+        public override string ToString()
+        {
+            return "class:" + Value.ToString();
+        }
+    }
+
+    public struct ToStringDisplayStruct
+    {
+        public int Value;
+
+        public ToStringDisplayStruct(int value)
+        {
+            Value = value;
+        }
+
+        public override string ToString()
+        {
+            return "struct:" + Value.ToString();
+        }
+    }
+
+    public class ToStringDisplayBase
+    {
+        public override string ToString()
+        {
+            return "base:7";
+        }
+    }
+
+    public class ToStringDisplayInherited : ToStringDisplayBase
+    {
+        public int Value = 7;
+    }
+
+    public class ToStringNoOverrideClass
+    {
+        public int Value = 123;
+        public Guid Id = new Guid("11111111-2222-3333-4444-555555555555");
+    }
+
     public struct TestSetVarStruct
     {
         public static int static_field_i;
@@ -548,6 +592,7 @@ namespace MITestVariables
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK5");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK6");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK7");
+                Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK8");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "BREAK_GETTER");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_func1");
                 Context.EnableBreakpoint(@"__FILE__:__LINE__", "bp_func2");
@@ -1250,7 +1295,7 @@ namespace MITestVariables
 
             int dummy7 = 7;                                     Label.Breakpoint("BREAK7");
 
-            Label.Checkpoint("test_eval_with_exception", "finish", (Object context) => {
+            Label.Checkpoint("test_eval_with_exception", "test_to_string_display", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK7");
 
@@ -1258,6 +1303,37 @@ namespace MITestVariables
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "777", "ts7", 1, false, 0);
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "{System.DivideByZeroException}", "ts7", 2, false, 0);
                 Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "\\\"text_567\\\"", "ts7", 3, false, 0);
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            Guid toStringGuid = new Guid("11111111-2222-3333-4444-555555555555");
+            Version toStringVersion = new Version(1, 2, 3, 4);
+            TimeSpan toStringTimeSpan = new TimeSpan(1, 2, 3);
+            ToStringDisplayClass toStringClass = new ToStringDisplayClass();
+            ToStringDisplayStruct toStringStruct = new ToStringDisplayStruct(99);
+            ToStringDisplayInherited toStringInherited = new ToStringDisplayInherited();
+            ToStringNoOverrideClass toStringNoOverride = new ToStringNoOverrideClass();
+
+            int dummy8 = 8;                                     Label.Breakpoint("BREAK8");
+
+            Label.Checkpoint("test_to_string_display", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "BREAK8");
+
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "toStringGuid", "11111111-2222-3333-4444-555555555555");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "toStringVersion", "1.2.3.4");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "toStringTimeSpan", "01:02:03");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "toStringClass", "class:42");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "toStringStruct", "struct:99");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "toStringInherited", "base:7");
+                Context.CreateAndCompareVar(@"__FILE__:__LINE__", "toStringNoOverride", "{MITestVariables.ToStringNoOverrideClass}");
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "123", "toStringNoOverride", 0, false, 0);
+                Context.GetAndCheckChildValue(@"__FILE__:__LINE__", "11111111-2222-3333-4444-555555555555", "toStringNoOverride", 1, false, 0);
+
+                var res = Context.MIDebugger.Request(String.Format("-var-create - * \"toStringGuid\" --evalFlags {0}", (int)Context.enum_EVALFLAGS.EVAL_NOFUNCEVAL));
+                Assert.Equal(MIResultClass.Done, res.Class, @"__FILE__:__LINE__");
+                Assert.Equal("{System.Guid}", ((MIConst)res["value"]).CString, @"__FILE__:__LINE__");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });

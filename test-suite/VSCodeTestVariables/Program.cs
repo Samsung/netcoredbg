@@ -432,6 +432,50 @@ namespace VSCodeTestVariables
         }
     }
 
+    public class ToStringDisplayClass
+    {
+        public int Value = 42;
+
+        public override string ToString()
+        {
+            return "class:" + Value.ToString();
+        }
+    }
+
+    public struct ToStringDisplayStruct
+    {
+        public int Value;
+
+        public ToStringDisplayStruct(int value)
+        {
+            Value = value;
+        }
+
+        public override string ToString()
+        {
+            return "struct:" + Value.ToString();
+        }
+    }
+
+    public class ToStringDisplayBase
+    {
+        public override string ToString()
+        {
+            return "base:7";
+        }
+    }
+
+    public class ToStringDisplayInherited : ToStringDisplayBase
+    {
+        public int Value = 7;
+    }
+
+    public class ToStringNoOverrideClass
+    {
+        public int Value = 123;
+        public Guid Id = new Guid("11111111-2222-3333-4444-555555555555");
+    }
+
     public struct TestSetVarStruct
     {
         public static int static_field_i;
@@ -639,6 +683,7 @@ namespace VSCodeTestVariables
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp3");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp4");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp5");
+                Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_to_string");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_func1");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_func2");
                 Context.AddBreakpoint(@"__FILE__:__LINE__", "bp_getter");
@@ -1426,7 +1471,7 @@ namespace VSCodeTestVariables
 
             i++;                                                            Label.Breakpoint("bp5");
 
-            Label.Checkpoint("test_eval_exception", "finish", (Object context) => {
+            Label.Checkpoint("test_eval_exception", "test_to_string_display", (Object context) => {
                 Context Context = (Context)context;
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp5");
                 Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp5");
@@ -1443,6 +1488,40 @@ namespace VSCodeTestVariables
                 Context.EvalVariableByIndex(@"__FILE__:__LINE__", variablesReference_ts7, "int", 1, "777");
                 Context.EvalVariableByIndex(@"__FILE__:__LINE__", variablesReference_ts7, "System.DivideByZeroException", 2, "{System.DivideByZeroException}");
                 Context.EvalVariableByIndex(@"__FILE__:__LINE__", variablesReference_ts7, "string", 3, "\"text_567\"");
+
+                Context.Continue(@"__FILE__:__LINE__");
+            });
+
+            Guid toStringGuid = new Guid("11111111-2222-3333-4444-555555555555");
+            Version toStringVersion = new Version(1, 2, 3, 4);
+            TimeSpan toStringTimeSpan = new TimeSpan(1, 2, 3);
+            ToStringDisplayClass toStringClass = new ToStringDisplayClass();
+            ToStringDisplayStruct toStringStruct = new ToStringDisplayStruct(99);
+            ToStringDisplayInherited toStringInherited = new ToStringDisplayInherited();
+            ToStringNoOverrideClass toStringNoOverride = new ToStringNoOverrideClass();
+
+            i++;                                                            Label.Breakpoint("bp_to_string");
+
+            Label.Checkpoint("test_to_string_display", "finish", (Object context) => {
+                Context Context = (Context)context;
+                Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_to_string");
+                Int64 frameId = Context.DetectFrameId(@"__FILE__:__LINE__", "bp_to_string");
+
+                int variablesReference_Locals = Context.GetVariablesReference(@"__FILE__:__LINE__", frameId, "Locals");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "System.Guid", "toStringGuid", "11111111-2222-3333-4444-555555555555");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "System.Version", "toStringVersion", "1.2.3.4");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "System.TimeSpan", "toStringTimeSpan", "01:02:03");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.ToStringDisplayClass", "toStringClass", "class:42");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.ToStringDisplayStruct", "toStringStruct", "struct:99");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.ToStringDisplayInherited", "toStringInherited", "base:7");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_Locals, "VSCodeTestVariables.ToStringNoOverrideClass", "toStringNoOverride", "{VSCodeTestVariables.ToStringNoOverrideClass}");
+
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "toStringGuid", "11111111-2222-3333-4444-555555555555");
+                Context.GetAndCheckValue(@"__FILE__:__LINE__", frameId, "toStringClass", "class:42");
+
+                int variablesReference_toStringNoOverride = Context.GetChildVariablesReference(@"__FILE__:__LINE__", variablesReference_Locals, "toStringNoOverride");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_toStringNoOverride, "int", "Value", "123");
+                Context.EvalVariable(@"__FILE__:__LINE__", variablesReference_toStringNoOverride, "System.Guid", "Id", "11111111-2222-3333-4444-555555555555");
 
                 Context.Continue(@"__FILE__:__LINE__");
             });
