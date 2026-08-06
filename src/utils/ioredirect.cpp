@@ -416,9 +416,7 @@ IDebugger::AsyncResult IORedirectHelper::async_input(InStream& in)
                 if (LOGE_IF(!input_handle, "can't issue read request for real stdin"))
                     return AsyncResult::Error;
             }
-            else {
-                read_lock.unlock();
-            }
+            read_lock.unlock();
         }
 
         // wait for finish of read request with small timeout
