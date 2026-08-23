@@ -2,7 +2,7 @@
 
 ## Async method stepping.
 
-Overal info about async/await:</br>
+Overall info about async/await:</br>
 https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-scenarios</br>
 https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/async</br>
 

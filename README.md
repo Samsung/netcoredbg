@@ -22,7 +22,7 @@ For other Linux distributions you can use binaries provided in github releases (
 
 ## Building from Source Code
 
-Currently, NetCoreDbg can be built on Linux, MacOS, or Windows. Instructions for building NetCoreDbg on each platform is shown below.
+Currently, NetCoreDbg can be built on Linux, MacOS, or Windows. Instructions for building NetCoreDbg on each platform are shown below.
 
 ### Supported Architectures
 
@@ -35,7 +35,7 @@ Currently, NetCoreDbg can be built on Linux, MacOS, or Windows. Instructions for
 
 ### Unix
 
-NetCoreDbg's build requires Microsoft's .NET, and as such, NetCoreDbg can only be built in Linux. Microsoft supports a few distributions, the details of which can be found here: https://learn.microsoft.com/en-us/dotnet/core/install/linux.
+NetCoreDbg's build requires Microsoft's .NET SDK. For Linux environments, Microsoft supports a number of distributions. The details can be found here: https://learn.microsoft.com/en-us/dotnet/core/install/linux.
 
 #### Prerequisites
 
@@ -110,7 +110,7 @@ You need to install homebrew from here: https://brew.sh/
 
 After this, the build instructions are the same as for Unix, including the prerequisites.
 
-*Note: the MacOS arm64 build (M1) is community supported and may not work as expected, as well as some tests possibly failing.*
+*Note: The macOS arm64 build (M1) is community supported and may not work as expected, as well as some tests possibly failing.*
 
 ### Windows
 
@@ -152,7 +152,7 @@ C:\Users\localuser\netcoredbg\build> cmake .. -G "Visual Studio 16 2019"
 *Note: You should run this command from cmd.exe, **not from cygwin's shell***.
 
 Option `-G` specifies which instance of Visual Studio should build the project.
-Note, the minimum requirements for NetCoreDbg's build is the **Visual Studio 2019** version.
+Note, the minimum requirements for NetCoreDbg's build are the **Visual Studio 2019** version.
 
 If you want to run tests after a successful build, then you should add the following option: `-DCMAKE_INSTALL_PREFIX="%cd%\..\bin"`.
 

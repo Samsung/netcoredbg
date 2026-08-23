@@ -7,7 +7,7 @@ To start debugger and run program with one command just type
 $ netcoredbg --interpreter=cli -- dotnet hello.dll param1 param2
 ```
 
-Note: to debug Release build of dlls with pdbs Just-My-Code should be disabled, see below.
+Note: To debug Release build of DLLs with PDBs Just-My-Code should be disabled (see below).
 
 ## Command reference
 ```
@@ -77,13 +77,13 @@ ncdb> set args hello.dll param1 param2
 
 ### Debugging Release build of dlls
 
-To debug Release build of dlls with pdbs Just-My-Code should be disabled:
+To debug Release build of DLLs with PDBs, Just-My-Code should be disabled:
 ```
 ncdb> set just-my-code 0
 ```
 
 ### Running debugging program
-Now the debugger is ready to run your assembly. The debugging information is not loaded at this moment and will be available after debuggee program starts. But breakpoints could be set here using `break` command (see below). Keep in mind that all breakpoints set here will have "pending" status until "hit entry point" event will occur. Debugging information is provided by *.pdb file. If the debugger can't find the correspoinding *.pdb the debugging will not be possible, even hitting the entry point will not pause the debuggee process. Example:
+Now the debugger is ready to run your assembly. The debugging information is not loaded at this moment and will be available after debuggee program starts. But breakpoints could be set here using `break` command (see below). Keep in mind that all breakpoints set here will have "pending" status until "hit entry point" event will occur. Debugging information is provided by *.pdb file. If the debugger can't find the corresponding *.pdb, the debugging will not be possible, even hitting the entry point will not pause the debuggee process. Example:
 ```
 ncdb> run
 thread created, id: 15498
