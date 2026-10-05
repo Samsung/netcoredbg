@@ -2065,7 +2065,7 @@ HRESULT EvalStackMachine::EvaluateExpression(ICorDebugThread *pThread, FrameLeve
     IfFailRet(GetFrontStackEntryValue(ppResultValue, &setterData, evalStack, m_evalData, output));
 
     if (editable)
-        *editable = setterData.get() && !setterData.get()->setterFunction ?
+        *editable = setterData.get() && !setterData.get()->setterFunction && !setterData.get()->staticFieldWithoutStorage ?
                     false /*property don't have setter*/ : evalStack.front().editable;
 
     if (resultSetterData)
