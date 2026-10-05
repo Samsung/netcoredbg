@@ -54,6 +54,9 @@ public:
         ToRelease<ICorDebugValue> thisValue;
         ToRelease<ICorDebugType> propertyType;
         ToRelease<ICorDebugFunction> setterFunction;
+        // Value is default value of static field, that don't have storage yet (type without static constructor), propertyType
+        // is type that declare field. In order to change value, type object must be created first and value received again.
+        bool staticFieldWithoutStorage = false;
 
         SetterData(ICorDebugValue *pValue, ICorDebugType *pType, ICorDebugFunction *pFunction)
         {
@@ -63,6 +66,7 @@ public:
         SetterData(SetterData &setterData)
         {
             Set(setterData.thisValue.GetPtr(), setterData.propertyType.GetPtr(), setterData.setterFunction.GetPtr());
+            staticFieldWithoutStorage = setterData.staticFieldWithoutStorage;
         };
 
         void Set(ICorDebugValue *pValue, ICorDebugType *pType, ICorDebugFunction *pFunction)
@@ -81,6 +85,8 @@ public:
         }
     };
 
+    // Note, for static field S_FALSE returned with valid value in case this is default value of static field without storage
+    // (type without static constructor), see EvalHelpers::CreatTypeObjectStaticConstructor() for details.
     typedef std::function<HRESULT(ICorDebugValue**,int)> GetValueCallback;
     typedef std::function<HRESULT(ICorDebugType*,bool,const std::string&,GetValueCallback,SetterData*)> WalkMembersCallback;
     typedef std::function<HRESULT(const std::string&,GetValueCallback)> WalkStackVarsCallback;

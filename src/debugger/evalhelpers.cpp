@@ -237,6 +237,44 @@ static bool TypeHaveStaticMembers(ICorDebugType *pType)
     return false;
 }
 
+// Check, that type object creation (evaluation) needed for type static members access.
+// Type object is created in order to run static constructor, so, type without static constructor (no `.cctor` in metadata)
+// don't need it, since there is nothing to run.
+// Note, generic types always need type object, since for type instantiation that was not used by program yet static members
+// can't be accessed without it, and thread static field of shared generic instantiation could be reported as not available
+// even if it have storage.
+// Note, in case of error we return `true`, so, caller will use type object as before.
+bool TypeObjectNeeded(ICorDebugType *pType)
+{
+    HRESULT Status;
+
+    ToRelease<ICorDebugTypeEnum> pTypeEnum;
+    IfFailRet(pType->EnumerateTypeParameters(&pTypeEnum));
+    ULONG typeParamsCount = 0;
+    IfFailRet(pTypeEnum->GetCount(&typeParamsCount));
+    if (typeParamsCount != 0)
+        return true;
+
+    ToRelease<ICorDebugClass> pClass;
+    IfFailRet(pType->GetClass(&pClass));
+    mdTypeDef typeDef;
+    IfFailRet(pClass->GetToken(&typeDef));
+    ToRelease<ICorDebugModule> pModule;
+    IfFailRet(pClass->GetModule(&pModule));
+    ToRelease<IUnknown> pMDUnknown;
+    IfFailRet(pModule->GetMetaDataInterface(IID_IMetaDataImport, &pMDUnknown));
+    ToRelease<IMetaDataImport> pMD;
+    IfFailRet(pMDUnknown->QueryInterface(IID_IMetaDataImport, (LPVOID*) &pMD));
+
+    ULONG numMethods = 0;
+    HCORENUM hEnum = NULL;
+    mdMethodDef methodDef;
+    Status = pMD->EnumMethodsWithName(&hEnum, typeDef, W(".cctor"), &methodDef, 1, &numMethods);
+    pMD->CloseEnum(hEnum);
+
+    return FAILED(Status) || numMethods != 0;
+}
+
 HRESULT EvalHelpers::TryReuseTypeObjectFromCache(ICorDebugType *pType, ICorDebugValue **ppTypeObjectResult)
 {
     std::lock_guard<std::mutex> lock(m_typeObjectCacheMutex);
@@ -311,7 +349,8 @@ HRESULT EvalHelpers::CreatTypeObjectStaticConstructor(
     ICorDebugThread *pThread,
     ICorDebugType *pType,
     ICorDebugValue **ppTypeObjectResult,
-    bool DetectStaticMembers)
+    bool DetectStaticMembers,
+    bool ForceCreation)
 {
     HRESULT Status;
 
@@ -329,6 +368,10 @@ HRESULT EvalHelpers::CreatTypeObjectStaticConstructor(
     // Note, for some cases we have static members check outside this method.
     if (DetectStaticMembers && !TypeHaveStaticMembers(pType))
         return S_FALSE;
+
+    // Note, in case type object not needed, S_OK returned without ICorDebugValue creation.
+    if (!ForceCreation && !TypeObjectNeeded(pType))
+        return S_OK;
 
     std::vector< ToRelease<ICorDebugType> > typeParams;
     ToRelease<ICorDebugTypeEnum> pTypeEnum;
@@ -565,6 +608,86 @@ HRESULT EvalHelpers::GetLiteralValue(
             return E_FAIL;
     }
     return S_OK;
+}
+
+// Create default value (null or zero) of field type without evaluation.
+// [in] pThread - managed thread;
+// [in] pModule - module of type that declare field;
+// [in] pSignatureBlob - field signature;
+// [out] ppDefaultValue - return value.
+// Note, only zero value of primitive type and null reference of object, string or class declared in the same module could be
+// created without evaluation (with exact type), for all other types E_NOTIMPL returned.
+HRESULT EvalHelpers::CreateDefaultValue(
+    ICorDebugThread *pThread,
+    ICorDebugModule *pModule,
+    PCCOR_SIGNATURE pSignatureBlob,
+    ICorDebugValue **ppDefaultValue)
+{
+    HRESULT Status;
+
+    CorSigUncompressCallingConv(pSignatureBlob);
+    CorElementType elementType;
+    CorSigUncompressElementType(pSignatureBlob, &elementType);
+    // Skip custom modifiers, for example, `volatile` field have `modreq(System.Runtime.CompilerServices.IsVolatile)`.
+    while (elementType == ELEMENT_TYPE_CMOD_REQD || elementType == ELEMENT_TYPE_CMOD_OPT)
+    {
+        CorSigUncompressElementType(pSignatureBlob);
+        CorSigUncompressToken(pSignatureBlob);
+        CorSigUncompressElementType(pSignatureBlob, &elementType);
+    }
+
+    switch (elementType)
+    {
+        case ELEMENT_TYPE_OBJECT:
+        case ELEMENT_TYPE_BOOLEAN:
+        case ELEMENT_TYPE_CHAR:
+        case ELEMENT_TYPE_I1:
+        case ELEMENT_TYPE_U1:
+        case ELEMENT_TYPE_I2:
+        case ELEMENT_TYPE_U2:
+        case ELEMENT_TYPE_I4:
+        case ELEMENT_TYPE_U4:
+        case ELEMENT_TYPE_I8:
+        case ELEMENT_TYPE_U8:
+        case ELEMENT_TYPE_R4:
+        case ELEMENT_TYPE_R8:
+        {
+            ToRelease<ICorDebugEval> pEval;
+            IfFailRet(pThread->CreateEval(&pEval));
+            // Note, ELEMENT_TYPE_CLASS without class is System.Object.
+            return pEval->CreateValue(elementType == ELEMENT_TYPE_OBJECT ? ELEMENT_TYPE_CLASS : elementType, nullptr, ppDefaultValue);
+        }
+        case ELEMENT_TYPE_STRING:
+        {
+            ToRelease<ICorDebugType> pStringType;
+            IfFailRet(EvalUtils::GetType("string", pThread, m_sharedModules.get(), &pStringType));
+
+            ToRelease<ICorDebugEval> pEval;
+            IfFailRet(pThread->CreateEval(&pEval));
+            ToRelease<ICorDebugEval2> pEval2;
+            IfFailRet(pEval->QueryInterface(IID_ICorDebugEval2, (LPVOID*) &pEval2));
+            return pEval2->CreateValueForType(pStringType, ppDefaultValue);
+        }
+        case ELEMENT_TYPE_CLASS:
+        {
+            // Note, class from other module (TypeRef token) can't be resolved exactly here.
+            mdToken tk;
+            CorSigUncompressElementType(pSignatureBlob);
+            CorSigUncompressToken(pSignatureBlob, &tk);
+            if (TypeFromToken(tk) != mdtTypeDef)
+                return E_NOTIMPL;
+
+            ToRelease<ICorDebugClass> pClass;
+            IfFailRet(pModule->GetClassFromToken(tk, &pClass));
+
+            ToRelease<ICorDebugEval> pEval;
+            IfFailRet(pThread->CreateEval(&pEval));
+            return pEval->CreateValue(ELEMENT_TYPE_CLASS, pClass, ppDefaultValue);
+        }
+        // Note, native integers (ELEMENT_TYPE_I, ELEMENT_TYPE_U) are not supported by ICorDebugEval::CreateValue().
+        default:
+            return E_NOTIMPL;
+    }
 }
 
 } // namespace netcoredbg

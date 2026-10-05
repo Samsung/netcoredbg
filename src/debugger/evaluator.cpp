@@ -698,6 +698,7 @@ static bool IsSynthesizedLocalName(WCHAR *mdName, ULONG nameLen)
            (nameLen > 4 && starts_with(mdName, W("CS$<")));
 }
 
+// Note, pInputValue could be nullptr for static members walk of type without type object, in this case pTypeCast must be provided.
 static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pInputValue, ICorDebugThread *pThread, FrameLevel frameLevel,
                                    ICorDebugType *pTypeCast, bool provideSetterData, Evaluator::WalkMembersCallback cb)
 {
@@ -706,13 +707,21 @@ static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pI
     BOOL isNull = FALSE;
     ToRelease<ICorDebugValue> pValue;
 
-    IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
+    if (pInputValue)
+    {
+        IfFailRet(DereferenceAndUnboxValue(pInputValue, &pValue, &isNull));
 
-    if (isNull && !pValue.GetPtr()) return S_OK;
-    else if (!pValue.GetPtr()) return E_FAIL;
+        if (isNull && !pValue.GetPtr()) return S_OK;
+        else if (!pValue.GetPtr()) return E_FAIL;
+    }
+    else if (pTypeCast)
+        isNull = TRUE; // No instance, static members only.
+    else
+        return E_INVALIDARG;
 
-    CorElementType inputCorType;
-    IfFailRet(pInputValue->GetType(&inputCorType));
+    CorElementType inputCorType = ELEMENT_TYPE_END;
+    if (pInputValue)
+        IfFailRet(pInputValue->GetType(&inputCorType));
     if (inputCorType == ELEMENT_TYPE_PTR)
     {
         auto getValue = [&](ICorDebugValue **ppResultValue, int) -> HRESULT
@@ -726,7 +735,7 @@ static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pI
     }
 
     ToRelease<ICorDebugArrayValue> pArrayValue;
-    if (SUCCEEDED(pValue->QueryInterface(IID_ICorDebugArrayValue, (LPVOID *) &pArrayValue)))
+    if (pValue && SUCCEEDED(pValue->QueryInterface(IID_ICorDebugArrayValue, (LPVOID *) &pArrayValue)))
     {
         ULONG32 nRank;
         IfFailRet(pArrayValue->GetRank(&nRank));
@@ -759,11 +768,11 @@ static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pI
         return S_OK;
     }
 
-    ToRelease<ICorDebugValue2> pValue2;
-    IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
     ToRelease<ICorDebugType> pType;
     if(pTypeCast == nullptr)
     {
+        ToRelease<ICorDebugValue2> pValue2;
+        IfFailRet(pValue->QueryInterface(IID_ICorDebugValue2, (LPVOID *) &pValue2));
         IfFailRet(pValue2->GetExactType(&pType));
         if (!pType) return E_FAIL;
     }
@@ -778,7 +787,7 @@ static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pI
     if (className == "decimal") // TODO: implement mechanism for walking over custom type fields
         return S_OK;
 
-    if (className.back() == '?') // System.Nullable<T>
+    if (className.back() == '?' && pInputValue) // System.Nullable<T>
     {
         ToRelease<ICorDebugValue> pValueValue;
         ToRelease<ICorDebugValue> pHasValueValue;
@@ -853,7 +862,30 @@ static HRESULT InternalWalkMembers(EvalHelpers *pEvalHelpers, ICorDebugValue *pI
                     if (pFrame == nullptr)
                         return E_FAIL;
 
-                    IfFailRet(pType->GetStaticFieldValue(fieldDef, pFrame, ppResultValue));
+                    Status = pType->GetStaticFieldValue(fieldDef, pFrame, ppResultValue);
+                    // Class could be not loaded yet or storage for static field could be not allocated yet (for example, thread static
+                    // field never accessed by this thread). In case type don't need type object (don't have static constructor), nothing
+                    // could write field before this, so, field have default value.
+                    if ((Status == CORDBG_E_STATIC_VAR_NOT_AVAILABLE || Status == CORDBG_E_CLASS_NOT_LOADED) && !TypeObjectNeeded(pType))
+                    {
+                        // Return S_FALSE, since this value don't have storage.
+                        // Note, RVA field have initial value from image, not default value.
+                        if (!(fieldAttr & fdHasFieldRVA) &&
+                            SUCCEEDED(pEvalHelpers->CreateDefaultValue(pThread, pModule, pSignatureBlob, ppResultValue)))
+                            return S_FALSE;
+
+                        // Default value can't be created without evaluation, create type object (load class and allocate static
+                        // fields storage) and read field again, as for type with static constructor.
+                        IfFailRet(pEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pType, nullptr, false, true));
+                        // Get pFrame again, since it was neutered at eval call.
+                        pFrame.Free();
+                        IfFailRet(GetFrameAt(pThread, frameLevel, &pFrame));
+                        if (pFrame == nullptr)
+                            return E_FAIL;
+                        Status = pType->GetStaticFieldValue(fieldDef, pFrame, ppResultValue);
+                    }
+
+                    IfFailRet(Status);
                 }
                 else
                 {
@@ -1552,7 +1584,8 @@ HRESULT Evaluator::WalkStackVars(ICorDebugThread *pThread, FrameLevel frameLevel
     return InternalWalkStackVars(m_sharedModules.get(), pThread, frameLevel, cb);
 }
 
-static HRESULT FollowFields(EvalHelpers *pEvalHelpers, ICorDebugThread *pThread, FrameLevel frameLevel, ICorDebugValue *pValue,
+// Note, pValue could be nullptr for static members access of type without type object, in this case pClassType must be provided.
+static HRESULT FollowFields(EvalHelpers *pEvalHelpers, ICorDebugThread *pThread, FrameLevel frameLevel, ICorDebugValue *pValue, ICorDebugType *pClassType,
                             Evaluator::ValueKind valueKind, std::vector<std::string> &identifiers, int nextIdentifier,
                             ICorDebugValue **ppResult, std::unique_ptr<Evaluator::SetterData> *resultSetterData, int evalFlags)
 {
@@ -1562,7 +1595,8 @@ static HRESULT FollowFields(EvalHelpers *pEvalHelpers, ICorDebugThread *pThread,
     if (nextIdentifier > (int)identifiers.size())
         return E_FAIL;
 
-    pValue->AddRef();
+    if (pValue)
+        pValue->AddRef();
     ToRelease<ICorDebugValue> pResultValue(pValue);
     for (int i = nextIdentifier; i < (int)identifiers.size(); i++)
     {
@@ -1571,7 +1605,7 @@ static HRESULT FollowFields(EvalHelpers *pEvalHelpers, ICorDebugThread *pThread,
 
         ToRelease<ICorDebugValue> pClassValue(std::move(pResultValue));
 
-        InternalWalkMembers(pEvalHelpers, pClassValue, pThread, frameLevel, nullptr, !!resultSetterData, [&](
+        InternalWalkMembers(pEvalHelpers, pClassValue, pThread, frameLevel, pClassValue ? nullptr : pClassType, !!resultSetterData, [&](
             ICorDebugType *pType,
             bool is_static,
             const std::string &memberName,
@@ -1589,6 +1623,11 @@ static HRESULT FollowFields(EvalHelpers *pEvalHelpers, ICorDebugThread *pThread,
             IfFailRet(getValue(&pResultValue, evalFlags));
             if (setterData && resultSetterData)
                 (*resultSetterData).reset(new Evaluator::SetterData(*setterData));
+            else if (Status == S_FALSE && resultSetterData) // default value of static field without storage
+            {
+                (*resultSetterData).reset(new Evaluator::SetterData(nullptr, pType, nullptr));
+                (*resultSetterData)->staticFieldWithoutStorage = true;
+            }
 
             return E_ABORT; // Fast exit from cycle with result.
         });
@@ -1646,7 +1685,7 @@ static HRESULT FollowNestedFindValue(Modules *pModules, EvalHelpers *pEvalHelper
             ToRelease<ICorDebugValue> pTypeObject;
             if (S_OK == pEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject))
             {
-                if (SUCCEEDED(FollowFields(pEvalHelpers, pThread, frameLevel, pTypeObject, Evaluator::ValueIsClass, staticName, 0, ppResult, resultSetterData, evalFlags)))
+                if (SUCCEEDED(FollowFields(pEvalHelpers, pThread, frameLevel, pTypeObject, pType, Evaluator::ValueIsClass, staticName, 0, ppResult, resultSetterData, evalFlags)))
                     return S_OK;
             }
             trim = true;
@@ -1656,7 +1695,7 @@ static HRESULT FollowNestedFindValue(Modules *pModules, EvalHelpers *pEvalHelper
         ToRelease<ICorDebugValue> pTypeObject;
         IfFailRet(pEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pType, &pTypeObject));
         if (Status == S_OK && // type have static members (S_FALSE if type don't have static members)
-            SUCCEEDED(FollowFields(pEvalHelpers, pThread, frameLevel, pTypeObject, Evaluator::ValueIsClass, fieldName, 0, ppResult, resultSetterData, evalFlags)))
+            SUCCEEDED(FollowFields(pEvalHelpers, pThread, frameLevel, pTypeObject, pType, Evaluator::ValueIsClass, fieldName, 0, ppResult, resultSetterData, evalFlags)))
             return S_OK;
 
         trim = true;
@@ -1679,7 +1718,7 @@ static HRESULT InternalResolveIdentifiers(Modules *pModules, EvalHelpers *pEvalH
     }
     else if (pInputValue)
     {
-        return FollowFields(pEvalHelpers, pThread, frameLevel, pInputValue, Evaluator::ValueIsVariable, identifiers, 0, ppResultValue, resultSetterData, evalFlags);
+        return FollowFields(pEvalHelpers, pThread, frameLevel, pInputValue, nullptr, Evaluator::ValueIsVariable, identifiers, 0, ppResultValue, resultSetterData, evalFlags);
     }
 
     HRESULT Status;
@@ -1727,7 +1766,7 @@ static HRESULT InternalResolveIdentifiers(Modules *pModules, EvalHelpers *pEvalH
         if (identifiers[nextIdentifier] == "this")
             nextIdentifier++; // skip first identifier with "this" (we have it in pThisValue), check rest
 
-        if (SUCCEEDED(FollowFields(pEvalHelpers, pThread, frameLevel, pThisValue, Evaluator::ValueIsVariable, identifiers, nextIdentifier, &pResolvedValue, resultSetterData, evalFlags)))
+        if (SUCCEEDED(FollowFields(pEvalHelpers, pThread, frameLevel, pThisValue, nullptr, Evaluator::ValueIsVariable, identifiers, nextIdentifier, &pResolvedValue, resultSetterData, evalFlags)))
         {
             *ppResultValue = pResolvedValue.Detach();
             return S_OK;
@@ -1757,6 +1796,7 @@ static HRESULT InternalResolveIdentifiers(Modules *pModules, EvalHelpers *pEvalH
     }
 
     Evaluator::ValueKind valueKind;
+    ToRelease<ICorDebugType> pType;
     if (pResolvedValue)
     {
         nextIdentifier++;
@@ -1769,7 +1809,6 @@ static HRESULT InternalResolveIdentifiers(Modules *pModules, EvalHelpers *pEvalH
     }
     else
     {
-        ToRelease<ICorDebugType> pType;
         IfFailRet(EvalUtils::FindType(identifiers, nextIdentifier, pThread, pModules, nullptr, &pType));
         IfFailRet(pEvalHelpers->CreatTypeObjectStaticConstructor(pThread, pType, &pResolvedValue));
 
@@ -1789,7 +1828,7 @@ static HRESULT InternalResolveIdentifiers(Modules *pModules, EvalHelpers *pEvalH
     }
 
     ToRelease<ICorDebugValue> pValue(std::move(pResolvedValue));
-    IfFailRet(FollowFields(pEvalHelpers, pThread, frameLevel, pValue, valueKind, identifiers, nextIdentifier, &pResolvedValue, resultSetterData, evalFlags));
+    IfFailRet(FollowFields(pEvalHelpers, pThread, frameLevel, pValue, pType, valueKind, identifiers, nextIdentifier, &pResolvedValue, resultSetterData, evalFlags));
 
     *ppResultValue = pResolvedValue.Detach();
     return S_OK;

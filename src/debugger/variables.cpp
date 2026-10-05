@@ -506,6 +506,15 @@ HRESULT Variables::SetChild(
 
         ToRelease<ICorDebugValue> iCorValue;
         IfFailRet(getValue(&iCorValue, ref.evalFlags));
+        // Default value of static field without storage can't be changed. Note, we have instance of type here, for class
+        // instance, struct local variable, array element, boxed struct and base class (same and other module) static fields
+        // storage was found allocated (.NET 8, 9 and 10), so, this should be thread static field, that don't have storage for
+        // this thread (type object creation don't allocate it).
+        if (Status == S_FALSE && !setterData)
+        {
+            output = "'" + name + "' cannot be assigned to";
+            return E_FAIL;
+        }
         IfFailRet(m_sharedEvaluator->SetValue(pThread, ref.frameId.getLevel(), iCorValue, &getValue, setterData, value, ref.evalFlags, output));
         IfFailRet(PrintValue(iCorValue, output));
         found = true;
@@ -538,6 +547,16 @@ HRESULT Variables::SetExpression(ICorDebugProcess *pProcess, FrameId frameId, co
     bool editable = false;
     std::unique_ptr<Evaluator::SetterData> setterData;
     IfFailRet(m_sharedEvalStackMachine->EvaluateExpression(pThread, frameId.getLevel(), evalFlags, expression, &iCorValue, output, &editable, &setterData));
+    if (setterData && setterData->staticFieldWithoutStorage)
+    {
+        // Default value of static field without storage. Create type object (allocate static fields storage), as for type with
+        // static constructor, and evaluate expression again.
+        IfFailRet(m_sharedEvalHelpers->CreatTypeObjectStaticConstructor(pThread, setterData->propertyType, nullptr, false, true));
+        iCorValue.Free();
+        setterData.reset();
+        // Note, in case value still don't have storage, setterData without setter function prevent value change below.
+        IfFailRet(m_sharedEvalStackMachine->EvaluateExpression(pThread, frameId.getLevel(), evalFlags, expression, &iCorValue, output, &editable, &setterData));
+    }
     if (!editable ||
         (editable && setterData.get() && !setterData.get()->setterFunction)) // property, that don't have setter
     {

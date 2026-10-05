@@ -35,6 +35,7 @@ $ALL_TEST_NAMES = @(
     "MITestBreakpointWithoutStop"
     "MITestBreakpointUpdate"
     "MITestUnhandledException"
+    "MITestStaticFields"
     "VSCodeExampleTest"
     "VSCodeTestBreakpoint"
     "VSCodeTestFuncBreak"
@@ -62,6 +63,7 @@ $ALL_TEST_NAMES = @(
     "VSCodeTestExtensionMethods"
     "VSCodeTestBreakpointWithoutStop"
     "VSCodeTestUnhandledException"
+    "VSCodeTestStaticFields"
 )
 
 # Skipped tests:
