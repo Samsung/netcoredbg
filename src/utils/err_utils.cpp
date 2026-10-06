@@ -16,7 +16,7 @@ const char *ErrGetStr(int err_code, char buf[], size_t buf_size)
     return haveErrorStr ? buf : errStr;
 #else
 
-#ifdef _GNU_SOURCE
+#if defined(_GNU_SOURCE) && defined(__GLIBC__)
     return strerror_r(err_code, buf, buf_size);
 #else
     static const char errStr[] = "Unknown error";
