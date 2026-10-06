@@ -8,6 +8,9 @@
 
 #include <coreclrhost.h>
 #include <thread>
+#if defined(__linux__) && !defined(__GLIBC__)
+#include <pthread.h>
+#endif
 #include <string>
 
 #include "palclr.h"
@@ -39,6 +42,35 @@ namespace Interop
 
 namespace // unnamed namespace
 {
+
+#if defined(__linux__) && !defined(__GLIBC__)
+// musl only. CoreCLR's PAL is built with ENSURE_PRIMARY_STACK_SIZE on musl, so PAL initialization inside
+// coreclr_initialize() alloca()-touches g_defaultStackSize bytes (1.5 MiB by default) on the CALLING
+// thread, on the assumption that it is the primary thread, whose stack grows on demand. Init() runs on the
+// ICorDebug managed-callback thread (ManagedCallback::CreateProcess), created by the DBI's own PAL with a
+// fixed 1.5 MiB stack, so the touch lands below the stack and the debugger dies with SIGSEGV. Running
+// coreclr_initialize() on a short-lived thread with a 16 MiB stack keeps the touch inside the stack.
+struct InitCoreCLRArgs
+{
+    coreclr_initialize_ptr fn;
+    const char *exePath;
+    const char *domainName;
+    int propertyCount;
+    const char **keys;
+    const char **values;
+    void **hostHandle;
+    unsigned int *domainId;
+    int result;
+};
+
+void *InitCoreCLRThread(void *p)
+{
+    InitCoreCLRArgs *a = static_cast<InitCoreCLRArgs *>(p);
+    a->result = a->fn(a->exePath, a->domainName, a->propertyCount, a->keys, a->values, a->hostHandle, a->domainId);
+    return nullptr;
+}
+#endif
+
 
 enum class RetCode : int32_t
 {
@@ -211,8 +243,23 @@ void Init(const std::string &coreClrPath)
                                     clrDir.c_str(), // NATIVE_DLL_SEARCH_DIRECTORIES
                                     "UseLatestBehaviorWhenTFMNotSpecified"};  // AppDomainCompatSwitch
 
+#if defined(__linux__) && !defined(__GLIBC__)
+    {
+        InitCoreCLRArgs args{initializeCoreCLR, exe.c_str(), "debugger",
+            (int)(sizeof(propertyKeys) / sizeof(propertyKeys[0])), propertyKeys, propertyValues, &hostHandle, &domainId, -1};
+        pthread_attr_t attr;
+        pthread_t thread;
+        if (pthread_attr_init(&attr) != 0 || pthread_attr_setstacksize(&attr, 16 * 1024 * 1024) != 0 ||
+            pthread_create(&thread, &attr, InitCoreCLRThread, &args) != 0)
+            throw std::runtime_error("Unable to start the CoreCLR initialization thread");
+        pthread_attr_destroy(&attr);
+        pthread_join(thread, nullptr);
+        Status = args.result;
+    }
+#else
     Status = initializeCoreCLR(exe.c_str(), "debugger",
         sizeof(propertyKeys) / sizeof(propertyKeys[0]), propertyKeys, propertyValues, &hostHandle, &domainId);
+#endif
 
     if (FAILED(Status))
         throw std::runtime_error("Fail to initialize CoreCLR " + std::to_string(Status));
