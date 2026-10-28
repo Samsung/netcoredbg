@@ -165,7 +165,10 @@ void IORedirectHelper::worker()
 
     std::unique_lock<Utility::RWLock::Reader> read_lock(m_rwlock.reader, std::defer_lock_t{});
 
-    // loop till fatal error or exit request
+    // streams which reached end of file (or failed): nothing more to read from them
+    bool finished[Utility::Size(stream_types)] = {};
+
+    // loop till fatal error, end of all input streams or exit request
     while (true)
     {
         // start new write requests if possible
@@ -190,7 +193,7 @@ void IORedirectHelper::worker()
             }
 
             // request to read more data
-            if (!async_handles[n])
+            if (!async_handles[n] && !finished[n])
             {
                 size_t free_size = stream->endp() - stream->egptr();
                 LOGD("requesting %u bytes to read", int(free_size));
@@ -201,6 +204,14 @@ void IORedirectHelper::worker()
                     return;
             }
         }
+
+        // all data of all input streams is passed to the callback: nothing left to do
+        bool all_finished = true;
+        for (unsigned n = 0; n < Utility::Size(stream_types); n++)
+            all_finished = all_finished && (in_streams[n] == nullptr || finished[n]);
+
+        if (all_finished)
+            return;
 
         // check if data available for reading or write operation is finished
         IOSystem::async_wait(async_handles, &async_handles[Utility::Size(async_handles)], WaitForever);
@@ -226,7 +237,7 @@ void IORedirectHelper::worker()
             return;
 
         // process finished read requests
-        if (!ProcessFinishedReadRequests(in_streams, Utility::Size(stream_types), async_handles))
+        if (!ProcessFinishedReadRequests(in_streams, Utility::Size(stream_types), async_handles, finished))
             return;
     }
 }
@@ -318,12 +329,12 @@ bool IORedirectHelper::ProcessFinishedWriteRequests(std::unique_lock<Utility::RW
     return true;
 }
 
-bool IORedirectHelper::ProcessFinishedReadRequests(InStreamBuf* const in_streams[], size_t stream_types_cout, IOSystem::AsyncHandle async_handles[])
+bool IORedirectHelper::ProcessFinishedReadRequests(InStreamBuf* const in_streams[], size_t stream_types_cout, IOSystem::AsyncHandle async_handles[], bool finished[])
 {
     for (size_t n = 0; n < stream_types_cout; n++)
     {
         InStreamBuf* const stream = in_streams[n];
-        if (stream == nullptr)
+        if (stream == nullptr || finished[n] || !async_handles[n])
             continue;
 
         IOSystem::IOResult result = IOSystem::async_result(async_handles[n]);
@@ -337,10 +348,16 @@ bool IORedirectHelper::ProcessFinishedReadRequests(InStreamBuf* const in_streams
             async_handles[n] = {};  // can issue next read request
         }
         else if (result.status != IOSystem::IOResult::Pending)
-        {   // fatal error
+        {
+            // End of this stream only (the debuggee exited or closed it): the data already read from it and from the
+            // other streams is still passed to the callback, and the other streams are read till their end. Returning
+            // here lost the last output of a debuggee when its end and the other stream's last data came together.
             async_handles[n] = {};
-            LOGE("child process stdout/stderr reading error");
-            return false;
+            finished[n] = true;
+            if (result.status == IOSystem::IOResult::Eof)
+                LOGD("child process stdout/stderr: end of file");
+            else
+                LOGE("child process stdout/stderr reading error");
         }
     }
 

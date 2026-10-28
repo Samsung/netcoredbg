@@ -100,7 +100,7 @@ private:
     void worker();    // worker thread function
     void StartNewWriteRequests(std::unique_lock<Utility::RWLock::Reader> &read_lock, OutStreamBuf* const out_stream, IOSystem::AsyncHandle &out_handle);
     bool ProcessFinishedWriteRequests(std::unique_lock<Utility::RWLock::Reader> &read_lock, OutStreamBuf* const out_stream, IOSystem::AsyncHandle &out_handle);
-    bool ProcessFinishedReadRequests(InStreamBuf* const in_streams[], size_t stream_types_cout, IOSystem::AsyncHandle async_handles[]);
+    bool ProcessFinishedReadRequests(InStreamBuf* const in_streams[], size_t stream_types_cout, IOSystem::AsyncHandle async_handles[], bool finished[]);
 
     // remote side of the pipes
     const std::tuple<IOSystem::FileHandle, IOSystem::FileHandle, IOSystem::FileHandle> m_pipes;

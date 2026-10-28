@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+#include <tuple>
 
 #include "utils/span.h"
 #include "utils/iosystem.h"
@@ -32,6 +36,66 @@ TEST_CASE("IORedirect::create")
     IORedirectHelper ior(
         { IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe() },
         callback );
+}
+
+// A process that writes its last line and exits: the reader can see that line and the end of both stdout and
+// stderr in one pass, and the line must still reach the callback. The end of stderr ended the reader before the
+// data already read from stdout was passed on, so the debuggee's last output was lost now and then on a busy
+// machine. The callback holds the reader on the first line while the last one is written and the pipes close.
+TEST_CASE("IORedirect::last output before the end of both streams")
+{
+    auto pipes = std::make_tuple(IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe(), IOSystem::unnamed_pipe());
+    const IOSystem::FileHandle out = std::get<IOSystem::Stdout>(pipes).second;
+    const IOSystem::FileHandle err = std::get<IOSystem::Stderr>(pipes).second;
+
+    std::mutex mutex;
+    std::condition_variable changed;
+    bool held = false, release = false;
+    std::string received;
+    auto callback = [&](IORedirectHelper::StreamType stream, span<char> text)
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        if (stream == IOSystem::Stdout)
+            received.append(text.begin(), text.end());
+        if (!held)
+        {
+            held = true;
+            changed.notify_all();
+            changed.wait(lock, [&] { return release; });
+        }
+    };
+
+    IORedirectHelper ior(pipes, callback);
+
+    IOSystem::write(out, "first\n", 6);
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        REQUIRE(changed.wait_for(lock, std::chrono::seconds(10), [&] { return held; }));
+    }
+
+    // the process writes its last line and exits while the reader is busy
+    IOSystem::write(out, "last\n", 5);
+    IOSystem::close(out);
+    IOSystem::close(err);
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        release = true;
+        changed.notify_all();
+    }
+
+    bool complete = false;
+    for (int wait = 0; wait < 200 && !complete; wait++)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            complete = received == "first\nlast\n";
+        }
+        if (!complete)
+            usleep(10000);
+    }
+
+    std::lock_guard<std::mutex> lock(mutex);
+    CHECK(received == "first\nlast\n");
 }
 
 #if 0  // IORedirect::output function should be changed on async_input().
