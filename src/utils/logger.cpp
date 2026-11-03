@@ -17,6 +17,9 @@
 #include <time.h>
 #include <assert.h>
 #include <mutex>
+#ifdef __FreeBSD__
+#include <pthread_np.h>
+#endif
 #include "utils/limits.h"
 
 #ifdef _WIN32
@@ -59,7 +62,9 @@ namespace
     // Function returns thread identifier.
     unsigned get_tid()
     {
-        #ifndef _WIN32
+        #if defined(__FreeBSD__)
+        static thread_local unsigned thread_id = pthread_getthreadid_np();
+        #elif !defined(_WIN32)
         static thread_local unsigned thread_id = syscall(SYS_gettid);
         #else
         static thread_local unsigned thread_id = unsigned(GetCurrentThreadId());

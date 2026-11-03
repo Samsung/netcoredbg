@@ -8,6 +8,10 @@
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
+#ifdef __FreeBSD__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 #include <array>
@@ -34,6 +38,16 @@ namespace
         char buffer[PATH_MAX];
         ssize_t r = readlink(self_link, buffer, PATH_MAX);
         return std::string(buffer, r < 0 ? 0 : r);
+    }
+#elif defined(__FreeBSD__)
+    std::string get_exe_path()
+    {
+        int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+        char buffer[PATH_MAX] = {};
+        size_t size = sizeof(buffer);
+        if (sysctl(mib, 4, buffer, &size, nullptr, 0) != 0)
+            return {};
+        return std::string(buffer);
     }
 #elif defined(__APPLE__)
     std::string get_exe_path()
