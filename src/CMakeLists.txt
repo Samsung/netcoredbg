@@ -353,6 +353,8 @@ if (BUILD_MANAGED)
         if (CLR_CMAKE_PLATFORM_UNIX)
             if (CLR_CMAKE_PLATFORM_DARWIN)
                 set(RID_NAME "osx")
+            elseif (CLR_CMAKE_PLATFORM_FREEBSD)
+                set(RID_NAME "freebsd")
             elseif (EXISTS "/etc/alpine-release") # Alpine use musl only.
                 set(RID_NAME "linux-musl")
             else()

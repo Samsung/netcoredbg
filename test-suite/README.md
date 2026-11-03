@@ -89,6 +89,9 @@ to make all necessary steps.
     $ powershell.exe -executionpolicy bypass -File run_tests.ps1 <test-name> [<test-name>]
 ```
 
+For the native FreeBSD build and launch/breakpoint smoke test, see
+[`docs/freebsd.md`](../docs/freebsd.md).
+
 # How to add new test
 
 - move to test-suite directory;

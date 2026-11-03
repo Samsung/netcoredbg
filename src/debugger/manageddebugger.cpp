@@ -454,7 +454,10 @@ VOID ManagedDebuggerHelpers::StartupCallback(IUnknown *pCordb, PVOID parameter, 
 {
     ManagedDebugger *self = static_cast<ManagedDebugger*>(parameter);
 
-    self->Startup(pCordb);
+    if (SUCCEEDED(hr) && pCordb != nullptr)
+        self->Startup(pCordb);
+    else
+        LOGE("Runtime startup failed: %s", errormessage(hr));
 
     if (self->m_unregisterToken)
     {
