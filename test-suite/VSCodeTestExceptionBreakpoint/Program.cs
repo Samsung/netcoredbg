@@ -237,6 +237,24 @@ namespace NetcoreDbgTest.Script
             throw new ResultNotSuccessException(@"__FILE__:__LINE__"+"\n"+caller_trace);
         }
 
+        public void TestInnermostException(string caller_trace, string expectedTypeName)
+        {
+            ExceptionInfoRequest exceptionInfoRequest = new ExceptionInfoRequest();
+            exceptionInfoRequest.arguments.threadId = threadId;
+            var ret = VSCodeDebugger.Request(exceptionInfoRequest);
+            Assert.True(ret.Success, @"__FILE__:__LINE__" + "\n" + caller_trace);
+
+            ExceptionInfoResponse exceptionInfoResponse =
+                JsonConvert.DeserializeObject<ExceptionInfoResponse>(ret.ResponseStr);
+
+            string expectedInnermost = "Innermost exception: " + expectedTypeName;
+            if (exceptionInfoResponse.body.description != null &&
+                exceptionInfoResponse.body.description.Contains(expectedInnermost))
+                return;
+
+            throw new ResultNotSuccessException(@"__FILE__:__LINE__" + "\n" + caller_trace);
+        }
+
         public void TestInnerException(string caller_trace, int innerLevel, string excName, string excMessage)
         {
             ExceptionInfoRequest exceptionInfoRequest = new ExceptionInfoRequest();
@@ -830,6 +848,7 @@ namespace VSCodeTestExceptionBreakpoint
                 Context.WasExceptionBreakpointHit(@"__FILE__:__LINE__", "bp_test_15", "CLR", "always", "System.ArgumentOutOfRangeException");
                 Context.TestInnerException(@"__FILE__:__LINE__", 0, "System.NullReferenceException", "Message2");
                 Context.TestInnerException(@"__FILE__:__LINE__", 1, "System.Exception", "Message1");
+                Context.TestInnermostException(@"__FILE__:__LINE__", "System.Exception");
                 Context.Continue(@"__FILE__:__LINE__");
                 Context.WasBreakpointHit(@"__FILE__:__LINE__", "bp_test_16");
                 Context.Continue(@"__FILE__:__LINE__");

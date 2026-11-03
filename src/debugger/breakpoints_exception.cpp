@@ -193,8 +193,53 @@ static void GetExceptionBreakModeName(ExceptionBreakMode breakMode, std::string 
     }
 }
 
+static CORDB_ADDRESS GetObjectAddress(ICorDebugValue *pValue)
+{
+    if (pValue == nullptr)
+        return 0;
+
+    CORDB_ADDRESS addr = 0;
+    ToRelease<ICorDebugReferenceValue> pRefValue;
+    if (SUCCEEDED(pValue->QueryInterface(IID_ICorDebugReferenceValue, (LPVOID*)&pRefValue)))
+    {
+        BOOL isNull = TRUE;
+        if (SUCCEEDED(pRefValue->IsNull(&isNull)) && !isNull)
+        {
+            if (SUCCEEDED(pRefValue->GetValue(&addr)))
+                return addr;
+        }
+        return 0;
+    }
+
+    if (SUCCEEDED(pValue->GetAddress(&addr)))
+        return addr;
+
+    return 0;
+}
+
 HRESULT ExceptionBreakpoints::GetExceptionDetails(ICorDebugThread *pThread, ICorDebugValue *pExceptionValue, ExceptionDetails &details)
 {
+    std::unordered_set<CORDB_ADDRESS> visitedAddresses;
+    return GetExceptionDetails(pThread, pExceptionValue, details, visitedAddresses, 0);
+}
+
+HRESULT ExceptionBreakpoints::GetExceptionDetails(ICorDebugThread *pThread, ICorDebugValue *pExceptionValue, ExceptionDetails &details,
+                                                  std::unordered_set<CORDB_ADDRESS> &visitedAddresses, int currentDepth)
+{
+    static const int maxExceptionDepth = 100;
+    if (currentDepth >= maxExceptionDepth || pExceptionValue == nullptr)
+        return S_OK;
+
+    CORDB_ADDRESS currentAddress = GetObjectAddress(pExceptionValue);
+    if (currentAddress != 0)
+    {
+        if (!visitedAddresses.insert(currentAddress).second)
+        {
+            // Cycle detected: this exception instance was already visited in the chain.
+            return S_OK;
+        }
+    }
+
     if (FAILED(TypePrinter::GetTypeOfValue(pExceptionValue, details.fullTypeName)))
     {
         details.fullTypeName = "<unknown exception>";
@@ -271,8 +316,15 @@ HRESULT ExceptionBreakpoints::GetExceptionDetails(ICorDebugThread *pThread, ICor
 
     if (iCorInnerExceptionValue != nullptr)
     {
-        details.innerException.reset(new ExceptionDetails);
-        GetExceptionDetails(pThread, iCorInnerExceptionValue, *details.innerException.get());
+        CORDB_ADDRESS innerAddress = GetObjectAddress(iCorInnerExceptionValue);
+        if (innerAddress == 0 || visitedAddresses.find(innerAddress) == visitedAddresses.end())
+        {
+            if (currentDepth + 1 < maxExceptionDepth)
+            {
+                details.innerException.reset(new ExceptionDetails);
+                GetExceptionDetails(pThread, iCorInnerExceptionValue, *details.innerException.get(), visitedAddresses, currentDepth + 1);
+            }
+        }
     }
 
     return S_OK;
@@ -310,8 +362,13 @@ HRESULT ExceptionBreakpoints::GetExceptionInfo(ICorDebugThread *pThread, Excepti
 
     if (exceptionInfo.details.innerException != nullptr)
     {
+        const ExceptionDetails *pInnermost = exceptionInfo.details.innerException.get();
+        while (pInnermost->innerException != nullptr)
+        {
+            pInnermost = pInnermost->innerException.get();
+        }
         exceptionInfo.description += "\n Inner exceptions found, see $exception in variables window for more details.\n Innermost exception: " +
-                                     exceptionInfo.details.innerException->fullTypeName;
+                                     pInnermost->fullTypeName;
     }
 
     GetExceptionBreakModeName(findBreakMode->second, exceptionInfo.breakMode);
