@@ -10,6 +10,7 @@
 #include "interfaces/types.h"
 #include "interfaces/idebugger.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <memory>
 #include <mutex>
@@ -70,6 +71,8 @@ private:
     std::unordered_map<DWORD, ExceptionBreakMode> m_threadsExceptionBreakMode;
 
     HRESULT GetExceptionDetails(ICorDebugThread *pThread, ICorDebugValue *pExceptionValue, ExceptionDetails &details);
+    HRESULT GetExceptionDetails(ICorDebugThread *pThread, ICorDebugValue *pExceptionValue, ExceptionDetails &details,
+                                std::unordered_set<CORDB_ADDRESS> &visitedAddresses, int currentDepth);
 
     struct ManagedExceptionBreakpoint
     {
