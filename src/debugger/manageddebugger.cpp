@@ -1700,21 +1700,36 @@ HRESULT ManagedDebugger::HotReloadApplyDeltas(const std::string &dllFileName, co
     IfFailRet(m_sharedCallbacksQueue->Stop(m_iCorProcess));
     bool continueProcess = (Status == S_OK); // Was stopped by m_sharedCallbacksQueue->Stop() call.
 
-    IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
-    std::string updatedDLL;
-    std::unordered_set<mdTypeDef> updatedTypeTokens;
-    IfFailRet(ApplyPdbDeltaAndLineUpdates(dllFileName, deltaPDB, lineUpdates, updatedDLL, updatedTypeTokens));
+    // The debuggee must be resumed whatever happens below: a failed update must not leave the program stopped.
+    auto apply = [&]() -> HRESULT
+    {
+        HRESULT Status;
+        IfFailRet(ApplyMetadataAndILDeltas(m_sharedModules.get(), dllFileName, deltaMD, deltaIL));
+        std::string updatedDLL;
+        std::unordered_set<mdTypeDef> updatedTypeTokens;
+        IfFailRet(ApplyPdbDeltaAndLineUpdates(dllFileName, deltaPDB, lineUpdates, updatedDLL, updatedTypeTokens));
 
-    ToRelease<ICorDebugThread> pThread;
-    if (SUCCEEDED(FindEvalCapableThread(pThread)))
-        IfFailRet(HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get(), updatedDLL, updatedTypeTokens));
-    else
-        IfFailRet(m_sharedBreakpoints->SetHotReloadBreakpoint(updatedDLL, updatedTypeTokens));
+        // The deltas are applied. What is left is telling the program's MetadataUpdateHandlers (UI frameworks refresh themselves in them), which needs the
+        // startup hook this debugger is built with (NCDB_DOTNET_STARTUP_HOOK). Without it that step is not implemented, and the update is still a success.
+        ToRelease<ICorDebugThread> pThread;
+        if (SUCCEEDED(FindEvalCapableThread(pThread)))
+            Status = HotReloadHelpers::UpdateApplication(pThread, m_sharedModules.get(), m_sharedEvaluator.get(), m_sharedEvalHelpers.get(), updatedDLL, updatedTypeTokens);
+        else
+            Status = m_sharedBreakpoints->SetHotReloadBreakpoint(updatedDLL, updatedTypeTokens);
+        if (Status != E_NOTIMPL)
+            IfFailRet(Status);
+        return S_OK;
+    };
+    HRESULT applyStatus = apply();
 
     if (continueProcess)
-        IfFailRet(m_sharedCallbacksQueue->Continue(m_iCorProcess));
+    {
+        HRESULT continueStatus = m_sharedCallbacksQueue->Continue(m_iCorProcess);
+        if (SUCCEEDED(applyStatus))
+            IfFailRet(continueStatus);
+    }
 
-    return S_OK;
+    return applyStatus;
 }
 
 } // namespace netcoredbg

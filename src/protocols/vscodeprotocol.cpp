@@ -599,6 +599,8 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
 
         sharedDebugger->SetJustMyCode(arguments.value("justMyCode", true)); // MS vsdbg have "justMyCode" enabled by default.
         sharedDebugger->SetStepFiltering(arguments.value("enableStepFiltering", true)); // MS vsdbg have "enableStepFiltering" enabled by default.
+        if (arguments.value("hotReload", false)) // Edit and Continue / Hot Reload: the client sends deltas with the "applyDeltas" request.
+            sharedDebugger->SetHotReload(true);
 
         if (!fileExec.empty())
             return sharedDebugger->Launch(fileExec, execArgs, env, cwd, arguments.value("stopAtEntry", false));
@@ -829,6 +831,22 @@ static HRESULT HandleCommand(std::shared_ptr<IDebugger> &sharedDebugger, std::st
         body["value"] = output;
 
         return S_OK;
+    } },
+    { "applyDeltas", [&](const json &arguments, json &body) {
+        // Custom request (not part of DAP): apply one Hot Reload update produced by Roslyn. All the deltas are files written by the client.
+        HRESULT Status = sharedDebugger->HotReloadApplyDeltas(
+            arguments.at("module").get<std::string>(),
+            arguments.at("metadataDelta").get<std::string>(),
+            arguments.at("ilDelta").get<std::string>(),
+            arguments.at("pdbDelta").get<std::string>(),
+            arguments.at("lineUpdates").get<std::string>());
+        if (FAILED(Status))
+        {
+            char text[32];
+            snprintf(text, sizeof(text), "HRESULT 0x%08x", (unsigned)Status);
+            body["message"] = text;
+        }
+        return Status;
     } },
     { "setFunctionBreakpoints", [&](const json &arguments, json &body) {
         HRESULT Status = S_OK;
